@@ -10,6 +10,11 @@ export interface ReducerInput {
   readonly budgetChars: number
   readonly sourceRef: string
   readonly isError: boolean
+  /**
+   * Orthogonal user gate for the `hypa-code-skeleton` candidate. Absent or
+   * false keeps source-code content on its existing head/tail reducers.
+   */
+  readonly codeSkeleton?: boolean
 }
 
 /** One verified reducer candidate. */
@@ -34,6 +39,19 @@ const GIT_STATUS_PATTERN = new RegExp([
   String.raw`^(?:On branch|Your branch|HEAD detached|Changes |Untracked |Unmerged |\s*(?:modified|deleted|`,
   String.raw`new file|renamed|both modified):)`,
 ].join(''), 'i')
+const CODE_IMPORT_PATTERN = new RegExp([
+  String.raw`^\s*(?:import\b|from\s+[\w.]+\s+import\b|use\s+\w|package\s+|#include\b|`,
+  String.raw`using\s+[\w.]+;|require\s*\(|extern\s+crate\b)`,
+].join(''))
+const CODE_STRUCTURE_PATTERN = new RegExp([
+  String.raw`^\s*(?:@[\w.]+|export\s+|default\s+|declare\s+|abstract\s+|public\s+|private\s+|protected\s+|`,
+  String.raw`internal\s+|static\s+|final\s+|sealed\s+|override\s+|pub(?:\([^)]*\))?\s+|async\s+|unsafe\s+)*`,
+  String.raw`(?:function\b|class\b|interface\b|enum\b|struct\b|impl\b|trait\b|type\s+\w|fn\s|func\b|`,
+  String.raw`def\s|module\b|namespace\b|sub\s)`,
+].join(''))
+const PYTHON_STRUCTURE_PATTERN = /^\s*(?:async\s+)?def\s|^\s*class\s/
+const CODE_DECORATOR_PATTERN = /^\s*@[\w.]+/
+const CODE_COMMENT_PATTERN = /^\s*(?:\/\/|#|\/\*|\*)/
 
 /**
  * Select a reducer from verified tool, command, and content evidence.
@@ -49,10 +67,11 @@ export function reduceFreshToolResult(input: ReducerInput): ReducerOutput | null
 
   if (looksLikeJson(normalized)) candidates.push(() => reduceJson(prepared))
   if (isSearchTool(name, command)) candidates.push(() => reduceSearch(prepared))
-  if (isReadTool(name)) candidates.push(() => reduceHead(prepared, 'pi-head'))
   if (isGitCommand(name, command)) candidates.push(() => reduceGit(prepared, command))
   if (isPackageCommand(command)) candidates.push(() => reducePatternLog(prepared, 'hypa-package', packagePattern()))
   if (isBuildOrTestCommand(command)) candidates.push(() => reducePatternLog(prepared, 'hypa-build-test', buildPattern()))
+  if (input.codeSkeleton === true && looksLikeSourceCode(normalized)) candidates.push(() => reduceCodeSkeleton(prepared))
+  if (isReadTool(name)) candidates.push(() => reduceHead(prepared, 'pi-head'))
   if (isShellTool(name) || command !== '') candidates.push(() => reduceShell(prepared))
   candidates.push(() => reduceSalient(prepared, 'generic-salience'))
 
@@ -306,6 +325,204 @@ function reduceSalient(input: ReducerInput, reducer: string): ReducerOutput | nu
   const salient = lines.filter(line => IMPORTANT_PATTERN.test(line) || STATUS_PATTERN.test(line)).slice(0, 24)
   const text = fitLines([head, ...salient, marker, tail], input.budgetChars, input.sourceRef)
   return text === null ? null : { text, reducer, lossy: true }
+}
+
+/**
+ * Keep a source-file skeleton: imports, decorators, declaration signatures,
+ * comments at brace depth zero, and every error-signalling line, eliding the
+ * remaining bodies with counted markers. Covers brace languages (TS/JS, Rust,
+ * Go, Java, C family) and indent blocks (Python); unknown syntax fails open to
+ * the next candidate. Output is compressed evidence, not required to parse.
+ * @param input - original result text, recovery source, and output budget.
+ * @returns a verified candidate, or `null` when the text is not code-like.
+ */
+function reduceCodeSkeleton(input: ReducerInput): ReducerOutput | null {
+  const lines = splitLines(input.text)
+  const kept: string[] = []
+  let elided = 0
+  const flushElided = (): void => {
+    if (elided > 0) kept.push(`[... ${String(elided)} lines elided ...]`)
+    elided = 0
+  }
+  let depth = 0
+  let index = 0
+  const elideBraceBody = (): void => {
+    const startDepth = depth
+    index += 1
+    while (index < lines.length && depth > startDepth) {
+      const body = lines[index]
+      if (body === undefined) break
+      if (IMPORTANT_PATTERN.test(body)) {
+        flushElided()
+        kept.push(body)
+      } else {
+        elided += 1
+      }
+      depth += braceDelta(body)
+      index += 1
+    }
+    flushElided()
+  }
+  const keepPythonSignature = (signatureLine: string): void => {
+    // The signature line is already kept; every path below must advance the
+    // cursor past it so the caller's `continue` cannot revisit the same line.
+    index += 1
+    if (/:\s*$/.test(signatureLine)) {
+      elideIndentedBody(leadingIndent(signatureLine))
+      return
+    }
+    // Multi-line signature: keep continuation lines until the colon, then
+    // elide the indented body at the colon line's indent.
+    for (let guard = 0; guard < 6 && index < lines.length; guard += 1) {
+      const next = lines[index]
+      if (next === undefined) break
+      if (next.trim() !== '' && leadingIndent(next) <= leadingIndent(signatureLine)) break
+      flushElided()
+      kept.push(next)
+      index += 1
+      if (/:\s*$/.test(next)) {
+        elideIndentedBody(leadingIndent(next))
+        return
+      }
+      if (next.trim() !== '' && !/[:,(]\s*$/.test(next)) break
+    }
+  }
+  const elideIndentedBody = (indent: number): void => {
+    while (index < lines.length) {
+      const body = lines[index]
+      if (body === undefined) break
+      if (body.trim() !== '' && leadingIndent(body) <= indent) break
+      if (IMPORTANT_PATTERN.test(body)) {
+        flushElided()
+        kept.push(body)
+        index += 1
+        continue
+      }
+      if (isCodeStructureLine(body) || CODE_DECORATOR_PATTERN.test(body)) {
+        flushElided()
+        kept.push(body)
+        keepPythonSignature(body)
+        continue
+      }
+      elided += 1
+      index += 1
+    }
+    flushElided()
+  }
+  while (index < lines.length) {
+    const line = lines[index]
+    if (line === undefined) break
+    const delta = braceDelta(line)
+    if (IMPORTANT_PATTERN.test(line)) {
+      flushElided()
+      kept.push(line)
+      depth += delta
+      index += 1
+      continue
+    }
+    if (isCodeStructureLine(line) || CODE_IMPORT_PATTERN.test(line) || CODE_DECORATOR_PATTERN.test(line)) {
+      flushElided()
+      kept.push(line)
+      depth += delta
+      if (delta > 0) {
+        elideBraceBody()
+        continue
+      }
+      if (PYTHON_STRUCTURE_PATTERN.test(line)) {
+        keepPythonSignature(line)
+        continue
+      }
+      // Brace-language signature continuation: keep following lines until one
+      // opens a block, then elide that block.
+      let opened = false
+      for (let guard = 0; guard < 6 && index + 1 < lines.length; guard += 1) {
+        const next = lines[index + 1]
+        if (next === undefined) break
+        const nextDelta = braceDelta(next)
+        if (nextDelta === 0 && next.trim() !== '' && !/[:,(]\s*$/.test(next)) break
+        flushElided()
+        kept.push(next)
+        depth += nextDelta
+        index += 1
+        if (nextDelta > 0) {
+          opened = true
+          break
+        }
+      }
+      if (opened) elideBraceBody()
+      else index += 1
+      continue
+    }
+    if (depth === 0 && CODE_COMMENT_PATTERN.test(line)) {
+      flushElided()
+      kept.push(line)
+    } else {
+      elided += 1
+    }
+    depth += delta
+    index += 1
+  }
+  flushElided()
+  return finishSkeleton(kept, lines, input)
+}
+
+function finishSkeleton(
+  kept: readonly string[],
+  lines: readonly string[],
+  input: ReducerInput,
+): ReducerOutput | null {
+  const header = `[code output compressed by hypa-code-skeleton; source: ${input.sourceRef}]`
+  const text = fitLines([header, ...kept, ...lines.slice(-4)], input.budgetChars, input.sourceRef)
+  return text === null ? null : { text, reducer: 'hypa-code-skeleton', lossy: true }
+}
+
+/** Net brace delta of one line, ignoring braces inside string literals. */
+function braceDelta(line: string): number {
+  let delta = 0
+  let quote: string | null = null
+  for (let position = 0; position < line.length; position += 1) {
+    const char = line[position]
+    if (quote !== null) {
+      if (char === '\\') position += 1
+      else if (char === quote) quote = null
+      continue
+    }
+    if (char === '"' || char === "'" || char === '`') {
+      quote = char
+      continue
+    }
+    if (char === '{') delta += 1
+    else if (char === '}') delta -= 1
+  }
+  return delta
+}
+
+function leadingIndent(line: string): number {
+  return codePointLength(line) - codePointLength(line.trimStart())
+}
+
+function isCodeStructureLine(line: string): boolean {
+  return CODE_STRUCTURE_PATTERN.test(line) || PYTHON_STRUCTURE_PATTERN.test(line)
+}
+
+/**
+ * Require content evidence of source code: enough declaration, import, or
+ * decorator lines among a bounded prefix. Failing this keeps prose, logs, and
+ * data on their existing reducers.
+ * @param text - normalized result text.
+ * @returns whether the text qualifies as source code.
+ */
+function looksLikeSourceCode(text: string): boolean {
+  const lines = splitLines(text)
+  if (lines.length < 12) return false
+  let evidence = 0
+  for (const line of lines.slice(0, 400)) {
+    if (isCodeStructureLine(line) || CODE_IMPORT_PATTERN.test(line) || CODE_DECORATOR_PATTERN.test(line)) {
+      evidence += 1
+      if (evidence >= 3) return true
+    }
+  }
+  return false
 }
 
 function omissionMarker(input: ReducerInput, reducer: string): string {

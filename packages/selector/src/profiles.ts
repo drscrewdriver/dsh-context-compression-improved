@@ -100,6 +100,29 @@ export interface AutoCompactSettings {
 }
 
 /**
+ * Orthogonal code-skeleton reducer gate, mirrored browser-safe from the
+ * runtime: independent of every profile, default off.
+ */
+export interface CodeSkeletonSettings {
+  enabled: boolean
+}
+
+/**
+ * Decode the persisted codeSkeleton section with exactly the runtime schema's
+ * strictness: absent means the lossless off default; present values must be a
+ * plain object carrying only a boolean `enabled`. Anything else is invalid,
+ * never silently coerced.
+ */
+export function decodeCodeSkeletonSettings(value: unknown): CodeSkeletonSettings | undefined {
+  if (value === undefined) return { enabled: false }
+  if (!isPlainRecord(value)) return undefined
+  const keys = Object.keys(value)
+  if (keys.length !== 1 || keys[0] !== 'enabled') return undefined
+  const enabled = (value as Record<string, unknown>).enabled
+  return typeof enabled === 'boolean' ? { enabled } : undefined
+}
+
+/**
  * The one threshold contract shared by the UI, the persisted settings, and the
  * runtime resolver; mirrored browser-safe from the runtime package.
  */
@@ -150,6 +173,8 @@ export interface ContextCompressionSettings {
   custom: CustomCompressionPolicy
   /** Auto Compact trigger captured with `profile` when the runtime first observes a Session. */
   autoCompact: AutoCompactSettings
+  /** Code-skeleton reducer gate captured independently of `profile`. */
+  codeSkeleton: CodeSkeletonSettings
 }
 
 /**

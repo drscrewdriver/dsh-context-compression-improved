@@ -29,7 +29,12 @@ describe('context-compression audit records', () => {
       kind: 'policy-frozen',
       sessionId: 'audit-session',
       settingsSource: 'host-settings',
-      settings: { profile: 'custom', custom, autoCompact: { thresholdPercent: 80 } },
+      settings: {
+        profile: 'custom',
+        custom,
+        autoCompact: { thresholdPercent: 80 },
+        codeSkeleton: { enabled: false },
+      },
       deploymentConfig: {
         profile: 'balanced',
         headChars: 4_096,

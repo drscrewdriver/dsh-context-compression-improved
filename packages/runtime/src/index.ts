@@ -104,6 +104,7 @@ export type {
 } from './measurement.ts'
 export type {
   AutoCompactSettings,
+  CodeSkeletonSettings,
   CompressionPolicy,
   CompressionProfile,
   CustomCompressionBudget,
@@ -1090,6 +1091,7 @@ export class ToolResultPruner extends Service {
     const textBlock = onlyTextBlock(result.content)
     if (textBlock !== null) {
       let budgetChars = Math.max(1, Math.floor(codePointLength(textBlock.text) * 0.75))
+      const codeSkeleton = this.activeSettings(session).codeSkeleton.enabled
       for (let attempt = 0; attempt < 10; attempt += 1) {
         const output = reduceFreshToolResult({
           toolName: candidate.call.name,
@@ -1098,6 +1100,7 @@ export class ToolResultPruner extends Service {
           budgetChars,
           sourceRef,
           isError: result.isError === true || candidate.event.data.error !== undefined,
+          codeSkeleton,
         })
         if (output !== null) {
           const plan = this.plan(

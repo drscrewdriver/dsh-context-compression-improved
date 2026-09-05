@@ -89,6 +89,15 @@ export interface AutoCompactSettings {
   thresholdPercent: number
 }
 
+/**
+ * Orthogonal evidence-based code-skeleton reducer gate. Independent of every
+ * profile: when enabled, fresh oversized source-code results may take the
+ * `hypa-code-skeleton` reducer before the head/tail fallbacks.
+ */
+export interface CodeSkeletonSettings {
+  enabled: boolean
+}
+
 /** Durable global preference exposed through `ctx.settings`. */
 export interface ContextCompressionSettings {
   /** Default strategy snapped when a Session first reaches the pruner. */
@@ -97,6 +106,8 @@ export interface ContextCompressionSettings {
   custom: CustomCompressionPolicy
   /** Auto Compact trigger preference snapped with `profile` for a newly observed Session. */
   autoCompact: AutoCompactSettings
+  /** Code-skeleton reducer gate snapped independently of `profile`. */
+  codeSkeleton: CodeSkeletonSettings
 }
 
 /** Token-gated policy with character fields limited to reducer candidate shape. */

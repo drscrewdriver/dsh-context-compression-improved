@@ -124,6 +124,36 @@ describe('autoCompact settings validation', () => {
         custom: structuredClone(BASE_SETTINGS.custom),
         autoCompact: { thresholdPercent: 400 },
       }],
+      ['codeSkeleton enabled', {
+        profile: 'off',
+        custom: structuredClone(BASE_SETTINGS.custom),
+        codeSkeleton: { enabled: true },
+      }],
+      ['codeSkeleton disabled', {
+        profile: 'off',
+        custom: structuredClone(BASE_SETTINGS.custom),
+        codeSkeleton: { enabled: false },
+      }],
+      ['malformed codeSkeleton section', {
+        profile: 'off',
+        custom: structuredClone(BASE_SETTINGS.custom),
+        codeSkeleton: { enabled: 'on' },
+      }],
+      ['empty codeSkeleton section', {
+        profile: 'off',
+        custom: structuredClone(BASE_SETTINGS.custom),
+        codeSkeleton: {},
+      }],
+      ['codeSkeleton with extra key', {
+        profile: 'off',
+        custom: structuredClone(BASE_SETTINGS.custom),
+        codeSkeleton: { enabled: true, extra: true },
+      }],
+      ['null codeSkeleton section', {
+        profile: 'off',
+        custom: structuredClone(BASE_SETTINGS.custom),
+        codeSkeleton: null,
+      }],
       ['custom with wrong version', { profile: 'off', custom: { ...structuredClone(BASE_SETTINGS.custom), version: 99 } }],
     ] as const
     for (const [label, document] of documents) {
@@ -444,5 +474,50 @@ describe('Auto Compact History linkage formula', () => {
       expect(policy.aggregateTriggerTokens).toBe(32_768)
       expect(policy.aggregateTargetTokens).toBe(12_288)
     }
+  })
+})
+
+describe('codeSkeleton settings validation', () => {
+  it('defaults legacy settings without a codeSkeleton section to off', () => {
+    const settings = parseContextCompressionSettings(structuredClone(BASE_SETTINGS))
+    expect(settings.codeSkeleton).toEqual({ enabled: false })
+  })
+
+  it('accepts an explicit boolean enabled flag on either side', () => {
+    for (const enabled of [true, false]) {
+      const settings = parseContextCompressionSettings({
+        ...structuredClone(BASE_SETTINGS),
+        codeSkeleton: { enabled },
+      } as never)
+      expect(settings.codeSkeleton).toEqual({ enabled })
+    }
+  })
+
+  it('rejects malformed codeSkeleton sections', () => {
+    for (const codeSkeleton of [
+      { enabled: 'true' },
+      { enabled: 1 },
+      {},
+      { enabled: true, extra: true },
+      null,
+      'on',
+    ]) {
+      expect(() => parseContextCompressionSettings({
+        ...structuredClone(BASE_SETTINGS),
+        codeSkeleton,
+      })).toThrow()
+    }
+  })
+
+  it('mirrors the browser decode for legacy, valid, and malformed documents', () => {
+    const legacy = structuredClone(BASE_SETTINGS)
+    const enabled = { ...structuredClone(BASE_SETTINGS), codeSkeleton: { enabled: true } }
+    const malformed = { ...structuredClone(BASE_SETTINGS), codeSkeleton: { enabled: 'on' } }
+    expect(browserDecodeSettings(structuredClone(legacy)))
+      .toEqual(parseContextCompressionSettings(structuredClone(legacy)))
+    expect(browserDecodeSettings(structuredClone(enabled)))
+      .toEqual(parseContextCompressionSettings(structuredClone(enabled) as never))
+    expect(browserDecodeSettings(structuredClone(malformed))).toBeUndefined()
+    expect(() => parseContextCompressionSettings(structuredClone(malformed))).toThrow()
   })
 })

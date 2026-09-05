@@ -3,6 +3,7 @@
 import z from '@deepseek-ai/schemastery'
 import type {
   AutoCompactSettings,
+  CodeSkeletonSettings,
   CompressionPolicy,
   CompressionProfile,
   CustomCompressionPolicy,
@@ -90,6 +91,27 @@ function parseAutoCompactSettings(value: unknown): AutoCompactSettings {
   return { thresholdPercent }
 }
 
+/**
+ * Strictly parse the persisted codeSkeleton section. The gate is orthogonal
+ * to every profile: absent inherits the lossless `false` default, while a
+ * present-but-invalid section is an explicitly invalid document.
+ */
+function parseCodeSkeletonSettings(value: unknown): CodeSkeletonSettings {
+  if (value === undefined) return { enabled: false }
+  if (!isPlainRecord(value)) {
+    throw new TypeError('Context-compression codeSkeleton must be a plain object')
+  }
+  const keys = Object.keys(value)
+  if (keys.length !== 1 || keys[0] !== 'enabled') {
+    throw new TypeError(`Context-compression codeSkeleton: expected exactly "enabled", got "${keys.join('", "')}"`)
+  }
+  const enabled = (value as Record<string, unknown>).enabled
+  if (typeof enabled !== 'boolean') {
+    throw new TypeError('Context-compression codeSkeleton.enabled must be a boolean')
+  }
+  return { enabled }
+}
+
 /** Settings schema used by the user-facing profile selector. */
 const contextCompressionSettingsInputSchema = z.object({
   profile: z.union([...COMPRESSION_PROFILES]).default('balanced'),
@@ -124,6 +146,7 @@ const DEFAULT_CONTEXT_COMPRESSION_SETTINGS: ContextCompressionSettings = {
   profile: 'balanced',
   custom: structuredClone(DEFAULT_CUSTOM_COMPRESSION_POLICY),
   autoCompact: { thresholdPercent: AUTO_COMPACT_THRESHOLD_LIMITS.default },
+  codeSkeleton: { enabled: false },
 }
 
 /**
@@ -157,9 +180,11 @@ export const ContextCompressionSettingsSchema: z<ContextCompressionSettings> = z
     // otherwise erase exotic prototypes before this boundary can reject them.
     assertPlainDataTree(value)
     const candidate = structuredClone(value)
-    // Settings stored before the autoCompact section exist remain valid and
-    // inherit the 80% default; the section itself stays strictly shaped.
-    const unknown = Object.keys(candidate).find(key => key !== 'profile' && key !== 'custom' && key !== 'autoCompact')
+    // Settings stored before the autoCompact or codeSkeleton sections existed
+    // remain valid and inherit their defaults; the sections themselves stay
+    // strictly shaped.
+    const unknown = Object.keys(candidate).find(key =>
+      key !== 'profile' && key !== 'custom' && key !== 'autoCompact' && key !== 'codeSkeleton')
     if (unknown !== undefined) {
       throw new TypeError(`Context-compression settings: unknown key "${unknown}"`)
     }
@@ -170,7 +195,8 @@ export const ContextCompressionSettingsSchema: z<ContextCompressionSettings> = z
     assertPresentSection(candidate, 'profile', isSupportedProfile)
     assertPresentSection(candidate, 'custom', isUsableCustomDocument)
     const autoCompact = parseAutoCompactSettings(candidate.autoCompact)
-    return { ...contextCompressionSettingsInputSchema(candidate), autoCompact }
+    const codeSkeleton = parseCodeSkeletonSettings(candidate.codeSkeleton)
+    return { ...contextCompressionSettingsInputSchema(candidate), autoCompact, codeSkeleton }
   },
 ).default(DEFAULT_CONTEXT_COMPRESSION_SETTINGS) as z<ContextCompressionSettings>
 
