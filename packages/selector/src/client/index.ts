@@ -78,6 +78,10 @@ export function apply(ctx: ClientContext): void {
       () => scope.set('autoCompact', { thresholdPercent }),
       settings => settings.autoCompact.thresholdPercent === thresholdPercent,
     ),
+    saveCodeSkeleton: enabled => writeAndConfirm(
+      () => scope.set('codeSkeleton', { enabled }),
+      settings => settings.codeSkeleton.enabled === enabled,
+    ),
   })
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',

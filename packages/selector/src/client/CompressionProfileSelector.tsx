@@ -26,6 +26,7 @@ export interface CompressionSelectorInjected {
   saveCustom: (custom: CustomCompressionPolicy) => Promise<void>
   resetCustom: () => Promise<void>
   saveAutoCompact: (thresholdPercent: number) => Promise<void>
+  saveCodeSkeleton: (enabled: boolean) => Promise<void>
 }
 
 export type CompressionProfileSelectorProps =
@@ -39,7 +40,7 @@ export function ContextCompressionSettingsSection(props: CompressionProfileSelec
 }
 
 function SettingsCompressionProfileControls({
-  useCompression, useSessions, select, saveCustom, resetCustom, saveAutoCompact, t,
+  useCompression, useSessions, select, saveCustom, resetCustom, saveAutoCompact, saveCodeSkeleton, t,
 }: CompressionProfileSelectorProps) {
   const state = useCompression(snapshot => snapshot)
   const currentPreset = useSessions((sessions) => {
@@ -107,6 +108,13 @@ function SettingsCompressionProfileControls({
         value={state.value?.autoCompact?.thresholdPercent ?? AUTO_COMPACT_THRESHOLD_LIMITS.default}
         disabled={busy || !state.writable || !selectorAvailable}
         save={saveAutoCompact}
+        settle={settle}
+        t={t}
+      />
+      <CodeSkeletonControls
+        value={state.value?.codeSkeleton?.enabled ?? false}
+        disabled={busy || !state.writable || !selectorAvailable}
+        save={saveCodeSkeleton}
         settle={settle}
         t={t}
       />
@@ -296,6 +304,39 @@ function AutoCompactThresholdControls({ value, disabled, save, settle, t }: Auto
           {t('autoCompact.save')}
         </button>
       </div>
+    </section>
+  )
+}
+
+interface CodeSkeletonControlsProps {
+  value: boolean
+  disabled: boolean
+  save: (enabled: boolean) => Promise<void>
+  settle: (operation: () => Promise<void>) => void
+  t: (key: ContextCompressionLocaleKey) => string
+}
+
+/**
+ * The authoritative code-skeleton reducer gate for the context-compression
+ * section. Deliberately minimal — an on/off select plus its own save path —
+ * because the gate is orthogonal to every profile and carries no parameters.
+ */
+function CodeSkeletonControls({ value, disabled, save, settle, t }: CodeSkeletonControlsProps) {
+  return (
+    <section className={css.autoCompact} aria-labelledby="context-compression-codeskeleton-title">
+      <h3 id="context-compression-codeskeleton-title" className={css.autoCompactTitle}>{t('codeSkeleton.title')}</h3>
+      <p className={css.customNote}>{t('codeSkeleton.description')}</p>
+      <label className={css.field}>
+        <span>{t('codeSkeleton.enabled')}</span>
+        <select
+          value={value ? 'on' : 'off'}
+          disabled={disabled}
+          onChange={(event) => { settle(() => save(event.currentTarget.value === 'on')) }}
+        >
+          <option value="on">{t('codeSkeleton.enabled.on')}</option>
+          <option value="off">{t('codeSkeleton.enabled.off')}</option>
+        </select>
+      </label>
     </section>
   )
 }
