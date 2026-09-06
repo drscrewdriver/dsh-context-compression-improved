@@ -282,7 +282,7 @@ function* jsonTokens(value: unknown): Generator<string> {
     case 'boolean':
       yield jsonScalar(value)
       return
-    case 'object':
+    case 'object': {
       if (Array.isArray(value)) {
         yield '['
         for (let index = 0; index < value.length; index++) {
@@ -304,6 +304,7 @@ function* jsonTokens(value: unknown): Generator<string> {
       }
       yield '}'
       return
+    }
     default:
     throw new TypeError('context_compression_retrieve: source content is not JSON-serializable')
   }

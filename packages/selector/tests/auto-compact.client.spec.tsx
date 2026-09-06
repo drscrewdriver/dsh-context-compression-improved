@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   CompressionProfileSelector,
   ContextCompressionSettingsSection,
-  type CompressionProfile,
   type CompressionProfileSelectorProps,
   type ContextCompressionSettings,
 } from '../src/client/CompressionProfileSelector.tsx'
@@ -139,15 +138,13 @@ describe('Auto Compact threshold controls', () => {
   })
 
   it('saves a non-quick value like 73 and reads the same value back after remount', async () => {
-    let store: ReturnType<typeof mountAutoCompact>['state'] | undefined
     const saving = vi.fn((thresholdPercent: number): Promise<void> => {
-      store?.update(draft => {
+      mounted.state.update(draft => {
         if (draft.value !== undefined) draft.value.autoCompact = { thresholdPercent }
       })
       return Promise.resolve()
     })
     const mounted = mountAutoCompact({ settingsSection: true, saveAutoCompact: saving })
-    store = mounted.state
     fireEvent.change(screen.getByLabelText(INPUT_LABEL), { target: { value: '73' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save Auto Compact threshold' }))
     await waitFor(() => { expect(mounted.state.getSnapshot().value?.autoCompact).toEqual({ thresholdPercent: 73 }) })

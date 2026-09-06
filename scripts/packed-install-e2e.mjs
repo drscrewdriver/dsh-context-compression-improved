@@ -752,7 +752,7 @@ try {
       })
       } catch (error) {
       if (e2eMode === 'release') {
-        throw new Error(`release gate requires the published previous release for the upgrade leg: ${error instanceof Error ? error.message : String(error)}`)
+        throw new Error(`release gate requires the published previous release for the upgrade leg: ${error instanceof Error ? error.message : String(error)}`, { cause: error })
       }
       upgradeLeg = `skipped-previous-release-unavailable:${error instanceof Error ? error.message : String(error)}`
       previousVersions.clear()
