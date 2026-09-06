@@ -2,6 +2,19 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
+## Unreleased
+
+### Added
+
+- Orthogonal code-skeleton compression gate (`codeSkeleton.enabled`, default off): the first exposure of an oversized fresh source-code tool result can keep an imports-and-declarations skeleton with bodies elided and error lines preserved, falling back to the original head pruning. The gate is independent of every profile and gated on exact tokenizer measurement.
+- Settings-UI toggle for the gate in the selector settings section, with Simplified Chinese and English copy.
+- Browser/runtime decode parity for the new section, confirm-on-write contract tests for `saveCodeSkeleton`, and a full-document parity matrix extension.
+
+### Changed
+
+- Added an ESLint flat-config baseline (`pnpm lint`, enforced in CI) and a `pnpm test:watch` TDD loop; removed dead imports and hardened two error paths surfaced by the lint baseline.
+- This repository is now maintained as an improved fork of `WilliamShi666/dsh-context-compression-selector`; documentation ships in English, Simplified Chinese, Japanese, and Korean.
+
 ## 0.1.0 - 2026-09-03
 
 ### Added
