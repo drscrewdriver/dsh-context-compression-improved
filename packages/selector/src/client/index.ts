@@ -81,6 +81,10 @@ export function apply(ctx: ClientContext): void {
       () => scope.set('codeSkeleton', { enabled }),
       settings => settings.codeSkeleton.enabled === enabled,
     ),
+    savePresetOptions: options => writeAndConfirm(
+      () => scope.set('presetOptions', options),
+      settings => (settings.presetOptions?.estimatorMode ?? '') === (options.estimatorMode ?? ''),
+    ),
   })
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
