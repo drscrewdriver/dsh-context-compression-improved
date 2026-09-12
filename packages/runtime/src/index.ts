@@ -5,14 +5,14 @@
  * replacements emitted here are content-only `tool/result` rewrites whose
  * full source remains in the append-only Session log.
  *
- * @module dsh-context-compression-selector-runtime
+ * @module dsh-context-compression-improved-runtime
  */
 
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { freezeMessage } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, freezeMessage } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, UserMessage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent, ToolResultMessage } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-compaction'
@@ -34,6 +34,33 @@ import {
   tailTrimStub,
 } from './tail-trim.ts'
 import { installContextCompressionRetrieve } from './retrieve.ts'
+import { buildLocatorBlock, findCompactionTrace } from './tokenpilot/locator.ts'
+import { clusterOmittedLines, isSupersededRead, toolCallPath } from './tokenpilot/read-state.ts'
+import {
+  Estimator,
+  backoffCooldownMs,
+  buildEstimatorSystemPrompt,
+  buildEstimatorUserPrompt,
+  isCoolingDown,
+  parseEstimatorAnswer,
+  type EstimatorFailures,
+  type EstimatorSample,
+} from './tokenpilot/estimator.ts'
+
+const BS = String.fromCharCode(10)
+/** Count the lines present in the original but absent from the replacement. */
+function countOmittedLines(original: string, replacement: string): number | undefined {
+  const originalLines = original.split(BS).length
+  const replacementLines = replacement.split(BS).length
+  const omitted = originalLines - replacementLines
+  return omitted > 0 ? omitted : undefined
+}
+import {
+  DedupeTable,
+  dedupeHash,
+  dedupePlaceholder,
+  flattenPlainText,
+} from './tokenpilot/dedup.ts'
 import {
   codePointLength,
   CONTEXT_COMPRESSION_SETTINGS_NAMESPACE,
@@ -214,6 +241,14 @@ export class ToolResultPruner extends Service {
   private readonly sessionSettings = new WeakMap<Session, ContextCompressionSettings>()
   /** Original result seqs whose first-exposure KEEP/REDUCE decision has committed. */
   private readonly firstExposure = new WeakMap<Session, Set<number>>()
+  /** Result seqs permanently exempt from further reduction (recovery outputs and registered equivalents). */
+  private readonly recoveryExemptions = new WeakMap<Session, Set<number>>()
+  /** Per-session canonical-content hash index backing tokenpilot-inspired dedupe. */
+  private readonly dedupeTables = new WeakMap<Session, DedupeTable>()
+  /** Advisory estimator verdicts consumed by the read-state classification. */
+  private readonly estimatorVerdicts = new WeakMap<Session, Map<number, boolean>>()
+  /** Per-session estimator failure backoff state. */
+  private readonly estimatorFailures = new WeakMap<Session, EstimatorFailures>()
   /** Runtime prerequisite warnings deduplicated per Session and failure key. */
   private readonly warnedFailures = new WeakMap<Session, Set<string>>()
   /** Last Adaptive postflight attempt emitted per Session; keeps diagnostics bounded and independent. */
@@ -233,19 +268,32 @@ export class ToolResultPruner extends Service {
     this.config = resolveConfig(config)
 
     ctx.on('session/event', (session, event) => {
-      if (event.type !== 'compaction/summary') return
-      emitCompressionAudit(ctx.logger, {
-        schemaVersion: 1,
-        kind: 'native-auto-compact',
-        sessionId: String(session.id),
-        manifestEventType: 'compaction/summary',
-        manifestSeq: event.seq,
-        reducer: 'llm-summary',
-        provider: event.data.provider,
-        model: event.data.model,
-        tokensBefore: event.data.shadowedTokenCount,
-        tokensAfter: null,
-      })
+      if (event.type === 'compaction/summary') {
+        emitCompressionAudit(ctx.logger, {
+          schemaVersion: 1,
+          kind: 'native-auto-compact',
+          sessionId: String(session.id),
+          manifestEventType: 'compaction/summary',
+          manifestSeq: event.seq,
+          reducer: 'llm-summary',
+          provider: event.data.provider,
+          model: event.data.model,
+          tokensBefore: event.data.shadowedTokenCount,
+          tokensAfter: null,
+        })
+        return
+      }
+      if (event.type === 'compaction/end') {
+        // TokenPilot-inspired A2: annotate the landed summary checkpoint with
+        // an Exact Sources locator block. Strictly after compaction/end so no
+        // open-compaction invariant ever observes the rewrite.
+        try {
+          this.attachSummaryLocator(session, event.data.compactionId)
+        } catch (error: unknown) {
+          this.auditFailure(session, 'pressure', 'summary-locator', error)
+          ctx.logger.warn('context-compression summary locator failed open: %o', error)
+        }
+      }
     })
 
     // This is the true first-exposure boundary available in the Harness:
@@ -283,6 +331,9 @@ export class ToolResultPruner extends Service {
         this.auditFailure(agent.session, 'fresh', 'terminal-pass', error)
         ctx.logger.warn('context-compression terminal pass failed open: %o', error)
       }
+      // TokenPilot-inspired E1: advisory estimator pass, strictly off the
+      // synchronous chain. Verdicts only feed the next pressure pass.
+      void this.postflightEstimatorPass(agent.session, signal).catch(() => undefined)
     })
   }
 
@@ -365,7 +416,7 @@ export class ToolResultPruner extends Service {
     const landed: PrunedEntry[] = []
     if (policy.nativeToolResultEnabled) {
       const candidates = this.snapshot(session, view)
-      const eligible = candidates.filter(candidate => candidate.call.name !== 'context_compression_retrieve')
+      const eligible = candidates.filter(candidate => !this.isRecoveryExempt(session, candidate))
       const exactUnavailable = eligible.some(candidate => candidate.count.kind !== 'exact-tokenizer')
       if (exactUnavailable) {
         this.warnExactUnavailable(session, view, 'native')
@@ -494,6 +545,136 @@ export class ToolResultPruner extends Service {
       deploymentConfig: this.config,
     })
     return snapshot
+  }
+
+  /**
+   * TokenPilot-inspired A2: replace the compaction summary checkpoint node
+   * with the same summary plus an Exact Sources locator block. Fails open:
+   * any unresolved shape (no trace, no checkpoint node, already annotated)
+   * leaves the summary untouched.
+   */
+  private attachSummaryLocator(session: Session, compactionId: string): void {
+    const policy = this.activePolicy(session)
+    if (policy?.presetOptions?.summaryLocator !== true) return
+    const events = sessionEvents(session)
+    const trace = findCompactionTrace(events, compactionId)
+    if (trace === undefined) return
+    const located = buildLocatorBlock(events, trace.summaryShadowedRange)
+    if (located === null) return
+    const block = located.text
+    // Locate the summary checkpoint surface node: the user/message replacement
+    // carrying this compaction's checkpoint provenance. Newest match wins.
+    let checkpointSeq: number | undefined
+    for (const seq of [...session.surface.nodes].reverse()) {
+      const event = events[seq]
+      if (event === undefined || event.type !== 'user/message') continue
+      const source = (event.data as { source?: { compactionId?: unknown } }).source
+      if (source === undefined || source === null) continue
+      if (source.compactionId !== compactionId) continue
+      checkpointSeq = seq
+      break
+    }
+    if (checkpointSeq === undefined) return
+    const original = events[checkpointSeq]
+    if (original?.type !== 'user/message') return
+    const data = original.data as UserMessage & { source?: unknown }
+    const content = data.content.map(block => ({ ...block })) as typeof data.content
+    const textBlocks = content.filter((block): block is Extract<(typeof content)[number], { type: 'text' }> => block.type === 'text')
+    const lastText = textBlocks.at(-1)
+    const marker = '## Exact Sources (locators)'
+    if (lastText === undefined) return
+    if (lastText.text.includes(marker)) return
+    lastText.text = `${lastText.text}\n\n${block}`
+    // Drop the checkpoint provenance: this replacement is a plain plugin-source
+    // user/message surface rewrite, not a new compaction checkpoint, and
+    // carrying the marker would fail the host's closed-transaction validation.
+    const replacement = createUserMessage({
+      content,
+      source: { kind: 'plugin', plugin: 'dsh-context-compression-improved-runtime' },
+    })
+    session.append('user/message', replacement, {
+      surfaceOp: { op: 'replace', start: checkpointSeq, end: checkpointSeq },
+      sourceEventSeqs: [checkpointSeq],
+    })
+    emitCompressionAudit(this.ctx.logger, {
+      schemaVersion: 1,
+      kind: 'summary-locator',
+      sessionId: String(session.id),
+      profile: policy.profile,
+      checkpointSeq,
+      summarySeq: trace.summarySeq,
+      locatorChars: codePointLength(located.text),
+      spillFiles: located.spillFiles,
+      touchedFiles: located.touchedFiles,
+    })
+  }
+
+  /**
+   * TokenPilot-inspired E1: sample oversized historical reads and ask the
+   * auxiliary estimator whether their file state is still likely to be
+   * referenced. Fire-and-forget: never awaited on the pruning chain, failures
+   * back off exponentially per Session, verdicts only extend the rule-only
+   * superseded classification.
+   */
+  private async postflightEstimatorPass(session: Session, signal: AbortSignal): Promise<void> {
+    const policy = this.activePolicy(session)
+    const presetOptions = policy?.presetOptions
+    if (policy === undefined || presetOptions?.readState !== true) return
+    const estimatorMode = presetOptions.estimator?.mode ?? ''
+    if (estimatorMode === '') return
+    const failures = this.estimatorFailures.get(session)
+    if (isCoolingDown(failures, Date.now())) return
+
+    const events = sessionEvents(session)
+    const samples: EstimatorSample[] = []
+    const now = Date.now()
+    for (const candidate of this.snapshot(session, measureForCompaction(this.ctx, session))) {
+      if (samples.length >= 3) break
+      if (candidate.event.data.turn === undefined) continue
+      const tokens = exactTokens(candidate.count)
+      if (tokens === undefined || tokens <= policy.freshTriggerTokens) continue
+      const path = toolCallPath(candidate.call.arguments)
+      if (path === undefined) continue
+      if (isSupersededRead(events, candidate.seq, path)) continue
+      if (this.estimatorVerdicts.get(session)?.has(candidate.seq) === true) continue
+      samples.push({ seq: candidate.seq, path, turn: candidate.event.data.turn })
+    }
+    if (samples.length === 0) return
+
+    const estimator = new Estimator(this.ctx, this.activeSettings(session).presetOptions ?? {})
+    const answer = await estimator.ask(buildEstimatorSystemPrompt(), buildEstimatorUserPrompt(samples), signal)
+    const latencyMs = Date.now() - now
+    const ok = answer !== undefined && signal.aborted === false
+    let expired = 0
+    if (ok && answer !== undefined) {
+      let verdicts = this.estimatorVerdicts.get(session)
+      if (verdicts === undefined) {
+        verdicts = new Map()
+        this.estimatorVerdicts.set(session, verdicts)
+      }
+      for (const verdict of parseEstimatorAnswer(answer)) {
+        if (verdicts.has(verdict.seq)) continue
+        verdicts.set(verdict.seq, verdict.expired)
+        if (verdict.expired) expired += 1
+      }
+    } else {
+      const next: EstimatorFailures = {
+        failures: (failures?.failures ?? 0) + 1,
+        cooldownUntil: Date.now() + backoffCooldownMs((failures?.failures ?? 0) + 1),
+      }
+      this.estimatorFailures.set(session, next)
+    }
+    emitCompressionAudit(this.ctx.logger, {
+      schemaVersion: 1,
+      kind: 'estimator-outcome',
+      sessionId: String(session.id),
+      profile: policy.profile,
+      channel: estimatorMode === 'host' ? 'host' : 'direct',
+      sampled: samples.length,
+      expired,
+      latencyMs,
+      ok,
+    })
   }
 
   private activePolicy(
@@ -865,6 +1046,27 @@ export class ToolResultPruner extends Service {
     return decisions
   }
 
+  /**
+   * TokenPilot-style skipReduction: recovery tool output is permanently exempt
+   * from every reduction pass so retrieved content can never enter a
+   * compress-restore-oscillation loop. A call-name match covers the built-in
+   * recovery tool; the per-session set admits future recovery paths.
+   */
+  private isRecoveryExempt(session: Session, candidate: SnapshotCandidate): boolean {
+    if (candidate.call.name === 'context_compression_retrieve') return true
+    return this.recoveryExemptions.get(session)?.has(candidate.seq) ?? false
+  }
+
+  /** Register a result seq as permanently exempt from further reduction. */
+  private grantRecoveryExemption(session: Session, seq: number): void {
+    let exemptions = this.recoveryExemptions.get(session)
+    if (exemptions === undefined) {
+      exemptions = new Set()
+      this.recoveryExemptions.set(session, exemptions)
+    }
+    exemptions.add(seq)
+  }
+
   private decideFreshStep(
     session: Session,
     options: PruneSessionOptions,
@@ -898,6 +1100,8 @@ export class ToolResultPruner extends Service {
 
     const plans = new Map<number, PlannedReplacement>()
     let freshPlanned = 0
+    let dedupePlanned = 0
+    const dedupeEnabled = policy.presetOptions?.dedupeToolResults === true
     const exactCandidateTokens = candidates.map(candidate => exactTokens(candidate.count))
     const exactAvailable = exactCandidateTokens.every(tokens => tokens !== undefined)
     const maxCandidateTokens = exactAvailable
@@ -909,7 +1113,15 @@ export class ToolResultPruner extends Service {
         this.warnExactUnavailable(session, view, 'fresh')
       }
       for (const candidate of candidates) {
-        if (candidate.call.name === 'context_compression_retrieve') continue
+        if (this.isRecoveryExempt(session, candidate)) continue
+        if (dedupeEnabled) {
+          const dedupePlan = this.planDedupe(candidate, session, policy, view)
+          if (dedupePlan !== null) {
+            plans.set(candidate.seq, dedupePlan)
+            dedupePlanned += 1
+            continue
+          }
+        }
         const plan = this.planFresh(candidate, session, policy, view)
         if (plan !== null) {
           plans.set(candidate.seq, plan)
@@ -929,7 +1141,7 @@ export class ToolResultPruner extends Service {
       if (aggregateAvailable) aggregateInputTokens = total
       if (aggregateAvailable && total > policy.aggregateTriggerTokens) {
         const remaining = candidates
-          .filter(candidate => candidate.call.name !== 'context_compression_retrieve')
+          .filter(candidate => !this.isRecoveryExempt(session, candidate))
           .sort((a, b) => Number(this.isError(a)) - Number(this.isError(b))
             || (plans.get(b.seq)?.tokensAfter ?? exactTokens(b.count) ?? 0)
               - (plans.get(a.seq)?.tokensAfter ?? exactTokens(a.count) ?? 0))
@@ -1033,7 +1245,7 @@ export class ToolResultPruner extends Service {
     policy: CompressionPolicy,
     view: CompactionTokenView,
   ): PlannedReplacement | null {
-    if (candidate.call.name === 'context_compression_retrieve') return null
+    if (this.isRecoveryExempt(session, candidate)) return null
     const tokensBefore = exactTokens(candidate.count)
     if (tokensBefore === undefined || tokensBefore <= policy.nativeTriggerTokens) return null
     const result = candidate.event.data.message.content[0]
@@ -1071,6 +1283,58 @@ export class ToolResultPruner extends Service {
       policy.nativeTargetTokens,
       'native-tool-result',
     )
+  }
+
+  /**
+   * TokenPilot-inspired A1: replace a byte-identical repeat of an earlier
+   * oversized tool result with a pointer to its first occurrence. The first
+   * occurrence's hash is always recorded so later repeats can point at the
+   * append-only original event even after the surface copy is reduced.
+   */
+  private planDedupe(
+    candidate: SnapshotCandidate,
+    session: Session,
+    policy: CompressionPolicy,
+    view: CompactionTokenView,
+  ): PlannedReplacement | null {
+    if (typeof candidate.event.surfaceOp === 'object') return null
+    const result = candidate.event.data.message.content[0]
+    const text = flattenPlainText(result.content)
+    if (text === undefined) return null
+    const tokensBefore = exactTokens(candidate.count)
+    if (tokensBefore === undefined || tokensBefore <= policy.freshTriggerTokens) return null
+    let table = this.dedupeTables.get(session)
+    if (table === undefined) {
+      table = new DedupeTable()
+      this.dedupeTables.set(session, table)
+    }
+    const hash = dedupeHash(text, 'trim-eol')
+    const entry = table.get(hash)
+    if (entry !== undefined && entry.seq !== candidate.seq) {
+      const placeholder = dedupePlaceholder(entry, codePointLength(text))
+      const plan = this.plan(
+        candidate,
+        [{ type: 'text', text: placeholder }],
+        entry.seq,
+        'dedupe-pointer',
+        'fresh',
+        'fresh',
+        undefined,
+        view,
+        { noNetSavingsGuard: true },
+      )
+      if (plan !== null) return plan
+      return null
+    }
+    if (entry === undefined) {
+      table.record(hash, {
+        seq: candidate.seq,
+        sourceRef: this.sourceRef(session, candidate.seq),
+        toolName: candidate.call.name,
+        originalChars: codePointLength(text),
+      })
+    }
+    return null
   }
 
   private planFresh(
@@ -1112,6 +1376,7 @@ export class ToolResultPruner extends Service {
             'fresh',
             undefined,
             view,
+            { noNetSavingsGuard: policy.presetOptions?.noNetSavingsGuard === true },
           )
           if (plan !== null && plan.tokensAfter <= policy.freshTargetTokens) return plan
         }
@@ -1239,6 +1504,7 @@ export class ToolResultPruner extends Service {
     view: CompactionTokenView,
   ): HistoryPlanOutcome {
     const candidates = this.snapshot(session, view)
+    const events = sessionEvents(session)
     const exact: number[] = []
     for (const candidate of candidates) {
       const tokens = exactTokens(candidate.count)
@@ -1259,7 +1525,7 @@ export class ToolResultPruner extends Service {
 
     const protectedSeqs = this.protectedHistoryCandidateSeqs(candidates, policy)
     const isUnsafe = (candidate: SnapshotCandidate): boolean => {
-      if (candidate.call.name === 'context_compression_retrieve') return true
+      if (this.isRecoveryExempt(session, candidate)) return true
       const result = candidate.event.data.message.content[0]
       const block = onlyTextBlock(result.content)
       return block?.text.includes('[Old tool result content cleared from active context]') === true
@@ -1293,6 +1559,31 @@ export class ToolResultPruner extends Service {
     for (const candidate of eligible) {
       const result = candidate.event.data.message.content[0]
       const block = onlyTextBlock(result.content)
+      // TokenPilot-inspired R2: a read output whose file was later mutated is
+      // superseded — its text can no longer match the file — so it takes the
+      // small whole-result placeholder before the ordinary reducer runs.
+      if (policy.presetOptions?.readState === true && block !== null) {
+        const readPath = toolCallPath(candidate.call.arguments)
+        const estimatorExpired = this.estimatorVerdicts.get(session)?.get(candidate.seq) === true
+        if (readPath !== undefined
+          && (isSupersededRead(events, candidate.seq, readPath) || estimatorExpired)) {
+          const plan = this.planAggregate(
+            candidate,
+            session,
+            view,
+            'superseded-read-whole-result',
+            'pressure',
+            undefined,
+            'history',
+            policy.historyMode,
+          )
+          if (plan === null) continue
+          planned.push(plan)
+          reclaim += plan.tokensBefore - plan.tokensAfter
+          if (reclaim >= required) break
+          continue
+        }
+      }
       const sourceSeq = this.rootToolResultSeq(session, candidate.seq)
       if (block === null) {
         const plan = this.planAggregate(
@@ -1328,9 +1619,19 @@ export class ToolResultPruner extends Service {
         isError: result.isError === true || candidate.event.data.error !== undefined,
       }
       if (!verifyReduction(verifyInput, output)) continue
+      // TokenPilot-inspired R3: when read-state semantics are on, append an
+      // error/warn/info census of the omitted lines so the model keeps
+      // meta-knowledge about what was dropped.
+      let replacementText = output.text
+      if (policy.presetOptions?.readState === true) {
+        const omitted = countOmittedLines(block.text, output.text)
+        const census = omitted === undefined ? undefined : clusterOmittedLines(block.text, omitted)
+        if (census !== undefined) replacementText = `${output.text}
+[... ${census} ...]`
+      }
       const plan = this.plan(
         candidate,
-        [{ ...block, text: output.text }],
+        [{ ...block, text: replacementText }],
         sourceSeq,
         output.reducer,
         'pressure',
@@ -1616,6 +1917,7 @@ export class ToolResultPruner extends Service {
     component: CompressionAuditComponent,
     historyMode: HistoryMode | undefined,
     view: CompactionTokenView,
+    options: { readonly noNetSavingsGuard?: boolean } = {},
   ): PlannedReplacement | null {
     const countBefore = candidate.count
     if (countBefore.kind !== 'exact-tokenizer') return null
@@ -1626,6 +1928,19 @@ export class ToolResultPruner extends Service {
     const tokensBefore = countBefore.tokens
     const tokensAfter = countAfter.tokens
     if (tokensAfter <= 0 || tokensAfter >= tokensBefore) return null
+    // TokenPilot-style no-net-savings: even when the exact tokenizer reports a
+    // saving, a replacement whose text is not smaller than its original adds
+    // noise without reclaiming context. Text-level because the placeholder
+    // guidance lines (source refs, retrieval hints) must pay for themselves.
+    if (options.noNetSavingsGuard === true) {
+      const originalBlocks = onlyTextBlocks(candidate.event.data.message.content[0].content)
+      const replacementBlocks = onlyTextBlocks(content)
+      if (originalBlocks !== null && replacementBlocks !== null) {
+        const originalChars = originalBlocks.reduce((sum, block) => sum + codePointLength(block.text), 0)
+        const replacementChars = replacementBlocks.reduce((sum, block) => sum + codePointLength(block.text), 0)
+        if (replacementChars >= originalChars) return null
+      }
+    }
     const charsBefore = candidate.characterPressure
     const charsAfter = this.pressureCost(content)
     return {
@@ -1863,7 +2178,12 @@ export class ToolResultPruner extends Service {
   private auditFailure(
     session: Session,
     stage: PruneStage,
-    operation: 'request-boundary' | 'terminal-pass' | 'policy-resolution',
+    operation:
+      | 'request-boundary'
+      | 'terminal-pass'
+      | 'policy-resolution'
+      | 'summary-locator'
+      | 'publication',
     error: unknown,
   ): void {
     emitCompressionAudit(this.ctx.logger, {

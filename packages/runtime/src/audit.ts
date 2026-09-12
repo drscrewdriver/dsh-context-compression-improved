@@ -18,6 +18,8 @@ export type CompressionAuditComponent =
   | 'history'
   | 'tail-trim'
   | 'native-tool-result'
+  | 'dedupe'
+  | 'summary-locator'
 
 /** Non-mutating outcome of evaluating one component at one runtime boundary. */
 export type CompressionAuditEvaluationStatus = 'disabled' | 'skipped'
@@ -119,7 +121,12 @@ export interface CompressionComponentEvaluationAuditRecord extends CompressionAu
 export interface CompressionFailureAuditRecord extends CompressionAuditBase {
   readonly kind: 'failure'
   readonly stage: 'fresh' | 'pressure'
-  readonly operation: 'request-boundary' | 'terminal-pass' | 'policy-resolution' | 'publication'
+  readonly operation:
+    | 'request-boundary'
+    | 'terminal-pass'
+    | 'policy-resolution'
+    | 'summary-locator'
+    | 'publication'
   readonly component?: CompressionAuditComponent
   readonly manifestSeq?: number
   readonly errorName: string
@@ -138,6 +145,28 @@ export interface NativeAutoCompactAuditRecord extends CompressionAuditBase {
   readonly tokensAfter: null
 }
 
+/** One Exact Sources locator block appended to a landed Auto Compact summary. */
+export interface SummaryLocatorAuditRecord extends CompressionAuditBase {
+  readonly kind: 'summary-locator'
+  readonly profile: CompressionProfile
+  readonly checkpointSeq: number
+  readonly summarySeq: number
+  readonly locatorChars: number
+  readonly spillFiles: number
+  readonly touchedFiles: number
+}
+
+/** One background estimator pass. Only numeric metadata — never prompts or keys. */
+export interface EstimatorOutcomeAuditRecord extends CompressionAuditBase {
+  readonly kind: 'estimator-outcome'
+  readonly profile: CompressionProfile
+  readonly channel: 'host' | 'direct'
+  readonly sampled: number
+  readonly expired: number
+  readonly latencyMs: number
+  readonly ok: boolean
+}
+
 /** Closed version-one context-compression audit vocabulary. */
 export type CompressionAuditRecord =
   | CompressionPolicyFrozenAuditRecord
@@ -146,6 +175,8 @@ export type CompressionAuditRecord =
   | CompressionComponentEvaluationAuditRecord
   | CompressionFailureAuditRecord
   | NativeAutoCompactAuditRecord
+  | SummaryLocatorAuditRecord
+  | EstimatorOutcomeAuditRecord
 
 /** Minimal logger method consumed by the audit publisher. */
 export interface CompressionAuditLogger {
