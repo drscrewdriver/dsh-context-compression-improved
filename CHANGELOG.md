@@ -6,6 +6,16 @@ All notable changes use this file. The project follows semantic versioning after
 
 ### Added
 
+- New `tokenpilot-inspired` profile: a TokenPilot-paper-inspired capability matrix layered on the Balanced thresholds, selected explicitly from the settings UI; every pre-existing profile keeps a byte-identical resolved policy (enforced by a captured-baseline golden test).
+- Byte-identical repeated tool-result dedup: an oversized repeat is replaced with a pointer to the first occurrence's append-only original event (`dedupe-pointer`), with a per-session SHA-256 index (2,048-entry insertion-order eviction, hash+seq metadata only).
+- No-net-savings guard: replacements whose text is not smaller than the original are rejected even when the exact tokenizer reports a token saving.
+- Recovery exemption: recovery-tool output is permanently exempt from every reduction pass via a unified per-session exemption set, preventing compress-restore oscillation.
+- Auto Compact summary locator: after `compaction/end`, the landed summary checkpoint gains an Exact Sources block (shadowed seq range, spill files, touched files) so summarized-away details stay recoverable; skipped when it would locate nothing concrete.
+- Read-state semantics: a historical read whose file was later mutated is `superseded` and takes the small whole-result placeholder; optional error/warn/info clustering of omitted lines is appended to historical placeholders.
+- Optional residual-utility estimator (three channels: off / Harness host model / direct OpenAI-compatible endpoint) with per-session exponential backoff, strict timeout, advisory-only verdicts consumed by the next pressure pass, and numeric-only `estimator-outcome` audits. The estimator card appears only while the new profile is selected; the API key is write-only in settings and never enters the frozen policy, audits, or logs.
+- New audit records: `summary-locator` and `estimator-outcome`; the rewrite record covers dedup via the `dedupe-pointer` reducer. Audit field allowlists are unchanged.
+- Simplified Chinese and English copy for the new profile and estimator card; unit and golden coverage under `packages/runtime/tests/tokenpilot/`.
+
 - Orthogonal code-skeleton compression gate (`codeSkeleton.enabled`, default off): the first exposure of an oversized fresh source-code tool result can keep an imports-and-declarations skeleton with bodies elided and error lines preserved, falling back to the original head pruning. The gate is independent of every profile and gated on exact tokenizer measurement.
 - Settings-UI toggle for the gate in the selector settings section, with Simplified Chinese and English copy.
 - Browser/runtime decode parity for the new section, confirm-on-write contract tests for `saveCodeSkeleton`, and a full-document parity matrix extension.
