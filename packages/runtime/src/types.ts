@@ -8,6 +8,7 @@ export const COMPRESSION_PROFILES = [
   'cache-strict',
   'savings',
   'adaptive',
+  'tokenpilot-inspired',
   'custom',
 ] as const
 
@@ -54,6 +55,24 @@ export interface CustomTailTrimPolicy {
   trigger: number
 }
 
+/** TokenPilot-inspired preset sub-capability switches (only injected for `tokenpilot-inspired`). */
+export interface PresetOptions {
+  /** Reject replacements whose text is not smaller than the original (G1). */
+  readonly noNetSavingsGuard: boolean
+  /** Permanently exempt recovery content from further reduction (G2). */
+  readonly skipReductionRecovery: boolean
+  /** Replace byte-identical repeated tool results with first-occurrence pointers (A1). */
+  readonly dedupeToolResults: boolean
+  /** Append Exact Sources locator blocks after Auto Compact completes (A2). */
+  readonly summaryLocator: boolean
+  /** Volatile-line demotion, deterministic tool ordering, and prefix fingerprint audit (S1/S2). */
+  readonly prefixStabilizer: boolean
+  /** Fresh/superseded read-state classification with clustered omission markers (R2/R3). */
+  readonly readState: boolean
+  /** Optional estimator channel; `''` keeps every estimator consumer on rule-only fallbacks (E1/E2). */
+  readonly estimator: { readonly mode: '' | 'host' | 'direct' }
+}
+
 /** Common user-authored Custom stages shared by persisted policy versions. */
 interface CustomCompressionPolicyFields<HistoryPolicy> {
   unit: CustomCompressionUnit
@@ -98,6 +117,29 @@ export interface CodeSkeletonSettings {
   enabled: boolean
 }
 
+/**
+ * Persisted sub-capability overrides for the `tokenpilot-inspired` preset.
+ * Absent fields inherit the preset defaults; the section is only meaningful
+ * while the resolved profile is `tokenpilot-inspired`.
+ */
+export interface PresetOptionsSettings {
+  readonly dedupeToolResults?: boolean
+  readonly summaryLocator?: boolean
+  readonly prefixStabilizer?: boolean
+  readonly readState?: boolean
+  readonly estimatorMode?: '' | 'host' | 'direct'
+  /**
+   * Estimator endpoint fields. Persisted-settings only: they never enter the
+   * frozen CompressionPolicy, which is emitted verbatim by policy-resolved
+   * audits, so the API key cannot leak into logs.
+   */
+  readonly estimatorProvider?: string
+  readonly estimatorModel?: string
+  readonly estimatorBaseUrl?: string
+  readonly estimatorApiKey?: string
+  readonly estimatorTimeoutMs?: number
+}
+
 /** Durable global preference exposed through `ctx.settings`. */
 export interface ContextCompressionSettings {
   /** Default strategy snapped when a Session first reaches the pruner. */
@@ -108,6 +150,8 @@ export interface ContextCompressionSettings {
   autoCompact: AutoCompactSettings
   /** Code-skeleton reducer gate snapped independently of `profile`. */
   codeSkeleton: CodeSkeletonSettings
+  /** Optional tokenpilot-inspired sub-capability overrides; absent inherits preset defaults. */
+  presetOptions?: PresetOptionsSettings
 }
 
 /** Token-gated policy with character fields limited to reducer candidate shape. */
@@ -145,6 +189,8 @@ export interface ToolResultPruneConfig {
    * compact across two thresholds.
    */
   autoCompactThresholdPercent?: number
+  /** Optional tokenpilot-inspired sub-capability overrides (deploy-level). */
+  presetOptions?: PresetOptionsSettings
 }
 
 /** Resolved per-profile behavior. */
@@ -182,6 +228,11 @@ export interface CompressionPolicy {
     readonly enabled: boolean
     readonly triggerTokens: number
   }
+  /**
+   * TokenPilot-inspired sub-capability switches. Present only for the
+   * `tokenpilot-inspired` preset; every other profile stays byte-identical.
+   */
+  readonly presetOptions?: PresetOptions
 }
 
 /** Validated, detached, deeply immutable configuration. */
@@ -204,6 +255,8 @@ export interface ResolvedConfig {
    * overlay generation (50-90 integer). Supersedes the live Host setting.
    */
   readonly autoCompactThresholdPercent?: number
+  /** Optional tokenpilot-inspired sub-capability overrides resolved from the deployment config. */
+  readonly presetOptions?: PresetOptionsSettings
 }
 
 /** Why a pruning pass runs. */

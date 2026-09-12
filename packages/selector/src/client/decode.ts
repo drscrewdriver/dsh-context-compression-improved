@@ -5,6 +5,7 @@ import {
   COMPRESSION_PROFILES,
   decodeAutoCompactSettings,
   decodeCodeSkeletonSettings,
+  decodePresetOptionsSettings,
   isCustomCompressionPolicy,
   isPlainRecord,
   type CompressionProfile,
@@ -24,13 +25,14 @@ import {
 export function decodeSettings(value: unknown): ContextCompressionSettings | undefined {
   if (!isPlainRecord(value)) return undefined
   const keys = Object.keys(value)
-  if (keys.some(key => key !== 'profile' && key !== 'custom' && key !== 'autoCompact' && key !== 'codeSkeleton')) {
+  if (keys.some(key => key !== 'profile' && key !== 'custom' && key !== 'autoCompact' && key !== 'codeSkeleton' && key !== 'presetOptions')) {
     return undefined
   }
   const profile = (value as { profile?: unknown }).profile
   const custom = (value as { custom?: unknown }).custom
   const autoCompact = decodeAutoCompactSettings((value as { autoCompact?: unknown }).autoCompact)
   const codeSkeleton = decodeCodeSkeletonSettings((value as { codeSkeleton?: unknown }).codeSkeleton)
+  const presetOptions = decodePresetOptionsSettings((value as { presetOptions?: unknown }).presetOptions)
   return typeof profile === 'string'
     && (COMPRESSION_PROFILES as readonly string[]).includes(profile)
     && isCustomCompressionPolicy(custom)
@@ -41,6 +43,7 @@ export function decodeSettings(value: unknown): ContextCompressionSettings | und
         custom: canonicalizeCustomPolicy(custom),
         autoCompact,
         codeSkeleton,
+        ...presetOptions === undefined ? {} : { presetOptions },
       }
     : undefined
 }
