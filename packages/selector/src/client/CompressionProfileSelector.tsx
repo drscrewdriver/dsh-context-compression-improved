@@ -15,10 +15,11 @@ import {
   type CustomCompressionPolicyV3,
   type CustomHistoryPolicy,
   type ContextCompressionSettings,
+  type PresetOptionsSettings,
 } from '../profiles.ts'
 
 export { COMPRESSION_PROFILES, isCustomCompressionPolicy }
-export type { CompressionProfile, CustomCompressionPolicy, ContextCompressionSettings }
+export type { CompressionProfile, CustomCompressionPolicy, ContextCompressionSettings, PresetOptionsSettings }
 
 export interface CompressionSelectorInjected {
   hooks: { compression: SettingsScope<ContextCompressionSettings> }
@@ -27,6 +28,7 @@ export interface CompressionSelectorInjected {
   resetCustom: () => Promise<void>
   saveAutoCompact: (thresholdPercent: number) => Promise<void>
   saveCodeSkeleton: (enabled: boolean) => Promise<void>
+  savePresetOptions: (options: Partial<PresetOptionsSettings>) => Promise<void>
 }
 
 export type CompressionProfileSelectorProps =
@@ -40,7 +42,8 @@ export function ContextCompressionSettingsSection(props: CompressionProfileSelec
 }
 
 function SettingsCompressionProfileControls({
-  useCompression, useSessions, select, saveCustom, resetCustom, saveAutoCompact, saveCodeSkeleton, t,
+  useCompression, useSessions, select, saveCustom, resetCustom, saveAutoCompact, saveCodeSkeleton,
+  savePresetOptions, t,
 }: CompressionProfileSelectorProps) {
   const state = useCompression(snapshot => snapshot)
   const currentPreset = useSessions((sessions) => {
@@ -118,6 +121,15 @@ function SettingsCompressionProfileControls({
         settle={settle}
         t={t}
       />
+      {current !== 'tokenpilot-inspired' ? null : (
+        <EstimatorControls
+          options={state.value?.presetOptions ?? {}}
+          disabled={busy || !state.writable || !selectorAvailable}
+          save={savePresetOptions}
+          settle={settle}
+          t={t}
+        />
+      )}
       <div className={css.pricing}>{t('pricing.disclosure')}</div>
       {current !== 'custom' || draft === null || !selectorAvailable ? null : (
         <CustomPolicyEditor value={draft} disabled={busy || !state.writable} setValue={setDraft}
@@ -337,6 +349,99 @@ function CodeSkeletonControls({ value, disabled, save, settle, t }: CodeSkeleton
           <option value="off">{t('codeSkeleton.enabled.off')}</option>
         </select>
       </label>
+    </section>
+  )
+}
+
+interface EstimatorControlsProps {
+  options: PresetOptionsSettings
+  disabled: boolean
+  save: (options: Partial<PresetOptionsSettings>) => Promise<void>
+  settle: (operation: () => Promise<void>) => void
+  t: (key: ContextCompressionLocaleKey) => string
+}
+
+/**
+ * TokenPilot-inspired estimator endpoint card. Shown only while the
+ * tokenpilot-inspired profile is selected; the key field is write-only
+ * (never rendered back) and the whole card is advisory — an unconfigured or
+ * failing endpoint simply keeps every consumer on its rule-only fallback.
+ */
+function EstimatorControls({ options, disabled, save, settle, t }: EstimatorControlsProps) {
+  const [keyDraft, setKeyDraft] = useState('')
+  const [baseUrl, setBaseUrl] = useState(options.estimatorBaseUrl ?? '')
+  const [model, setModel] = useState(options.estimatorModel ?? '')
+  const [provider, setProvider] = useState(options.estimatorProvider ?? '')
+  const mode = options.estimatorMode ?? ''
+  const commit = (patch: Partial<PresetOptionsSettings>) => {
+    settle(() => save({ ...patch, ...(keyDraft.trim() === '' ? {} : { estimatorApiKey: keyDraft.trim() }) }))
+  }
+  return (
+    <section className={css.autoCompact} aria-labelledby="context-compression-estimator-title">
+      <h3 id="context-compression-estimator-title" className={css.autoCompactTitle}>{t('estimator.title')}</h3>
+      <p className={css.customNote}>{t('estimator.description')}</p>
+      <label className={css.field}>
+        <span>{t('estimator.mode')}</span>
+        <select
+          value={mode}
+          disabled={disabled}
+          onChange={(event) => { settle(() => save({ estimatorMode: event.currentTarget.value as '' | 'host' | 'direct' })) }}
+        >
+          <option value="">{t('estimator.mode.off')}</option>
+          <option value="host">{t('estimator.mode.host')}</option>
+          <option value="direct">{t('estimator.mode.direct')}</option>
+        </select>
+      </label>
+      {mode === '' ? null : (
+        <>
+          {mode === 'host' ? (
+            <label className={css.field}>
+              <span>{t('estimator.provider')}</span>
+              <input
+                type="text"
+                value={provider}
+                disabled={disabled}
+                placeholder={t('estimator.provider.placeholder')}
+                onChange={(event) => { setProvider(event.currentTarget.value) }}
+                onBlur={() => { if (provider !== (options.estimatorProvider ?? '')) commit({ estimatorProvider: provider }) }}
+              />
+            </label>
+          ) : (
+            <label className={css.field}>
+              <span>{t('estimator.baseUrl')}</span>
+              <input
+                type="text"
+                value={baseUrl}
+                disabled={disabled}
+                placeholder="https://127.0.0.1:8000/v1"
+                onChange={(event) => { setBaseUrl(event.currentTarget.value) }}
+                onBlur={() => { if (baseUrl !== (options.estimatorBaseUrl ?? '')) commit({ estimatorBaseUrl: baseUrl }) }}
+              />
+            </label>
+          )}
+          <label className={css.field}>
+            <span>{t('estimator.model')}</span>
+            <input
+              type="text"
+              value={model}
+              disabled={disabled}
+              onChange={(event) => { setModel(event.currentTarget.value) }}
+              onBlur={() => { if (model !== (options.estimatorModel ?? '')) commit({ estimatorModel: model }) }}
+            />
+          </label>
+          <label className={css.field}>
+            <span>{t('estimator.apiKey')}</span>
+            <input
+              type="password"
+              value={keyDraft}
+              disabled={disabled}
+              placeholder={t('estimator.apiKey.placeholder')}
+              onChange={(event) => { setKeyDraft(event.currentTarget.value) }}
+              onBlur={() => { if (keyDraft.trim() !== '') commit({}) }}
+            />
+          </label>
+        </>
+      )}
     </section>
   )
 }
