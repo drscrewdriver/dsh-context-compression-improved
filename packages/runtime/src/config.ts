@@ -7,6 +7,8 @@ import type {
   CompressionPolicy,
   CompressionProfile,
   CustomCompressionPolicy,
+  PresetOptions,
+  PresetOptionsSettings,
   ContextCompressionSettings,
   ResolvedConfig,
   ToolResultPruneConfig,
@@ -112,6 +114,63 @@ function parseCodeSkeletonSettings(value: unknown): CodeSkeletonSettings {
   return { enabled }
 }
 
+/**
+ * Parse the optional tokenpilot-inspired preset sub-capability section. Absent
+ * inherits the preset defaults; present-but-invalid is rejected, mirroring the
+ * codeSkeleton section semantics.
+ */
+export function parsePresetOptionsSettings(value: unknown): PresetOptionsSettings | undefined {
+  if (value === undefined) return undefined
+  if (!isPlainRecord(value)) {
+    throw new TypeError('Context-compression presetOptions must be a plain object')
+  }
+  const allowed = new Set([
+    'dedupeToolResults', 'summaryLocator', 'prefixStabilizer', 'readState', 'estimatorMode',
+    'estimatorProvider', 'estimatorModel', 'estimatorBaseUrl', 'estimatorApiKey', 'estimatorTimeoutMs',
+  ])
+  const unknown = Object.keys(value).find(key => !allowed.has(key))
+  if (unknown !== undefined) {
+    throw new TypeError(`Context-compression presetOptions: unknown key "${unknown}"`)
+  }
+  const booleans = ['dedupeToolResults', 'summaryLocator', 'prefixStabilizer', 'readState'] as const
+  for (const key of booleans) {
+    const entry = value[key]
+    if (entry !== undefined && typeof entry !== 'boolean') {
+      throw new TypeError(`Context-compression presetOptions.${key} must be a boolean`)
+    }
+  }
+  const estimatorMode = value.estimatorMode
+  if (estimatorMode !== undefined && estimatorMode !== '' && estimatorMode !== 'host' && estimatorMode !== 'direct') {
+    throw new TypeError('Context-compression presetOptions.estimatorMode must be "", "host", or "direct"')
+  }
+  const estimatorTimeoutMs = value.estimatorTimeoutMs
+  if (estimatorTimeoutMs !== undefined
+    && (typeof estimatorTimeoutMs !== 'number' || !Number.isSafeInteger(estimatorTimeoutMs)
+      || estimatorTimeoutMs < 100 || estimatorTimeoutMs > 60_000)) {
+    throw new TypeError('Context-compression presetOptions.estimatorTimeoutMs must be an integer between 100 and 60000')
+  }
+  for (const key of ['estimatorProvider', 'estimatorModel', 'estimatorBaseUrl', 'estimatorApiKey'] as const) {
+    const entry = value[key]
+    if (entry !== undefined && typeof entry !== 'string') {
+      throw new TypeError(`Context-compression presetOptions.${key} must be a string`)
+    }
+  }
+  const result: {
+    -readonly [K in keyof PresetOptionsSettings]: PresetOptionsSettings[K]
+  } = {}
+  if (value.dedupeToolResults !== undefined) result.dedupeToolResults = value.dedupeToolResults as boolean
+  if (value.summaryLocator !== undefined) result.summaryLocator = value.summaryLocator as boolean
+  if (value.prefixStabilizer !== undefined) result.prefixStabilizer = value.prefixStabilizer as boolean
+  if (value.readState !== undefined) result.readState = value.readState as boolean
+  if (estimatorMode !== undefined) result.estimatorMode = estimatorMode as '' | 'host' | 'direct'
+  if (value.estimatorProvider !== undefined) result.estimatorProvider = value.estimatorProvider as string
+  if (value.estimatorModel !== undefined) result.estimatorModel = value.estimatorModel as string
+  if (value.estimatorBaseUrl !== undefined) result.estimatorBaseUrl = value.estimatorBaseUrl as string
+  if (value.estimatorApiKey !== undefined) result.estimatorApiKey = value.estimatorApiKey as string
+  if (estimatorTimeoutMs !== undefined) result.estimatorTimeoutMs = estimatorTimeoutMs as number
+  return result
+}
+
 /** Settings schema used by the user-facing profile selector. */
 const contextCompressionSettingsInputSchema = z.object({
   profile: z.union([...COMPRESSION_PROFILES]).default('balanced'),
@@ -184,7 +243,7 @@ export const ContextCompressionSettingsSchema: z<ContextCompressionSettings> = z
     // remain valid and inherit their defaults; the sections themselves stay
     // strictly shaped.
     const unknown = Object.keys(candidate).find(key =>
-      key !== 'profile' && key !== 'custom' && key !== 'autoCompact' && key !== 'codeSkeleton')
+      key !== 'profile' && key !== 'custom' && key !== 'autoCompact' && key !== 'codeSkeleton' && key !== 'presetOptions')
     if (unknown !== undefined) {
       throw new TypeError(`Context-compression settings: unknown key "${unknown}"`)
     }
@@ -196,7 +255,13 @@ export const ContextCompressionSettingsSchema: z<ContextCompressionSettings> = z
     assertPresentSection(candidate, 'custom', isUsableCustomDocument)
     const autoCompact = parseAutoCompactSettings(candidate.autoCompact)
     const codeSkeleton = parseCodeSkeletonSettings(candidate.codeSkeleton)
-    return { ...contextCompressionSettingsInputSchema(candidate), autoCompact, codeSkeleton }
+    const presetOptions = parsePresetOptionsSettings(candidate.presetOptions)
+    return {
+      ...contextCompressionSettingsInputSchema(candidate),
+      autoCompact,
+      codeSkeleton,
+      ...presetOptions === undefined ? {} : { presetOptions },
+    }
   },
 ).default(DEFAULT_CONTEXT_COMPRESSION_SETTINGS) as z<ContextCompressionSettings>
 
@@ -222,6 +287,7 @@ const CONFIG_KEYS: ReadonlySet<string> = new Set([
   'historyKeepRecentTokens',
   'historyMinReclaimTokens',
   'autoCompactThresholdPercent',
+  'presetOptions',
 ])
 
 const LEGACY_GATE_REPLACEMENTS: Readonly<Record<string, string>> = Object.freeze({
@@ -289,6 +355,7 @@ export function resolveConfig(config: ToolResultPruneConfig = {}): ResolvedConfi
     ...config.historyKeepRecentTokens === undefined ? {} : { historyKeepRecentTokens: config.historyKeepRecentTokens },
     ...config.historyMinReclaimTokens === undefined ? {} : { historyMinReclaimTokens: config.historyMinReclaimTokens },
     ...config.autoCompactThresholdPercent === undefined ? {} : { autoCompactThresholdPercent: config.autoCompactThresholdPercent },
+    ...config.presetOptions === undefined ? {} : { presetOptions: config.presetOptions },
   }
   if (!isCompressionProfile(resolved.profile)) {
     throw new Error(`ToolResultPruneConfig: unsupported profile "${String(resolved.profile)}"`)
@@ -329,10 +396,44 @@ const AUTO_COMPACT_HISTORY_RATIOS: Readonly<Record<string, Readonly<{
   savings: Object.freeze({ trigger: 0.50, minReclaim: 0.16, keepRecentTokens: 0.08 }),
   'cache-strict': Object.freeze({ trigger: 0.75, minReclaim: 0.16, keepRecentTokens: 0.08 }),
   adaptive: Object.freeze({ trigger: 0.625, minReclaim: 0.12, keepRecentTokens: 0.08 }),
+  'tokenpilot-inspired': Object.freeze({ trigger: 0.625, minReclaim: 0.12, keepRecentTokens: 0.08 }),
 })
 
 /** Micro-compact last-chance ratio: `D = floor(A × 0.875)`. */
 const MICRO_DEADLINE_RATIO = 0.875
+
+/**
+ * TokenPilot-inspired sub-capability defaults. Every capability is on except
+ * the estimator, which requires an explicit endpoint channel (host or direct)
+ * before any consumer may leave its rule-only fallback.
+ */
+const PRESET_OPTION_DEFAULTS: PresetOptions = deepFreeze({
+  noNetSavingsGuard: true,
+  skipReductionRecovery: true,
+  dedupeToolResults: true,
+  summaryLocator: true,
+  prefixStabilizer: true,
+  readState: true,
+  estimator: { mode: '' },
+})
+
+/**
+ * Merge persisted presetOptions overrides over the tokenpilot-inspired
+ * defaults. Persisted booleans are three-state (undefined = inherit); the
+ * estimator channel overrides the default empty mode wholesale.
+ */
+function mergePresetOptions(overrides: PresetOptionsSettings | undefined): PresetOptions {
+  if (overrides === undefined) return PRESET_OPTION_DEFAULTS
+  return deepFreeze({
+    noNetSavingsGuard: true,
+    skipReductionRecovery: true,
+    dedupeToolResults: overrides.dedupeToolResults ?? PRESET_OPTION_DEFAULTS.dedupeToolResults,
+    summaryLocator: overrides.summaryLocator ?? PRESET_OPTION_DEFAULTS.summaryLocator,
+    prefixStabilizer: overrides.prefixStabilizer ?? PRESET_OPTION_DEFAULTS.prefixStabilizer,
+    readState: overrides.readState ?? PRESET_OPTION_DEFAULTS.readState,
+    estimator: { mode: overrides.estimatorMode ?? PRESET_OPTION_DEFAULTS.estimator.mode },
+  })
+}
 
 /**
  * Resolve the Auto-Compact-linked History watermarks for one standard profile.
@@ -439,6 +540,14 @@ export function resolvePolicy(
       historyTriggerTokens: 500_000, historyKeepRecentToolCalls: 10,
       historyKeepRecentTokens: 64_000, historyMinReclaimTokens: 96_000,
     },
+    'tokenpilot-inspired': {
+      nativeToolResultEnabled: false, freshEnabled: true, aggregateEnabled: true, historyMode: 'routine',
+      nativeTriggerTokens: Number.MAX_SAFE_INTEGER, nativeTargetTokens: Number.MAX_SAFE_INTEGER,
+      freshTriggerTokens: 8_192, freshTargetTokens: 3_072,
+      aggregateTriggerTokens: 32_768, aggregateTargetTokens: 12_288,
+      historyTriggerTokens: 500_000, historyKeepRecentToolCalls: 10,
+      historyKeepRecentTokens: 64_000, historyMinReclaimTokens: 96_000,
+    },
   }
   const preset = presets[profile]
   const linkage = resolveAutoCompactLinkage(profile, options)
@@ -462,6 +571,9 @@ export function resolvePolicy(
       autoCompactTokens: linkage.autoCompactTokens,
       microDeadlineTokens: linkage.microDeadlineTokens,
     },
+    ...profile === 'tokenpilot-inspired' ? {
+      presetOptions: mergePresetOptions(config.presetOptions),
+    } : {},
   }
   if (policy.nativeTargetTokens >= policy.nativeTriggerTokens && profile === 'native') {
     throw new Error('context compression policy: native target must be below trigger')

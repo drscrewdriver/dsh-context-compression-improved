@@ -6,6 +6,7 @@ export const COMPRESSION_PROFILES = [
   'cache-strict',
   'savings',
   'adaptive',
+  'tokenpilot-inspired',
   'custom',
 ] as const
 
@@ -122,6 +123,67 @@ export function decodeCodeSkeletonSettings(value: unknown): CodeSkeletonSettings
   return typeof enabled === 'boolean' ? { enabled } : undefined
 }
 
+/** Browser-safe mirror of the runtime presetOptions section. */
+export interface PresetOptionsSettings {
+  readonly dedupeToolResults?: boolean
+  readonly summaryLocator?: boolean
+  readonly prefixStabilizer?: boolean
+  readonly readState?: boolean
+  readonly estimatorMode?: '' | 'host' | 'direct'
+  readonly estimatorProvider?: string
+  readonly estimatorModel?: string
+  readonly estimatorBaseUrl?: string
+  readonly estimatorApiKey?: string
+  readonly estimatorTimeoutMs?: number
+}
+
+/**
+ * Browser mirror of the runtime presetOptions section: absent inherits the
+ * preset defaults (decodes to `undefined`); present values must be a plain
+ * object carrying only the known keys with valid types.
+ */
+export function decodePresetOptionsSettings(value: unknown): PresetOptionsSettings | undefined {
+  if (value === undefined) return undefined
+  if (!isPlainRecord(value)) return undefined
+  const allowed = new Set([
+    'dedupeToolResults', 'summaryLocator', 'prefixStabilizer', 'readState', 'estimatorMode',
+    'estimatorProvider', 'estimatorModel', 'estimatorBaseUrl', 'estimatorApiKey', 'estimatorTimeoutMs',
+  ])
+  if (Object.keys(value).some(key => !allowed.has(key))) return undefined
+  for (const key of ['dedupeToolResults', 'summaryLocator', 'prefixStabilizer', 'readState'] as const) {
+    const entry = value[key]
+    if (entry !== undefined && typeof entry !== 'boolean') return undefined
+  }
+  const estimatorMode = value.estimatorMode
+  if (estimatorMode !== undefined && estimatorMode !== '' && estimatorMode !== 'host' && estimatorMode !== 'direct') {
+    return undefined
+  }
+  for (const key of ['estimatorProvider', 'estimatorModel', 'estimatorBaseUrl', 'estimatorApiKey'] as const) {
+    const entry = value[key]
+    if (entry !== undefined && typeof entry !== 'string') return undefined
+  }
+  const estimatorTimeoutMs = value.estimatorTimeoutMs
+  if (estimatorTimeoutMs !== undefined
+    && (typeof estimatorTimeoutMs !== 'number' || !Number.isSafeInteger(estimatorTimeoutMs)
+      || estimatorTimeoutMs < 100 || estimatorTimeoutMs > 60_000)) {
+    return undefined
+  }
+  const decoded: {
+    -readonly [K in keyof PresetOptionsSettings]: PresetOptionsSettings[K]
+  } = {}
+  if (value.dedupeToolResults !== undefined) decoded.dedupeToolResults = value.dedupeToolResults as boolean
+  if (value.summaryLocator !== undefined) decoded.summaryLocator = value.summaryLocator as boolean
+  if (value.prefixStabilizer !== undefined) decoded.prefixStabilizer = value.prefixStabilizer as boolean
+  if (value.readState !== undefined) decoded.readState = value.readState as boolean
+  if (estimatorMode !== undefined) decoded.estimatorMode = estimatorMode as '' | 'host' | 'direct'
+  if (value.estimatorProvider !== undefined) decoded.estimatorProvider = value.estimatorProvider as string
+  if (value.estimatorModel !== undefined) decoded.estimatorModel = value.estimatorModel as string
+  if (value.estimatorBaseUrl !== undefined) decoded.estimatorBaseUrl = value.estimatorBaseUrl as string
+  if (value.estimatorApiKey !== undefined) decoded.estimatorApiKey = value.estimatorApiKey as string
+  if (estimatorTimeoutMs !== undefined) decoded.estimatorTimeoutMs = estimatorTimeoutMs as number
+  return decoded
+}
+
 /**
  * The one threshold contract shared by the UI, the persisted settings, and the
  * runtime resolver; mirrored browser-safe from the runtime package.
@@ -175,6 +237,8 @@ export interface ContextCompressionSettings {
   autoCompact: AutoCompactSettings
   /** Code-skeleton reducer gate captured independently of `profile`. */
   codeSkeleton: CodeSkeletonSettings
+  /** Optional tokenpilot-inspired sub-capability overrides (presence-validated only). */
+  presetOptions?: PresetOptionsSettings
 }
 
 /**
