@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from 'react'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { IconChevronDownOutline14, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ContextCompressionLocaleKey } from './locales.ts'
 import css from './CompressionProfileSelector.module.css'
@@ -31,8 +31,14 @@ export interface CompressionSelectorInjected {
   savePresetOptions: (options: Partial<PresetOptionsSettings>) => Promise<void>
 }
 
+/**
+ * Owner-agnostic panel props: the same component registers under the 0.1.5
+ * `settings.plugins.tab` card (no owner props) and the legacy
+ * `settings.section` page (whose shell supplies `close`), so the section
+ * owner share stays optional.
+ */
 export type CompressionProfileSelectorProps =
-  PropsRuntime<'settings.section'>
+  { close?: () => void }
   & PropsLocale<'context-compression'>
   & InjectFace<CompressionSelectorInjected>
 

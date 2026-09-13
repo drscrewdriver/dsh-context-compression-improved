@@ -1,6 +1,5 @@
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-import type { SlotCore } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
@@ -16,10 +15,14 @@ import { en, zh } from './locales.ts'
 /**
  * Harness 0.1.5 mounts the web core's `slots` service on the client context
  * but no longer ships a public type for it; declare the face this plugin
- * consumes (same shape the dsh-plugin-template documents for 0.1.2+).
+ * consumes (same shape dsh-thinking-levels and dsh-prime-memory rely on).
+ * `inject` factories may be sync (return a disposer) or generator (yield the
+ * registration); slot options are validated at runtime per slot kind, which
+ * lets one entry supply both `id` (Desktop, list) and `key` (CLI, keyed).
  */
-interface SlotsService extends Pick<SlotCore, 'register'> {
-  inject(slot: string, register: () => () => void): () => void
+interface SlotsService {
+  inject(slot: string, register: () => (() => void) | Generator<() => void>): () => void
+  register(options: Record<string, unknown>, component: unknown): () => void
 }
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -56,60 +59,101 @@ function sameCustomPolicy(
 
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-context-compression: dictionaries')
-  const scope = ctx.settingsScope.bind<ContextCompressionSettings>({ namespace: NS, decode: decodeSettings })
-  const writeAndConfirm = async (
-    write: () => Promise<void>,
-    accepts: (settings: ContextCompressionSettings) => boolean,
-  ): Promise<void> => {
-    const beforeRevision = scope.getSnapshot().revision
-    await write()
-    const after = scope.getSnapshot()
-    if (
-      after.status !== 'ready'
-      || after.value === undefined
-      || after.revision === beforeRevision
-      || !accepts(after.value)
-    ) {
-      throw new Error('Context compression settings were not saved.')
+  const injected = (): CompressionSelectorInjected => {
+    // Bind per factory call on the caller's fiber (0.1.5: activation must
+    // never block on the settings transport; the scope disposer belongs to
+    // the calling registration's lifecycle).
+    const scope = ctx.settingsScope.bind<ContextCompressionSettings>({ namespace: NS, decode: decodeSettings })
+    const writeAndConfirm = async (
+      write: () => Promise<void>,
+      accepts: (settings: ContextCompressionSettings) => boolean,
+    ): Promise<void> => {
+      const beforeRevision = scope.getSnapshot().revision
+      await write()
+      const after = scope.getSnapshot()
+      if (
+        after.status !== 'ready'
+        || after.value === undefined
+        || after.revision === beforeRevision
+        || !accepts(after.value)
+      ) {
+        throw new Error('Context compression settings were not saved.')
+      }
+    }
+    return {
+      hooks: { compression: scope },
+      select: profile => writeAndConfirm(
+        () => scope.set('profile', profile),
+        settings => settings.profile === profile,
+      ),
+      saveCustom: custom => writeAndConfirm(
+        () => scope.set('custom', custom),
+        settings => isCustomCompressionPolicy(settings.custom)
+          && sameCustomPolicy(settings.custom, custom),
+      ),
+      resetCustom: () => writeAndConfirm(
+        () => scope.set('custom', structuredClone(DEFAULT_CUSTOM_COMPRESSION_POLICY)),
+        settings => isCustomCompressionPolicy(settings.custom)
+          && sameCustomPolicy(settings.custom, DEFAULT_CUSTOM_COMPRESSION_POLICY),
+      ),
+      saveAutoCompact: thresholdPercent => writeAndConfirm(
+        () => scope.set('autoCompact', { thresholdPercent }),
+        settings => settings.autoCompact.thresholdPercent === thresholdPercent,
+      ),
+      saveCodeSkeleton: enabled => writeAndConfirm(
+        () => scope.set('codeSkeleton', { enabled }),
+        settings => settings.codeSkeleton.enabled === enabled,
+      ),
+      savePresetOptions: options => writeAndConfirm(
+        () => scope.set('presetOptions', options),
+        settings => (settings.presetOptions?.estimatorMode ?? '') === (options.estimatorMode ?? ''),
+      ),
     }
   }
-  const injected = (): CompressionSelectorInjected => ({
-    hooks: { compression: scope },
-    select: profile => writeAndConfirm(
-      () => scope.set('profile', profile),
-      settings => settings.profile === profile,
-    ),
-    saveCustom: custom => writeAndConfirm(
-      () => scope.set('custom', custom),
-      settings => isCustomCompressionPolicy(settings.custom)
-        && sameCustomPolicy(settings.custom, custom),
-    ),
-    resetCustom: () => writeAndConfirm(
-      () => scope.set('custom', structuredClone(DEFAULT_CUSTOM_COMPRESSION_POLICY)),
-      settings => isCustomCompressionPolicy(settings.custom)
-        && sameCustomPolicy(settings.custom, DEFAULT_CUSTOM_COMPRESSION_POLICY),
-    ),
-    saveAutoCompact: thresholdPercent => writeAndConfirm(
-      () => scope.set('autoCompact', { thresholdPercent }),
-      settings => settings.autoCompact.thresholdPercent === thresholdPercent,
-    ),
-    saveCodeSkeleton: enabled => writeAndConfirm(
-      () => scope.set('codeSkeleton', { enabled }),
-      settings => settings.codeSkeleton.enabled === enabled,
-    ),
-    savePresetOptions: options => writeAndConfirm(
-      () => scope.set('presetOptions', options),
-      settings => (settings.presetOptions?.estimatorMode ?? '') === (options.estimatorMode ?? ''),
-    ),
-  })
-  ctx.slots.inject('settings.section', () => ctx.slots.register({
-    name: 'settings.section',
-    id: 'context-compression',
-    order: 17,
-    label: () => ctx.locale.bind(NS)('nav'),
-    locale: NS,
-    inject: injected,
-  }, ContextCompressionSettingsSection))
+  // 设置 → 插件 → 上下文压缩卡片。槽名随宿主版本演变：0.1.5-rc.2 的 SlotMap
+  // 声明 `settings.plugins.tab`，0.1.2/0.1.3 叫 `settings.plugin.item`。未声明槽
+  // 的注册会在激活期抛错，故 inject 调用与工厂体都各自 try/catch，任一失败不
+  // 影响另一处（双槽冗余同 dsh-prime-memory；id+key 双写兼容 Desktop list 与
+  // CLI keyed 两种槽声明，同 dsh-thinking-levels）。
+  const registerSettingsCard = (slotName: 'settings.plugins.tab' | 'settings.plugin.item'): void => {
+    try {
+      ctx.slots.inject(slotName, () => {
+        try {
+          return ctx.slots.register({
+            name: slotName,
+            id: NS,
+            key: NS,
+            order: 17,
+            label: () => ctx.locale.bind(NS)('nav'),
+            locale: NS,
+            inject: injected,
+          }, ContextCompressionSettingsSection)
+        } catch (error) {
+          console.warn(`[dsh-context-compression-improved] ${slotName} 注册失败(宿主未声明该槽):`, error)
+          return () => {}
+        }
+      })
+    } catch (error) {
+      console.warn(`[dsh-context-compression-improved] ${slotName} 注入失败(宿主未声明该槽):`, error)
+    }
+  }
+  registerSettingsCard('settings.plugins.tab')
+  registerSettingsCard('settings.plugin.item')
+
+  // 设置 → 上下文压缩 直挂分节（0.1.1 契约；0.1.5 官方分节也注册在此，未声明槽
+  // 的注册会在激活期抛错，故 try/catch 守卫 —— 同 dsh-prime-memory 的双槽冗余）
+  try {
+    ctx.slots.inject('settings.section', () => ctx.slots.register({
+      name: 'settings.section',
+      id: 'context-compression',
+      order: 17,
+      label: () => ctx.locale.bind(NS)('nav'),
+      locale: NS,
+      inject: injected,
+    }, ContextCompressionSettingsSection))
+  } catch (error) {
+    console.warn('[dsh-context-compression-improved] settings.section 注册失败(新宿主已收编):', error)
+  }
 }
 
 export type {
