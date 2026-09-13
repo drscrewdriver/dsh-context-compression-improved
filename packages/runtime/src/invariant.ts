@@ -7,7 +7,7 @@ import type {} from '@deepseek-ai/dsh-compaction'
 import { validatePublishedTailTrim } from './tail-trim.ts'
 import { sessionEvents } from './session-events.ts'
 
-const PACKAGE_NAME = 'dsh-context-compression-selector-runtime'
+const PACKAGE_NAME = 'dsh-context-compression-improved-runtime'
 
 /** Cordis companion plugin name. */
 export const name = 'context-compression-selector-runtime-invariant'

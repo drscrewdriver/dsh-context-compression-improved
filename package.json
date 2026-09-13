@@ -1,5 +1,5 @@
 {
-  "name": "dsh-context-compression-selector-workspace",
+  "name": "dsh-context-compression-improved-workspace",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "pnpm -r --if-present run bundle",
-    "typecheck": "pnpm --filter dsh-context-compression-selector-runtime run typecheck && pnpm --filter dsh-context-compression-selector-runtime run bundle && pnpm --filter dsh-context-compression-selector run typecheck && pnpm run typecheck:tests",
+    "typecheck": "pnpm --filter dsh-context-compression-improved-runtime run typecheck && pnpm --filter dsh-context-compression-improved-runtime run bundle && pnpm --filter dsh-context-compression-improved run typecheck && pnpm run typecheck:tests",
     "typecheck:tests": "tsc --noEmit -p tsconfig.tests.json",
     "lint": "eslint packages scripts eslint.config.js",
     "lint:fix": "eslint packages scripts eslint.config.js --fix",

@@ -19,9 +19,9 @@ describe('standalone package contract', () => {
       dependencies?: Record<string, string>
       publishConfig?: { tag?: string }
     }
-    expect(selector.name).toBe('dsh-context-compression-selector')
-    expect(runtime.name).toBe('dsh-context-compression-selector-runtime')
-    expect(selector.dependencies?.['dsh-context-compression-selector-runtime']).toBe(runtime.version)
+    expect(selector.name).toBe('dsh-context-compression-improved')
+    expect(runtime.name).toBe('dsh-context-compression-improved-runtime')
+    expect(selector.dependencies?.['dsh-context-compression-improved-runtime']).toBe(runtime.version)
     expect(runtime.dependencies?.['@huggingface/tokenizers']).toBe('0.1.3')
     expect(Object.keys(selector.peerDependencies ?? {})).not.toContain('@deepseek-ai/dsh-compaction-tool-result-pruner')
     expect(selector.peerDependencies?.['@deepseek-ai/dsh-compaction-basic'])
@@ -34,7 +34,7 @@ describe('standalone package contract', () => {
 
   it('uses the community package in the one Bundle patch', () => {
     const patch = readFileSync(resolve(root, 'selector/cordis.patch.yml'), 'utf8')
-    expect(patch).toContain("name: 'dsh-context-compression-selector'")
+    expect(patch).toContain("name: 'dsh-context-compression-improved'")
     expect(patch).not.toContain('@deepseek-ai/dsh-client-ui-context-compression-selector')
   })
 })

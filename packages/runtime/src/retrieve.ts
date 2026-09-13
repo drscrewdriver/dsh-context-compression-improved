@@ -5,7 +5,7 @@
  * reference. The tool never reads the replacement surface as the source of
  * truth and never crosses into another Session.
  *
- * @module dsh-context-compression-selector-runtime/retrieve
+ * @module dsh-context-compression-improved-runtime/retrieve
  */
 
 import type { Context } from '@deepseek-ai/cordis'

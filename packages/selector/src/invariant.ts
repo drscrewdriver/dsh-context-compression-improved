@@ -1,14 +1,14 @@
 /**
  * Package-owned invariant companion for
- * `dsh-context-compression-selector`.
- * @module dsh-context-compression-selector/invariant
+ * `dsh-context-compression-improved`.
+ * @module dsh-context-compression-improved/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
-const PACKAGE_NAME = 'dsh-context-compression-selector'
+const PACKAGE_NAME = 'dsh-context-compression-improved'
 
 /** Cordis companion plugin name. */
 export const name = 'client-ui-context-compression-selector-invariant'

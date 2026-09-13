@@ -24,11 +24,11 @@ const MODEL = 'deepseek-v4-flash'
 const AUDIT_PREFIX = 'context-compression audit '
 const consumerRoot = await realpath(dirname(fileURLToPath(import.meta.url)))
 const consumerRequire = createRequire(import.meta.url)
-const selectorPackage = consumerRequire.resolve('dsh-context-compression-selector/package.json')
+const selectorPackage = consumerRequire.resolve('dsh-context-compression-improved/package.json')
 const selectorRequire = createRequire(selectorPackage)
-const runtimePackage = selectorRequire.resolve('dsh-context-compression-selector-runtime/package.json')
-const SelectorHost = await import(pathToFileURL(consumerRequire.resolve('dsh-context-compression-selector')).href)
-const Runtime = await import(pathToFileURL(selectorRequire.resolve('dsh-context-compression-selector-runtime')).href)
+const runtimePackage = selectorRequire.resolve('dsh-context-compression-improved-runtime/package.json')
+const SelectorHost = await import(pathToFileURL(consumerRequire.resolve('dsh-context-compression-improved')).href)
+const Runtime = await import(pathToFileURL(selectorRequire.resolve('dsh-context-compression-improved-runtime')).href)
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(`packed component smoke: ${message}`)

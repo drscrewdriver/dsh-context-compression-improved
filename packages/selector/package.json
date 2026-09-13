@@ -1,5 +1,5 @@
 {
-  "name": "dsh-context-compression-selector",
+  "name": "dsh-context-compression-improved",
   "version": "0.1.0",
   "description": "One-install context-compression selector bundle for DeepSeek Harness",
   "type": "module",
@@ -24,6 +24,9 @@
     "lib/**/*.js",
     "lib/**/*.d.ts",
     "cordis.patch.yml",
+    "dsh.plugin.json",
+    "screenshots.json",
+    "assets",
     "README.md",
     "README.zh.md",
     "LICENSE",
@@ -52,12 +55,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/WilliamShi666/dsh-context-compression-selector.git",
+    "url": "git+https://github.com/drscrewdriver/dsh-context-compression-improved.git",
     "directory": "packages/selector"
   },
-  "homepage": "https://github.com/WilliamShi666/dsh-context-compression-selector#readme",
+  "homepage": "https://github.com/drscrewdriver/dsh-context-compression-improved#readme",
   "bugs": {
-    "url": "https://github.com/WilliamShi666/dsh-context-compression-selector/issues"
+    "url": "https://github.com/drscrewdriver/dsh-context-compression-improved/issues"
   },
   "author": "WilliamShi666",
   "engines": {
@@ -76,7 +79,7 @@
     "tag": "latest"
   },
   "dependencies": {
-    "dsh-context-compression-selector-runtime": "0.1.0",
+    "dsh-context-compression-improved-runtime": "0.1.0",
     "js-yaml": "^4.2.0"
   },
   "peerDependencies": {

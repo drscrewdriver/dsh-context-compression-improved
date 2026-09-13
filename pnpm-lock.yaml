@@ -233,7 +233,7 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: '>=3.18.1 <4'
         version: 3.18.1
-      dsh-context-compression-selector-runtime:
+      dsh-context-compression-improved-runtime:
         specifier: 0.1.0
         version: link:../runtime
       js-yaml:

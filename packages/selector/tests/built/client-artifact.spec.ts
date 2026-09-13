@@ -18,7 +18,7 @@ describe('built Harness client artifact', () => {
     Object.defineProperty(window, '__ModuleLoader__', { configurable: true, value: moduleLoader })
 
     expect(() => Function(code)()).not.toThrow()
-    expect(registration?.id).toBe('dsh-context-compression-selector')
+    expect(registration?.id).toBe('dsh-context-compression-improved')
 
     const modules = new Map<string, unknown>([
       ['react', React],
@@ -36,9 +36,9 @@ describe('built Harness client artifact', () => {
     expect(exported.apply).toBeTypeOf('function')
     expect(exported.inject).toEqual(['slots', 'locale', 'settingsScope'])
     const style = document.querySelector<HTMLStyleElement>(
-      'style[data-plugin-css="dsh-context-compression-selector/CompressionProfileSelector.module.css"]',
+      'style[data-plugin-css="dsh-context-compression-improved/CompressionProfileSelector.module.css"]',
     )
-    expect(style?.dataset.plugin).toBe('dsh-context-compression-selector')
+    expect(style?.dataset.plugin).toBe('dsh-context-compression-improved')
     expect(style?.textContent).toContain('profileGrid')
     expect(document.querySelectorAll('style[data-plugin-css]').length).toBe(1)
 

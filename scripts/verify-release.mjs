@@ -28,8 +28,8 @@ if (selectorPackage.scripts?.test
 }
 const ci = await readFile(join(root, '.github/workflows/ci.yml'), 'utf8')
 for (const required of [
-  'pnpm --filter dsh-context-compression-selector-runtime test',
-  'pnpm --filter dsh-context-compression-selector test',
+  'pnpm --filter dsh-context-compression-improved-runtime test',
+  'pnpm --filter dsh-context-compression-improved test',
 ]) {
   if (!ci.includes(required)) fail(`CI lacks package-local gate: ${required}`)
 }
@@ -81,7 +81,7 @@ for (const required of [
 }
 await stat(join(root, 'tsconfig.tests.json'))
 
-if (selectorPackage.dependencies?.['dsh-context-compression-selector-runtime'] !== selectorPackage.version) {
+if (selectorPackage.dependencies?.['dsh-context-compression-improved-runtime'] !== selectorPackage.version) {
   fail('selector must depend on the exact same runtime version')
 }
 if (selectorPackage.dsh?.bundle?.patch !== './cordis.patch.yml') {
@@ -90,8 +90,8 @@ if (selectorPackage.dsh?.bundle?.patch !== './cordis.patch.yml') {
 if (selectorPackage.files?.some((entry) => entry.endsWith('.css'))) {
   fail('selector must not rely on separately served CSS assets')
 }
-if (runtimePackage.name !== 'dsh-context-compression-selector-runtime') fail('unexpected runtime package name')
-if (selectorPackage.name !== 'dsh-context-compression-selector') fail('unexpected selector package name')
+if (runtimePackage.name !== 'dsh-context-compression-improved-runtime') fail('unexpected runtime package name')
+if (selectorPackage.name !== 'dsh-context-compression-improved') fail('unexpected selector package name')
 for (const [name, manifest] of [
   ['runtime', runtimePackage],
   ['selector', selectorPackage],

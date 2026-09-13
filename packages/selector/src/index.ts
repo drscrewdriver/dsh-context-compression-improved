@@ -9,7 +9,7 @@ import {
 import {
   CONTEXT_COMPRESSION_SETTINGS_NAMESPACE,
   ContextCompressionSettingsSchema,
-} from 'dsh-context-compression-selector-runtime'
+} from 'dsh-context-compression-improved-runtime'
 import {
   decorateAgentPresets,
   resolveCompressionModulePaths,
@@ -37,7 +37,7 @@ interface SettingsOwner {
 
 /** Symbol properties reach the shared service target through Cordis proxies. */
 const SHARED_SETTINGS = Symbol.for(
-  'dsh-context-compression-selector/settings-registration',
+  'dsh-context-compression-improved/settings-registration',
 )
 
 type SettingsCarrier = SettingsService & {

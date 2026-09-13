@@ -40,8 +40,8 @@ export interface PresetOverlayOptions {
   /** Preset ids that deliberately retain their native composition. */
   readonly excludedPresetIds?: readonly string[]
   /**
-   * Reads the Auto Compact threshold percent (50–90) to freeze into newly
-   * generated compositions — once per composition, into BOTH the
+   * Reads the Auto Compact threshold percent (50�?0) to freeze into newly
+   * generated compositions �?once per composition, into BOTH the
    * compaction-basic `thresholdRatio` and the runtime deployment config, so
    * one generation can never split Auto Compact and micro compact across two
    * thresholds. Returning `undefined` keeps both defaults untouched.
@@ -127,7 +127,7 @@ const COMPRESSION_PACKAGES = new Set([
   '@deepseek-ai/dsh-compaction-basic',
   '@deepseek-ai/dsh-command-compact',
   '@deepseek-ai/dsh-compaction-tool-result-pruner',
-  'dsh-context-compression-selector-runtime',
+  'dsh-context-compression-improved-runtime',
 ])
 
 /**
@@ -141,7 +141,7 @@ export function resolveCompressionModulePaths(): CompressionModulePaths {
     commandCompact: modulePath(
       '@deepseek-ai/dsh-command-compact', import.meta.resolve('@deepseek-ai/dsh-command-compact')),
     toolResultPruner: modulePath(
-      'dsh-context-compression-selector-runtime', import.meta.resolve('dsh-context-compression-selector-runtime')),
+      'dsh-context-compression-improved-runtime', import.meta.resolve('dsh-context-compression-improved-runtime')),
   }
 }
 
@@ -390,7 +390,7 @@ interface SharedDecoration {
  * Symbol properties forward to the shared target, unlike proxy identity.
  */
 const SHARED_DECORATION = Symbol.for(
-  'dsh-context-compression-selector/preset-overlay',
+  'dsh-context-compression-improved/preset-overlay',
 )
 
 /** Object-identity keys keep test metadata policies from sharing one store. */

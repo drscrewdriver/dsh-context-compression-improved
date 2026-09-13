@@ -1,5 +1,5 @@
 {
-  "name": "dsh-context-compression-selector-runtime",
+  "name": "dsh-context-compression-improved-runtime",
   "version": "0.1.0",
   "description": "Auditable context-compression runtime for DeepSeek Harness",
   "type": "module",
@@ -35,12 +35,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/WilliamShi666/dsh-context-compression-selector.git",
+    "url": "git+https://github.com/drscrewdriver/dsh-context-compression-improved.git",
     "directory": "packages/runtime"
   },
-  "homepage": "https://github.com/WilliamShi666/dsh-context-compression-selector#readme",
+  "homepage": "https://github.com/drscrewdriver/dsh-context-compression-improved#readme",
   "bugs": {
-    "url": "https://github.com/WilliamShi666/dsh-context-compression-selector/issues"
+    "url": "https://github.com/drscrewdriver/dsh-context-compression-improved/issues"
   },
   "author": "WilliamShi666",
   "engines": {
