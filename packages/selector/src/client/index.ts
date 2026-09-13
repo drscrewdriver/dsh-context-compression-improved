@@ -1,5 +1,7 @@
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type { SlotCore } from '@deepseek-ai/dsh-client-ui-slots'
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import {
@@ -10,6 +12,20 @@ import {
 import { DEFAULT_CUSTOM_COMPRESSION_POLICY } from '../profiles.ts'
 import { decodeSettings } from './decode.ts'
 import { en, zh } from './locales.ts'
+
+/**
+ * Harness 0.1.5 mounts the web core's `slots` service on the client context
+ * but no longer ships a public type for it; declare the face this plugin
+ * consumes (same shape the dsh-plugin-template documents for 0.1.2+).
+ */
+interface SlotsService extends Pick<SlotCore, 'register'> {
+  inject(slot: string, register: () => () => void): () => void
+}
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    slots: SlotsService
+  }
+}
 
 export const inject = ['slots', 'locale', 'settingsScope']
 const NS = 'context-compression'

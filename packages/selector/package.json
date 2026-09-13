@@ -36,7 +36,8 @@
     "client": {
       "inject": [
         "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-store",
+        "@deepseek-ai/dsh-client-ui-session",
         "@deepseek-ai/dsh-client-ui-settings",
         "@deepseek-ai/dsh-client-ui-workspace"
       ],
@@ -64,7 +65,8 @@
   },
   "author": "WilliamShi666",
   "engines": {
-    "node": "^22.19.0 || >=24.0.0"
+    "node": "^22.19.0 || >=24.0.0",
+    "dsh": ">=0.1.5-alpha.1 <0.2.0-0"
   },
   "keywords": [
     "deepseek",
@@ -90,7 +92,8 @@
     "@deepseek-ai/dsh-command-compact": ">=0.1.1-rc.2 <0.2.0",
     "@deepseek-ai/dsh-compaction-basic": ">=0.1.1-rc.2 <0.2.0",
     "@deepseek-ai/dsh-client-locale": ">=0.1.1-rc.2 <0.2.0",
-    "@deepseek-ai/dsh-client-runtime": ">=0.1.1-rc.2 <0.2.0",
+    "@deepseek-ai/dsh-client-store": ">=0.1.2-rc.1 <0.2.0",
+    "@deepseek-ai/dsh-client-ui-session": ">=0.1.5-rc.2 <0.2.0",
     "@deepseek-ai/dsh-client-ui-primitives": ">=0.1.1-rc.2 <0.2.0",
     "@deepseek-ai/dsh-client-ui-settings": ">=0.1.1-rc.2 <0.2.0",
     "@deepseek-ai/dsh-client-ui-slots": ">=0.1.1-rc.2 <0.2.0",

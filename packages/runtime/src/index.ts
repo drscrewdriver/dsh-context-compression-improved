@@ -13,6 +13,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { createUserMessage, freezeMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, UserMessage } from '@deepseek-ai/dsh-llm'
+import { SessionSeq } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, ToolResultMessage } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-compaction'
@@ -593,8 +594,8 @@ export class ToolResultPruner extends Service {
       source: { kind: 'plugin', plugin: 'dsh-context-compression-improved-runtime' },
     })
     session.append('user/message', replacement, {
-      surfaceOp: { op: 'replace', start: checkpointSeq, end: checkpointSeq },
-      sourceEventSeqs: [checkpointSeq],
+      surfaceOp: { op: 'replace', startSeq: SessionSeq(checkpointSeq), endSeq: SessionSeq(checkpointSeq) },
+      sourceEventSeqs: [SessionSeq(checkpointSeq)],
     })
     emitCompressionAudit(this.ctx.logger, {
       schemaVersion: 1,
@@ -1818,7 +1819,8 @@ export class ToolResultPruner extends Service {
         || stubCount.tokens <= 0
         || tokensBefore - stubCount.tokens < policy.historyMinReclaimTokens) continue
       const heuristicTokens = shadowedSeqs.reduce((sum, seq) => sum + (heuristic.get(seq) ?? 0), 0)
-      const range = { start: assistantSeq, end: resultSeqs.at(-1) ?? assistantSeq }
+      const range = { start: SessionSeq(assistantSeq), end: SessionSeq(resultSeqs.at(-1) ?? assistantSeq) }
+      const surfaceRange = { op: 'replace' as const, startSeq: range.start, endSeq: range.end }
       if (!this.reserveTailTrimBoundaryAttempt(session)) {
         this.auditComponent(session, policy, 'tail-trim', 'pressure', 'skipped',
           'already-attempted-at-request-boundary', {
@@ -1836,7 +1838,7 @@ export class ToolResultPruner extends Service {
       let replacement: SessionEvent<'user/message'>
       try {
         replacement = session.append('user/message', tailTrimMessage(stub), {
-          surfaceOp: { op: 'replace', ...range },
+          surfaceOp: surfaceRange,
           sourceEventSeqs: [manifest.seq, ...shadowedSeqs],
         })
       } catch (error) {
@@ -1968,8 +1970,8 @@ export class ToolResultPruner extends Service {
       content: [{ ...result, content: plan.content }] as [typeof result],
     })
     const manifest = session.append('compaction/prune', {
-      shadowedRange: { start: candidate.seq, end: candidate.seq },
-      shadowedSeqs: [candidate.seq],
+      shadowedRange: { start: SessionSeq(candidate.seq), end: SessionSeq(candidate.seq) },
+      shadowedSeqs: [SessionSeq(candidate.seq)],
       shadowedTokenCount: candidate.shadowedHeuristicTokenCount,
     })
     let replacement: SessionEvent<'tool/result'>
@@ -1978,8 +1980,8 @@ export class ToolResultPruner extends Service {
         ...candidate.event.data,
         message,
       }, {
-        surfaceOp: { op: 'replace', start: candidate.seq, end: candidate.seq },
-        sourceEventSeqs: [candidate.seq],
+        surfaceOp: { op: 'replace', startSeq: SessionSeq(candidate.seq), endSeq: SessionSeq(candidate.seq) },
+        sourceEventSeqs: [SessionSeq(candidate.seq)],
       })
     } catch (error) {
       this.auditPublicationFailure(

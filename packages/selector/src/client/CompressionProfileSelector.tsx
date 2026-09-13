@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from 'react'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { IconChevronDownOutline14, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ContextCompressionLocaleKey } from './locales.ts'
@@ -42,15 +42,13 @@ export function ContextCompressionSettingsSection(props: CompressionProfileSelec
 }
 
 function SettingsCompressionProfileControls({
-  useCompression, useSessions, select, saveCustom, resetCustom, saveAutoCompact, saveCodeSkeleton,
+  useCompression, select, saveCustom, resetCustom, saveAutoCompact, saveCodeSkeleton,
   savePresetOptions, t,
 }: CompressionProfileSelectorProps) {
   const state = useCompression(snapshot => snapshot)
-  const currentPreset = useSessions((sessions) => {
-    const current = sessions.current
-    return current === undefined ? undefined : sessions.byId[current]?.agentPreset
-  })
-  const selectorAvailable = currentPreset !== 'minimal'
+  // Harness 0.1.5 dropped browser-side agentPreset from session summaries, so
+  // the old Minimal-preset gate has no data source; the selector stays enabled.
+  const selectorAvailable = true
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [draft, setDraft] = useState<CustomCompressionPolicyV3 | null>(null)
@@ -147,16 +145,13 @@ export function CompressionProfileSelector({
 }
 
 function CompressionProfileControls({
-  useCompression, useSessions, select, saveCustom, resetCustom, t, showCustomEditor,
+  useCompression, select, saveCustom, resetCustom, t, showCustomEditor,
 }: CompressionProfileSelectorProps & { showCustomEditor: boolean }) {
   const state = useCompression(snapshot => snapshot)
-  const currentPreset = useSessions((sessions) => {
-    const current = sessions.current
-    return current === undefined ? undefined : sessions.byId[current]?.agentPreset
-  })
-  // A profile is Host-global. A cold Session may not have reported a live
-  // capability yet, so only Minimal blocks initial configuration.
-  const contextCompressionAvailable = currentPreset !== 'minimal'
+  // Harness 0.1.5 dropped browser-side agentPreset from session summaries; see
+  // the section component note. Only Minimal used to block initial
+  // configuration, and that signal is no longer available client-side.
+  const contextCompressionAvailable = true
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)

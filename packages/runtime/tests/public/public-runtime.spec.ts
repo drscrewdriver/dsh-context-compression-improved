@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import {
-  CallId,
+  ToolCallId as CallId,
   createMessage,
   createUserMessage,
   createToolResultMessage,
@@ -18,16 +18,15 @@ import BasicCompactionEngine from '@deepseek-ai/dsh-compaction-basic'
 import SessionStore, {
   Session,
   SessionId,
+  SessionSeq,
   canonicalHeader,
 } from '@deepseek-ai/dsh-session'
 import {
   agentEvents,
-  Inbox,
   type Agent,
 } from '@deepseek-ai/dsh-agent'
 import {
   SettingsProvider,
-  settingsNamespace,
   type SettingsNamespace,
 } from '@deepseek-ai/dsh-settings'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -37,6 +36,7 @@ import { CompactionId } from '@deepseek-ai/dsh-compaction'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import * as SelectorHost from '../../../selector/src/index.ts'
 import * as RuntimeInvariant from '../../src/invariant.ts'
+import { sessionEvents } from '../../src/session-events.ts'
 import ToolResultPruner, {
   CONTEXT_COMPRESSION_SETTINGS_NAMESPACE,
   DEFAULT_CUSTOM_COMPRESSION_POLICY,
@@ -180,6 +180,7 @@ function appendToolTurn(
   }
   session.append('step/start', { turn, step: 1 })
   const assistant = session.append('assistant/message', {
+      stream: [],
     turn,
     step: 1,
     message: createMessage({
@@ -229,6 +230,7 @@ function appendToolBatchTurn(
   }
   session.append('step/start', { turn, step: 1 })
   const assistant = session.append('assistant/message', {
+      stream: [],
     turn,
     step: 1,
     message: createMessage({
@@ -267,12 +269,18 @@ function appendToolBatchTurn(
   return { assistantSeq: assistant.seq, resultSeqs }
 }
 
+// 0.1.5 removed the settingsNamespace() wrapper; namespaces are branded
+// strings validated at runtime by SettingsProvider.parse.
+const nsBrand = (value: string): SettingsNamespace => value as unknown as SettingsNamespace
+
 function stubAgent(ctx: Context, session: Session): Agent {
   return {
     id: session.id,
     options: {},
     session,
-    inbox: new Inbox(session, { inserted: () => {}, discarded: () => {}, claimed: () => {} }),
+    // 0.1.5 moved the durable Inbox behind the loop driver; the pruner only
+    // reads id/session, so an inert face is enough for the stub.
+    inbox: undefined as unknown as Agent['inbox'],
     status: 'idle',
     ctx,
     send: () => {},
@@ -350,10 +358,10 @@ describe('standalone runtime on published Harness APIs', () => {
     const result = pruner.pruneSession(session, { stage: 'pressure' })
 
     expect(result.pruned).toHaveLength(1)
-    const manifest = session.events.at(-2)
-    const replacement = session.events.at(-1)
+    const manifest = sessionEvents(session).at(-2)
+    const replacement = sessionEvents(session).at(-1)
     expect(manifest?.type).toBe('compaction/prune')
-    expect(session.events.some(event => event.type === ('compaction/group-trim' as string))).toBe(false)
+    expect(sessionEvents(session).some(event => event.type === ('compaction/group-trim' as string))).toBe(false)
     expect(replacement?.type).toBe('tool/result')
     if (replacement?.type !== 'tool/result') throw new Error('Native prune did not append a tool result replacement')
     expect(replacement.surfaceOp).toEqual({
@@ -521,7 +529,7 @@ describe('standalone runtime on published Harness APIs', () => {
     await ctx.plugin(TestSettings).await()
     await ctx.plugin(SelectorHost).await()
     const audit = captureAudit(ctx)
-    const namespace = settingsNamespace(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE)
+    const namespace = nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE)
 
     // A high threshold delays the micro-compact last-chance gate past the old
     // fixed 0.7 ratio: pressure between 0.7*C and D must NOT age history.
@@ -557,7 +565,7 @@ describe('standalone runtime on published Harness APIs', () => {
     await ctx.plugin(TestSettings).await()
     await ctx.plugin(SelectorHost).await()
     const audit = captureAudit(ctx)
-    const namespace = settingsNamespace(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE)
+    const namespace = nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE)
 
     // A low threshold pulls the micro-compact deadline below the old fixed
     // 0.7 ratio: pressure between D and 0.7*C must age history now.
@@ -591,7 +599,7 @@ describe('standalone runtime on published Harness APIs', () => {
     await ctx.plugin(TestSettings).await()
     await ctx.plugin(SelectorHost).await()
     const audit = captureAudit(ctx)
-    const namespace = settingsNamespace(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE)
+    const namespace = nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE)
     // The preset overlay captured 70% into this generation's deployment
     // config; the user then moved the global setting to 90 before the first
     // prune. Auto Compact and micro compact must both stay on 70%.
@@ -627,7 +635,7 @@ describe('standalone runtime on published Harness APIs', () => {
     await ctx.plugin(TestSettings).await()
     await ctx.plugin(SelectorHost).await()
     const audit = captureAudit(ctx)
-    const namespace = settingsNamespace(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE)
+    const namespace = nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE)
     // A hand-edited store can surface a document the schema rejects (unknown
     // top-level key). The runtime must not fall back to a lossy-capable
     // profile: the session freezes effectively off and keeps every original
@@ -677,7 +685,7 @@ describe('standalone runtime on published Harness APIs', () => {
     await ctx.plugin(TestSettings).await()
     await ctx.plugin(SelectorHost).await()
     const audit = captureAudit(ctx)
-    const namespace = settingsNamespace(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE)
+    const namespace = nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE)
     // Schemastery `.default(...)` would silently replace these present-but-null
     // sections with the balanced/default-v3 policy; the runtime must reject the
     // document and freeze the session losslessly instead.
@@ -714,7 +722,7 @@ describe('standalone runtime on published Harness APIs', () => {
     await ctx.plugin(TestSettings).await()
     await ctx.plugin(SelectorHost).await()
     const audit = captureAudit(ctx)
-    const namespace = settingsNamespace(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE)
+    const namespace = nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE)
     const malformed = {
       profile: 'balanced' as const,
       custom: structuredClone(DEFAULT_CUSTOM_COMPRESSION_POLICY),
@@ -814,7 +822,7 @@ describe('standalone runtime on published Harness APIs', () => {
     await ctx.plugin(TestSettings).await()
     await ctx.plugin(SelectorHost).await()
     const audit = captureAudit(ctx)
-    const namespace = settingsNamespace(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE)
+    const namespace = nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE)
     await ctx.settings.update(namespace, { autoCompact: { thresholdPercent: 73 } })
     await ctx.plugin(ToolResultPruner, { profile: 'balanced' }).await()
     const session = Session.create(SessionId('public-autocompact-coordination'))
@@ -911,7 +919,7 @@ describe('standalone runtime on published Harness APIs', () => {
     await ctx.plugin(TestSettings).await()
     await ctx.plugin(SelectorHost).await()
     const audit = captureAudit(ctx)
-    const namespace = settingsNamespace(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE)
+    const namespace = nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE)
     await ctx.plugin(ToolResultPruner, { profile: 'balanced' }).await()
 
     const first = Session.create(SessionId('public-autocompact-freeze-first'))
@@ -975,6 +983,7 @@ describe('standalone runtime on published Harness APIs', () => {
     }), { surfaceOp: 'append' })
     session.append('step/start', { turn: 1, step: 1 })
     session.append('assistant/message', {
+      stream: [],
       turn: 1,
       step: 1,
       message: createMessage({
@@ -1002,7 +1011,7 @@ describe('standalone runtime on published Harness APIs', () => {
 
     const before = measureForCompaction(ctx, session)
     const toolResultTokens = before.measuredNodes
-      .filter(node => session.events[node.seq]?.type === 'tool/result')
+      .filter(node => sessionEvents(session)[node.seq]?.type === 'tool/result')
       .reduce((sum, node) => sum + (node.count.kind === 'exact-tokenizer' ? node.count.tokens : 0), 0)
     // Deadline D = 7000 is reached by the complete request, not by the tool
     // results, which stay far below every trigger in force.
@@ -1175,6 +1184,7 @@ describe('standalone runtime on published Harness APIs', () => {
     session.append('turn/start', { turn })
     session.append('step/start', { turn, step: 1 })
     session.append('assistant/message', {
+      stream: [],
       turn,
       step: 1,
       message: createMessage({
@@ -1224,6 +1234,7 @@ describe('standalone runtime on published Harness APIs', () => {
     })
     onlyUnsafe.append('step/start', { turn: 1, step: 1 })
     onlyUnsafe.append('assistant/message', {
+      stream: [],
       turn: 1,
       step: 1,
       message: createMessage({
@@ -1435,7 +1446,7 @@ describe('standalone runtime on published Harness APIs', () => {
     }
     custom.prefixPolicy = 'pressure-break'
     custom.tailTrim = { enabled: false, trigger: 700_000 }
-    await ctx.settings.update(settingsNamespace(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE), {
+    await ctx.settings.update(nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE), {
       profile: 'custom',
       custom,
     })
@@ -1538,7 +1549,7 @@ describe('standalone runtime on published Harness APIs', () => {
       historyMinReclaimTokens: 1,
     }).await()
 
-    const agent = ctx.agentLoop.create(SessionId('public-history-capacity-request-boundary'), {
+    const agent = await ctx.agentLoop.create(SessionId('public-history-capacity-request-boundary'), {
       provider: 'deepseek',
       model: MODEL,
     })
@@ -1615,7 +1626,7 @@ describe('standalone runtime on published Harness APIs', () => {
     firstCustom.aggregate.enabled = false
     firstCustom.history.enabled = false
     if (firstCustom.version === 3) firstCustom.tailTrim.enabled = false
-    const namespace = settingsNamespace(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE)
+    const namespace = nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE)
     await ctx.settings.update(namespace, { profile: 'custom', custom: firstCustom })
     await ctx.plugin(ToolResultPruner, {
       profile: 'off',
@@ -1681,7 +1692,7 @@ describe('standalone runtime on published Harness APIs', () => {
     policy.history.keepRecentTokens = 0
     policy.history.minReclaim = 1
     policy.tailTrim = { enabled: true, trigger: 8 }
-    await ctx.settings.update(settingsNamespace(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE), {
+    await ctx.settings.update(nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE), {
       profile: 'custom',
       custom: policy,
     })
@@ -1697,7 +1708,7 @@ describe('standalone runtime on published Harness APIs', () => {
 
     pruner.pruneSession(session, { stage: 'pressure' })
 
-    const manifest = session.events.findLast(event => event.type === 'compaction/prune')
+    const manifest = sessionEvents(session).findLast(event => event.type === 'compaction/prune')
     expect(manifest?.type).toBe('compaction/prune')
     if (manifest?.type !== 'compaction/prune') throw new Error('TailTrim did not publish a standard prune')
     const publication = validatePublishedTailTrim(session, manifest.seq)
@@ -1732,7 +1743,7 @@ describe('standalone runtime on published Harness APIs', () => {
     expect(recoveredText).toContain('kind: tailtrim-group')
     expect(recoveredText).toContain('old candidate result')
 
-    const persistedEvents = JSON.parse(JSON.stringify(session.events))
+    const persistedEvents = JSON.parse(JSON.stringify(sessionEvents(session)))
     const replay = Session.create(session.id, persistedEvents)
     const replayPublication = validatePublishedTailTrim(replay, manifest.seq)
     expect(replayPublication?.ref).toBe(publication?.ref)
@@ -1776,7 +1787,7 @@ describe('standalone runtime on published Harness APIs', () => {
       policy.history.keepRecentTokens = 0
       policy.history.minReclaim = options.minReclaim
       policy.tailTrim = { enabled: true, trigger: options.trigger }
-      await ctx.settings.update(settingsNamespace(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE), {
+      await ctx.settings.update(nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE), {
         profile: 'custom',
         custom: policy,
       })
@@ -1859,7 +1870,7 @@ describe('standalone runtime on published Harness APIs', () => {
     policy.history.keepRecentTokens = 0
     policy.history.minReclaim = 1
     policy.tailTrim = { enabled: true, trigger: 8 }
-    await ctx.settings.update(settingsNamespace(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE), {
+    await ctx.settings.update(nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE), {
       profile: 'custom',
       custom: policy,
     })
@@ -1884,21 +1895,21 @@ describe('standalone runtime on published Harness APIs', () => {
 
     expect(() => ctx.toolResultPruner.pruneSession(session, { stage: 'pressure' })).not.toThrow()
     append.mockRestore()
-    expect(session.events.at(-1)?.type).toBe('compaction/prune')
+    expect(sessionEvents(session).at(-1)?.type).toBe('compaction/prune')
     expect(session.surface.nodes).toEqual(beforeSurface)
     expect(rewrites(audit.records())).toHaveLength(0)
     expect(audit.records()).toContainEqual(expect.objectContaining({
       kind: 'failure',
       operation: 'publication',
       component: 'tail-trim',
-      manifestSeq: session.events.length - 1,
+      manifestSeq: sessionEvents(session).length - 1,
     }))
 
     expect(() => session.append('turn/end', {
       turn: 3,
       reason: { kind: 'completed' },
     })).not.toThrow()
-    const persisted = JSON.parse(JSON.stringify(session.events))
+    const persisted = JSON.parse(JSON.stringify(sessionEvents(session)))
 
     const resumedCtx = new Context()
     activeContexts.push(resumedCtx)
@@ -1919,17 +1930,17 @@ describe('standalone runtime on published Harness APIs', () => {
     const session = ctx.sessions.create(SessionId('public-malformed-companion'))
     const source = appendToolTurn(session, 1, 'source remains intact', false)
     session.append('compaction/prune', {
-      shadowedRange: { start: source.resultSeq, end: source.resultSeq },
-      shadowedSeqs: [source.resultSeq],
+      shadowedRange: { start: SessionSeq(source.resultSeq), end: SessionSeq(source.resultSeq) },
+      shadowedSeqs: [SessionSeq(source.resultSeq)],
       shadowedTokenCount: 1,
     })
-    const result = session.events[source.resultSeq]
+    const result = sessionEvents(session)[source.resultSeq]
     if (result?.type !== 'tool/result') throw new Error('missing source result')
     const before = session.seq
 
     expect(() => session.append('tool/result', result.data, {
-      surfaceOp: { op: 'replace', start: source.assistantSeq, end: source.assistantSeq },
-      sourceEventSeqs: [source.resultSeq],
+      surfaceOp: { op: 'replace', startSeq: SessionSeq(source.assistantSeq), endSeq: SessionSeq(source.assistantSeq) },
+      sourceEventSeqs: [SessionSeq(source.resultSeq)],
     })).toThrow(/sourceEventSeqs|does not replace compaction\/prune range/)
     expect(session.seq).toBe(before)
   })
@@ -1942,7 +1953,7 @@ describe('standalone runtime on published Harness APIs', () => {
     const summary = session.append('compaction/summary', {
       compactionId: CompactionId('public-native-auto'),
       summary: [{ type: 'text', text: 'summary' }],
-      shadowedRange: { start: 0, end: 0 },
+      shadowedRange: { start: SessionSeq(0), end: SessionSeq(0) },
       shadowedSeqs: [],
       shadowedTokenCount: 321,
       provider: 'deepseek',
@@ -1986,7 +1997,7 @@ describe('standalone runtime on published Harness APIs', () => {
       maxTokens: 100,
       compactionRetries: 0,
     })
-    const agent = ctx.agentLoop.create(SessionId('public-native-auto-real'), {
+    const agent = await ctx.agentLoop.create(SessionId('public-native-auto-real'), {
       provider: 'deepseek',
       model: MODEL,
     })
@@ -2003,7 +2014,7 @@ describe('standalone runtime on published Harness APIs', () => {
     await agent.whenIdle()
 
     expect(rewrites(audit.records())).toHaveLength(0)
-    const summary = agent.session.events.findLast(event => event.type === 'compaction/summary')
+    const summary = agent.sessionEvents(session).findLast(event => event.type === 'compaction/summary')
     expect(summary?.type).toBe('compaction/summary')
     expect(audit.records()).toContainEqual(expect.objectContaining({
       kind: 'native-auto-compact',
@@ -2045,7 +2056,7 @@ describe('standalone runtime on published Harness APIs', () => {
     }
     policy.prefixPolicy = 'pressure-break'
     policy.tailTrim = { enabled: true, trigger: 8 }
-    await ctx.settings.update(settingsNamespace(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE), {
+    await ctx.settings.update(nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE), {
       profile: 'custom',
       custom: policy,
     })
@@ -2100,7 +2111,7 @@ describe('standalone runtime on published Harness APIs', () => {
       () => Promise.resolve({ kind: 'enter' as const, messages: [] }),
     )
     expect(decision).toEqual({ kind: 'enter', messages: [] })
-    const summary = session.events.findLast(event => event.type === 'compaction/summary')
+    const summary = sessionEvents(session).findLast(event => event.type === 'compaction/summary')
     expect(summary?.type).toBe('compaction/summary')
 
     const records = audit.records()
@@ -2123,7 +2134,7 @@ describe('standalone runtime on published Harness APIs', () => {
     expect(firstIndex('history')).toBeLessThan(firstIndex('tail-trim'))
     expect(records.findIndex(record => record.kind === 'native-auto-compact'))
       .toBeGreaterThan(firstIndex('tail-trim'))
-    expect(session.events.some(event => event.type === ('compaction/group-trim' as string))).toBe(false)
+    expect(sessionEvents(session).some(event => event.type === ('compaction/group-trim' as string))).toBe(false)
   })
 
   it('compresses text tool results exactly in a vision session that also carries a user image', async () => {
@@ -2155,6 +2166,7 @@ describe('standalone runtime on published Harness APIs', () => {
     }), { surfaceOp: 'append' })
     session.append('step/start', { turn: 1, step: 1 })
     session.append('assistant/message', {
+      stream: [],
       turn: 1,
       step: 1,
       message: createMessage({
@@ -2222,6 +2234,7 @@ describe('standalone runtime on published Harness APIs', () => {
     })
     session.append('step/start', { turn: 1, step: 1 })
     session.append('assistant/message', {
+      stream: [],
       turn: 1,
       step: 1,
       message: createMessage({
@@ -2253,7 +2266,7 @@ describe('standalone runtime on published Harness APIs', () => {
     expect(fresh.pruned).toHaveLength(0)
     expect(pressure.pruned).toHaveLength(0)
     // The original image-bearing result stays on the surface untouched.
-    const original = session.events[imageResult.seq]
+    const original = sessionEvents(session)[imageResult.seq]
     expect(original?.type).toBe('tool/result')
     expect(audit.records()).toContainEqual(expect.objectContaining({
       kind: 'component-evaluation',
@@ -2460,7 +2473,7 @@ describe('standalone runtime on published Harness APIs', () => {
     await ctx.plugin(TestSettings).await()
     await ctx.plugin(SelectorHost).await()
     const audit = captureAudit(ctx)
-    await ctx.settings.update(settingsNamespace(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE), {
+    await ctx.settings.update(nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE), {
       profile: 'custom',
       custom: {
         version: 3,
@@ -2481,6 +2494,7 @@ describe('standalone runtime on published Harness APIs', () => {
     })
     session.append('step/start', { turn: 1, step: 1 })
     session.append('assistant/message', {
+      stream: [],
       turn: 1,
       step: 1,
       message: createMessage({
@@ -2511,7 +2525,7 @@ describe('standalone runtime on published Harness APIs', () => {
     expect(result.pruned).toHaveLength(0)
     expect(rewrites(audit.records()).some(record =>
       record.sessionId === String(session.id) && record.component === 'tail-trim')).toBe(false)
-    expect(session.events.some(event =>
+    expect(sessionEvents(session).some(event =>
       event.type === 'tool/result'
       && event.data.message.content.some(block => block.type === 'tool-result'
         && block.content.some(inner => inner.type === 'image')))).toBe(true)

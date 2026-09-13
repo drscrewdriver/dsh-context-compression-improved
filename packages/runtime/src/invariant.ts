@@ -21,8 +21,8 @@ function resemblesCompanion(prune: PruneEvent, event: SessionEvent): boolean {
   if ((event.type !== 'tool/result' && event.type !== 'user/message')
     || typeof event.surfaceOp !== 'object') return false
   const sources = new Set(event.sourceEventSeqs ?? [])
-  return (event.surfaceOp.start === prune.data.shadowedRange.start
-      && event.surfaceOp.end === prune.data.shadowedRange.end)
+  return (event.surfaceOp.startSeq === prune.data.shadowedRange.start
+      && event.surfaceOp.endSeq === prune.data.shadowedRange.end)
     || prune.data.shadowedSeqs.some(seq => sources.has(seq))
 }
 
@@ -39,11 +39,11 @@ function validateCompanion(
   }
   const { shadowedRange, shadowedSeqs } = prune.data
   if (shadowedSeqs.length === 0
-    || shadowedSeqs[0] !== shadowedRange.start
-    || shadowedSeqs.at(-1) !== shadowedRange.end) {
+    || shadowedSeqs[0] !== Number(shadowedRange.start)
+    || shadowedSeqs.at(-1) !== Number(shadowedRange.end)) {
     fail(`compaction/prune at seq ${prune.seq} has a shadowed range inconsistent with shadowedSeqs`)
   }
-  if (event.surfaceOp.start !== shadowedRange.start || event.surfaceOp.end !== shadowedRange.end) {
+  if (event.surfaceOp.startSeq !== shadowedRange.start || event.surfaceOp.endSeq !== shadowedRange.end) {
     fail(`replacement at seq ${event.seq} does not replace compaction/prune range ${shadowedRange.start}-${shadowedRange.end}`)
   }
   const sources = new Set(event.sourceEventSeqs ?? [])

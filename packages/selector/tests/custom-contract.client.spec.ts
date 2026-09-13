@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { ClientContext, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ClientContext } from '@deepseek-ai/cordis'
+import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import {
   DEFAULT_CUSTOM_COMPRESSION_POLICY,
   isCustomCompressionPolicy,

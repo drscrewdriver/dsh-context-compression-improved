@@ -69,8 +69,8 @@ export function validatePublishedTailTrim(
   if (manifest?.type !== 'compaction/prune'
     || manifest.data.shadowedSeqs.length < 2
     || manifest.data.shadowedSeqs.length > MAX_ROOTS
-    || manifest.data.shadowedSeqs[0] !== manifest.data.shadowedRange.start
-    || manifest.data.shadowedSeqs.at(-1) !== manifest.data.shadowedRange.end
+    || manifest.data.shadowedSeqs[0] !== Number(manifest.data.shadowedRange.start)
+    || manifest.data.shadowedSeqs.at(-1) !== Number(manifest.data.shadowedRange.end)
     || new Set(manifest.data.shadowedSeqs).size !== manifest.data.shadowedSeqs.length) return null
   const replacement = events[manifestSeq + 1]
   if (replacement?.type !== 'user/message'
@@ -79,8 +79,8 @@ export function validatePublishedTailTrim(
     || replacement.data.source.plugin !== 'dsh-context-compression-improved-runtime'
     || replacement.surfaceOp === undefined
     || replacement.surfaceOp === 'append'
-    || replacement.surfaceOp.start !== manifest.data.shadowedRange.start
-    || replacement.surfaceOp.end !== manifest.data.shadowedRange.end
+    || replacement.surfaceOp.startSeq !== manifest.data.shadowedRange.start
+    || replacement.surfaceOp.endSeq !== manifest.data.shadowedRange.end
     || !sameNumbers(
       replacement.sourceEventSeqs,
       [manifest.seq, ...manifest.data.shadowedSeqs],
