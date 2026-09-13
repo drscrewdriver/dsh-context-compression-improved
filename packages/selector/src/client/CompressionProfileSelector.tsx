@@ -367,12 +367,55 @@ interface EstimatorControlsProps {
  * (never rendered back) and the whole card is advisory — an unconfigured or
  * failing endpoint simply keeps every consumer on its rule-only fallback.
  */
+interface CatalogModelEntry { readonly id: string, readonly name: string }
+interface CatalogProviderEntry { readonly id: string, readonly name: string, readonly models: readonly CatalogModelEntry[], readonly error?: string }
+interface EstimatorCatalogBody {
+  readonly ok?: boolean
+  readonly providers?: readonly CatalogProviderEntry[]
+  readonly selection?: { readonly provider: string, readonly model: string }
+}
+
+// 0.1.1/0.1.2 客户端 API 前缀是 /endpoint（0.1.5 起改为 /api）：宿主两条路径都
+// 注册了，这里按宿主世代依次尝试，先命中哪个用哪个。
+const ESTIMATOR_CATALOG_ROUTES = [
+  '/endpoint/dsh-context-compression-improved/estimator-catalog',
+  '/api/dsh-context-compression-improved/estimator-catalog',
+]
+
 function EstimatorControls({ options, disabled, save, settle, t }: EstimatorControlsProps) {
   const [keyDraft, setKeyDraft] = useState('')
   const [baseUrl, setBaseUrl] = useState(options.estimatorBaseUrl ?? '')
   const [model, setModel] = useState(options.estimatorModel ?? '')
   const [provider, setProvider] = useState(options.estimatorProvider ?? '')
   const mode = options.estimatorMode ?? ''
+  // Host-mode dropdown source: the live provider/model-group catalog served by
+  // the runtime's estimator-catalog route (dsh-perm-gate receiver pattern).
+  // Empty catalog (route missing / llm service absent) falls back to the
+  // manual text inputs so nothing breaks on hosts without the webServer.
+  const [catalog, setCatalog] = useState<EstimatorCatalogBody | undefined>()
+  useEffect(() => {
+    if (mode !== 'host') return
+    let alive = true
+    const load = async (routes: readonly string[]): Promise<EstimatorCatalogBody | undefined> => {
+      for (const route of routes) {
+        try {
+          const response = await fetch(route, { headers: { 'cache-control': 'no-cache' } })
+          if (response.ok) return (await response.json()) as EstimatorCatalogBody
+        } catch {
+          // try the next prefix
+        }
+      }
+      return undefined
+    }
+    load(ESTIMATOR_CATALOG_ROUTES).then((body) => {
+      if (alive) setCatalog(body)
+    })
+    return () => { alive = false }
+  }, [mode])
+  const hostProviders = catalog?.providers ?? []
+  const hostProvider = hostProviders.find(entry => entry.id === (options.estimatorProvider ?? ''))
+    ?? hostProviders.find(entry => entry.id === catalog?.selection?.provider)
+  const hostModels = hostProvider?.models ?? []
   const commit = (patch: Partial<PresetOptionsSettings>) => {
     settle(() => save({ ...patch, ...(keyDraft.trim() === '' ? {} : { estimatorApiKey: keyDraft.trim() }) }))
   }
@@ -395,17 +438,51 @@ function EstimatorControls({ options, disabled, save, settle, t }: EstimatorCont
       {mode === '' ? null : (
         <>
           {mode === 'host' ? (
-            <label className={css.field}>
-              <span>{t('estimator.provider')}</span>
-              <input
-                type="text"
-                value={provider}
-                disabled={disabled}
-                placeholder={t('estimator.provider.placeholder')}
-                onChange={(event) => { setProvider(event.currentTarget.value) }}
-                onBlur={() => { if (provider !== (options.estimatorProvider ?? '')) commit({ estimatorProvider: provider }) }}
-              />
-            </label>
+            hostProviders.length > 0 ? (
+              <>
+                <label className={css.field}>
+                  <span>{t('estimator.provider')}</span>
+                  <select
+                    value={options.estimatorProvider ?? ''}
+                    disabled={disabled}
+                    onChange={(event) => { commit({ estimatorProvider: event.currentTarget.value, estimatorModel: '' }) }}
+                  >
+                    <option value="">{t('estimator.followHost')}</option>
+                    {hostProviders.map(entry => (
+                      <option key={entry.id} value={entry.id}>{entry.name === '' ? entry.id : entry.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className={css.field}>
+                  <span>{t('estimator.model')}</span>
+                  <select
+                    value={options.estimatorModel ?? ''}
+                    disabled={disabled}
+                    onChange={(event) => { commit({ estimatorModel: event.currentTarget.value }) }}
+                  >
+                    <option value="">{t('estimator.followHost')}</option>
+                    {hostModels.map(entry => (
+                      <option key={entry.id} value={entry.id}>{entry.name}</option>
+                    ))}
+                  </select>
+                </label>
+                {hostProvider?.error === undefined ? null : (
+                  <p className={css.customNote}>{String(hostProvider.error)}</p>
+                )}
+              </>
+            ) : (
+              <label className={css.field}>
+                <span>{t('estimator.provider')}</span>
+                <input
+                  type="text"
+                  value={provider}
+                  disabled={disabled}
+                  placeholder={t('estimator.provider.placeholder')}
+                  onChange={(event) => { setProvider(event.currentTarget.value) }}
+                  onBlur={() => { if (provider !== (options.estimatorProvider ?? '')) commit({ estimatorProvider: provider }) }}
+                />
+              </label>
+            )
           ) : (
             <label className={css.field}>
               <span>{t('estimator.baseUrl')}</span>
