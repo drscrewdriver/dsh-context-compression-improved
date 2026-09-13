@@ -2228,17 +2228,47 @@ export class ToolResultPruner extends Service {
    * is missing (same runtime detection as dsh-perm-gate's routes).
    */
   private registerEstimatorCatalogRoute(ctx: Context): void {
-    let webServer: unknown
-    try {
-      webServer = ctx.get('webServer' as never)
-    } catch {
-      webServer = undefined
+    // webServer often activates AFTER this plugin: attempt immediately, then
+    // poll until the service appears (or the plugin unmounts). Registration is
+    // best effort — its absence only degrades the card to manual inputs.
+    let settled = false
+    const attempt = (): (() => void) | undefined => {
+      if (settled) return undefined
+      let webServer: unknown
+      try {
+        webServer = ctx.get('webServer' as never)
+      } catch {
+        webServer = undefined
+      }
+      const register = (webServer as { register?: unknown } | undefined)?.register
+      if (typeof register !== 'function') return undefined
+      settled = true
+      return this.registerEstimatorCatalogHandler(ctx, register as (
+        spec: { kind: 'exact', path: string, handler: (req: unknown, res: unknown) => void },
+      ) => () => void)
     }
-    const register = (webServer as { register?: unknown } | undefined)?.register
-    if (typeof register !== 'function') {
-      ctx.logger?.warn?.('[dsh-context-compression-improved] webServer service unavailable — estimator-catalog route not registered')
+    const immediate = attempt()
+    if (immediate !== undefined) {
+      ctx.effect(() => immediate, 'dsh-context-compression-improved: estimator-catalog route')
       return
     }
+    const timer = setInterval(() => {
+      const late = attempt()
+      if (late !== undefined) {
+        clearInterval(timer)
+        ctx.logger?.info?.('[dsh-context-compression-improved] estimator-catalog route registered on late webServer activation')
+      }
+    }, 2_000)
+    ctx.effect(() => () => {
+      settled = true
+      clearInterval(timer)
+    }, 'dsh-context-compression-improved: estimator-catalog route retry')
+  }
+
+  private registerEstimatorCatalogHandler(
+    ctx: Context,
+    register: (spec: { kind: 'exact', path: string, handler: (req: unknown, res: unknown) => void }) => () => void,
+  ): (() => void) {
     const deps = (): EstimatorCatalogDeps => {
       let llm: EstimatorCatalogDeps['llm']
       let currentSelection: EstimatorCatalogDeps['currentSelection']
@@ -2280,9 +2310,7 @@ export class ToolResultPruner extends Service {
         )
       },
     })
-    if (typeof off === 'function') {
-      ctx.effect(() => off, 'dsh-context-compression-improved: estimator-catalog route')
-    }
+    return typeof off === 'function' ? off : () => {}
   }
 
   private auditFailure(

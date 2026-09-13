@@ -392,14 +392,29 @@ function EstimatorControls({ options, disabled, save, settle, t }: EstimatorCont
   useEffect(() => {
     if (mode !== 'host') return
     let alive = true
-    fetch(ESTIMATOR_CATALOG_ROUTE, { headers: { 'cache-control': 'no-cache' } })
-      .then(async (response) => (response.ok ? (await response.json()) as EstimatorCatalogBody : undefined))
-      .then((body) => {
-        if (alive) setCatalog(body)
+    // The runtime registers the catalog route on late webServer activation;
+    // poll briefly so the dropdowns appear without reopening the panel.
+    let attempts = 0
+    const load = async (): Promise<EstimatorCatalogBody | undefined> => {
+      try {
+        const response = await fetch(ESTIMATOR_CATALOG_ROUTE, { headers: { 'cache-control': 'no-cache' } })
+        return response.ok ? (await response.json()) as EstimatorCatalogBody : undefined
+      } catch {
+        return undefined
+      }
+    }
+    const tick = (): void => {
+      attempts += 1
+      void load().then((body) => {
+        if (!alive) return
+        if (body !== undefined && (body.providers?.length ?? 0) > 0) {
+          setCatalog(body)
+          return
+        }
+        if (attempts < 10) setTimeout(tick, 3_000)
       })
-      .catch(() => {
-        if (alive) setCatalog(undefined)
-      })
+    }
+    tick()
     return () => { alive = false }
   }, [mode])
   const hostProviders = catalog?.providers ?? []
