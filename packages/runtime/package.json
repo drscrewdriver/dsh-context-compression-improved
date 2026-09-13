@@ -44,7 +44,8 @@
   },
   "author": "WilliamShi666",
   "engines": {
-    "node": "^22.19.0 || >=24.0.0"
+    "node": "^22.19.0 || >=24.0.0",
+    "dsh": ">=0.1.5-alpha.1 <0.2.0-0"
   },
   "keywords": [
     "deepseek",

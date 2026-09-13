@@ -1,4 +1,4 @@
-import type { CallId } from '@deepseek-ai/dsh-llm'
+import type { ToolCallId as CallId } from '@deepseek-ai/dsh-llm'
 
 /** User-facing mixed strategy profile. */
 export const COMPRESSION_PROFILES = [

@@ -13,5 +13,6 @@ export function sessionEvents(session: Session): readonly SessionEvent[] {
   const snapshot = (session as unknown as {
     snapshotEvents?: () => readonly SessionEvent[]
   }).snapshotEvents
-  return typeof snapshot === 'function' ? snapshot.call(session) : session.events
+  if (typeof snapshot === 'function') return snapshot.call(session)
+  return (session as unknown as { events?: readonly SessionEvent[] }).events ?? []
 }
