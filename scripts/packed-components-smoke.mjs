@@ -3,20 +3,21 @@ import { createRequire } from 'node:module'
 import { dirname, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
-import { agentEvents, Inbox } from '@deepseek-ai/dsh-agent'
+import { agentEvents } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import BasicCompactionEngine from '@deepseek-ai/dsh-compaction-basic'
 import LlmRuntime, {
-  CallId,
+  ToolCallId as CallId,
   createMessage,
   createUserMessage,
   createToolResultMessage,
   LlmAdapter,
 } from '@deepseek-ai/dsh-llm'
-import SessionStore, { SessionId, canonicalHeader } from '@deepseek-ai/dsh-session'
-import { SettingsProvider, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import SessionStore, { Session, SessionId, canonicalHeader } from '@deepseek-ai/dsh-session'
+import { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 
@@ -112,6 +113,7 @@ function appendToolTurn(session, turn, text, closeTurn, userText, provider = 'de
   }
   session.append('step/start', { turn, step: 1 })
   const assistant = session.append('assistant/message', {
+      stream: [],
     turn,
     step: 1,
     message: createMessage({
@@ -155,6 +157,7 @@ function appendToolBatchTurn(session, turn, texts, closeTurn, userText) {
   }
   session.append('step/start', { turn, step: 1 })
   session.append('assistant/message', {
+      stream: [],
     turn,
     step: 1,
     message: createMessage({
@@ -188,7 +191,9 @@ function stubAgent(ctx, session) {
     id: session.id,
     options: {},
     session,
-    inbox: new Inbox(session, { inserted() {}, discarded() {}, claimed() {} }),
+    // 0.1.5 moved the durable Inbox behind the loop driver; the pruner only
+  // reads id/session, so an inert face is enough for the stub.
+  inbox: undefined,
     status: 'idle',
     ctx,
     send() {},
@@ -205,11 +210,12 @@ const ctx = new Context()
 try {
   await ctx.plugin(MemorySettings).await()
   await ctx.plugin(SelectorHost).await()
-  await ctx.plugin(LlmRuntime)
-  await ctx.plugin(SessionStore)
-  await ctx.plugin(SystemPrompt)
-  await ctx.plugin(ToolRuntime)
-  await ctx.plugin(TokenMeter)
+  await ctx.plugin(LlmRuntime).await()
+  await ctx.plugin(SessionStore).await()
+  await ctx.plugin(SystemPrompt).await()
+  await ctx.plugin(ToolRuntime).await()
+  await ctx.plugin(SessionProjectionRegistry).await()
+  await ctx.plugin(TokenMeter).await()
   const audit = captureAudit(ctx)
 
   const policy = structuredClone(Runtime.DEFAULT_CUSTOM_COMPRESSION_POLICY)
@@ -228,7 +234,7 @@ try {
   }
   policy.prefixPolicy = 'pressure-break'
   policy.tailTrim = { enabled: true, trigger: 8 }
-  const namespace = settingsNamespace(Runtime.CONTEXT_COMPRESSION_SETTINGS_NAMESPACE)
+  const namespace = Runtime.CONTEXT_COMPRESSION_SETTINGS_NAMESPACE
   await ctx.settings.update(namespace, { profile: 'custom', custom: policy })
   await ctx.plugin(Runtime.default, {
     profile: 'native',
@@ -238,7 +244,7 @@ try {
     tailChars: 8,
   }).await()
 
-  const session = ctx.sessions.create(SessionId('packed-components-full-pipeline'))
+  const session = Session.create(SessionId('packed-components-full-pipeline'))
   appendToolTurn(session, 1, 'packed Fresh '.repeat(600), false, 'run packed Fresh')
   ctx.toolResultPruner.pruneSession(session, { stage: 'fresh', freshTurn: 1, freshStep: 1 })
   session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
@@ -273,7 +279,7 @@ try {
   assert(recoveredText.includes('kind: tailtrim-group'),
     'installed TailTrim recovery did not return a TailTrim group')
   const tailSourcePayloads = tail.sourceSeqs
-    .map(seq => session.events[seq])
+    .map(seq => session.snapshotEvents()[seq])
     .filter(event => event !== undefined)
     .map(event => JSON.stringify(event))
   const recoveredMarker = [
@@ -301,7 +307,7 @@ try {
   capacityPolicy.tailTrim.enabled = false
   await ctx.settings.update(namespace, { profile: 'custom', custom: capacityPolicy })
 
-  const inactiveCapacity = ctx.sessions.create(SessionId('packed-history-capacity-inactive'))
+  const inactiveCapacity = Session.create(SessionId('packed-history-capacity-inactive'))
   appendToolTurn(inactiveCapacity, 1, 'packed capacity inactive '.repeat(600), true)
   appendToolTurn(inactiveCapacity, 2, 'packed newest protected result', true)
   inactiveCapacity.append('request/context', {
@@ -319,7 +325,7 @@ try {
     && inactiveCapacityAudit.historyMode === 'capacity-pressure',
   'installed History did not prove the inactive capacity-pressure gate')
 
-  const activeCapacity = ctx.sessions.create(SessionId('packed-history-capacity-active'))
+  const activeCapacity = Session.create(SessionId('packed-history-capacity-active'))
   appendToolTurn(activeCapacity, 1, 'packed capacity active '.repeat(600), true)
   appendToolTurn(activeCapacity, 2, 'packed newest protected result', true)
   const activeCapacityWindow = Math.floor(ctx.tokenMeter.measure(activeCapacity).totalTokens / 0.75)
@@ -344,8 +350,8 @@ try {
   const boundaryCtx = new Context()
   try {
     await mountAgentLoopTestDependencies(boundaryCtx)
-    await boundaryCtx.plugin(AgentLoop, { agents: [] })
-    await boundaryCtx.plugin(TokenMeter)
+    await boundaryCtx.plugin(AgentLoop, { agents: [] }).await()
+    await boundaryCtx.plugin(TokenMeter).await()
     const boundaryAudit = captureAudit(boundaryCtx)
     boundaryCtx.llm.registerAdapter(
       ['deepseek'],
@@ -362,7 +368,7 @@ try {
       historyKeepRecentTokens: 1,
       historyMinReclaimTokens: 1,
     }).await()
-    const boundaryAgent = boundaryCtx.agentLoop.create(
+    const boundaryAgent = await boundaryCtx.agentLoop.create(
       SessionId('packed-history-capacity-request-boundary'),
       { provider: 'deepseek', model: MODEL },
     )
@@ -414,11 +420,12 @@ try {
   try {
     await visionCtx.plugin(MemorySettings).await()
     await visionCtx.plugin(SelectorHost).await()
-    await visionCtx.plugin(LlmRuntime)
-    await visionCtx.plugin(SessionStore)
-    await visionCtx.plugin(SystemPrompt)
-    await visionCtx.plugin(ToolRuntime)
-    await visionCtx.plugin(TokenMeter)
+    await visionCtx.plugin(LlmRuntime).await()
+    await visionCtx.plugin(SessionStore).await()
+    await visionCtx.plugin(SystemPrompt).await()
+    await visionCtx.plugin(ToolRuntime).await()
+    await visionCtx.plugin(SessionProjectionRegistry).await()
+    await visionCtx.plugin(TokenMeter).await()
     const visionAudit = captureAudit(visionCtx)
     await visionCtx.plugin(Runtime.default, {
       profile: 'balanced',
@@ -434,7 +441,7 @@ try {
 
     // (a) A user image plus pure-text tool results: the text rewrites must be
     // exact and carry the vision tokenizer's repository/revision.
-    const visionText = visionCtx.sessions.create(SessionId('packed-vision-text-session'))
+    const visionText = Session.create(SessionId('packed-vision-text-session'))
     visionText.append('turn/start', { turn: 1 })
     visionText.append('request/header', {
       reason: 'initial',
@@ -491,7 +498,7 @@ try {
     // (b) An image-bearing tool result: its surface may be estimated, but every
     // rewrite path still requires exact counts. The original event is untouched
     // and the audits say why no rewrite was authorized.
-    const visionImage = visionCtx.sessions.create(SessionId('packed-vision-image-tool-result'))
+    const visionImage = Session.create(SessionId('packed-vision-image-tool-result'))
     visionImage.append('turn/start', { turn: 1 })
     visionImage.append('request/header', {
       reason: 'initial',
@@ -549,7 +556,7 @@ try {
     // Tool-result events carry one envelope block whose nested content holds
     // the original [text, image] blocks; the durable attachment reference must
     // still be there verbatim.
-    const originalImage = visionImage.events[imageResult.seq]
+    const originalImage = visionImage.snapshotEvents()[imageResult.seq]
     assert(originalImage?.type === 'tool/result'
       && JSON.stringify(originalImage).includes('packed-image-800x600')
       && JSON.stringify(originalImage).includes('"type":"image"'),
@@ -594,11 +601,11 @@ try {
     () => Promise.resolve({ kind: 'enter', messages: [] }),
   )
   assert(decision.kind === 'enter', 'Native pre-step did not return enter')
-  assert(session.events.some(event => event.type === 'compaction/summary'),
+  assert(session.snapshotEvents().some(event => event.type === 'compaction/summary'),
     'official BasicCompactionEngine did not commit Native summary')
 
   await ctx.settings.update(namespace, { profile: 'native' })
-  const nativeSession = ctx.sessions.create(SessionId('packed-native-tool-result'))
+  const nativeSession = Session.create(SessionId('packed-native-tool-result'))
   appendToolTurn(nativeSession, 1, 'packed native tool result '.repeat(800), false)
   const nativeResult = ctx.toolResultPruner.pruneSession(nativeSession, { stage: 'pressure' })
   assert(nativeResult.pruned.length === 1, 'installed Native tool-result profile did not rewrite')
@@ -609,7 +616,7 @@ try {
   firstFrozen.history.enabled = false
   firstFrozen.tailTrim.enabled = false
   await ctx.settings.update(namespace, { profile: 'custom', custom: firstFrozen })
-  const frozenA = ctx.sessions.create(SessionId('packed-policy-freeze-a'))
+  const frozenA = Session.create(SessionId('packed-policy-freeze-a'))
   appendToolTurn(frozenA, 1, 'packed frozen first '.repeat(800), false)
   assert(ctx.toolResultPruner.pruneSession(frozenA, {
     stage: 'fresh', freshTurn: 1, freshStep: 1,
@@ -623,7 +630,7 @@ try {
   assert(ctx.toolResultPruner.pruneSession(frozenA, {
     stage: 'fresh', freshTurn: 2, freshStep: 1,
   }).pruned.length === 1, 'observed Session did not retain its complete frozen policy')
-  const frozenB = ctx.sessions.create(SessionId('packed-policy-freeze-b'))
+  const frozenB = Session.create(SessionId('packed-policy-freeze-b'))
   appendToolTurn(frozenB, 1, 'packed new disabled Fresh '.repeat(800), false)
   assert(ctx.toolResultPruner.pruneSession(frozenB, {
     stage: 'fresh', freshTurn: 1, freshStep: 1,
@@ -696,7 +703,7 @@ try {
         tokensAfter: record.tokensAfter,
       }
     }),
-    customEvents: session.events.some(event => event.type === 'compaction/group-trim') ? 'present' : 'absent',
+    customEvents: session.snapshotEvents().some(event => event.type === 'compaction/group-trim') ? 'present' : 'absent',
   })}`)
 } finally {
   await ctx.fiber.dispose()
