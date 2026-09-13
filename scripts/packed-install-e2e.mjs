@@ -19,26 +19,14 @@ const packages = [
   { directory: join(root, 'packages/runtime') },
   { directory: join(root, 'packages/selector') },
 ]
-const officialHostPackages = [
-  '@deepseek-ai/cordis@4.0.1',
-  '@deepseek-ai/cordis-plugin-group@1.0.1',
-  '@deepseek-ai/cordis-plugin-include@1.0.6',
-  '@deepseek-ai/cordis-plugin-loader@1.0.2',
-  '@deepseek-ai/dsh-agent@0.1.5-rc.2',
-  '@deepseek-ai/dsh-agent-loop@0.1.5-rc.2',
-  '@deepseek-ai/dsh-agent-loop-testkit@0.1.5-rc.2',
-  '@deepseek-ai/dsh-agent-presets@0.1.5-rc.2',
-  '@deepseek-ai/dsh-commands@0.1.5-rc.2',
-  '@deepseek-ai/dsh-command-compact@0.1.5-rc.2',
-  '@deepseek-ai/dsh-compaction-basic@0.1.5-rc.2',
-  '@deepseek-ai/dsh-llm@0.1.5-rc.2',
-  '@deepseek-ai/dsh-session@0.1.5-rc.2',
-  '@deepseek-ai/dsh-scope@0.1.5-rc.2',
-  '@deepseek-ai/dsh-settings@0.1.5-rc.2',
-  '@deepseek-ai/dsh-system-prompt@0.1.5-rc.2',
-  '@deepseek-ai/dsh-token-meter@0.1.5-rc.2',
-  '@deepseek-ai/dsh-tools@0.1.5-rc.2',
-]
+// The full @deepseek-ai/* host closure (pinned in the workspace root manifest,
+// currently 0.1.5-rc.2): auto-installed peers must all resolve from the mock
+// registry, so the list must cover every peer the packed plugins and the
+// official packages declare.
+const rootManifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
+const officialHostPackages = Object.entries(rootManifest.devDependencies)
+  .filter(([name]) => name.startsWith('@deepseek-ai/'))
+  .map(([name, version]) => `${name}@${version}`)
 
 const run = (command, args, options = {}) => new Promise((resolve, reject) => {
   const child = spawn(command, args, { stdio: 'inherit', shell: process.platform === 'win32', ...options })
@@ -143,6 +131,7 @@ async function runPackedHostSmoke(consumerRoot) {
     scopeModule,
     settingsModule,
     systemPromptModule,
+    sessionProjectionModule,
     tokenMeterModule,
     toolsModule,
     selectorModule,
@@ -160,6 +149,7 @@ async function runPackedHostSmoke(consumerRoot) {
     load('@deepseek-ai/dsh-scope'),
     load('@deepseek-ai/dsh-settings'),
     load('@deepseek-ai/dsh-system-prompt'),
+    load('@deepseek-ai/dsh-session-projection'),
     load('@deepseek-ai/dsh-token-meter'),
     load('@deepseek-ai/dsh-tools'),
     load('dsh-context-compression-improved'),
@@ -191,23 +181,25 @@ async function runPackedHostSmoke(consumerRoot) {
   const runtime = new cordis.Context()
   try {
     runtime.baseUrl = `${pathToFileURL(presetRoot).href}/`
-    await runtime.plugin(loaderModule.default)
+    await runtime.plugin(loaderModule.default).await()
     runtime.loader.builtins.include = includeModule.default
     runtime.loader.builtins.group = groupModule.default
-    await runtime.plugin(llmModule.default)
-    await runtime.plugin(sessionModule.default)
-    await runtime.plugin(systemPromptModule.default, { persona: '' })
-    await runtime.plugin(toolsModule.default)
-    await runtime.plugin(agentModule.default)
-    await runtime.plugin(agentLoopModule.default, { agents: [] })
-    await runtime.plugin(commandsModule.default)
-    await runtime.plugin(tokenMeterModule.default)
-    await runtime.plugin(MemorySettings)
+    await runtime.plugin(llmModule.default).await()
+    await runtime.plugin(sessionModule.default).await()
+    await runtime.plugin(systemPromptModule.default, { personaPrefix: '' }).await()
+    await runtime.plugin(toolsModule.default).await()
+    await runtime.plugin(agentModule.default).await()
+    await runtime.plugin(agentLoopModule.default, { agents: [] }).await()
+    await runtime.plugin(commandsModule.default).await()
+    await runtime.plugin(sessionProjectionModule.default).await()
+    await runtime.plugin(tokenMeterModule.default).await()
+    await runtime.plugin(MemorySettings).await()
     await runtime.plugin(presetsModule.default, {
       default: 'standard',
       roots: [{ path: presetRoot, trust: 'system' }],
+      includeShippedRoot: false,
       includeUserRoot: false,
-    })
+    }).await()
     await runtime.plugin({
       apply: selectorCtx => selectorModule.apply(selectorCtx, { presetOverlay: true }),
     }).await()
@@ -273,7 +265,7 @@ async function runPackedHostSmoke(consumerRoot) {
     assert(hasRetrieve(child) && hasCompact(child),
       'child lacks the inherited retrieve tool or compact command')
 
-    const namespace = settingsModule.settingsNamespace('context-compression')
+    const namespace = 'context-compression'
     const settings = runtime.settings.get(namespace)
     assert(settings.custom.history.trigger === 500_000,
       'packed Host did not expose the 500000 History default')
@@ -504,7 +496,7 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
       'try {',
       "  const settings = ctx.get('settings')",
       "  if (settings === undefined) throw new Error('boot probe: settings service missing')",
-      "  const raw = settings.get(settingsModule.settingsNamespace('context-compression'))",
+      "  const raw = settings.get('context-compression')",
       ...settingsProof,
       "  const presets = ctx.get('agentPresets')",
       "  if (presets === undefined) throw new Error('boot probe: agentPresets service missing')",
@@ -877,6 +869,10 @@ try {
     version: '0.0.0',
     private: true,
   }, null, 2))
+  // Stop pnpm's workspace walk-up: an ancestor with its own pnpm-workspace.yaml
+  // (e.g. a user home project) would otherwise absorb this consumer and land
+  // the install — and every resolution — outside the packed consumer.
+  await writeFile(join(consumerRoot, 'pnpm-workspace.yaml'), ['packages:', '  - .'].join(String.fromCharCode(10)))
   if (upgradeLeg === 'installed') {
     // Real upgrade path: install the published previous release, then move to
     // the packed candidate through the standard update command.
@@ -934,7 +930,7 @@ try {
     throw new Error('packed package is not guarded by publishConfig.tag=latest')
   }
   for (const peer of ['@deepseek-ai/dsh-command-compact', '@deepseek-ai/dsh-compaction-basic']) {
-    if (selector.peerDependencies?.[peer] !== '>=0.1.1-rc.2 <0.2.0') {
+    if (selector.peerDependencies?.[peer] !== '>=0.1.5-rc.2 <0.2.0-0') {
       throw new Error(`packed selector has an invalid ${peer} peer range`)
     }
   }

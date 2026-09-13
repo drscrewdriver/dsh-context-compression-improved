@@ -260,6 +260,13 @@ export class ToolResultPruner extends Service {
   private readonly tailTrimBoundaryAttempts = new WeakMap<Session, object>()
   /** Last effective policy audit key emitted for each Session. */
   private readonly policyResolutionAudits = new WeakMap<Session, string>()
+  /**
+   * Native summary manifest seqs already audited per Session. 0.1.5 commits
+   * Native auto-compact by reopening the Session with a seed log, and seed
+   * events never reach the `session/event` firehose, so summaries are audited
+   * from a snapshot scan instead of the live event alone.
+   */
+  private readonly auditedNativeSummaries = new WeakMap<Session, Set<number>>()
 
   constructor(ctx: Context, config: ToolResultPruneConfig = {}) {
     super(ctx, 'toolResultPruner')
@@ -269,19 +276,9 @@ export class ToolResultPruner extends Service {
     this.config = resolveConfig(config)
 
     ctx.on('session/event', (session, event) => {
+      this.scanForSeededNativeSummary(session)
       if (event.type === 'compaction/summary') {
-        emitCompressionAudit(ctx.logger, {
-          schemaVersion: 1,
-          kind: 'native-auto-compact',
-          sessionId: String(session.id),
-          manifestEventType: 'compaction/summary',
-          manifestSeq: event.seq,
-          reducer: 'llm-summary',
-          provider: event.data.provider,
-          model: event.data.model,
-          tokensBefore: event.data.shadowedTokenCount,
-          tokensAfter: null,
-        })
+        this.emitNativeSummaryAudit(session, event.seq, event.data)
         return
       }
       if (event.type === 'compaction/end') {
@@ -315,7 +312,12 @@ export class ToolResultPruner extends Service {
             ctx.logger.warn('context-compression fresh pass failed open: %o', error)
           }
         }
-        return await next()
+        const outcome = await next()
+        // BasicCompactionEngine's own pre-step may have just landed a Native
+        // auto-compact summary (possibly through a seed-reopen that never
+        // reaches the event firehose): scan once more after the step opens.
+        this.scanForSeededNativeSummary(agent.session)
+        return outcome
       } finally {
         if (this.activeRequestBoundaries.get(agent.session) === boundary) {
           this.activeRequestBoundaries.delete(agent.session)
@@ -402,6 +404,7 @@ export class ToolResultPruner extends Service {
    * @returns landed replacements and aggregate Unicode-code-point savings.
    */
   pruneSession(session: Session, options: PruneSessionOptions = {}): PruneResult {
+    this.scanForSeededNativeSummary(session)
     const stage = options.stage ?? 'pressure'
     // External callers (compaction-basic) do not carry routed capacity; the
     // runtime resolves it itself so the frozen Auto Compact linkage and the
@@ -2173,6 +2176,46 @@ export class ToolResultPruner extends Service {
       reason,
       ...detail,
     })
+  }
+
+  /** Emit the native-auto-compact audit for one summary manifest, once. */
+  private emitNativeSummaryAudit(
+    session: Session,
+    manifestSeq: number,
+    data: { provider?: unknown, model?: unknown, shadowedTokenCount?: unknown },
+  ): void {
+    let audited = this.auditedNativeSummaries.get(session)
+    if (audited === undefined) {
+      audited = new Set()
+      this.auditedNativeSummaries.set(session, audited)
+    }
+    if (audited.has(manifestSeq)) return
+    audited.add(manifestSeq)
+    emitCompressionAudit(this.ctx.logger, {
+      schemaVersion: 1,
+      kind: 'native-auto-compact',
+      sessionId: String(session.id),
+      manifestEventType: 'compaction/summary',
+      manifestSeq,
+      reducer: 'llm-summary',
+      provider: data.provider === undefined ? 'unknown' : String(data.provider),
+      model: data.model === undefined ? 'unknown' : String(data.model),
+      tokensBefore: typeof data.shadowedTokenCount === 'number' ? data.shadowedTokenCount : null,
+      tokensAfter: null,
+    })
+  }
+
+  /**
+   * 0.1.5 commits Native auto-compact by reopening the Session with a seed
+   * log; seed events never reach the `session/event` firehose, so scan the
+   * snapshot for summary manifests the live listener could not observe.
+   */
+  private scanForSeededNativeSummary(session: Session): void {
+    for (const event of sessionEvents(session)) {
+      if (event.type === 'compaction/summary') {
+        this.emitNativeSummaryAudit(session, event.seq, event.data)
+      }
+    }
   }
 
   private auditFailure(
