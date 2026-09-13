@@ -118,6 +118,36 @@ export class Estimator {
     }
   }
 
+  /**
+   * Resolve the host LLM route. Explicit estimator provider/model win; with
+   * them empty, reuse the route the harness already has configured via the
+   * optional `agentDefaultModel` service's current selection (same seam as
+   * dsh-prime-memory's resolveModelRoute) — the user must not re-enter a
+   * provider/model the host already knows.
+   */
+  private resolveHostRoute(): { provider: string, model: string } | undefined {
+    const provider = this.options.estimatorProvider ?? ''
+    const model = this.options.estimatorModel ?? ''
+    if (provider.length > 0 && model.length > 0) return { provider, model }
+    try {
+      const defaults = this.ctx.get('agentDefaultModel' as never) as
+        | { currentSelection?: () => { provider?: string, model?: string } | undefined }
+        | undefined
+      const selected = defaults?.currentSelection?.()
+      const selectedProvider = selected?.provider ?? ''
+      const selectedModel = selected?.model ?? ''
+      if (selectedProvider.length > 0 && selectedModel.length > 0) {
+        return {
+          provider: provider.length > 0 ? provider : selectedProvider,
+          model: model.length > 0 ? model : selectedModel,
+        }
+      }
+    } catch {
+      // optional service; absence must not throw
+    }
+    return undefined
+  }
+
   private async askHost(system: string, user: string, signal: AbortSignal): Promise<string | undefined> {
     let llm: HostLlmLike | undefined
     try {
@@ -126,9 +156,10 @@ export class Estimator {
       return undefined
     }
     if (llm?.stream === undefined) return undefined
-    const provider = this.options.estimatorProvider ?? ''
-    const model = this.options.estimatorModel ?? ''
-    if (provider.length === 0 || model.length === 0) return undefined
+    const route = this.resolveHostRoute()
+    if (route === undefined) return undefined
+    const provider = route.provider
+    const model = route.model
     let text = ''
     const stream = llm.stream({
       provider,

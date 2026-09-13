@@ -2,6 +2,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import {
   isCustomCompressionPolicy,
@@ -30,7 +31,11 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-export const inject = ['slots', 'locale', 'settingsScope']
+// Declare ONLY `slots` (always present). `locale` and `settingsScope` are
+// resolved lazily via ctx.get() inside apply: a declarative inject of an
+// absent/late service suspends apply forever and the whole UI silently
+// disappears (dsh-prime-memory's documented workaround for exactly this).
+export const inject = ['slots']
 const NS = 'context-compression'
 
 
@@ -58,12 +63,34 @@ function sameCustomPolicy(
 }
 
 export function apply(ctx: ClientContext): void {
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-context-compression: dictionaries')
+  const getService = (name: string): unknown => {
+    // cordis exposes services both via ctx.get() and as context properties;
+    // tolerate hosts/stubs that provide only one of the two faces.
+    try {
+      const getter = (ctx as { get?: (name: string) => unknown }).get
+      if (typeof getter === 'function') return getter.call(ctx, name)
+      return (ctx as unknown as Record<string, unknown>)[name]
+    } catch {
+      return undefined
+    }
+  }
+  const locale = getService('locale') as
+    | { register(namespace: string, dictionaries: { zh: Record<string, string>, en: Record<string, string> }): unknown }
+    | undefined
+  const settingsScope = getService('settingsScope') as
+    | { bind<T>(spec: { namespace: string, decode: (value: unknown) => ContextCompressionSettings | undefined }): SettingsScope<T> }
+    | undefined
+  if (locale === undefined || settingsScope === undefined) {
+    // Loud degradation: register nothing rather than half a panel.
+    console.warn('[dsh-context-compression-improved] client services locale/settingsScope unavailable; settings panel not registered')
+    return
+  }
+  locale.register(NS, { zh, en })
   const injected = (): CompressionSelectorInjected => {
     // Bind per factory call on the caller's fiber (0.1.5: activation must
     // never block on the settings transport; the scope disposer belongs to
     // the calling registration's lifecycle).
-    const scope = ctx.settingsScope.bind<ContextCompressionSettings>({ namespace: NS, decode: decodeSettings })
+    const scope = settingsScope.bind<ContextCompressionSettings>({ namespace: NS, decode: decodeSettings })
     const writeAndConfirm = async (
       write: () => Promise<void>,
       accepts: (settings: ContextCompressionSettings) => boolean,
