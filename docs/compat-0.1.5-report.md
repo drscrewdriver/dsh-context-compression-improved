@@ -2,13 +2,13 @@
 
 > 分支：`compat/0.1.5`（基于 `feat/ctx-preset-v2`，2026-09-14 完成）
 > 提交：`b5428cf`（依赖与代码适配）→ `4c11289`（测试与 CHANGELOG）→ `93e47c2`（e2e release-gate 适配）
-> 参照：`dsh-docs-deliverables/plugin-framework`（v0.1.5-migration / compatibility-guide §十二 / upgrade-pitfalls §七 / distribution-strategy §1.1）
+> 参照：`dsh-docs-deliverables/plugin-framework`（v0.1.5-migration / compatibility-guide §二十 / upgrade-pitfalls §七 / distribution-strategy §1.1）
 
 ## 一、结论
 
 compaction 深度插件（直接依赖 tokenMeter / session surface 写路径）从 0.1.1-rc.2 适配到 0.1.5-rc.2 完成。typecheck 0 错误、lint 0、unit 338/341（2 个 Windows 环境抖动）、built ✅、verify:release ✅、packed-e2e dev 模式全绿（release 模式需发布 npm 前版后执行）。
 
-迁移指南逐章核对结果：Inbox / Permission Presets / Sidebar Slot / LLM Adapter 四个高危变更本插件均不涉及；实际工作量集中在 **客户端包重构、Session V3 surface 语义、cordis 启动语义、semver peer 规则** 四块——其中后两类是迁移指南未覆盖的实测新坑，已回填 framework 文档（pitfalls §7、compatibility-guide §十二）。
+迁移指南逐章核对结果：Inbox / Permission Presets / Sidebar Slot / LLM Adapter 四个高危变更本插件均不涉及；实际工作量集中在 **客户端包重构、Session V3 surface 语义、cordis 启动语义、semver peer 规则** 四块——其中后两类是迁移指南未覆盖的实测新坑，已回填 framework 文档（pitfalls §7、compatibility-guide §二十）。
 
 ## 二、适配清单
 
