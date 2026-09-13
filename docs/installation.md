@@ -2,13 +2,13 @@
 
 > [English](installation.md) · [中文](installation.zh.md) · [日本語](installation.ja.md) · [한국어](installation.ko.md)
 
-This guide installs the fork from source. The fork is not yet published to npm; the internal package names intentionally stay upstream's (`dsh-context-compression-selector` + its exact-version runtime dependency `dsh-context-compression-selector-runtime`).
+This guide installs the fork from source. The fork is not yet published to npm; the internal package names intentionally stay upstream's (`dsh-context-compression-improved` + its exact-version runtime dependency `dsh-context-compression-improved-runtime`).
 
 ## Prerequisites
 
 - Node `^22.19.0 || >=24` and pnpm `11.7.0` (`corepack enable` picks the pinned version from `packageManager`).
 - A DeepSeek Harness installation compatible with the `0.1.1-rc.2` peer range (verified against the official `dsh-v0.1.2-alpha.5` release).
-- A DeepSeek V4 model route (`deepseek-v4-flash`, `deepseek-v4-pro`, or `deepseek-v4-flash-vision-exp`). Lossy compression — including the code-skeleton gate — requires the exact bundled tokenizer; other routes fail open and keep original tool results.
+- A DeepSeek V4 model route (`deepseek-v4-flash`, `deepseek-v4-pro`, or `deepseek-v4-flash-vision-exp`). Lossy compression �?including the code-skeleton gate �?requires the exact bundled tokenizer; other routes fail open and keep original tool results.
 - Git.
 
 ## 1. Build from source
@@ -29,7 +29,7 @@ The selector package is the single Bundle entry; the runtime comes along as its 
 ```sh
 cd packages/selector
 pnpm pack
-# → dsh-context-compression-selector-0.1.0.tgz
+# �?dsh-context-compression-improved-0.1.0.tgz
 cd ../..
 ```
 
@@ -40,21 +40,21 @@ cd ../..
 The selector package declares the Harness Bundle manifest field `dsh.bundle.patch`, so `dsh plugin add` is the standard out-of-tree Bundle installation path:
 
 ```sh
-dsh plugin --profile web add packages/selector/dsh-context-compression-selector-0.1.0.tgz
+dsh plugin --profile web add packages/selector/dsh-context-compression-improved-0.1.0.tgz
 dsh --profile web --dump-config
 ```
 
-Restart the selected profile after installation. The config dump should list the selector Bundle as active. Do **not** install or wire the selector and runtime packages separately — the runtime is installed automatically.
+Restart the selected profile after installation. The config dump should list the selector Bundle as active. Do **not** install or wire the selector and runtime packages separately �?the runtime is installed automatically.
 
 ## 4. Turn on the code-skeleton gate
 
-Open DeepSeek Harness settings → **Context compression selector**:
+Open DeepSeek Harness settings �?**Context compression selector**:
 
 1. Pick a compression profile (the gate is orthogonal to all of them).
-2. Optionally adjust the Auto Compact trigger level (50–90%, default 80%).
+2. Optionally adjust the Auto Compact trigger level (50�?0%, default 80%).
 3. Set **Code skeleton compression** to **On**. The toggle saves on change.
 
-Like all selector settings, the value is frozen when a session first observes it — the gate affects newly observed sessions, never a task that is already running.
+Like all selector settings, the value is frozen when a session first observes it �?the gate affects newly observed sessions, never a task that is already running.
 
 ## 5. Update or remove
 
@@ -62,10 +62,10 @@ Like all selector settings, the value is frozen when a session first observes it
 # update: pull, rebuild, repack, and add the new tarball again
 git pull && pnpm install --frozen-lockfile && pnpm build
 cd packages/selector && pnpm pack && cd ../..
-dsh plugin --profile web add packages/selector/dsh-context-compression-selector-0.1.0.tgz
+dsh plugin --profile web add packages/selector/dsh-context-compression-improved-0.1.0.tgz
 
 # remove
-dsh plugin --profile web remove dsh-context-compression-selector
+dsh plugin --profile web remove dsh-context-compression-improved
 ```
 
 ## Troubleshooting

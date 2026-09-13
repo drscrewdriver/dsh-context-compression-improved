@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'tsdown'
 import { transform } from 'lightningcss'
 
-const PLUGIN_ID = 'dsh-context-compression-selector'
+const PLUGIN_ID = 'dsh-context-compression-improved'
 const SELECTOR_ROOT = dirname(fileURLToPath(import.meta.url))
 const CSS_PREFIX = '\0dsh-context-compression-css:'
 const CSS_SUFFIX = '.mjs'

@@ -162,7 +162,7 @@ async function runPackedHostSmoke(consumerRoot) {
     load('@deepseek-ai/dsh-system-prompt'),
     load('@deepseek-ai/dsh-token-meter'),
     load('@deepseek-ai/dsh-tools'),
-    load('dsh-context-compression-selector'),
+    load('dsh-context-compression-improved'),
   ])
 
   class MemorySettings extends settingsModule.SettingsProvider {
@@ -325,8 +325,8 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
   const profilePackages = () => {
     const profileRoot = join(dshHome, 'profiles/web')
     const profileRequire = createRequire(join(profileRoot, 'package.json'))
-    const selectorPath = profileRequire.resolve('dsh-context-compression-selector/package.json')
-    const runtimePath = profileRequire.resolve('dsh-context-compression-selector-runtime/package.json')
+    const selectorPath = profileRequire.resolve('dsh-context-compression-improved/package.json')
+    const runtimePath = profileRequire.resolve('dsh-context-compression-improved-runtime/package.json')
     return {
       profileRoot,
       selectorPath,
@@ -339,7 +339,7 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
   /**
    * Peers a headless official profile can never provide: pure web-host UI
    * packages supplied by the web app, not the CLI installation. The list is
-   * REVIEWED and exact â€” any OTHER unresolved selector peer fails the gate,
+   * REVIEWED and exact â€?any OTHER unresolved selector peer fails the gate,
    * and every web/client peer is still import-verified from the built
    * client libraries below.
    */
@@ -399,7 +399,7 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
    * the release gate resolves and imports instead. Fail-closed parts: every
    * RUNTIME peer (the engine surface the headless host must provide) and the
    * selector's node entry with a callable apply(). The selector's remaining
-   * unresolved peers must equal the REVIEWED web-only whitelist above â€”
+   * unresolved peers must equal the REVIEWED web-only whitelist above â€?
    * anything else (a newly missing host dependency) fails immediately.
    */
   const provePluginLoads = async () => {
@@ -417,7 +417,7 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
       `for (const peer of ${JSON.stringify(enginePeers)}) {`,
       '  requireFromProfile.resolve(peer)',
       '}',
-      "const selectorEntry = requireFromProfile.resolve('dsh-context-compression-selector')",
+      "const selectorEntry = requireFromProfile.resolve('dsh-context-compression-improved')",
       'const plugin = require(selectorEntry)',
       "if (typeof plugin.apply !== 'function') throw new Error('selector entry exports no apply()')",
       `const unresolved = []`,
@@ -449,7 +449,7 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
 
   /**
    * Boot the official profile FOR REAL through the CLI's own profile-boot
-   * path â€” not --dump-config, which composes YAML without booting or
+   * path â€?not --dump-config, which composes YAML without booting or
    * executing plugins. The probe mounts the full bundle tree (selector
    * included), then proves: the settings service resolves the registered
    * document (before the upgrade: the previous release's schema defaults;
@@ -464,7 +464,7 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
     const settingsProof = expectSeeded
       ? [
         '  const requireFromProfile = createRequire(profileRoot)',
-        "  const runtimeEntry = requireFromProfile.resolve('dsh-context-compression-selector-runtime/package.json').replace(/package\\.json$/u, 'lib/index.js')",
+        "  const runtimeEntry = requireFromProfile.resolve('dsh-context-compression-improved-runtime/package.json').replace(/package\\.json$/u, 'lib/index.js')",
         '  const runtime = requireFromProfile(runtimeEntry)',
         '  const parsed = runtime.parseContextCompressionSettings(structuredClone(raw))',
         "  if (parsed.profile !== 'savings' || parsed.autoCompact.thresholdPercent !== 73) {",
@@ -559,7 +559,7 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
       "const { createRequire } = require('node:module')",
       "const yaml = require('js-yaml')",
       `const requireFromProfile = createRequire(String.raw\`${join(profileRoot, 'package.json')}\`)`,
-      "const runtimeEntry = requireFromProfile.resolve('dsh-context-compression-selector-runtime/package.json').replace(/package\\.json$/u, 'lib/index.js')",
+      "const runtimeEntry = requireFromProfile.resolve('dsh-context-compression-improved-runtime/package.json').replace(/package\\.json$/u, 'lib/index.js')",
       'const runtime = require(runtimeEntry)',
       "const document = {",
       "  'context-compression': {",
@@ -591,7 +591,7 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
       "const { createRequire } = require('node:module')",
       'const yaml = require(\'js-yaml\')',
       `const requireFromProfile = createRequire(String.raw\`${join(profileRoot, 'package.json')}\`)`,
-      "const runtimeEntry = requireFromProfile.resolve('dsh-context-compression-selector-runtime/package.json').replace(/package\\.json$/u, 'lib/index.js')",
+      "const runtimeEntry = requireFromProfile.resolve('dsh-context-compression-improved-runtime/package.json').replace(/package\\.json$/u, 'lib/index.js')",
       'const runtime = require(runtimeEntry)',
       `const document = yaml.load(readFileSync(String.raw\`${settingsPath}\`, 'utf8'))`,
       "const parsed = runtime.parseContextCompressionSettings(document['context-compression'])",
@@ -614,9 +614,9 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
     added = true
     await run('pnpm', ['install', '--frozen-lockfile', '--ignore-scripts'], { cwd: worktree })
     // A source checkout ships no built artifacts (install above skips
-    // prepare scripts). The boot probes run the REAL web profile â€”
+    // prepare scripts). The boot probes run the REAL web profile â€?
     // dsh-base + dsh-web-app, the only bundle that mounts agent-presets and
-    // therefore the selector's preset overlay â€” so build both library faces
+    // therefore the selector's preset overlay â€?so build both library faces
     // AND the web frontend; the healed profiles/node_modules fallback also
     // symlinks the CLI's own workspace packages.
     await run('pnpm', ['run', 'build'], { cwd: worktree })
@@ -624,7 +624,7 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
     // Real lifecycle: start on the published previous release.
     if (upgradeFrom === undefined) throw new Error('release gate requires the previous published release for the official lifecycle')
     await dsh('plugin', '--profile', 'web', 'add',
-      `dsh-context-compression-selector@${upgradeFrom}`, '--registry', registry)
+      `dsh-context-compression-improved@${upgradeFrom}`, '--registry', registry)
     const beforeUp = profilePackages()
     if (beforeUp.runtime.version !== upgradeFrom || beforeUp.selector.version !== upgradeFrom) {
       throw new Error(`official lifecycle started on selector ${String(beforeUp.selector.version)} / runtime ${String(beforeUp.runtime.version)}, expected ${upgradeFrom}`)
@@ -632,7 +632,7 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
 
     // Boot the profile once on the previous release. This asserts the added
     // bundle layer is live before any update and heals
-    // $DSH_HOME/profiles/node_modules â€” the shared-module fallback the
+    // $DSH_HOME/profiles/node_modules â€?the shared-module fallback the
     // plugin's harness peers resolve through in every later raw-node proof.
     const addedDump = await dumpConfig()
     assert(addedDump.includes('context-compression-selector-bundle'),
@@ -648,7 +648,7 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
 
     // Standard update command moves BOTH packages; assert before any add.
     await dsh('plugin', '--profile', 'web', 'up',
-      'dsh-context-compression-selector@latest', '--registry', registry)
+      'dsh-context-compression-improved@latest', '--registry', registry)
     const afterUp = profilePackages()
     if (afterUp.selector.version !== candidateVersion || afterUp.runtime.version !== candidateVersion) {
       throw new Error(`official up landed selector ${String(afterUp.selector.version)} / runtime ${String(afterUp.runtime.version)}, expected both at ${String(candidateVersion)}`)
@@ -673,13 +673,13 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
       env: environment,
     })
 
-    await dsh('plugin', '--profile', 'web', 'remove', 'dsh-context-compression-selector')
+    await dsh('plugin', '--profile', 'web', 'remove', 'dsh-context-compression-improved')
     const removedDump = await dumpConfig()
     assert(!removedDump.includes('context-compression-selector-bundle'),
       'official CLI remove left the selector Bundle layer active')
 
     await dsh('plugin', '--profile', 'web', 'add',
-      'dsh-context-compression-selector@latest', '--registry', registry)
+      'dsh-context-compression-improved@latest', '--registry', registry)
     const secondDump = await dumpConfig()
     assert(secondDump.includes('context-compression-selector-bundle'),
       'official CLI reinstall did not restore the selector Bundle layer')
@@ -732,7 +732,7 @@ try {
   const previousVersions = new Map()
   const previousRelease = '0.1.0-beta.2'
   let upgradeLeg = 'skipped-no-network'
-  for (const name of ['dsh-context-compression-selector', 'dsh-context-compression-selector-runtime']) {
+  for (const name of ['dsh-context-compression-improved', 'dsh-context-compression-improved-runtime']) {
     try {
       const response = await fetch(`https://registry.npmjs.org/${name}/${previousRelease}`)
       if (!response.ok) throw new Error(`packument responded ${response.status}`)
@@ -873,7 +873,7 @@ try {
   const registry = `http://127.0.0.1:${address.port}`
 
   await writeFile(join(consumerRoot, 'package.json'), JSON.stringify({
-    name: 'dsh-context-compression-selector-packed-e2e',
+    name: 'dsh-context-compression-improved-packed-e2e',
     version: '0.0.0',
     private: true,
   }, null, 2))
@@ -882,13 +882,13 @@ try {
     // the packed candidate through the standard update command.
     await run('pnpm', [
       'add',
-      `dsh-context-compression-selector@${previousRelease}`,
+      `dsh-context-compression-improved@${previousRelease}`,
       ...officialHostPackages,
       '--registry', registry,
     ], { cwd: consumerRoot })
-    const previousSelectorDir = await realpath(join(consumerRoot, 'node_modules/dsh-context-compression-selector'))
+    const previousSelectorDir = await realpath(join(consumerRoot, 'node_modules/dsh-context-compression-improved'))
     const previousRuntime = JSON.parse(await readFile(
-      join(dirname(previousSelectorDir), 'dsh-context-compression-selector-runtime/package.json'),
+      join(dirname(previousSelectorDir), 'dsh-context-compression-improved-runtime/package.json'),
       'utf8',
     ))
     if (previousRuntime.version !== previousRelease) {
@@ -896,17 +896,17 @@ try {
     }
     await run('pnpm', [
       'up',
-      'dsh-context-compression-selector@latest',
+      'dsh-context-compression-improved@latest',
       '--registry', registry,
     ], { cwd: consumerRoot })
     // The up command must land BOTH packages on the packed candidate.
-    const upgradedSelectorDir = await realpath(join(consumerRoot, 'node_modules/dsh-context-compression-selector'))
+    const upgradedSelectorDir = await realpath(join(consumerRoot, 'node_modules/dsh-context-compression-improved'))
     const upgradedSelector = JSON.parse(await readFile(join(upgradedSelectorDir, 'package.json'), 'utf8'))
     const upgradedRuntime = JSON.parse(await readFile(
-      join(dirname(upgradedSelectorDir), 'dsh-context-compression-selector-runtime/package.json'),
+      join(dirname(upgradedSelectorDir), 'dsh-context-compression-improved-runtime/package.json'),
       'utf8',
     ))
-    const candidateVersion = registryPackages.get('dsh-context-compression-selector-runtime')?.manifest.version
+    const candidateVersion = registryPackages.get('dsh-context-compression-improved-runtime')?.manifest.version
     if (candidateVersion === undefined) throw new Error('packed candidate version is unknown')
     if (upgradedSelector.version !== candidateVersion || upgradedRuntime.version !== candidateVersion) {
       throw new Error(`upgrade leg landed selector ${String(upgradedSelector.version)} / runtime ${String(upgradedRuntime.version)}, expected both at ${String(candidateVersion)}`)
@@ -918,14 +918,14 @@ try {
     console.info(`UPGRADE_LEG_SKIPPED ${upgradeLeg}`)
     await run('pnpm', [
       'add',
-      'dsh-context-compression-selector@latest',
+      'dsh-context-compression-improved@latest',
       ...officialHostPackages,
       '--registry', registry,
     ], { cwd: consumerRoot })
   }
 
-  const selectorDir = await realpath(join(consumerRoot, 'node_modules/dsh-context-compression-selector'))
-  const runtimeDir = await realpath(join(dirname(selectorDir), 'dsh-context-compression-selector-runtime'))
+  const selectorDir = await realpath(join(consumerRoot, 'node_modules/dsh-context-compression-improved'))
+  const runtimeDir = await realpath(join(dirname(selectorDir), 'dsh-context-compression-improved-runtime'))
   const selector = JSON.parse(await readFile(join(selectorDir, 'package.json'), 'utf8'))
   const runtime = JSON.parse(await readFile(join(runtimeDir, 'package.json'), 'utf8'))
   if (selector.version !== runtime.version) throw new Error('selector/runtime versions differ')
@@ -947,8 +947,8 @@ try {
   }
 
   const productionLicenses = Object.fromEntries(await Promise.all([
-    ['dsh-context-compression-selector', selectorDir, 'MIT'],
-    ['dsh-context-compression-selector-runtime', runtimeDir, 'MIT'],
+    ['dsh-context-compression-improved', selectorDir, 'MIT'],
+    ['dsh-context-compression-improved-runtime', runtimeDir, 'MIT'],
     ['@huggingface/tokenizers', join(dirname(runtimeDir), '@huggingface/tokenizers'), 'Apache-2.0'],
     ['js-yaml', join(dirname(selectorDir), 'js-yaml'), 'MIT'],
   ].map(async ([name, directory, expected]) => {
@@ -1022,7 +1022,7 @@ try {
     && packedVisionSmoke.imageSession.originalIntact === true,
   'installed vision smoke did not prove estimate propagation and exact-only safety')
   let officialCloneSmoke = null
-  const candidateVersion = registryPackages.get('dsh-context-compression-selector-runtime')?.manifest.version
+  const candidateVersion = registryPackages.get('dsh-context-compression-improved-runtime')?.manifest.version
   if (candidateVersion === undefined) throw new Error('packed candidate version is unknown')
   const previousForLifecycle = upgradeLeg === 'installed' ? previousRelease : undefined
   if (process.env.DSH_OFFICIAL_CLONE !== undefined) {
@@ -1033,7 +1033,7 @@ try {
       candidateVersion,
     )
   } else {
-    // Auto-provision a clean official checkout so the standard add â†’ up â†’
+    // Auto-provision a clean official checkout so the standard add â†?up â†?
     // remove lifecycle runs without manual setup. Release mode fails closed;
     // only dev mode may skip with an explicit marker.
     const cloneRoot = join(artifactRoot, 'official-clone')
@@ -1062,7 +1062,7 @@ try {
     throw new Error('release gate requires the official clean-harness lifecycle to run')
   }
   console.info(JSON.stringify({
-    installCommand: 'pnpm add dsh-context-compression-selector@latest',
+    installCommand: 'pnpm add dsh-context-compression-improved@latest',
     e2eMode,
     upgradeLeg,
     artifactSource: fixedArtifactRoot === undefined ? 'fresh-pack' : artifactRoot,

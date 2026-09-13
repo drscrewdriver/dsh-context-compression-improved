@@ -55,7 +55,7 @@ export function tailTrimStub(
 export function tailTrimMessage(stub: string): UserMessage {
   return createUserMessage({
     content: [{ type: 'text', text: stub }],
-    source: { kind: 'plugin', plugin: 'dsh-context-compression-selector-runtime' },
+    source: { kind: 'plugin', plugin: 'dsh-context-compression-improved-runtime' },
   })
 }
 
@@ -76,7 +76,7 @@ export function validatePublishedTailTrim(
   if (replacement?.type !== 'user/message'
     || replacement.seq !== manifest.seq + 1
     || replacement.data.source.kind !== 'plugin'
-    || replacement.data.source.plugin !== 'dsh-context-compression-selector-runtime'
+    || replacement.data.source.plugin !== 'dsh-context-compression-improved-runtime'
     || replacement.surfaceOp === undefined
     || replacement.surfaceOp === 'append'
     || replacement.surfaceOp.start !== manifest.data.shadowedRange.start
