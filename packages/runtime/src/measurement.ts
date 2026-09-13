@@ -3,6 +3,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
 import { deriveEventMessage } from '@deepseek-ai/dsh-session'
+import { sessionEvents } from './session-events.ts'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-token-meter'
 import type { TokenMeasurement } from '@deepseek-ai/dsh-token-meter'
@@ -15,7 +16,6 @@ import {
   estimateDeepSeekVisionImageTokens,
 } from './deepseek-v4-vision-tokens.ts'
 import { unavailableTokenCount } from './token-count.ts'
-import { sessionEvents } from './session-events.ts'
 import type {
   CanonicalTextTokenCounter,
   ExactTokenizerTokenCount,
@@ -113,8 +113,12 @@ export function measureForCompaction(ctx: Context, session: Session): Compaction
   const target = header?.config
   const counter = bindCounter(target?.provider, target?.model)
   const events = sessionEvents(session)
+  // 0.1.5 surface nodes are positional and may replace earlier ranges, so
+  // their seq values are not guaranteed to equal the snapshot array index:
+  // resolve events by seq, never by position.
+  const eventsBySeq = new Map(events.map(event => [Number(event.seq), event]))
   const measuredNodes = measurement.nodes.map((node): MeasuredTokenSurfaceNode => {
-    const event = events[node.seq]
+    const event = eventsBySeq.get(Number(node.seq))
     if (event === undefined) {
       return { seq: node.seq, count: unavailableTokenCount(`surface node ${String(node.seq)} is missing`) }
     }

@@ -30,6 +30,7 @@ import {
   type SettingsNamespace,
 } from '@deepseek-ai/dsh-settings'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { CompactionId } from '@deepseek-ai/dsh-compaction'
@@ -130,10 +131,11 @@ class NativeSummaryAdapter extends LlmAdapter {
 async function runtimeContext(): Promise<Context> {
   const ctx = new Context()
   activeContexts.push(ctx)
-  await ctx.plugin(SessionStore)
-  await ctx.plugin(SystemPrompt)
-  await ctx.plugin(ToolRuntime)
-  await ctx.plugin(TokenMeter)
+  await ctx.plugin(SessionStore).await()
+  await ctx.plugin(SystemPrompt).await()
+  await ctx.plugin(ToolRuntime).await()
+  await ctx.plugin(SessionProjectionRegistry).await()
+  await ctx.plugin(TokenMeter).await()
   return ctx
 }
 
@@ -366,8 +368,8 @@ describe('standalone runtime on published Harness APIs', () => {
     if (replacement?.type !== 'tool/result') throw new Error('Native prune did not append a tool result replacement')
     expect(replacement.surfaceOp).toEqual({
       op: 'replace',
-      start: source.resultSeq,
-      end: source.resultSeq,
+      startSeq: source.resultSeq,
+      endSeq: source.resultSeq,
     })
     expect(replacement.sourceEventSeqs).toContain(source.resultSeq)
     expect(rewrites(audit.records())).toContainEqual(expect.objectContaining({
@@ -1393,9 +1395,10 @@ describe('standalone runtime on published Harness APIs', () => {
   it('audits recovery-tool-unavailable when a committed batch cannot land without the recovery tool', async () => {
     const ctx = new Context()
     activeContexts.push(ctx)
-    await ctx.plugin(SessionStore)
-    await ctx.plugin(SystemPrompt)
-    await ctx.plugin(TokenMeter)
+    await ctx.plugin(SessionStore).await()
+    await ctx.plugin(SystemPrompt).await()
+    await ctx.plugin(SessionProjectionRegistry).await()
+    await ctx.plugin(TokenMeter).await()
     const audit = captureAudit(ctx)
     await ctx.plugin(ToolResultPruner, {
       profile: 'balanced',
@@ -1531,7 +1534,7 @@ describe('standalone runtime on published Harness APIs', () => {
     activeContexts.push(ctx)
     await mountAgentLoopTestDependencies(ctx)
     await ctx.plugin(AgentLoop, { agents: [] })
-    await ctx.plugin(TokenMeter)
+    await ctx.plugin(TokenMeter).await()
     const audit = captureAudit(ctx)
     ctx.llm.registerAdapter(
       ['deepseek'],
@@ -1615,10 +1618,11 @@ describe('standalone runtime on published Harness APIs', () => {
     activeContexts.push(ctx)
     await ctx.plugin(TestSettings).await()
     await ctx.plugin(SelectorHost).await()
-    await ctx.plugin(SessionStore)
-    await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRuntime)
-    await ctx.plugin(TokenMeter)
+    await ctx.plugin(SessionStore).await()
+    await ctx.plugin(SystemPrompt).await()
+    await ctx.plugin(ToolRuntime).await()
+    await ctx.plugin(SessionProjectionRegistry).await()
+    await ctx.plugin(TokenMeter).await()
     const audit = captureAudit(ctx)
 
     const firstCustom = structuredClone(DEFAULT_CUSTOM_COMPRESSION_POLICY) as CustomCompressionPolicy
@@ -1676,10 +1680,11 @@ describe('standalone runtime on published Harness APIs', () => {
     activeContexts.push(ctx)
     await ctx.plugin(TestSettings).await()
     await ctx.plugin(SelectorHost).await()
-    await ctx.plugin(SessionStore)
-    await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRuntime)
-    await ctx.plugin(TokenMeter)
+    await ctx.plugin(SessionStore).await()
+    await ctx.plugin(SystemPrompt).await()
+    await ctx.plugin(ToolRuntime).await()
+    await ctx.plugin(SessionProjectionRegistry).await()
+    await ctx.plugin(TokenMeter).await()
     const audit = captureAudit(ctx)
 
     const policy = structuredClone(DEFAULT_CUSTOM_COMPRESSION_POLICY) as CustomCompressionPolicy
@@ -1771,10 +1776,11 @@ describe('standalone runtime on published Harness APIs', () => {
       activeContexts.push(ctx)
       await ctx.plugin(TestSettings).await()
       await ctx.plugin(SelectorHost).await()
-      await ctx.plugin(SessionStore)
-      await ctx.plugin(SystemPrompt)
-      await ctx.plugin(ToolRuntime)
-      await ctx.plugin(TokenMeter)
+      await ctx.plugin(SessionStore).await()
+      await ctx.plugin(SystemPrompt).await()
+      await ctx.plugin(ToolRuntime).await()
+      await ctx.plugin(SessionProjectionRegistry).await()
+      await ctx.plugin(TokenMeter).await()
       const audit = captureAudit(ctx)
 
       const policy = structuredClone(DEFAULT_CUSTOM_COMPRESSION_POLICY) as CustomCompressionPolicy
@@ -1853,12 +1859,13 @@ describe('standalone runtime on published Harness APIs', () => {
     activeContexts.push(ctx)
     await ctx.plugin(TestSettings).await()
     await ctx.plugin(SelectorHost).await()
-    await ctx.plugin(SessionStore)
-    await ctx.plugin(InvariantRegistry)
-    await ctx.plugin(RuntimeInvariant)
-    await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRuntime)
-    await ctx.plugin(TokenMeter)
+    await ctx.plugin(SessionStore).await()
+    await ctx.plugin(InvariantRegistry).await()
+    await ctx.plugin(RuntimeInvariant).await()
+    await ctx.plugin(SystemPrompt).await()
+    await ctx.plugin(ToolRuntime).await()
+    await ctx.plugin(SessionProjectionRegistry).await()
+    await ctx.plugin(TokenMeter).await()
     const audit = captureAudit(ctx)
 
     const policy = structuredClone(DEFAULT_CUSTOM_COMPRESSION_POLICY) as CustomCompressionPolicy
@@ -1913,9 +1920,9 @@ describe('standalone runtime on published Harness APIs', () => {
 
     const resumedCtx = new Context()
     activeContexts.push(resumedCtx)
-    await resumedCtx.plugin(SessionStore)
-    await resumedCtx.plugin(InvariantRegistry)
-    await resumedCtx.plugin(RuntimeInvariant)
+    await resumedCtx.plugin(SessionStore).await()
+    await resumedCtx.plugin(InvariantRegistry).await()
+    await resumedCtx.plugin(RuntimeInvariant).await()
     const resumed = resumedCtx.sessions.create(session.id, { seed: persisted })
     expect(resumed.surface.nodes).toEqual(beforeSurface)
     expect(() => resumed.append('turn/start', { turn: 4 })).not.toThrow()
@@ -1924,9 +1931,9 @@ describe('standalone runtime on published Harness APIs', () => {
   it('still rejects a malformed adjacent replacement instead of treating it as an orphan', async () => {
     const ctx = new Context()
     activeContexts.push(ctx)
-    await ctx.plugin(SessionStore)
-    await ctx.plugin(InvariantRegistry)
-    await ctx.plugin(RuntimeInvariant)
+    await ctx.plugin(SessionStore).await()
+    await ctx.plugin(InvariantRegistry).await()
+    await ctx.plugin(RuntimeInvariant).await()
     const session = ctx.sessions.create(SessionId('public-malformed-companion'))
     const source = appendToolTurn(session, 1, 'source remains intact', false)
     session.append('compaction/prune', {
@@ -1979,7 +1986,7 @@ describe('standalone runtime on published Harness APIs', () => {
     activeContexts.push(ctx)
     await mountAgentLoopTestDependencies(ctx)
     await ctx.plugin(AgentLoop, { agents: [] })
-    await ctx.plugin(TokenMeter)
+    await ctx.plugin(TokenMeter).await()
     const audit = captureAudit(ctx)
     ctx.llm.registerAdapter(
       ['deepseek'],
@@ -2014,7 +2021,7 @@ describe('standalone runtime on published Harness APIs', () => {
     await agent.whenIdle()
 
     expect(rewrites(audit.records())).toHaveLength(0)
-    const summary = agent.sessionEvents(session).findLast(event => event.type === 'compaction/summary')
+    const summary = sessionEvents(agent.session).findLast(event => event.type === 'compaction/summary')
     expect(summary?.type).toBe('compaction/summary')
     expect(audit.records()).toContainEqual(expect.objectContaining({
       kind: 'native-auto-compact',
@@ -2032,11 +2039,12 @@ describe('standalone runtime on published Harness APIs', () => {
     activeContexts.push(ctx)
     await ctx.plugin(TestSettings).await()
     await ctx.plugin(SelectorHost).await()
-    await ctx.plugin(LlmRuntime)
-    await ctx.plugin(SessionStore)
-    await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRuntime)
-    await ctx.plugin(TokenMeter)
+    await ctx.plugin(LlmRuntime).await()
+    await ctx.plugin(SessionStore).await()
+    await ctx.plugin(SystemPrompt).await()
+    await ctx.plugin(ToolRuntime).await()
+    await ctx.plugin(SessionProjectionRegistry).await()
+    await ctx.plugin(TokenMeter).await()
     const audit = captureAudit(ctx)
 
     const policy = structuredClone(DEFAULT_CUSTOM_COMPRESSION_POLICY) as CustomCompressionPolicy

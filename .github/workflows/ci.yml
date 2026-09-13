@@ -18,15 +18,15 @@ jobs:
           version: 11.7.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 22.19.0
+          node-version: 24.0.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm build
       - run: pnpm test
-      - run: pnpm --filter dsh-context-compression-selector-runtime test
-      - run: pnpm --filter dsh-context-compression-selector test
+      - run: pnpm --filter dsh-context-compression-improved-runtime test
+      - run: pnpm --filter dsh-context-compression-improved test
       - run: pnpm test:built
       - run: pnpm verify:release
       - run: pnpm pack:dry-run

@@ -2,7 +2,16 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
-## Unreleased
+## Unreleased (compat/0.1.5)
+
+### Changed
+
+- Adapt to the official DeepSeek Harness `v0.1.5-rc.2` on this branch. All `@deepseek-ai/dsh-*` dev dependencies and the pinned e2e host set move from `0.1.1-rc.2` to `0.1.5-rc.2` (cordis `4.0.2`, schemastery `3.18.2`), including the new split packages (`dsh-session-projection`, `dsh-session-persistence`, `dsh-atomic-write`, `dsh-home-paths`, `dsh-sandbox`, and related) and the `dsh-client-store` client stack.
+- Surface replace operations now use the v3 `startSeq`/`endSeq` shape with branded `SessionSeq` values; `compaction/prune` manifests keep the durable `start`/`end` fields. Events are resolved from surface nodes by seq lookup instead of array indexing.
+- The client bundle no longer imports the removed `@deepseek-ai/dsh-client-runtime`: settings types now come from `@deepseek-ai/dsh-client-ui-settings` and the session hooks merge from `@deepseek-ai/dsh-client-ui-session`. `engines.dsh >=0.1.5-alpha.1 <0.2.0-0` is declared in both package manifests and `dsh.plugin.json`.
+- Harness 0.1.5 no longer exposes the session `agentPreset` to the browser, so the client can no longer detect Minimal-only sessions; the selector stays selectable and the old unavailable banner is unreachable.
+- Test batteries updated for 0.1.5 semantics: cordis plugin starts require `.await()`, the Token Meter requires a mounted `SessionProjectionRegistry`, assistant events carry `stream: []`, and settings namespaces are plain strings.
+
 
 ### Added
 

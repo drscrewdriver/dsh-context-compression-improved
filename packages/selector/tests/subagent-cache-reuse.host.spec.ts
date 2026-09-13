@@ -1,3 +1,4 @@
+import { sessionEvents } from '../../runtime/src/session-events.ts'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
@@ -8,6 +9,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import * as Fork from '@deepseek-ai/dsh-subagent-fork-in-process'
 import * as Spawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import { PublicMockAdapter, publicTextResponse } from './support/mock-adapter.ts'
 import {
@@ -47,13 +49,14 @@ const envelope = (options: GenerateOptions, messageCount = options.messages.leng
 
 async function liveHarness(requests: Map<string, GenerateOptions[]>): Promise<Context> {
   const created = new Context()
-  await mountAgentLoopTestDependencies(created, { systemPrompt: { persona: SYSTEM } })
-  await created.plugin(TokenMeter)
-  await created.plugin(AgentLoop, { agents: [] })
-  await created.plugin(SubagentRuntime)
-  await created.plugin(Fork, { providerName: 'fork' })
-  await created.plugin(Spawn, { providerName: 'spawn' })
-  await created.plugin(LlmDeepSeek)
+  await mountAgentLoopTestDependencies(created, { systemPrompt: { personaPrefix: SYSTEM } })
+  await created.plugin(SessionProjectionRegistry).await()
+  await created.plugin(TokenMeter).await()
+  await created.plugin(AgentLoop).await()
+  await created.plugin(SubagentRuntime).await()
+  await created.plugin(Fork).await()
+  await created.plugin(Spawn).await()
+  await created.plugin(LlmDeepSeek).await()
   created.on('llm/stream', (options, next) => {
     const sessionId = String(options.sessionId)
     requests.set(sessionId, [...(requests.get(sessionId) ?? []), options])
@@ -64,11 +67,11 @@ async function liveHarness(requests: Map<string, GenerateOptions[]>): Promise<Co
 
 async function keylessHarness(requests: Map<string, GenerateOptions[]>): Promise<Context> {
   const created = new Context()
-  await mountAgentLoopTestDependencies(created, { systemPrompt: { persona: SYSTEM } })
-  await created.plugin(AgentLoop, { agents: [] })
-  await created.plugin(SubagentRuntime)
-  await created.plugin(Fork, { providerName: 'fork' })
-  await created.plugin(Spawn, { providerName: 'spawn' })
+  await mountAgentLoopTestDependencies(created, { systemPrompt: { personaPrefix: SYSTEM } })
+  await created.plugin(AgentLoop).await()
+  await created.plugin(SubagentRuntime).await()
+  await created.plugin(Fork).await()
+  await created.plugin(Spawn).await()
   created.llm.registerAdapter(['mock'], new PublicMockAdapter([
     publicTextResponse('cobalt-heron-42'),
     publicTextResponse('cobalt-heron-42'),
@@ -86,7 +89,7 @@ describe('parent/child prefix behavior (keyless full-loop E2E)', () => {
   it('runs parent, fork, and spawn through the real loop and session providers', async () => {
     const requests = new Map<string, GenerateOptions[]>()
     ctx = await keylessHarness(requests)
-    const parent = ctx.agentLoop.create(SessionId('cache-parent-keyless-e2e'), {
+    const parent = await ctx.agentLoop.create(SessionId('cache-parent-keyless-e2e'), {
       provider: 'mock',
       model: 'mock',
     })
@@ -95,7 +98,7 @@ describe('parent/child prefix behavior (keyless full-loop E2E)', () => {
       source: { kind: 'user' },
     }))
     await parent.whenIdle()
-    const parentEvents = parent.session.events.slice()
+    const parentEvents = sessionEvents(parent.session).slice()
     const parentRequest = requests.get(String(parent.id))?.at(-1)
     expect(parentRequest).toBeDefined()
 
@@ -112,8 +115,8 @@ describe('parent/child prefix behavior (keyless full-loop E2E)', () => {
     if (forkChild === undefined || forkRequest === undefined || parentRequest === undefined) {
       throw new Error('keyless fork did not publish its complete evidence')
     }
-    expect(forkChild.session.header.seedLength).toBe(parentEvents.length)
-    expect(forkChild.session.events.slice(0, parentEvents.length)).toEqual(parentEvents)
+    expect(forkChild.session.firstLiveSeq).toBe(parentEvents.length)
+    expect(sessionEvents(forkChild.session).slice(0, parentEvents.length)).toEqual(parentEvents)
     const parentStable = envelope(parentRequest)
     const forkStablePrefix = envelope(forkRequest, parentRequest.messages.length)
     expect(fingerprintStablePrefix(forkStablePrefix)).toBe(fingerprintStablePrefix(parentStable))
@@ -127,7 +130,7 @@ describe('parent/child prefix behavior (keyless full-loop E2E)', () => {
     await spawnRun.result
     const spawnChild = spawnRun.localAgent
     const spawnRequest = requests.get(String(spawnRun.id))?.at(-1)
-    expect(spawnChild?.session.header.seedLength).toBeUndefined()
+    expect(spawnChild?.session.firstLiveSeq).toBe(0)
     expect(spawnRequest).toBeDefined()
     expect(JSON.stringify(spawnRequest?.messages)).not.toContain(PARENT_TEXT)
     expect(assessReusablePrefix({
@@ -158,7 +161,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('parent/child natural cache-prefi
   it('preserves the fork prefix, separates spawn, and records only official usage evidence', async () => {
     const requests = new Map<string, GenerateOptions[]>()
     ctx = await liveHarness(requests)
-    const parent = ctx.agentLoop.create(SessionId('cache-parent-e2e'), {
+    const parent = await ctx.agentLoop.create(SessionId('cache-parent-e2e'), {
       provider: 'deepseek-official',
       model: 'deepseek-v4-flash',
     })
@@ -167,7 +170,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('parent/child natural cache-prefi
       source: { kind: 'user' },
     }))
     await parent.whenIdle()
-    const parentEvents = parent.session.events.slice()
+    const parentEvents = sessionEvents(parent.session).slice()
     const parentRequest = requests.get(String(parent.id))?.at(-1)
     expect(parentRequest).toBeDefined()
 
@@ -186,7 +189,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('parent/child natural cache-prefi
       parentSession: parent.session.header.id,
       seedLength: parentEvents.length,
     })
-    expect(forkChild.session.events.slice(0, parentEvents.length)).toEqual(parentEvents)
+    expect(sessionEvents(forkChild.session).slice(0, parentEvents.length)).toEqual(parentEvents)
 
     const parentStable = envelope(parentRequest!)
     const forkStablePrefix = envelope(forkRequest!, parentRequest!.messages.length)
@@ -234,7 +237,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('parent/child natural cache-prefi
     if (spawnChild === undefined) throw new Error('spawn did not publish a local agent')
     const spawnRequest = requests.get(String(spawnRun.id))?.at(-1)
     expect(spawnChild.session.header.parentSession).toBe(parent.session.header.id)
-    expect(spawnChild.session.header.seedLength).toBeUndefined()
+    expect(spawnChild.session.firstLiveSeq).toBe(0)
     expect(spawnRequest).toBeDefined()
     expect(JSON.stringify(spawnRequest!.messages)).not.toContain(PARENT_TEXT)
     expect(assessReusablePrefix({

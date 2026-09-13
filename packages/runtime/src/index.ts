@@ -25,7 +25,7 @@ import type {
   TokenCount,
 } from './measurement.ts'
 import { measureForCompaction } from './measurement.ts'
-import { sessionEvents } from './session-events.ts'
+import { eventBySeq, sessionEvents } from './session-events.ts'
 import { deepSeekV4TokenizerForModel } from './deepseek-v4-tokenizer.ts'
 import { countExactCanonicalTextFields } from './token-count.ts'
 import type {} from '@deepseek-ai/dsh-tools'
@@ -567,7 +567,7 @@ export class ToolResultPruner extends Service {
     // carrying this compaction's checkpoint provenance. Newest match wins.
     let checkpointSeq: number | undefined
     for (const seq of [...session.surface.nodes].reverse()) {
-      const event = events[seq]
+      const event = eventBySeq(events, seq)
       if (event === undefined || event.type !== 'user/message') continue
       const source = (event.data as { source?: { compactionId?: unknown } }).source
       if (source === undefined || source === null) continue
@@ -1101,7 +1101,6 @@ export class ToolResultPruner extends Service {
 
     const plans = new Map<number, PlannedReplacement>()
     let freshPlanned = 0
-    let dedupePlanned = 0
     const dedupeEnabled = policy.presetOptions?.dedupeToolResults === true
     const exactCandidateTokens = candidates.map(candidate => exactTokens(candidate.count))
     const exactAvailable = exactCandidateTokens.every(tokens => tokens !== undefined)
@@ -1119,7 +1118,6 @@ export class ToolResultPruner extends Service {
           const dedupePlan = this.planDedupe(candidate, session, policy, view)
           if (dedupePlan !== null) {
             plans.set(candidate.seq, dedupePlan)
-            dedupePlanned += 1
             continue
           }
         }
@@ -1218,7 +1216,7 @@ export class ToolResultPruner extends Service {
     const measured = new Map(view.measuredNodes.map(node => [node.seq, node.count]))
     const projectionPrices = new Map(view.nodes.map(node => [node.seq, node.tokens]))
     for (const seq of [...session.surface.nodes]) {
-      const event = events[seq]
+      const event = eventBySeq(events, seq)
       if (event?.type !== 'tool/result') continue
       const shadowedHeuristicTokenCount = projectionPrices.get(seq)
       if (shadowedHeuristicTokenCount === undefined) {
@@ -1748,7 +1746,7 @@ export class ToolResultPruner extends Service {
       else if (event.type === 'step/end') completedSteps.add(`${String(event.data.turn)}:${String(event.data.step)}`)
     }
     const firstCompletedSurfaceTurn = session.surface.nodes
-      .map(seq => events[seq])
+      .map(seq => eventBySeq(events, seq))
       .filter((event): event is SessionEvent<'assistant/message'> | SessionEvent<'tool/result'> =>
         (event?.type === 'assistant/message' || event?.type === 'tool/result')
           && completedTurns.has(event.data.turn))
@@ -1760,7 +1758,7 @@ export class ToolResultPruner extends Service {
     for (let index = 0; index < nodes.length; index++) {
       const assistantSeq = nodes[index]
       if (assistantSeq === undefined) continue
-      const assistant = events[assistantSeq]
+      const assistant = eventBySeq(events, assistantSeq)
       if (assistant?.type !== 'assistant/message'
         || assistant.data.interrupted === true
         || assistant.data.message.content.length === 0

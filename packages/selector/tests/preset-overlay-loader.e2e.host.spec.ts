@@ -15,14 +15,17 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
 import {
   SettingsProvider,
-  settingsNamespace,
   type SettingsNamespace,
 } from '@deepseek-ai/dsh-settings'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { afterEach, describe, expect, it } from 'vitest'
 import { apply } from '../src/index.ts'
+
+// 0.1.5 removed the settingsNamespace() wrapper; namespaces are validated at runtime.
+const nsBrand = (value: string): SettingsNamespace => value as unknown as SettingsNamespace
 
 const CORDIS_ORIGINAL = Symbol.for('cordis.original')
 type Traceable = { [CORDIS_ORIGINAL]?: unknown }
@@ -74,21 +77,23 @@ async function harness(): Promise<Context> {
   const presets = await createPresetRoot()
   const runtime = new Context()
   runtime.baseUrl = `${pathToFileURL(presets).href}/`
-  await runtime.plugin(Loader)
+  await runtime.plugin(Loader).await()
   runtime.loader.builtins.include = Include
   runtime.loader.builtins.group = Group
-  await runtime.plugin(LlmRuntime)
-  await runtime.plugin(SessionStore)
-  await runtime.plugin(SystemPrompt, { persona: '' })
-  await runtime.plugin(ToolRuntime)
-  await runtime.plugin(AgentRegistry)
-  await runtime.plugin(AgentLoop, { agents: [] })
-  await runtime.plugin(CommandRuntime)
-  await runtime.plugin(TokenMeter)
-  await runtime.plugin(MemorySettings)
+  await runtime.plugin(LlmRuntime).await()
+  await runtime.plugin(SessionStore).await()
+  await runtime.plugin(SystemPrompt).await()
+  await runtime.plugin(ToolRuntime).await()
+  await runtime.plugin(AgentRegistry).await()
+  await runtime.plugin(AgentLoop).await()
+  await runtime.plugin(CommandRuntime).await()
+  await runtime.plugin(SessionProjectionRegistry).await()
+  await runtime.plugin(TokenMeter).await()
+  await runtime.plugin(MemorySettings).await()
   await runtime.plugin(AgentPresets, {
     default: 'standard',
     roots: [{ path: presets, trust: 'system' }],
+    includeShippedRoot: false,
     includeUserRoot: false,
   })
   await runtime.plugin({
@@ -187,7 +192,7 @@ describe('standalone selector Bundle through the real preset Loader', () => {
 
   it('publishes the daily Custom defaults from the plugin-owned settings row', async () => {
     const runtime = await harness()
-    const namespace = settingsNamespace('context-compression')
+    const namespace = nsBrand('context-compression')
     const settings = runtime.settings.get(namespace) as CustomSettings
 
     expect(settings.custom.history.trigger).toBe(500_000)
