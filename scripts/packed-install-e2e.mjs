@@ -41,7 +41,7 @@ const officialHostPackages = [
 ]
 
 const run = (command, args, options = {}) => new Promise((resolve, reject) => {
-  const child = spawn(command, args, { stdio: 'inherit', ...options })
+  const child = spawn(command, args, { stdio: 'inherit', shell: process.platform === 'win32', ...options })
   child.once('error', reject)
   child.once('exit', (code, signal) => {
     if (code === 0) resolve()
@@ -50,7 +50,7 @@ const run = (command, args, options = {}) => new Promise((resolve, reject) => {
 })
 
 const capture = (command, args, options = {}) => new Promise((resolve, reject) => {
-  const child = spawn(command, args, { ...options, stdio: ['ignore', 'pipe', 'pipe'] })
+  const child = spawn(command, args, { shell: process.platform === 'win32', ...options, stdio: ['ignore', 'pipe', 'pipe'] })
   let stdout = ''
   let stderr = ''
   child.stdout.setEncoding('utf8')
@@ -69,7 +69,7 @@ const capture = (command, args, options = {}) => new Promise((resolve, reject) =
 })
 
 const captureOutcome = (command, args, options = {}) => new Promise((resolve, reject) => {
-  const child = spawn(command, args, { ...options, stdio: ['ignore', 'pipe', 'pipe'] })
+  const child = spawn(command, args, { shell: process.platform === 'win32', ...options, stdio: ['ignore', 'pipe', 'pipe'] })
   let stdout = ''
   let stderr = ''
   child.stdout.setEncoding('utf8')

@@ -15,11 +15,11 @@ import CommandRuntime from '@deepseek-ai/dsh-commands'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import SessionStore from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import {
   SettingsProvider,
-  settingsNamespace,
   type SettingsNamespace,
 } from '@deepseek-ai/dsh-settings'
 import { pathToFileURL } from 'node:url'
@@ -36,6 +36,9 @@ import type {
   OverlayableAgentPresets,
   PresetOverlayMetadataIo,
 } from '../src/preset-overlay.ts'
+
+// 0.1.5 removed the settingsNamespace() wrapper; namespaces are validated at runtime.
+const nsBrand = (value: string): SettingsNamespace => value as unknown as SettingsNamespace
 
 let root: string | undefined
 let ctx: Context | undefined
@@ -176,22 +179,24 @@ async function assertStandingSwitch(
   sourceRoot = rootPath
   ctx = new Context()
   ctx.baseUrl = `${pathToFileURL(rootPath).href}/`
-  await ctx.plugin(Loader)
+  await ctx.plugin(Loader).await()
   ctx.loader.builtins.include = Include
   ctx.loader.builtins.group = Group
-  await ctx.plugin(LlmRuntime)
-  await ctx.plugin(SessionStore)
-  await ctx.plugin(SystemPrompt, { persona: '' })
-  await ctx.plugin(ToolRuntime)
-  await ctx.plugin(AgentRegistry)
-  await ctx.plugin(AgentLoop, { agents: [] })
-  await ctx.plugin(CommandRuntime)
-  await ctx.plugin(TokenMeter)
+  await ctx.plugin(LlmRuntime).await()
+  await ctx.plugin(SessionStore).await()
+  await ctx.plugin(SystemPrompt).await()
+  await ctx.plugin(ToolRuntime).await()
+  await ctx.plugin(AgentRegistry).await()
+  await ctx.plugin(AgentLoop).await()
+  await ctx.plugin(CommandRuntime).await()
+  await ctx.plugin(SessionProjectionRegistry).await()
+  await ctx.plugin(TokenMeter).await()
   await ctx.plugin(MemorySettings).await()
   await ctx.plugin({ apply }).await()
   await ctx.plugin(AgentPresets, {
     default: 'standard',
     roots: [{ path: rootPath, trust: 'system' }],
+    includeShippedRoot: false,
     includeUserRoot: false,
   }).await()
   const act = await arrange()
@@ -263,20 +268,22 @@ describe('real AgentPresets standing generations with the overlay threshold', ()
 
     ctx = new Context()
     ctx.baseUrl = `${pathToFileURL(rootPath).href}/`
-    await ctx.plugin(Loader)
+    await ctx.plugin(Loader).await()
     ctx.loader.builtins.include = Include
     ctx.loader.builtins.group = Group
-    await ctx.plugin(LlmRuntime)
-    await ctx.plugin(SessionStore)
-    await ctx.plugin(SystemPrompt, { persona: '' })
-    await ctx.plugin(ToolRuntime)
-    await ctx.plugin(AgentRegistry)
-    await ctx.plugin(AgentLoop, { agents: [] })
-    await ctx.plugin(CommandRuntime)
-    await ctx.plugin(TokenMeter)
+    await ctx.plugin(LlmRuntime).await()
+    await ctx.plugin(SessionStore).await()
+    await ctx.plugin(SystemPrompt).await()
+    await ctx.plugin(ToolRuntime).await()
+    await ctx.plugin(AgentRegistry).await()
+    await ctx.plugin(AgentLoop).await()
+    await ctx.plugin(CommandRuntime).await()
+    await ctx.plugin(SessionProjectionRegistry).await()
+    await ctx.plugin(TokenMeter).await()
     await ctx.plugin(AgentPresets, {
       default: 'standard',
       roots: [{ path: rootPath, trust: 'system' }],
+      includeShippedRoot: false,
       includeUserRoot: false,
     }).await()
 
@@ -333,25 +340,27 @@ describe('real AgentPresets standing generations with the overlay threshold', ()
     sourceRoot = rootPath
     ctx = new Context()
     ctx.baseUrl = `${pathToFileURL(rootPath).href}/`
-    await ctx.plugin(Loader)
+    await ctx.plugin(Loader).await()
     ctx.loader.builtins.include = Include
     ctx.loader.builtins.group = Group
-    await ctx.plugin(LlmRuntime)
-    await ctx.plugin(SessionStore)
-    await ctx.plugin(SystemPrompt, { persona: '' })
-    await ctx.plugin(ToolRuntime)
-    await ctx.plugin(AgentRegistry)
-    await ctx.plugin(AgentLoop, { agents: [] })
-    await ctx.plugin(CommandRuntime)
-    await ctx.plugin(TokenMeter)
+    await ctx.plugin(LlmRuntime).await()
+    await ctx.plugin(SessionStore).await()
+    await ctx.plugin(SystemPrompt).await()
+    await ctx.plugin(ToolRuntime).await()
+    await ctx.plugin(AgentRegistry).await()
+    await ctx.plugin(AgentLoop).await()
+    await ctx.plugin(CommandRuntime).await()
+    await ctx.plugin(SessionProjectionRegistry).await()
+    await ctx.plugin(TokenMeter).await()
     await ctx.plugin(MemorySettings).await()
     await ctx.plugin({ apply }).await()
     await ctx.plugin(AgentPresets, {
       default: 'standard',
       roots: [{ path: rootPath, trust: 'system' }],
+      includeShippedRoot: false,
       includeUserRoot: false,
     }).await()
-    const namespace = settingsNamespace('context-compression')
+    const namespace = nsBrand('context-compression')
     await ctx.settings.update(namespace, { autoCompact: { thresholdPercent: 80 } })
     const bundle = ctx.plugin({ apply: (child) => {
       apply(child, { presetOverlay: true })
@@ -388,25 +397,27 @@ describe('real AgentPresets standing generations with the overlay threshold', ()
     const rootPath = await presetsRoot()
     ctx = new Context()
     ctx.baseUrl = `${pathToFileURL(rootPath).href}/`
-    await ctx.plugin(Loader)
+    await ctx.plugin(Loader).await()
     ctx.loader.builtins.include = Include
     ctx.loader.builtins.group = Group
-    await ctx.plugin(LlmRuntime)
-    await ctx.plugin(SessionStore)
-    await ctx.plugin(SystemPrompt, { persona: '' })
-    await ctx.plugin(ToolRuntime)
-    await ctx.plugin(AgentRegistry)
-    await ctx.plugin(AgentLoop, { agents: [] })
-    await ctx.plugin(CommandRuntime)
-    await ctx.plugin(TokenMeter)
+    await ctx.plugin(LlmRuntime).await()
+    await ctx.plugin(SessionStore).await()
+    await ctx.plugin(SystemPrompt).await()
+    await ctx.plugin(ToolRuntime).await()
+    await ctx.plugin(AgentRegistry).await()
+    await ctx.plugin(AgentLoop).await()
+    await ctx.plugin(CommandRuntime).await()
+    await ctx.plugin(SessionProjectionRegistry).await()
+    await ctx.plugin(TokenMeter).await()
     await ctx.plugin(MemorySettings).await()
     await ctx.plugin({ apply }).await()
     await ctx.plugin(AgentPresets, {
       default: 'standard',
       roots: [{ path: rootPath, trust: 'system' }],
+      includeShippedRoot: false,
       includeUserRoot: false,
     }).await()
-    const namespace = settingsNamespace('context-compression')
+    const namespace = nsBrand('context-compression')
     await ctx.settings.update(namespace, { autoCompact: { thresholdPercent: 73 } })
     const bundle = ctx.plugin({ apply: (child) => {
       apply(child, { presetOverlay: true })
@@ -451,7 +462,7 @@ describe('real AgentPresets standing generations with the overlay threshold', ()
 
   it('switches the standing generation for an equal-length threshold change', async () => {
     await assertStandingSwitch(async () => {
-      const namespace = settingsNamespace('context-compression')
+      const namespace = nsBrand('context-compression')
       await ctx!.settings.update(namespace, { autoCompact: { thresholdPercent: 70 } })
       return async () => ctx!.settings.update(namespace, { autoCompact: { thresholdPercent: 80 } })
     })
@@ -459,7 +470,7 @@ describe('real AgentPresets standing generations with the overlay threshold', ()
 
   it('switches the standing generation for an equal-length source change at a fixed threshold', async () => {
     await assertStandingSwitch(async () => {
-      const namespace = settingsNamespace('context-compression')
+      const namespace = nsBrand('context-compression')
       await ctx!.settings.update(namespace, { autoCompact: { thresholdPercent: 80 } })
       return async () => {
         await rewriteSourceMarker('marker-bbbbbbbbbb.mjs')
@@ -472,25 +483,27 @@ describe('real AgentPresets standing generations with the overlay threshold', ()
     sourceRoot = rootPath
     ctx = new Context()
     ctx.baseUrl = `${pathToFileURL(rootPath).href}/`
-    await ctx.plugin(Loader)
+    await ctx.plugin(Loader).await()
     ctx.loader.builtins.include = Include
     ctx.loader.builtins.group = Group
-    await ctx.plugin(LlmRuntime)
-    await ctx.plugin(SessionStore)
-    await ctx.plugin(SystemPrompt, { persona: '' })
-    await ctx.plugin(ToolRuntime)
-    await ctx.plugin(AgentRegistry)
-    await ctx.plugin(AgentLoop, { agents: [] })
-    await ctx.plugin(CommandRuntime)
-    await ctx.plugin(TokenMeter)
+    await ctx.plugin(LlmRuntime).await()
+    await ctx.plugin(SessionStore).await()
+    await ctx.plugin(SystemPrompt).await()
+    await ctx.plugin(ToolRuntime).await()
+    await ctx.plugin(AgentRegistry).await()
+    await ctx.plugin(AgentLoop).await()
+    await ctx.plugin(CommandRuntime).await()
+    await ctx.plugin(SessionProjectionRegistry).await()
+    await ctx.plugin(TokenMeter).await()
     await ctx.plugin(MemorySettings).await()
     await ctx.plugin({ apply }).await()
     await ctx.plugin(AgentPresets, {
       default: 'standard',
       roots: [{ path: rootPath, trust: 'system' }],
+      includeShippedRoot: false,
       includeUserRoot: false,
     }).await()
-    const namespace = settingsNamespace('context-compression')
+    const namespace = nsBrand('context-compression')
     await ctx.settings.update(namespace, { autoCompact: { thresholdPercent: 80 } })
 
     const presets = ctx.agentPresets as unknown as OverlayableAgentPresets
@@ -536,25 +549,27 @@ describe('real AgentPresets standing generations with the overlay threshold', ()
     const rootPath = await presetsRoot()
     ctx = new Context()
     ctx.baseUrl = `${pathToFileURL(rootPath).href}/`
-    await ctx.plugin(Loader)
+    await ctx.plugin(Loader).await()
     ctx.loader.builtins.include = Include
     ctx.loader.builtins.group = Group
-    await ctx.plugin(LlmRuntime)
-    await ctx.plugin(SessionStore)
-    await ctx.plugin(SystemPrompt, { persona: '' })
-    await ctx.plugin(ToolRuntime)
-    await ctx.plugin(AgentRegistry)
-    await ctx.plugin(AgentLoop, { agents: [] })
-    await ctx.plugin(CommandRuntime)
-    await ctx.plugin(TokenMeter)
+    await ctx.plugin(LlmRuntime).await()
+    await ctx.plugin(SessionStore).await()
+    await ctx.plugin(SystemPrompt).await()
+    await ctx.plugin(ToolRuntime).await()
+    await ctx.plugin(AgentRegistry).await()
+    await ctx.plugin(AgentLoop).await()
+    await ctx.plugin(CommandRuntime).await()
+    await ctx.plugin(SessionProjectionRegistry).await()
+    await ctx.plugin(TokenMeter).await()
     await ctx.plugin(MemorySettings).await()
     await ctx.plugin({ apply }).await()
     await ctx.plugin(AgentPresets, {
       default: 'standard',
       roots: [{ path: rootPath, trust: 'system' }],
+      includeShippedRoot: false,
       includeUserRoot: false,
     }).await()
-    const namespace = settingsNamespace('context-compression')
+    const namespace = nsBrand('context-compression')
     await ctx.settings.update(namespace, { autoCompact: { thresholdPercent: 73 } })
     const bundle = ctx.plugin({ apply: (child) => {
       apply(child, { presetOverlay: true })
@@ -581,25 +596,27 @@ describe('real AgentPresets standing generations with the overlay threshold', ()
     const rootPath = await presetsRoot()
     ctx = new Context()
     ctx.baseUrl = `${pathToFileURL(rootPath).href}/`
-    await ctx.plugin(Loader)
+    await ctx.plugin(Loader).await()
     ctx.loader.builtins.include = Include
     ctx.loader.builtins.group = Group
-    await ctx.plugin(LlmRuntime)
-    await ctx.plugin(SessionStore)
-    await ctx.plugin(SystemPrompt, { persona: '' })
-    await ctx.plugin(ToolRuntime)
-    await ctx.plugin(AgentRegistry)
-    await ctx.plugin(AgentLoop, { agents: [] })
-    await ctx.plugin(CommandRuntime)
-    await ctx.plugin(TokenMeter)
+    await ctx.plugin(LlmRuntime).await()
+    await ctx.plugin(SessionStore).await()
+    await ctx.plugin(SystemPrompt).await()
+    await ctx.plugin(ToolRuntime).await()
+    await ctx.plugin(AgentRegistry).await()
+    await ctx.plugin(AgentLoop).await()
+    await ctx.plugin(CommandRuntime).await()
+    await ctx.plugin(SessionProjectionRegistry).await()
+    await ctx.plugin(TokenMeter).await()
     await ctx.plugin(MemorySettings).await()
     await ctx.plugin({ apply }).await()
     await ctx.plugin(AgentPresets, {
       default: 'standard',
       roots: [{ path: rootPath, trust: 'system' }],
+      includeShippedRoot: false,
       includeUserRoot: false,
     }).await()
-    const namespace = settingsNamespace('context-compression')
+    const namespace = nsBrand('context-compression')
     await ctx.settings.update(namespace, { autoCompact: { thresholdPercent: 70 } })
     const bundle = ctx.plugin({ apply: (child) => {
       apply(child, { presetOverlay: true })

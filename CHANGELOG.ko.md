@@ -3,6 +3,13 @@
 > 전체 히스토리(업스트림 0.1.0 이전 포함)는 [CHANGELOG.md](CHANGELOG.md)를 참고하세요. 이 파일은 포크의 추가 항목만 번역한 것입니다. · [English](CHANGELOG.md) · [中文](CHANGELOG.zh.md) · [日本語](CHANGELOG.ja.md)
 
 ## Unreleased(미출시)
+### Changed(0.1.5 호환 / compat/0.1.5 브랜치)
+
+- 이 브랜치에서 공식 DeepSeek Harness `v0.1.5-rc.2`에 적응. 모든 `@deepseek-ai/dsh-*` 개발 의존성과 e2e 공식 호스트 목록을 `0.1.1-rc.2`에서 `0.1.5-rc.2`로 업데이트(cordis `4.0.2`, schemastery `3.18.2`, 새 분할 패키지들과 `dsh-client-store` 클라이언트 스택 포함).
+- surface 치환은 v3의 `startSeq`/`endSeq` 형태와 브랜딩된 `SessionSeq` 사용. surface node의 이벤트 해석을 배열 인덱스에서 seq 조회로 변경.
+- 클라이언트 번들은 제거된 `@deepseek-ai/dsh-client-runtime`을 참조하지 않음. settings 타입은 `@deepseek-ai/dsh-client-ui-settings`, 세션 hooks는 `@deepseek-ai/dsh-client-ui-session`에서 가져옴. `engines.dsh >=0.1.5-alpha.1 <0.2.0-0` 선언.
+- Harness 0.1.5는 세션 `agentPreset`을 브라우저에 노출하지 않으므로 클라이언트에서 Minimal 세션을 감지할 수 없음. 셀렉터는 선택 가능한 상태 유지.
+- 테스트를 0.1.5 시맨틱에 맞춰 업데이트(`.await()`, `SessionProjectionRegistry`, `stream: []`, 문자열 settings 네임스페이스).
 
 ### 추가
 

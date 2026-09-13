@@ -244,14 +244,14 @@ describe('context compression profiles', () => {
     },
   )
 
-  it('explains that Minimal keeps the selector effectively off without overwriting the saved profile', () => {
+  it('keeps the selector selectable under a Minimal preset: 0.1.5 no longer exposes agentPreset client-side, so availability cannot gate the UI', () => {
     const { state } = renderReady(
       vi.fn(() => Promise.resolve()), false, key => COPY[key] ?? key,
       { agentPreset: 'minimal' },
     )
 
-    expect(screen.getByText(/Minimal mode does not load context compression.*effectively off.*native behavior remains/)).not.toBeNull()
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: /Context compression/ }).disabled).toBe(true)
+    expect(screen.queryByText(/Minimal mode does not load context compression.*effectively off.*native behavior remains/)).toBeNull()
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: /Context compression/ }).disabled).toBe(false)
     expect(state.getSnapshot().value?.profile).toBe('native')
   })
 

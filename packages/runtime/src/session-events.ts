@@ -16,3 +16,15 @@ export function sessionEvents(session: Session): readonly SessionEvent[] {
   if (typeof snapshot === 'function') return snapshot.call(session)
   return (session as unknown as { events?: readonly SessionEvent[] }).events ?? []
 }
+
+/**
+ * Resolve one surface-node seq to its event. 0.1.5 surface nodes are
+ * positional and may replace earlier ranges, so a node's seq is not
+ * guaranteed to equal the snapshot array index: always resolve by seq.
+ */
+export function eventBySeq(
+  events: readonly SessionEvent[],
+  seq: number | bigint | { valueOf(): number },
+): SessionEvent | undefined {
+  return events[Number(seq)]
+}

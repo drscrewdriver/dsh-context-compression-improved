@@ -5,12 +5,14 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import type { AgentPreset } from '@deepseek-ai/dsh-agent-presets'
 import {
   SettingsProvider,
-  settingsNamespace,
   type SettingsNamespace,
 } from '@deepseek-ai/dsh-settings'
 import { afterEach, describe, expect, it } from 'vitest'
 import { apply } from '../src/index.ts'
 import type { OverlayableAgentPresets } from '../src/preset-overlay.ts'
+
+// 0.1.5 removed the settingsNamespace() wrapper; namespaces are validated at runtime.
+const nsBrand = (value: string): SettingsNamespace => value as unknown as SettingsNamespace
 
 let root: string | undefined
 let ctx: Context | undefined
@@ -97,7 +99,7 @@ describe('context compression selector Host preset integration', () => {
     const builtIn = ctx.plugin({ apply })
     await builtIn.await()
 
-    const namespace = settingsNamespace('context-compression')
+    const namespace = nsBrand('context-compression')
     const service = ctx.agentPresets as unknown as OverlayableAgentPresets
     expect((await service.mount({})).path).toBe(preset.path)
     expect(ctx.settings.describe().filter(row => row.ns === namespace)).toHaveLength(1)
@@ -133,7 +135,7 @@ describe('context compression selector Host preset integration', () => {
     await ctx.plugin(FakeAgentPresets, preset).await()
     // A settings-owning row must register the namespace before the update.
     await ctx.plugin({ apply }).await()
-    const namespace = settingsNamespace('context-compression')
+    const namespace = nsBrand('context-compression')
     await ctx.settings.update(namespace, { autoCompact: { thresholdPercent: 73 } })
 
     const bundle = ctx.plugin({ apply: (child) => {
@@ -179,7 +181,7 @@ describe('context compression selector Host preset integration', () => {
     await ctx.plugin(FakeAgentPresets, preset).await()
     // A settings-owning row must register the namespace before the update.
     await ctx.plugin({ apply }).await()
-    const namespace = settingsNamespace('context-compression')
+    const namespace = nsBrand('context-compression')
     await ctx.settings.update(namespace, { autoCompact: { thresholdPercent: 70 } })
 
     const bundle = ctx.plugin({ apply: (child) => {

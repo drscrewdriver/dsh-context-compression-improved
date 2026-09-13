@@ -2,7 +2,16 @@
 
 > 完整历史（含上游 0.1.0 及更早版本）见 [CHANGELOG.md](CHANGELOG.md)。本文件只翻译本 fork 的新增条目。 · [English](CHANGELOG.md) · [日本語](CHANGELOG.ja.md) · [한국어](CHANGELOG.ko.md)
 
-## Unreleased（未发布）
+## Unreleased（compat/0.1.5 分支）
+
+### Changed
+
+- 在本分支适配官方 DeepSeek Harness `v0.1.5-rc.2`。全部 `@deepseek-ai/dsh-*` 开发依赖与 e2e 官方宿主清单从 `0.1.1-rc.2` 升至 `0.1.5-rc.2`（cordis `4.0.2`、schemastery `3.18.2`），含新的拆分包（`dsh-session-projection`、`dsh-session-persistence`、`dsh-atomic-write`、`dsh-home-paths`、`dsh-sandbox` 等）与 `dsh-client-store` 客户端栈。
+- Surface 替换操作改用 v3 的 `startSeq`/`endSeq` 形状与品牌化 `SessionSeq`；`compaction/prune` 清单保留持久化的 `start`/`end` 字段。surface node 事件改为按 seq 查找而非数组下标。
+- 客户端 bundle 不再引用已移除的 `@deepseek-ai/dsh-client-runtime`：settings 类型改自 `@deepseek-ai/dsh-client-ui-settings`，会话 hooks 合并自 `@deepseek-ai/dsh-client-ui-session`。两份 package manifest 与 `dsh.plugin.json` 声明 `engines.dsh >=0.1.5-alpha.1 <0.2.0-0`。
+- Harness 0.1.5 不再向浏览器暴露会话 `agentPreset`，客户端无法再识别 Minimal 会话；选择器保持可选，旧的不可用横幅不再出现。
+- 测试套件按 0.1.5 语义更新：cordis 插件启动需要 `.await()`，Token Meter 需要预先挂载 `SessionProjectionRegistry`，assistant 事件携带 `stream: []`，settings 命名空间为普通字符串。
+
 
 ### 新增
 

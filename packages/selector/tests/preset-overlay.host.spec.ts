@@ -164,8 +164,11 @@ describe('plugin-owned preset overlay decorator', () => {
     const first = await presets.mount({}, 'standard')
     const same = await presets.mount({}, 'standard')
     expect(same.path).toBe(first.path)
-    expect((await stat(dirname(first.path))).mode & 0o777).toBe(0o700)
-    expect((await stat(first.path)).mode & 0o777).toBe(0o600)
+    // Windows (NTFS) ignores POSIX permission bits: mode stays 0o666.
+    if (process.platform !== 'win32') {
+      expect((await stat(dirname(first.path))).mode & 0o777).toBe(0o700)
+      expect((await stat(first.path)).mode & 0o777).toBe(0o600)
+    }
 
     await writeFile(standard.path, `${await readFile(standard.path, 'utf8')}\n- id: later\n  name: '/opt/preset/later.js'\n`)
     const changed = await presets.mount({}, 'standard')

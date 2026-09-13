@@ -8,7 +8,7 @@ const EVENTS = Object.freeze([
 
 describe('sessionEvents', () => {
   it('retains the rc.2 events accessor fallback', () => {
-    const session = { events: EVENTS } as Session
+    const session = { events: EVENTS } as unknown as Session
     expect(sessionEvents(session)).toBe(EVENTS)
   })
 
