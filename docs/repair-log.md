@@ -266,7 +266,29 @@ capable, and it never stops the service for you.
 
 **Verification.** The script's `-DryRun` reports one true target and names the one path.
 
-**Status.** Diagnosed and delivered as a script; not yet executed.
+**Status. Resolved** in the maintenance window. The consumer ran a plain `pnpm install` in
+the profile and it completed: `Packages: +256 -16`, `Progress: resolved 256, reused 256`,
+`Done in 11.1s using pnpm v12.4.1`, exit 0.
+
+**Resolution evidence (read-only re-check after the install):**
+
+| Check | Result |
+| --- | --- |
+| `pnpm-lock.yaml` references `dsh-context-compression-selector-workspace` | **none** — lockfile and `package.json` agree again |
+| `node_modules\dsh-context-compression*` | exactly one directory, `dsh-context-compression-improved` |
+| `*_pacquet-stage_*` residue | none |
+| plugin `packages/selector/lib/**` | all ten artifacts present, `invariant.js` 3927 B — byte-size identical to the source build |
+| `dsh.profile.bundles` row | `dsh-context-compression-improved` still listed |
+
+Two things follow for the record. First, the lockfile inconsistency tracked here was a
+**symptom** of the failed installs, not a separate defect: once one install succeeded, it
+cleared itself — no manual lockfile surgery was needed. Second, the blockage cleared **by
+retrying**, without the elevated ACL repair. That does not retire the finding — the `katex`
+ACL hole is still real and will bite the next replacement of that subtree — but it does mean
+the earlier per-run progress (`added 151 → 159 → 205`) was the decisive mechanism: each
+attempt converged further and the last one finished. Record it as *cleared by convergence*,
+not as *fixed by the script*; `-04` remains the tool of record if a future install stalls on
+the same signature.
 
 ---
 
@@ -375,7 +397,7 @@ The merged package keeps **one** invariant companion, and it is the runtime's: `
 | `compat/0.1.5` @ `d7c592d` | no (lazy) | **absent** | n/a | needed | **inherits the whole contract** |
 | `baseline/pre-god-module-split`, `main` @ `e337bf5` | no | **absent, no `lib/`** | n/a | needed | not distributable by design |
 | any future single-package release | structurally impossible | — | **permanent gate** | — | inherits D3 |
-| every branch on this host | — | — | — | — | **blocked by D6** until the profile install stops hitting `os error 5` |
+| every branch on this host | — | — | — | — | was **blocked by D6**; the profile install now completes, so real-machine verification is unblocked |
 
 ## Inheritance rules
 
@@ -402,3 +424,4 @@ The merged package keeps **one** invariant companion, and it is the runtime's: `
 | 2026-09-14 | D1–D5 | Ledger created; D1 fixed; D2 fixed for `dependencies`/`./pruner`; D3 gate added and verified; D4 delivered as a script; D5 recorded for `compat/0.1.5` |
 | 2026-09-14 | D2 | `./invariant` added to the root `exports`; root and package manifests now agree. Ten-gate closure ledger added, with the gate-5 flakiness evidence and the withdrawn identity-hash criterion |
 | 2026-09-14 | D6 | Profile dependency-reconciliation blocker diagnosed: two independent `os error 5` sources (one ACL-denied directory; mapped native modules held by the live host), plus the ownership-vs-write-right criterion warning. Delivered as a dry-runnable script |
+| 2026-09-15 | D6 | **Resolved.** One plain `pnpm install` in the profile converged (`+256 -16`, exit 0); the lockfile repointed itself and the `_pacquet-stage_` residue is gone. Cleared by convergence over successive attempts, not by the ACL repair — the `katex` denial stays on record |
