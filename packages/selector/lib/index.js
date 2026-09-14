@@ -456,6 +456,12 @@ function restoreMethod(presets, snapshot) {
 //#endregion
 //#region src/index.ts
 const ESTIMATOR_CATALOG_ROUTES = ["/endpoint/dsh-context-compression-improved/estimator-catalog", "/api/dsh-context-compression-improved/estimator-catalog"];
+/**
+* The one service the catalog route actually needs. `llm` and
+* `agentDefaultModel` are payload enrichment the handler resolves per request,
+* never reasons to withhold the route.
+*/
+const ESTIMATOR_CATALOG_ROUTE_DEPS = ["webServer"];
 function asWebServer(value) {
 	const register = value?.register;
 	if (typeof register !== "function") return void 0;
@@ -467,26 +473,44 @@ function asWebServer(value) {
 * `llm` service plus the effective selection). This lives on the top-level
 * plugin context, NOT inside the isolated toolResultPruner service: a route
 * registered there can never reach the `webServer` service across the
-* isolation boundary, and the dropdowns answer 401. `ctx.inject` also fixes
-* the late-activation problem the old polling loop worked around — the handler
-* is installed the moment `webServer` appears. Best effort: without the
-* service the plugin keeps working, only the HTTP API is missing.
+* isolation boundary.
+*
+* The route gates on `webServer` **alone**. `llm` and `agentDefaultModel` only
+* enrich the response and are resolved per request, so listing them here would
+* let an estimator-side service the handler never needs keep the route
+* unregistered. That failure is silent by construction — an unsatisfied
+* `ctx.inject` callback never runs, so the plugin simply has no HTTP API and
+* every request falls through to the host 404.
+*
+* Two channels cover the two arrival orders: a direct lookup catches a
+* `webServer` that is already active when the plugin loads, and `ctx.inject`
+* catches one that activates later. Both funnel into a single guarded
+* registration, because a late-arriving service must not re-register a
+* `(kind, path)` the host treats as a composition-contract violation.
 */
 function registerEstimatorCatalogRoute(ctx) {
-	ctx.inject([
-		"webServer",
-		"llm",
-		"agentDefaultModel"
-	], (injected) => {
-		const rctx = injected;
-		const webServer = asWebServer(rctx.webServer);
-		if (webServer === void 0) return;
+	const readService = (name) => {
+		try {
+			return ctx.get(name);
+		} catch {
+			return;
+		}
+	};
+	const log = (level, message, ...args) => {
+		try {
+			ctx.logger[level](message, ...args);
+		} catch {}
+	};
+	let registered = false;
+	const register = (webServer, channel) => {
+		if (registered) return;
 		const handler = (_req, res) => {
 			const resTyped = res;
 			if (typeof resTyped?.writeHead !== "function" || typeof resTyped?.end !== "function") return;
-			const defaults = rctx.agentDefaultModel;
+			const llm = readService("llm");
+			const defaults = readService("agentDefaultModel");
 			buildEstimatorCatalog({
-				...rctx.llm === void 0 ? {} : { llm: rctx.llm },
+				...llm === void 0 ? {} : { llm },
 				...typeof defaults?.currentSelection === "function" ? { currentSelection: () => defaults.currentSelection?.() } : {}
 			}).then((catalog) => {
 				resTyped.writeHead(200, {
@@ -505,15 +529,35 @@ function registerEstimatorCatalogRoute(ctx) {
 				}));
 			});
 		};
-		const disposers = ESTIMATOR_CATALOG_ROUTES.map((path) => webServer.register({
-			kind: "exact",
-			path,
-			handler
-		})).filter((off) => typeof off === "function");
-		rctx.effect(() => () => {
-			for (const off of disposers) off();
-		}, "contextCompressionSelector.estimator-catalog route");
+		try {
+			const disposers = ESTIMATOR_CATALOG_ROUTES.map((path) => webServer.register({
+				kind: "exact",
+				path,
+				handler
+			})).filter((off) => typeof off === "function");
+			registered = true;
+			ctx.effect(() => () => {
+				for (const off of disposers) off();
+			}, "contextCompressionSelector.estimator-catalog route");
+			log("info", "context-compression estimator catalog route registered (%s): %s", channel, ESTIMATOR_CATALOG_ROUTES.join(", "));
+		} catch (error) {
+			log("warn", "context-compression estimator catalog route registration failed (%s): %o", channel, error);
+		}
+	};
+	const active = asWebServer(readService("webServer"));
+	if (active !== void 0) {
+		register(active, "direct");
+		if (registered) return;
+	}
+	ctx.inject([...ESTIMATOR_CATALOG_ROUTE_DEPS], (injected) => {
+		const webServer = asWebServer(injected.webServer);
+		if (webServer === void 0) {
+			log("warn", "context-compression webServer exposes no register() — estimator catalog route not registered");
+			return;
+		}
+		register(webServer, "inject");
 	});
+	log("warn", "context-compression webServer not active yet — estimator catalog route pending: %s", ESTIMATOR_CATALOG_ROUTES.join(", "));
 }
 const CONTEXT_COMPRESSION_NAMESPACE = CONTEXT_COMPRESSION_SETTINGS_NAMESPACE;
 /** Symbol properties reach the shared service target through Cordis proxies. */
