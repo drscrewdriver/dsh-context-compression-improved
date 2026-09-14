@@ -2,6 +2,23 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
+## 0.1.1
+
+### Added
+
+- TypeScript toolchain for `scripts/`: `verify-release`, `packed-components-smoke`, and `packed-install-e2e` are now `.ts` sources compiled to `scripts-dist/` via `tsc`, eliminating the last three non-TS source files in the repository.
+
+### Changed
+
+- `package.json` scripts `test:e2e:packed` and `verify:release` now run compiled outputs from `scripts-dist/`.
+- Estimator catalog route registration hardened: `asWebServer` returns the service itself (D7 fix), and the estimator UI preserves its section heading when inactive instead of hiding behind an invisible gate (U1 fix).
+- Framework documentation corrected: row-level `inject: [webServer]` is not load-bearing (Y22); `isolate()` does not exist in any DSH package.
+
+### Fixed
+
+- The estimator catalog route was never registered since day one because `asWebServer` detached `register` from its service (D7).
+- The estimator section silently disappeared when a non-TokenPilot profile was active, with no hint about why or how to enable it (U1).
+
 ## Unreleased
 
 ### Added
