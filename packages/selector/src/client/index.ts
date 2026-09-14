@@ -12,6 +12,7 @@ import {
 import { DEFAULT_CUSTOM_COMPRESSION_POLICY } from '../profiles.ts'
 import { decodeSettings } from './decode.ts'
 import { en, zh } from './locales.ts'
+import { planPresetOptionsOps, presetOptionsOpsAccepted } from './preset-options.ts'
 
 /**
  * Harness 0.1.5 mounts the web core's `slots` service on the client context
@@ -131,10 +132,17 @@ export function apply(ctx: ClientContext): void {
         () => scope.set('codeSkeleton', { enabled }),
         settings => settings.codeSkeleton.enabled === enabled,
       ),
-      savePresetOptions: options => writeAndConfirm(
-        () => scope.set('presetOptions', options),
-        settings => (settings.presetOptions?.estimatorMode ?? '') === (options.estimatorMode ?? ''),
-      ),
+      savePresetOptions: options => {
+        // Path-addressed so one field write cannot delete its siblings: the
+        // previous whole-section set erased estimatorMode (and every other
+        // override) whenever the user touched a second field.
+        const ops = planPresetOptionsOps(scope.getSnapshot().value?.presetOptions, options)
+        if (ops.length === 0) return Promise.resolve()
+        return writeAndConfirm(
+          () => scope.mutate(ops),
+          settings => presetOptionsOpsAccepted(settings.presetOptions, ops),
+        )
+      },
     }
   }
   // 设置 → 插件 → 上下文压缩卡片。槽名随宿主版本演变：0.1.5-rc.2 的 SlotMap
