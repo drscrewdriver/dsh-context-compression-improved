@@ -1,12 +1,14 @@
 /**
  * Host-side guard for the estimator catalog route.
  *
- * The defect this pins is a registration that never happens: the injection gate
- * asked for more services than the handler needs, and an unsatisfied
- * `ctx.inject` callback fails silently, so the plugin simply had no HTTP API
- * and every request fell through to the host 404. These cases assert the two
- * properties that failure violated — the route appears whenever `webServer` is
- * usable, in either arrival order, and its absence is never silent.
+ * The defect this pins is a route that never exists: the plugin reached for the
+ * raw `webServer` service, which the host never intended a plugin to resolve,
+ * and an unsatisfied `ctx.inject` callback fails silently — so the plugin simply
+ * had no HTTP API and every request fell through to the host 404.
+ *
+ * These cases assert the two properties that failure violated: the route
+ * appears whenever `connection` is usable, in either arrival order, and its
+ * absence is never silent.
  */
 
 import { Context } from '@deepseek-ai/cordis'
@@ -14,17 +16,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { apply } from '../src/index.ts'
 
 const CATALOG_ROUTE = '/api/dsh-context-compression-improved/estimator-catalog'
-const LEGACY_ROUTE = '/endpoint/dsh-context-compression-improved/estimator-catalog'
 
 interface RegisteredRoute {
-  kind: string
   path: string
-  handler: (req: unknown, res: unknown) => void
+  methods: readonly string[]
+  fetch: (request: Request) => Promise<Response> | Response
 }
 
-interface FakeResponse {
-  status?: number
-  body?: string
+interface RouteOutcome {
+  status: number
+  body: string
 }
 
 let ctx: Context | undefined
@@ -38,21 +39,23 @@ afterEach(async () => {
 const settle = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 20))
 
 /**
- * Mount a host web server stand-in that records routes and reproduces the real
- * host's duplicate-`(kind, path)` contract, so a double registration is a
- * failure rather than a silent overwrite.
+ * Mount a host Connection stand-in that records routes and reproduces the real
+ * service's duplicate-path contract, so a double registration is a failure
+ * rather than a silent overwrite.
  */
-async function mountWebServer(runtime: Context, routes: RegisteredRoute[]): Promise<void> {
+async function mountConnection(runtime: Context, routes: RegisteredRoute[]): Promise<void> {
   await runtime.plugin({
-    name: 'fake-webserver',
-    apply(webCtx) {
-      webCtx.provide('webServer', {
-        register(route: RegisteredRoute) {
-          if (routes.some(existing => existing.kind === route.kind && existing.path === route.path)) {
-            throw new Error(`webserver: duplicate ${route.kind} route "${route.path}"`)
-          }
-          routes.push(route)
-          return () => {}
+    name: 'fake-connection',
+    apply(connectionCtx) {
+      connectionCtx.provide('connection', {
+        fetch: {
+          register(route: RegisteredRoute) {
+            if (routes.some(existing => existing.path === route.path)) {
+              throw new Error(`connection: exact Fetch route ${JSON.stringify(route.path)} is already registered`)
+            }
+            routes.push(route)
+            return () => {}
+          },
         },
       })
     },
@@ -70,33 +73,27 @@ async function mountEstimatorServices(runtime: Context): Promise<void> {
   })
 }
 
-/** Drive one registered route through a stand-in response. */
-async function invoke(route: RegisteredRoute): Promise<FakeResponse> {
-  const captured: FakeResponse = {}
-  const res = {
-    writeHead(code: number) { captured.status = code },
-    end(body?: string) { if (body !== undefined) captured.body = body },
-  }
-  route.handler({ method: 'GET' }, res)
-  await settle()
-  return captured
+/** Drive one registered route through a stand-in request. */
+async function invoke(route: RegisteredRoute): Promise<RouteOutcome> {
+  const response = await route.fetch(new Request(`http://127.0.0.1${route.path}`, { method: 'GET' }))
+  return { status: response.status, body: await response.text() }
 }
 
 describe('estimator catalog route registration', () => {
-  it('registers both route prefixes with only webServer present', async () => {
+  it('registers the catalog path on the connection Fetch surface', async () => {
     const routes: RegisteredRoute[] = []
     const runtime = new Context()
     ctx = runtime
-    await mountWebServer(runtime, routes)
+    await mountConnection(runtime, routes)
 
     apply(runtime, {})
     await settle()
 
-    expect(routes.map(route => route.path)).toEqual([LEGACY_ROUTE, CATALOG_ROUTE])
-    expect(routes.every(route => route.kind === 'exact')).toBe(true)
+    expect(routes.map(route => route.path)).toEqual([CATALOG_ROUTE])
+    expect(routes[0]?.methods).toEqual(['GET'])
   })
 
-  it('registers the route when webServer activates after the plugin applied', async () => {
+  it('registers the route when connection activates after the plugin applied', async () => {
     const routes: RegisteredRoute[] = []
     const runtime = new Context()
     ctx = runtime
@@ -105,17 +102,17 @@ describe('estimator catalog route registration', () => {
     await settle()
     expect(routes).toHaveLength(0)
 
-    await mountWebServer(runtime, routes)
+    await mountConnection(runtime, routes)
     await settle()
 
-    expect(routes.map(route => route.path)).toEqual([LEGACY_ROUTE, CATALOG_ROUTE])
+    expect(routes.map(route => route.path)).toEqual([CATALOG_ROUTE])
   })
 
   it('registers nothing twice when the estimator services arrive later', async () => {
     const routes: RegisteredRoute[] = []
     const runtime = new Context()
     ctx = runtime
-    await mountWebServer(runtime, routes)
+    await mountConnection(runtime, routes)
 
     apply(runtime, {})
     await settle()
@@ -127,7 +124,7 @@ describe('estimator catalog route registration', () => {
     expect(routes).toHaveLength(afterRegistration)
   })
 
-  it('keeps the rest of the plugin alive and warns when webServer never arrives', async () => {
+  it('keeps the rest of the plugin alive and warns when connection never arrives', async () => {
     const runtime = new Context()
     ctx = runtime
     // The diagnostic goes to `console`: the host's cordis logger surfaces no
@@ -149,16 +146,16 @@ describe('estimator catalog route registration', () => {
     const routes: RegisteredRoute[] = []
     const runtime = new Context()
     ctx = runtime
-    await mountWebServer(runtime, routes)
+    await mountConnection(runtime, routes)
 
     apply(runtime, {})
     await settle()
 
     const route = routes.find(candidate => candidate.path === CATALOG_ROUTE)
     expect(route).toBeDefined()
-    const response = await invoke(route as RegisteredRoute)
+    const outcome = await invoke(route as RegisteredRoute)
 
-    expect(response.status).toBe(200)
-    expect(JSON.parse(String(response.body))).toMatchObject({ ok: true, providers: [] })
+    expect(outcome.status).toBe(200)
+    expect(JSON.parse(outcome.body)).toMatchObject({ ok: true, providers: [] })
   })
 })
