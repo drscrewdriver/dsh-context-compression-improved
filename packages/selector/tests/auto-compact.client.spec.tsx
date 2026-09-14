@@ -115,6 +115,8 @@ function mountAutoCompact(options: MountOptions = {}) {
     saveCustom: vi.fn(() => Promise.resolve()),
     resetCustom: vi.fn(() => Promise.resolve()),
     saveAutoCompact,
+    saveCodeSkeleton: vi.fn(() => Promise.resolve()),
+    savePresetOptions: vi.fn(() => Promise.resolve()),
     t,
   } as unknown as CompressionProfileSelectorProps)} />)
   return { state, saveAutoCompact }
@@ -135,6 +137,17 @@ describe('Auto Compact threshold controls', () => {
     expect(screen.queryByLabelText(INPUT_LABEL)).toBeNull()
     expect(screen.queryByRole('slider')).toBeNull()
     expect(screen.getByText(/Auto Compact threshold: 80%/)).not.toBeNull()
+  })
+
+  // Regression guard: the settings surface must keep BOTH section-level gates.
+  // A refactor once dropped CodeSkeletonControls from the settings section while
+  // leaving the injected save path intact, so the code-skeleton save contract
+  // stayed green with the control missing from the UI.
+  it('keeps the code-skeleton gate alongside the Auto Compact editor in the settings section', () => {
+    mountAutoCompact({ settingsSection: true })
+    expect(screen.getByRole('heading', { name: en['codeSkeleton.title'] })).not.toBeNull()
+    expect(screen.getByLabelText(en['codeSkeleton.enabled'])).not.toBeNull()
+    expect(screen.getByRole('heading', { name: en['autoCompact.title'] })).not.toBeNull()
   })
 
   it('saves a non-quick value like 73 and reads the same value back after remount', async () => {

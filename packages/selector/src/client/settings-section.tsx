@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Full-page Settings surface backed by the same durable selector state.
  *
  * Extracted from CompressionProfileSelector.tsx to reduce god-module size.
@@ -15,7 +15,7 @@ import {
   type CustomCompressionPolicyV3,
 } from '../profiles.ts'
 import type { CompressionProfileSelectorProps } from './CompressionProfileSelector.tsx'
-import { AutoCompactThresholdControls } from './CompressionProfileControls.tsx'
+import { AutoCompactThresholdControls, CodeSkeletonControls } from './CompressionProfileControls.tsx'
 import { EstimatorControls, EstimatorInactiveNotice } from './EstimatorControls.tsx'
 import { CustomPolicyEditor, editableCustom } from './CustomPolicyEditor.tsx'
 
@@ -94,6 +94,13 @@ export function SettingsCompressionProfileControls({
         value={state.value?.autoCompact?.thresholdPercent ?? AUTO_COMPACT_THRESHOLD_LIMITS.default}
         disabled={busy || !state.writable || !selectorAvailable}
         save={saveAutoCompact}
+        settle={settle}
+        t={t}
+      />
+      <CodeSkeletonControls
+        value={state.value?.codeSkeleton?.enabled ?? false}
+        disabled={busy || !state.writable || !selectorAvailable}
+        save={saveCodeSkeleton}
         settle={settle}
         t={t}
       />

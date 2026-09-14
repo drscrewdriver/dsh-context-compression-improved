@@ -17,10 +17,8 @@ import {
   isValidAutoCompactThresholdPercent,
   type CompressionProfile,
   type CustomCompressionPolicyV3,
-  type ContextCompressionSettings,
 } from '../profiles.ts'
 import type { CompressionProfileSelectorProps } from './CompressionProfileSelector.tsx'
-import { EstimatorControls, EstimatorInactiveNotice } from './EstimatorControls.tsx'
 import { CustomPolicyEditor, editableCustom } from './CustomPolicyEditor.tsx'
 
 export function CompressionProfileControls({

@@ -62,8 +62,7 @@ export {
   editableCustom,
 } from './CustomPolicyEditor.tsx'
 
-// Lazy re-exports for backward compatibility.
-import { ContextCompressionSettingsSection } from './settings-section.tsx'
+// Imported for the wrapper component below; re-exported above.
 import { CompressionProfileControls } from './CompressionProfileControls.tsx'
 
 /** Full-page Settings surface backed by the same durable selector state. */

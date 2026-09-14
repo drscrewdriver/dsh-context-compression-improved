@@ -584,6 +584,12 @@ declare class ToolResultPruner extends Service {
   readonly state: PrunerState;
   constructor(ctx: Context, config?: ToolResultPruneConfig);
   /**
+   * Measure text content in Unicode code points; non-text blocks cost zero.
+   * @param blocks - tool-result content to measure.
+   * @returns total Unicode code points across text blocks.
+   */
+  measureContent(blocks: readonly ContentBlock[]): number;
+  /**
    * Apply the configured native head/middle/tail transform.
    * @param blocks - original tool-result content.
    * @returns reduced content, or `null` when no reduction is required.

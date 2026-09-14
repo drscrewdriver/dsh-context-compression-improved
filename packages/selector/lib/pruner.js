@@ -2518,6 +2518,14 @@ var ToolResultPruner = class extends Service {
 		});
 	}
 	/**
+	* Measure text content in Unicode code points; non-text blocks cost zero.
+	* @param blocks - tool-result content to measure.
+	* @returns total Unicode code points across text blocks.
+	*/
+	measureContent(blocks) {
+		return measureContent(blocks);
+	}
+	/**
 	* Apply the configured native head/middle/tail transform.
 	* @param blocks - original tool-result content.
 	* @returns reduced content, or `null` when no reduction is required.
