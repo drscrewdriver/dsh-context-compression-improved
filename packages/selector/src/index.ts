@@ -9,7 +9,7 @@ import {
 import {
   CONTEXT_COMPRESSION_SETTINGS_NAMESPACE,
   ContextCompressionSettingsSchema,
-} from 'dsh-context-compression-improved-runtime'
+} from './runtime/config.ts'
 import { buildEstimatorCatalog, type EstimatorCatalogDeps } from './estimator-catalog.ts'
 import {
   decorateAgentPresets,

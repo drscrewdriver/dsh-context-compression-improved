@@ -187,7 +187,7 @@ describe('estimator channel card', () => {
     const { savePresetOptions } = mountEstimator({ estimatorMode: 'host' })
 
     const provider = screen.getByLabelText<HTMLInputElement>(PROVIDER_LABEL)
-    const model = screen.getByLabelText<HTMLInputElement>(MODEL_LABEL)
+    expect(screen.getByLabelText(MODEL_LABEL).tagName).toBe('INPUT')
     expect(document.querySelectorAll('#estimator-provider-options option').length).toBe(0)
     expect(document.querySelectorAll('#estimator-model-options option').length).toBe(0)
     fireEvent.change(provider, { target: { value: 'manual-group' } })

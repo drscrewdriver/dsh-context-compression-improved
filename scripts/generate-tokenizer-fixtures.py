@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Regenerate the tokenizer golden fixture for the Node loader equivalence tests.
 
-Loads each pinned ``tokenizer.json`` shipped in ``packages/runtime/assets`` with
+Loads each pinned ``tokenizer.json`` shipped in ``packages/selector/assets`` with
 the official Hugging Face ``tokenizers`` Python library (the same Rust core the
 ``transformers`` tokenizer for these repositories uses) and records the token
 counts the Node runtime must reproduce exactly.
@@ -10,7 +10,7 @@ Usage:
     python3 scripts/generate-tokenizer-fixtures.py
 
 Requires: pip install tokenizers
-Output:   packages/runtime/tests/fixtures/tokenizer-golden.json
+Output:   packages/selector/tests/runtime/fixtures/tokenizer-golden.json
 """
 
 import json
@@ -19,11 +19,11 @@ import platform
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 ASSETS = {
-    "deepseek-ai/DeepSeek-V4-Pro": REPO_ROOT / "packages/runtime/assets/deepseek-v4",
+    "deepseek-ai/DeepSeek-V4-Pro": REPO_ROOT / "packages/selector/assets/deepseek-v4",
     "deepseek-ai/DeepSeek-V4-Flash-Vision-Exp": REPO_ROOT
-    / "packages/runtime/assets/deepseek-v4-vision-exp",
+    / "packages/selector/assets/deepseek-v4-vision-exp",
 }
-OUTPUT = REPO_ROOT / "packages/runtime/tests/fixtures/tokenizer-golden.json"
+OUTPUT = REPO_ROOT / "packages/selector/tests/runtime/fixtures/tokenizer-golden.json"
 
 CASES = [
     ("english prose", "The quick brown fox jumps over the lazy dog."),
