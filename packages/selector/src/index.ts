@@ -60,9 +60,14 @@ function asWebServer(value: unknown): WebServerLike | undefined {
  * Serve `GET /api/dsh-context-compression-improved/estimator-catalog` — the
  * settings card's host-route dropdowns (live provider/model groups from the DSH
  * `llm` service plus the effective selection). This lives on the top-level
- * plugin context, NOT inside the isolated toolResultPruner service: a route
- * registered there can never reach the `webServer` service across the
- * isolation boundary.
+ * plugin context, NOT inside the isolated toolResultPruner service.
+ *
+ * (The isolation reason this placement was originally justified with — "a route
+ * registered there can never reach `webServer` across the isolation boundary" —
+ * is **unverified**: no `@deepseek-ai` package calls `.isolate(`, so there is no
+ * boundary to cross here. Top-level placement is still the right choice, for a
+ * reason that needs no framework rule: the route is host-wide, not
+ * per-pruner-instance. Don't promote the isolation wording into a rule.)
  *
  * The route gates on `webServer` **alone**. `llm` and `agentDefaultModel` only
  * enrich the response and are resolved per request, so listing them here would
@@ -191,12 +196,27 @@ export interface Config {
   /** Add the canonical compression stack to every non-Minimal preset. */
   presetOverlay?: boolean
   /**
-   * Own the estimator catalog HTTP route. Set only on the Loader row that
-   * declares `inject: [webServer]`: registering a route authorizes against the
+   * Own the estimator catalog HTTP route. Set on the Loader row that declares
+   * `inject: [webServer]`.
+   *
+   * **Measured, and it contradicts the note this field was introduced with.**
+   * The original justification — "registering a route authorizes against the
    * calling fiber, and a fiber that has not declared `webServer` cannot reach
-   * it — not even through `ctx.inject` or a runtime `ctx.get` probe. Splitting
-   * it onto its own row keeps the compression stack loadable on profiles that
-   * have no web server at all.
+   * it, not even through `ctx.inject` or `ctx.get`" — is wrong on both halves:
+   * the host's `register` performs no authorization at all (it reads
+   * `this.exact` / `this.prefixes` and throws only on a duplicate
+   * `(kind, path)`), and `ctx.get(name, strict)` checks only that the providing
+   * fiber is active (`state === 2`), never the caller's `inject` list. The one
+   * inject-gated path is the `ctx.webServer` **property** access, which this
+   * plugin never uses: `registerEstimatorCatalogRoute` uses `ctx.get` plus its
+   * own `ctx.inject(['webServer'], …)`.
+   *
+   * So the row-level `inject` is **not load-bearing**; it is kept as
+   * belt-and-braces so the route row stays inactive until `webServer` exists,
+   * and the flag keeps the route off standalone Bundle rows on profiles that
+   * have no web server. The internal two-channel registration is what actually
+   * covers both arrival orders. Do not cite this comment as a rule to the
+   * 0.1.5 replay — cite the host source.
    */
   estimatorCatalogRoute?: boolean
 }
