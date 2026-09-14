@@ -5,6 +5,18 @@ import { Context } from "@deepseek-ai/cordis";
 interface Config {
   /** Add the canonical compression stack to every non-Minimal preset. */
   presetOverlay?: boolean;
+  /**
+   * Register the estimator-catalog HTTP route on this row.
+   *
+   * The standalone Bundle patch sets this on its own row (which declares
+   * `inject: [webServer]`), so profiles without a host web server never mount a
+   * row that could only announce a pending route. The row-level `inject` is
+   * belt-and-braces: `dsh-host-webserver.register` performs no authorization
+   * check and `ctx.get(name)` only asks whether the providing fiber is active,
+   * so the two-channel registration inside this function is what actually
+   * covers both arrival orders.
+   */
+  estimatorCatalogRoute?: boolean;
 }
 /** Loader validation for the standalone Bundle opt-in. */
 declare const Config: z<Config>;
