@@ -128,6 +128,8 @@ const COMPRESSION_PACKAGES = new Set([
   '@deepseek-ai/dsh-command-compact',
   '@deepseek-ai/dsh-compaction-tool-result-pruner',
   'dsh-context-compression-improved-runtime',
+  'dsh-context-compression-improved',
+  'dsh-context-compression-improved/pruner',
 ])
 
 /**
@@ -141,7 +143,7 @@ export function resolveCompressionModulePaths(): CompressionModulePaths {
     commandCompact: modulePath(
       '@deepseek-ai/dsh-command-compact', import.meta.resolve('@deepseek-ai/dsh-command-compact')),
     toolResultPruner: modulePath(
-      'dsh-context-compression-improved-runtime', import.meta.resolve('dsh-context-compression-improved-runtime')),
+      'dsh-context-compression-improved/pruner', import.meta.resolve('dsh-context-compression-improved/pruner')),
   }
 }
 

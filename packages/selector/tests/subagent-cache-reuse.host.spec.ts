@@ -1,4 +1,4 @@
-import { sessionEvents } from '../../runtime/src/session-events.ts'
+import { sessionEvents } from '../src/runtime/session-events.ts'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'

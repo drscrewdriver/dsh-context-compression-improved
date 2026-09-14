@@ -5,8 +5,6 @@
     "composite": false
   },
   "include": [
-    "packages/runtime/src/**/*.ts",
-    "packages/runtime/tests/**/*.ts",
     "packages/selector/src/**/*.ts",
     "packages/selector/src/**/*.tsx",
     "packages/selector/tests/**/*.ts",
