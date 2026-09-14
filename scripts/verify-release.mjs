@@ -11,24 +11,39 @@ const fail = (message) => {
 
 const json = async (path) => JSON.parse(await readFile(path, 'utf8'))
 const rootPackage = await json(join(root, 'package.json'))
-const runtimePackage = await json(join(root, 'packages/runtime/package.json'))
 const selectorPackage = await json(join(root, 'packages/selector/package.json'))
 
 if (!rootPackage.scripts?.typecheck?.includes('pnpm run typecheck:tests')
   || rootPackage.scripts?.['typecheck:tests'] !== 'tsc --noEmit -p tsconfig.tests.json') {
   fail('root typecheck must include the strict active-test TypeScript gate')
 }
-if (runtimePackage.scripts?.test
-  !== 'vitest run --root ../.. --config vitest.config.ts --project runtime') {
-  fail('Runtime package-local test script is not the verified root project command')
+// The root manifest is the install surface for git installs: one package
+// carries the runtime, the settings UI and the bundle patch.
+if (rootPackage.name !== 'dsh-context-compression-improved') fail('unexpected root package name')
+for (const specifier of ['.', './invariant', './pruner', './client']) {
+  if (rootPackage.exports?.[specifier] === undefined) {
+    fail(`root exports are missing the ${specifier} specifier`)
+  }
+}
+if (rootPackage.dsh?.bundle?.patch !== './packages/selector/cordis.patch.yml') {
+  fail('root must declare the DSH Bundle patch of the selector package')
+}
+for (const dependency of ['@huggingface/tokenizers', 'js-yaml']) {
+  if (rootPackage.dependencies?.[dependency] === undefined) {
+    fail(`root dependencies are missing ${dependency}`)
+  }
+}
+for (const specifier of ['.', './invariant', './pruner', './client']) {
+  if (selectorPackage.exports?.[specifier] === undefined) {
+    fail(`selector exports are missing the ${specifier} specifier`)
+  }
 }
 if (selectorPackage.scripts?.test
-  !== 'vitest run --root ../.. --config vitest.config.ts --project selector-host --project selector-client') {
+  !== 'vitest run --root ../.. --config vitest.config.ts --project runtime --project selector-host --project selector-client') {
   fail('Selector package-local test script is not the verified root project command')
 }
 const ci = await readFile(join(root, '.github/workflows/ci.yml'), 'utf8')
 for (const required of [
-  'pnpm --filter dsh-context-compression-improved-runtime test',
   'pnpm --filter dsh-context-compression-improved test',
 ]) {
   if (!ci.includes(required)) fail(`CI lacks package-local gate: ${required}`)
@@ -81,24 +96,15 @@ for (const required of [
 }
 await stat(join(root, 'tsconfig.tests.json'))
 
-if (selectorPackage.dependencies?.['dsh-context-compression-improved-runtime'] !== selectorPackage.version) {
-  fail('selector must depend on the exact same runtime version')
-}
 if (selectorPackage.dsh?.bundle?.patch !== './cordis.patch.yml') {
   fail('selector must declare the DSH Bundle patch')
 }
 if (selectorPackage.files?.some((entry) => entry.endsWith('.css'))) {
   fail('selector must not rely on separately served CSS assets')
 }
-if (runtimePackage.name !== 'dsh-context-compression-improved-runtime') fail('unexpected runtime package name')
 if (selectorPackage.name !== 'dsh-context-compression-improved') fail('unexpected selector package name')
-for (const [name, manifest] of [
-  ['runtime', runtimePackage],
-  ['selector', selectorPackage],
-]) {
-  if (manifest.publishConfig?.access !== 'public') fail(`${name} publish access is not public`)
-  if (manifest.publishConfig?.tag !== 'latest') fail(`${name} publish tag is not latest`)
-}
+if (selectorPackage.publishConfig?.access !== 'public') fail('selector publish access is not public')
+if (selectorPackage.publishConfig?.tag !== 'latest') fail('selector publish tag is not latest')
 for (const peer of [
   '@deepseek-ai/dsh-command-compact',
   '@deepseek-ai/dsh-compaction-basic',
@@ -107,11 +113,10 @@ for (const peer of [
     fail(`selector peer ${peer} is missing or outside the verified range`)
   }
 }
-for (const packageRoot of [join(root, 'packages/runtime'), join(root, 'packages/selector')]) {
-  const notice = await readFile(join(packageRoot, 'THIRD_PARTY_NOTICES.md'), 'utf8')
-  if (!notice.includes('Copyright (c) 2026 DeepSeek')) {
-    fail(`${relative(root, packageRoot)} does not carry the full DeepSeek Harness MIT notice`)
-  }
+const packageRoot = join(root, 'packages/selector')
+const notice = await readFile(join(packageRoot, 'THIRD_PARTY_NOTICES.md'), 'utf8')
+if (!notice.includes('Copyright (c) 2026 DeepSeek')) {
+  fail('packages/selector does not carry the full DeepSeek Harness MIT notice')
 }
 
 const assetManifests = [
@@ -128,7 +133,7 @@ const assetManifests = [
   },
 ]
 for (const expected of assetManifests) {
-  const assetRoot = join(root, 'packages/runtime/assets', expected.directory)
+  const assetRoot = join(root, 'packages/selector/assets', expected.directory)
   const manifest = await json(join(assetRoot, 'manifest.json'))
   if (manifest.repository !== expected.repository) fail(`${expected.directory} manifest repository differs`)
   if (!JSON.stringify(manifest.modelIds).includes(expected.modelIds)) {
@@ -143,18 +148,19 @@ for (const expected of assetManifests) {
     if (bytes.byteLength !== descriptor.bytes) fail(`${expected.directory}/${name} byte length differs from manifest`)
     if (hash !== descriptor.sha256) fail(`${expected.directory}/${name} SHA-256 differs from manifest`)
   }
-  const runtimeFiles = runtimePackage.files
-  if (!runtimeFiles.includes(`assets/${expected.directory}/*`)) {
-    fail(`runtime package files list omits assets/${expected.directory}/*`)
+  if (!selectorPackage.files?.includes(`assets/${expected.directory}/*`)) {
+    fail(`selector package files list omits assets/${expected.directory}/*`)
   }
 }
 
-const sourceRoots = [join(root, 'packages/runtime/src'), join(root, 'packages/selector/src')]
+const sourceRoots = [join(root, 'packages/selector/src')]
 const forbidden = [
   { pattern: /compaction\/group-trim/u, label: 'custom compaction/group-trim event' },
   { pattern: /@deepseek-ai\/[^'"\s]+\/src(?:\/|['"])/u, label: 'Harness source subpath import' },
   { pattern: /(?:\/home\/|[A-Za-z]:\\Users\\)/u, label: 'developer absolute path' },
   { pattern: /\.\.\/\.\.\/\.\.\/(?:core|packages)\//u, label: 'monorepo-relative source import' },
+  // The single-package merge must not leave a cross-package import behind.
+  { pattern: /from\s*['"]dsh-context-compression-improved-runtime/u, label: 'cross-package runtime import' },
 ]
 
 const walk = async (directory) => {
@@ -177,11 +183,15 @@ for (const sourceRoot of sourceRoots) {
   }
 }
 
-for (const packageRoot of [join(root, 'packages/runtime'), join(root, 'packages/selector')]) {
-  const lib = join(packageRoot, 'lib')
-  if (!(await stat(lib)).isDirectory()) fail(`${relative(root, lib)} is missing; run build first`)
-  for (const path of await walk(lib)) {
-    if (path.endsWith('.map')) fail(`${relative(root, path)} is a source map`)
+const lib = join(packageRoot, 'lib')
+if (!(await stat(lib)).isDirectory()) fail(`${relative(root, lib)} is missing; run build first`)
+for (const path of await walk(lib)) {
+  if (path.endsWith('.map')) fail(`${relative(root, path)} is a source map`)
+  if (path.endsWith('.js')) {
+    const text = await readFile(path, 'utf8')
+    if (/from\s*["']dsh-context-compression-improved-runtime["']/u.test(text)) {
+      fail(`${relative(root, path)} still imports the removed runtime package`)
+    }
   }
 }
 
@@ -210,13 +220,14 @@ const collectSpecs = async (directory) => (await walk(directory))
   .map(path => relative(root, path).replaceAll('\\', '/'))
   .sort()
 
-const runtimeSpecs = await collectSpecs(join(root, 'packages/runtime/tests'))
+const runtimeSpecs = await collectSpecs(join(root, 'packages/selector/tests/runtime'))
 const selectorSpecs = await collectSpecs(join(root, 'packages/selector/tests'))
-if (runtimeSpecs.some(path => !path.endsWith('.spec.ts'))) {
+if (runtimeSpecs.some(path => !path.endsWith('.spec.ts') || !path.includes('/tests/runtime/'))) {
   fail('Runtime test inventory contains a spec outside the active **/*.spec.ts project')
 }
 const selectorUnclassified = selectorSpecs.filter(path => path !== 'packages/selector/tests/cache-prefix-audit.spec.ts'
   && path !== 'packages/selector/tests/built/client-artifact.spec.ts'
+  && !path.includes('/tests/runtime/')
   && !path.endsWith('.host.spec.ts')
   && !path.endsWith('.client.spec.ts')
   && !path.endsWith('.client.spec.tsx'))
@@ -225,7 +236,7 @@ if (selectorUnclassified.length > 0) {
 }
 const rootTestConfig = await readFile(join(root, 'vitest.config.ts'), 'utf8')
 for (const required of [
-  'packages/runtime/tests/**/*.spec.ts',
+  'packages/selector/tests/runtime/**/*.spec.ts',
   'packages/selector/tests/**/*.host.spec.ts',
   'packages/selector/tests/**/*.client.spec.{ts,tsx}',
   'packages/selector/tests/cache-prefix-audit.spec.ts',
@@ -248,7 +259,7 @@ for (const path of [...runtimeSpecs, ...selectorSpecs]) {
   }
 }
 
-const runtime = await import(new URL('../packages/runtime/lib/index.js', import.meta.url))
+const runtime = await import(new URL('../packages/selector/lib/pruner.js', import.meta.url))
 const defaults = runtime.DEFAULT_CUSTOM_COMPRESSION_POLICY
 if (defaults?.history?.trigger !== 500_000) fail('Custom History default is not 500000')
 if (defaults?.tailTrim?.trigger !== 700_000 || defaults?.tailTrim?.enabled !== false) {
