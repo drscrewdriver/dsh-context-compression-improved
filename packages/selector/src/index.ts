@@ -16,27 +16,39 @@ import {
   resolveCompressionModulePaths,
 } from './preset-overlay.ts'
 
-// 0.1.1/0.1.2 客户端 API 前缀是 /endpoint，0.1.5 起改为 /api —— 两条绝对路径都
-// 注册（各自的 (kind, path) 表项），一份处理器服务两个前缀。
-const ESTIMATOR_CATALOG_ROUTES = [
-  '/endpoint/dsh-context-compression-improved/estimator-catalog',
-  '/api/dsh-context-compression-improved/estimator-catalog',
-] as const
+/**
+ * The plugin-facing HTTP surface of the 0.1.2 generation is the `connection`
+ * service, not `webServer`. `dsh-client-connection` owns the `/api` prefix
+ * route, applies the Host/Origin fence and browser authentication to it, and
+ * registers it on `webServer` from its own context — the one place where that
+ * service is demonstrably reachable. A plugin that reaches for `webServer`
+ * itself takes on a dependency the host never intended it to have, and loses
+ * the auth fence along with it.
+ *
+ * This path is a legal `connection` Fetch route (`assertFetchRoute` accepts any
+ * path whose segments match `^[A-Za-z0-9_$.-]+$`) and deliberately is NOT a
+ * typert endpoint: the `/api` RPC interceptor belongs to the API gateway and
+ * only claims two-segment `<ns>/<method>` remotes, so a three-segment
+ * plugin-owned path could never be answered through it.
+ */
+const ESTIMATOR_CATALOG_PATH = '/api/dsh-context-compression-improved/estimator-catalog'
 
 /**
- * The one service the catalog route actually needs. `llm` and
- * `agentDefaultModel` are payload enrichment the handler resolves per request,
- * never reasons to withhold the route.
+ * The one service the route needs. `llm` and `agentDefaultModel` only enrich
+ * the payload and are resolved per request, never reasons to withhold the route.
  */
-const ESTIMATOR_CATALOG_ROUTE_DEPS: readonly ['webServer'] = ['webServer']
+const ESTIMATOR_CATALOG_ROUTE_DEPS: readonly ['connection'] = ['connection']
 
-/** Runtime detection of the host web server (same pattern as dsh-perm-gate). */
-interface WebServerLike {
-  register: (spec: {
-    kind: 'exact'
-    path: string
-    handler: (req: unknown, res: unknown) => void
-  }) => unknown
+/** One route as `connection.fetch.register` accepts it. */
+interface FetchRouteLike {
+  path: string
+  methods: readonly string[]
+  fetch: (request: Request) => Promise<Response> | Response
+}
+
+/** Runtime detection of the host Connection service (duck-typed, as perm-gate does). */
+interface ConnectionLike {
+  fetch: { register: (route: FetchRouteLike) => unknown }
 }
 
 /** The estimator-side service the catalog handler enriches its response with. */
@@ -45,32 +57,22 @@ interface AgentDefaultModelLike {
   currentSelection?: () => { provider?: unknown, model?: unknown } | undefined
 }
 
-function asWebServer(value: unknown): WebServerLike | undefined {
-  const register = (value as { register?: unknown } | undefined)?.register
+function asConnection(value: unknown): ConnectionLike | undefined {
+  const register = (value as { fetch?: { register?: unknown } } | undefined)?.fetch?.register
   if (typeof register !== 'function') return undefined
-  return { register: register as WebServerLike['register'] }
+  return { fetch: { register: register as ConnectionLike['fetch']['register'] } }
 }
 
 /**
  * Serve `GET /api/dsh-context-compression-improved/estimator-catalog` — the
  * settings card's host-route dropdowns (live provider/model groups from the DSH
- * `llm` service plus the effective selection). This lives on the top-level
- * plugin context, NOT inside the isolated toolResultPruner service: a route
- * registered there can never reach the `webServer` service across the
- * isolation boundary.
+ * `llm` service plus the effective selection).
  *
- * The route gates on `webServer` **alone**. `llm` and `agentDefaultModel` only
- * enrich the response and are resolved per request, so listing them here would
- * let an estimator-side service the handler never needs keep the route
- * unregistered. That failure is silent by construction — an unsatisfied
- * `ctx.inject` callback never runs, so the plugin simply has no HTTP API and
- * every request falls through to the host 404.
- *
- * Two channels cover the two arrival orders: a direct lookup catches a
- * `webServer` that is already active when the plugin loads, and `ctx.inject`
- * catches one that activates later. Both funnel into a single guarded
- * registration, because a late-arriving service must not re-register a
- * `(kind, path)` the host treats as a composition-contract violation.
+ * Two channels cover the two arrival orders: a direct lookup catches an already
+ * active `connection`, and `ctx.inject` catches one that activates later. Both
+ * funnel into a single guarded registration. Ownership of the route stays with
+ * `connection.fetch.register`, which binds it to this fiber's effect, so a
+ * second disposer here would only duplicate that lifetime.
  */
 function registerEstimatorCatalogRoute(ctx: Context): void {
   const readService = (name: string): unknown => {
@@ -90,14 +92,10 @@ function registerEstimatorCatalogRoute(ctx: Context): void {
   }
 
   let registered = false
-  const register = (webServer: WebServerLike, channel: 'direct' | 'inject'): void => {
+  const register = (connection: ConnectionLike, channel: 'direct' | 'inject'): void => {
     if (registered) return
-    const handler = (_req: unknown, res: unknown): void => {
-      const resTyped = res as {
-        writeHead: (code: number, headers?: Record<string, string>) => void
-        end: (body?: string) => void
-      }
-      if (typeof resTyped?.writeHead !== 'function' || typeof resTyped?.end !== 'function') return
+    const headers = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-cache' }
+    const handler = async (): Promise<Response> => {
       const llm = readService('llm')
       const defaults = readService('agentDefaultModel') as AgentDefaultModelLike | undefined
       const deps: EstimatorCatalogDeps = {
@@ -108,48 +106,41 @@ function registerEstimatorCatalogRoute(ctx: Context): void {
           ? { currentSelection: () => defaults.currentSelection?.() }
           : {}),
       }
-      buildEstimatorCatalog(deps).then(
-        catalog => {
-          resTyped.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-cache' })
-          resTyped.end(JSON.stringify({ ok: true, ...catalog }))
-        },
-        (error: unknown) => {
-          resTyped.writeHead(500, { 'content-type': 'application/json; charset=utf-8' })
-          resTyped.end(JSON.stringify({ ok: false, error: String((error as Error)?.message ?? error) }))
-        },
-      )
+      try {
+        const catalog = await buildEstimatorCatalog(deps)
+        return new Response(JSON.stringify({ ok: true, ...catalog }), { status: 200, headers })
+      } catch (error) {
+        return new Response(
+          JSON.stringify({ ok: false, error: String((error as Error)?.message ?? error) }),
+          { status: 500, headers },
+        )
+      }
     }
     try {
-      const disposers = ESTIMATOR_CATALOG_ROUTES
-        .map(path => webServer.register({ kind: 'exact', path, handler }))
-        .filter((off): off is () => void => typeof off === 'function')
+      connection.fetch.register({ path: ESTIMATOR_CATALOG_PATH, methods: ['GET'], fetch: handler })
       registered = true
-      ctx.effect(
-        () => () => { for (const off of disposers) off() },
-        'contextCompressionSelector.estimator-catalog route',
-      )
-      log('info', 'context-compression estimator catalog route registered (%s): %s', channel, ESTIMATOR_CATALOG_ROUTES.join(', '))
+      log('info', 'context-compression estimator catalog route registered (%s): %s', channel, ESTIMATOR_CATALOG_PATH)
     } catch (error) {
       log('warn', 'context-compression estimator catalog route registration failed (%s): %o', channel, error)
     }
   }
 
-  const active = asWebServer(readService('webServer'))
+  const active = asConnection(readService('connection'))
   if (active !== undefined) {
     register(active, 'direct')
     if (registered) return
   }
 
   ctx.inject([...ESTIMATOR_CATALOG_ROUTE_DEPS], (injected) => {
-    const webServer = asWebServer((injected as { webServer?: unknown }).webServer)
-    if (webServer === undefined) {
-      log('warn', 'context-compression webServer exposes no register() — estimator catalog route not registered')
+    const connection = asConnection((injected as { connection?: unknown }).connection)
+    if (connection === undefined) {
+      log('warn', 'context-compression connection exposes no fetch.register — estimator catalog route not registered')
       return
     }
-    register(webServer, 'inject')
+    register(connection, 'inject')
   })
 
-  log('warn', 'context-compression webServer not active yet — estimator catalog route pending: %s', ESTIMATOR_CATALOG_ROUTES.join(', '))
+  log('warn', 'context-compression connection not active yet — estimator catalog route pending: %s', ESTIMATOR_CATALOG_PATH)
 }
 
 // Harness 0.1.1 exposed a namespace-branding helper; 0.1.2 validates the
