@@ -2,7 +2,9 @@
 
 > [English](installation.md) · [中文](installation.zh.md) · [日本語](installation.ja.md) · [한국어](installation.ko.md)
 
-�?가이드�?포크�?소스에서 설치하는 방법�?다룹니다. 포크�?아직 npm�?게시되지 않았으며, 내부 패키지 이름은 의도적으�?업스트림�?동일합니�?`dsh-context-compression-improved` �?정확�?버전 의존�?`dsh-context-compression-improved-runtime`).
+이 가이드는 소스에서 포크를 설치합니다. 포크는 아직 npm에 게시되지 않았으며, 패키지 이름은
+의도적으로 업스트림과 동일합니다(`dsh-context-compression-improved` 단일 패키지이며,
+예전에 별도 패키지였던 runtime이 함께 포함됩니다).
 
 ## 사전 요구 사항
 

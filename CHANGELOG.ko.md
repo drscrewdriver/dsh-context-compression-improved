@@ -5,6 +5,12 @@
 ## Unreleased(미출시)
 ### Changed(0.1.5 호환 / compat/0.1.5 브랜치)
 
+- runtime 패키지를 selector 패키지로 통합했습니다. 한 번의 설치로 전체 스택이 들어오고,
+  저장소 루트가 설치면이 됩니다(`name`, `main`, `types`, `./pruner`와 `./invariant`를 포함한
+  `exports`, `dependencies`, `dsh`). 툴체인, 스크립트, CI도 단일 패키지로 정리했습니다.
+  실기에서 검증한 estimator-catalog 라우트 등록(이중 접두사, 보호된 이중 채널 활성화, 요청별
+  서비스 해석, 관측 가능한 수명주기 로그)을 이 라인에 재적용하고 호스트 측 가드를 추가했습니다.
+  `ab2175a`에서 `z.any()`로 낮춰졌던 settings 스키마를 복원해 Custom 기본값이 다시 게시됩니다.
 - 이 브랜치에서 공식 DeepSeek Harness `v0.1.5-rc.2`에 적응. 모든 `@deepseek-ai/dsh-*` 개발 의존성과 e2e 공식 호스트 목록을 `0.1.1-rc.2`에서 `0.1.5-rc.2`로 업데이트(cordis `4.0.2`, schemastery `3.18.2`, 새 분할 패키지들과 `dsh-client-store` 클라이언트 스택 포함).
 - surface 치환은 v3의 `startSeq`/`endSeq` 형태와 브랜딩된 `SessionSeq` 사용. surface node의 이벤트 해석을 배열 인덱스에서 seq 조회로 변경.
 - 클라이언트 번들은 제거된 `@deepseek-ai/dsh-client-runtime`을 참조하지 않음. settings 타입은 `@deepseek-ai/dsh-client-ui-settings`, 세션 hooks는 `@deepseek-ai/dsh-client-ui-session`에서 가져옴. `engines.dsh >=0.1.5-alpha.1 <0.2.0-0` 선언.

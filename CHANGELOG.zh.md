@@ -6,6 +6,11 @@
 
 ### Changed
 
+- runtime 包并入 selector 包：一次安装即可获得完整栈，仓库根目录即为安装面
+  （`name`、`main`、`types`、`exports`（含 `./pruner`、`./invariant`）、`dependencies`、`dsh`），
+  工具链、脚本与 CI 一并收敛为单包。已真机验证的 estimator-catalog 路由注册（双前缀、受保护的
+  双通道激活、按请求解析服务、可检索的生命周期日志）重放到本线，并新增宿主侧守门；`ab2175a`
+  降级为 `z.any()` 的 settings schema 已还原，每日 Custom 默认值重新下发。
 - 在本分支适配官方 DeepSeek Harness `v0.1.5-rc.2`。全部 `@deepseek-ai/dsh-*` 开发依赖与 e2e 官方宿主清单从 `0.1.1-rc.2` 升至 `0.1.5-rc.2`（cordis `4.0.2`、schemastery `3.18.2`），含新的拆分包（`dsh-session-projection`、`dsh-session-persistence`、`dsh-atomic-write`、`dsh-home-paths`、`dsh-sandbox` 等）与 `dsh-client-store` 客户端栈。
 - Surface 替换操作改用 v3 的 `startSeq`/`endSeq` 形状与品牌化 `SessionSeq`；`compaction/prune` 清单保留持久化的 `start`/`end` 字段。surface node 事件改为按 seq 查找而非数组下标。
 - 客户端 bundle 不再引用已移除的 `@deepseek-ai/dsh-client-runtime`：settings 类型改自 `@deepseek-ai/dsh-client-ui-settings`，会话 hooks 合并自 `@deepseek-ai/dsh-client-ui-session`。两份 package manifest 与 `dsh.plugin.json` 声明 `engines.dsh >=0.1.5-alpha.1 <0.2.0-0`。

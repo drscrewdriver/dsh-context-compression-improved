@@ -5,6 +5,13 @@
 ## Unreleased（未リリース）
 ### Changed（0.1.5 互換 / compat/0.1.5 ブランチ）
 
+- runtime パッケージを selector パッケージへ統合しました。1 回のインストールでスタック全体が入り、
+  リポジトリのルートがインストール面になります（`name`、`main`、`types`、`./pruner` と
+  `./invariant` を含む `exports`、`dependencies`、`dsh`）。ツールチェーン・スクリプト・CI も
+  単一パッケージへ揃えました。実機で検証済みの estimator-catalog ルート登録（二重プレフィックス、
+  保護された二経路の有効化、リクエスト毎のサービス解決、可観測なライフサイクルログ）を本ラインへ
+  再適用し、ホスト側のガードを追加しました。`ab2175a` で `z.any()` に落とされていた settings
+  スキーマを復元し、Custom の既定値が再び公開されます。
 - ブランチ上で公式 DeepSeek Harness `v0.1.5-rc.2` に適応。`@deepseek-ai/dsh-*` 全開発依存と e2e 公式ホスト一覧を `0.1.1-rc.2` から `0.1.5-rc.2` へ更新（cordis `4.0.2`、schemastery `3.18.2`、新分割パッケージ群と `dsh-client-store` クライアントスタックを含む）。
 - surface 置換は v3 の `startSeq`/`endSeq` 形状とブランド化 `SessionSeq` を使用。surface node のイベント解決は配列インデックスではなく seq 検索に変更。
 - クライアントバンドルは削除された `@deepseek-ai/dsh-client-runtime` を参照しない。settings 型は `@deepseek-ai/dsh-client-ui-settings`、セッション hooks は `@deepseek-ai/dsh-client-ui-session` から取得。`engines.dsh >=0.1.5-alpha.1 <0.2.0-0` を宣言。

@@ -31,7 +31,7 @@ Their supported behavior is covered by active public tests:
 - policy resolution, reducers, exact measurement, Fresh, Aggregate, routine
   and capacity-pressure History, Native pruning, TailTrim publication,
   recovery, replay and orphan fail-open behavior:
-  `packages/runtime/tests/public/public-runtime.spec.ts`;
+  `packages/selector/tests/runtime/public/public-runtime.spec.ts`;
 - Loader composition, preset overlay, Minimal pause/restore and parent/child
   service identity: `packages/selector/tests/preset-overlay-loader.e2e.host.spec.ts`;
 - package/export/tarball contract:

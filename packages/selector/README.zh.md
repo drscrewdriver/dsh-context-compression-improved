@@ -9,7 +9,10 @@ dsh plugin --profile web add dsh-context-compression-improved@latest
 dsh --profile web --dump-config
 ```
 
-这一条命令会自动安装精确版本�?`dsh-context-compression-improved-runtime` 依赖。Bundle 提供 Host 设置、Web UI 和可�?preset overlay。除 id 精确等于内置 `minimal` �?preset 外，其他 preset 都会获得压缩能力；非 Minimal preset 之间切换时已保存设置保持不变。Minimal 只暂停插件压缩，不删除设置�?
+这一条命令安装单一的 `dsh-context-compression-improved` 包：压缩运行时、Host 设置、Web UI
+与可逆 preset overlay 全部包含在其中。除 id 精确等于内置 `minimal` 的 preset 外，
+其他 preset 都会获得压缩能力；非 Minimal preset 之间切换时已保存设置保持不变。
+Minimal 只暂停插件压缩，不删除设置。
 
 已验证兼�?DeepSeek Harness `dsh-v0.1.1-rc.2` �?`dsh-v0.1.2-alpha.5`，Node `^22.19.0 || >=24`。不需要修�?Harness 核心�?
 
