@@ -75,7 +75,7 @@ async function invoke(route: RegisteredRoute): Promise<FakeResponse> {
   const captured: FakeResponse = {}
   const res = {
     writeHead(code: number) { captured.status = code },
-    end(body?: string) { captured.body = body },
+    end(body?: string) { if (body !== undefined) captured.body = body },
   }
   route.handler({ method: 'GET' }, res)
   await settle()
@@ -130,16 +130,19 @@ describe('estimator catalog route registration', () => {
   it('keeps the rest of the plugin alive and warns when webServer never arrives', async () => {
     const runtime = new Context()
     ctx = runtime
-    const warn = vi.spyOn(
-      runtime.logger as unknown as { warn: (...args: unknown[]) => void },
-      'warn',
-    )
+    // The diagnostic goes to `console`: the host's cordis logger surfaces no
+    // plugin output at all, so a lifecycle line published there is invisible.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-    expect(() => apply(runtime, {})).not.toThrow()
-    await settle()
+    try {
+      expect(() => apply(runtime, {})).not.toThrow()
+      await settle()
 
-    const messages = warn.mock.calls.map(([message]) => String(message))
-    expect(messages.some(message => message.includes('estimator catalog route pending'))).toBe(true)
+      const messages = warn.mock.calls.map(([message]) => String(message))
+      expect(messages.some(message => message.includes('estimator catalog route pending'))).toBe(true)
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('answers 200 without the estimator services, which only enrich the payload', async () => {

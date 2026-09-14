@@ -80,13 +80,13 @@ function registerEstimatorCatalogRoute(ctx: Context): void {
       return undefined
     }
   }
-  // Logging must never be the reason route registration fails.
+  // `console`, not `ctx.logger`: measured on the 0.1.2 host, the cordis logger
+  // surfaces no plugin output in the `dsh web` terminal at all — a full boot
+  // produced zero plugin log lines while the process itself stayed chatty — so
+  // a lifecycle diagnostic published there is unobservable. `dsh-perm-gate`
+  // uses `console.warn` for the same message class on the same host.
   const log = (level: 'info' | 'warn', message: string, ...args: unknown[]): void => {
-    try {
-      ctx.logger[level](message, ...args)
-    } catch {
-      // A context without a logger still gets a working route.
-    }
+    console[level](message, ...args)
   }
 
   let registered = false

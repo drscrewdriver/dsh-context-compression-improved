@@ -497,9 +497,7 @@ function registerEstimatorCatalogRoute(ctx) {
 		}
 	};
 	const log = (level, message, ...args) => {
-		try {
-			ctx.logger[level](message, ...args);
-		} catch {}
+		console[level](message, ...args);
 	};
 	let registered = false;
 	const register = (webServer, channel) => {
