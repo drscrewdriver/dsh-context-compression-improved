@@ -147,6 +147,11 @@ for (const expected of assetManifests) {
     const hash = createHash('sha256').update(bytes).digest('hex')
     if (bytes.byteLength !== descriptor.bytes) fail(`${expected.directory}/${name} byte length differs from manifest`)
     if (hash !== descriptor.sha256) fail(`${expected.directory}/${name} SHA-256 differs from manifest`)
+    // A checkout with core.autocrlf=true can rewrite these pinned bytes as CRLF;
+    // the `-text` attribute in .gitattributes prevents it, but only while the
+    // pattern still matches the path. Catch it here rather than in a consumer
+    // whose tokenizer would fail its own integrity check at run time.
+    if (bytes.includes(0x0d)) fail(`${expected.directory}/${name} contains CR bytes; the asset was rewritten`)
   }
   const assetEntries = selectorPackage.files ?? []
   if (!assetEntries.some(entry => entry === 'assets' || entry.startsWith('assets/'))) {
