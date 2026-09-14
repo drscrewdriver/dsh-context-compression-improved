@@ -7,11 +7,10 @@ import {
   type default as SettingsService,
 } from '@deepseek-ai/dsh-settings'
 import {
-  buildEstimatorCatalog,
   CONTEXT_COMPRESSION_SETTINGS_NAMESPACE,
   ContextCompressionSettingsSchema,
-  type EstimatorCatalogDeps,
 } from 'dsh-context-compression-improved-runtime'
+import { buildEstimatorCatalog, type EstimatorCatalogDeps } from './estimator-catalog.ts'
 import {
   decorateAgentPresets,
   resolveCompressionModulePaths,
