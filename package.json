@@ -49,6 +49,7 @@
   },
   "scripts": {
     "build": "pnpm -r --if-present run bundle",
+    "build:scripts": "tsc -p tsconfig.scripts.json",
     "typecheck": "pnpm --filter dsh-context-compression-improved run bundle && pnpm --filter dsh-context-compression-improved run typecheck && pnpm run typecheck:tests",
     "typecheck:tests": "tsc --noEmit -p tsconfig.tests.json",
     "lint": "eslint packages scripts eslint.config.js",

@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "allowImportingTsExtensions": false,
+    "rootDir": "scripts",
+    "outDir": "scripts-dist",
+    "noEmit": false,
+    "types": ["node"]
+  },
+  "include": ["scripts/**/*.ts"]
+}
