@@ -127,30 +127,39 @@ function mountEstimator(
 }
 
 describe('estimator channel card', () => {
-  it('host mode reuses the configured providers and asks for no API key', async () => {
+  it('host mode fills comboboxes from the catalog, keeps custom typing, and asks for no API key', async () => {
     const { savePresetOptions } = mountEstimator({ estimatorMode: 'host' }, { catalog: CATALOG })
 
-    // The dropdowns come from the live catalog; the route names itself. The
-    // manual fallback renders first, so wait for the select element itself.
+    // Provider/model are always comboboxes (dsh-perm-gate receiver pattern):
+    // a catalog pick fills the field, and the same input accepts a custom id.
+    const provider = screen.getByLabelText<HTMLInputElement>(PROVIDER_LABEL)
+    const model = screen.getByLabelText<HTMLInputElement>(MODEL_LABEL)
     await waitFor(() => {
-      expect(screen.getByLabelText(PROVIDER_LABEL).tagName).toBe('SELECT')
-      expect(screen.getByLabelText(MODEL_LABEL).tagName).toBe('SELECT')
+      const providerOptions = document.querySelectorAll('#estimator-provider-options option')
+      expect([...providerOptions].map(option => (option as HTMLOptionElement).value))
+        .toEqual(['local-35b', 'deepseek-official'])
+      expect(provider.getAttribute('list')).toBe('estimator-provider-options')
+      expect(model.getAttribute('list')).toBe('estimator-model-options')
     })
-    const provider = screen.getByLabelText<HTMLSelectElement>(PROVIDER_LABEL)
-    expect([...provider.options].map(option => option.value))
-      .toEqual(['', 'local-35b', 'deepseek-official'])
     expect(screen.getByText(/Effective route: deepseek-official \/ deepseek-flash/)).not.toBeNull()
     expect(screen.getByText(/no API key is needed/)).not.toBeNull()
 
-    // No credential input and no duplicate manual model field on this channel.
+    // No credential input and no base-URL field on this channel.
     expect(screen.queryByLabelText(API_KEY_LABEL)).toBeNull()
     expect(screen.queryByLabelText(BASE_URL_LABEL)).toBeNull()
     expect(document.querySelectorAll('input[type="password"]').length).toBe(0)
-    expect(document.querySelectorAll('input[type="text"]').length).toBe(0)
 
+    // A datalist pick fires change without blur: it commits immediately.
     fireEvent.change(provider, { target: { value: 'local-35b' } })
     await waitFor(() => {
-      expect(savePresetOptions).toHaveBeenCalledWith({ estimatorProvider: 'local-35b', estimatorModel: '' })
+      expect(savePresetOptions).toHaveBeenCalledWith({ estimatorProvider: 'local-35b' })
+    })
+    // Free typing only commits on blur, so mid-edit keystrokes never save.
+    fireEvent.change(provider, { target: { value: 'my-custom-group' } })
+    expect(savePresetOptions).not.toHaveBeenCalledWith({ estimatorProvider: 'my-custom-group' })
+    fireEvent.blur(provider)
+    await waitFor(() => {
+      expect(savePresetOptions).toHaveBeenCalledWith({ estimatorProvider: 'my-custom-group' })
     })
   })
 
@@ -159,12 +168,16 @@ describe('estimator channel card', () => {
       { estimatorMode: 'host', estimatorProvider: 'local-35b' },
       { catalog: CATALOG },
     )
+    // Query before the catalog lands: once the datalist has options, the
+    // label's textContent includes them and getByLabelText's exact match
+    // would no longer see a bare "Model".
+    const model = screen.getByLabelText<HTMLInputElement>(MODEL_LABEL)
+    expect(model.value).toBe('')
     await waitFor(() => {
-      expect(screen.getByLabelText(MODEL_LABEL).tagName).toBe('SELECT')
-      expect([...screen.getByLabelText<HTMLSelectElement>(MODEL_LABEL).options].map(option => option.value))
-        .toEqual(['', 'Qwen3.6-35B-A3B', 'Qwen38-27B'])
+      const modelOptions = document.querySelectorAll('#estimator-model-options option')
+      expect([...modelOptions].map(option => (option as HTMLOptionElement).value))
+        .toEqual(['Qwen3.6-35B-A3B', 'Qwen38-27B'])
     })
-    const model = screen.getByLabelText<HTMLSelectElement>(MODEL_LABEL)
     expect(screen.getByText(/Effective route: local-35b/)).not.toBeNull()
 
     fireEvent.change(model, { target: { value: 'Qwen38-27B' } })
@@ -173,12 +186,19 @@ describe('estimator channel card', () => {
     })
   })
 
-  it('falls back to manual names — still without a credential field — when no catalog is served', async () => {
+  it('still accepts custom names — without a credential field — when no catalog is served', async () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('no route'))))
-    mountEstimator({ estimatorMode: 'host' })
+    const { savePresetOptions } = mountEstimator({ estimatorMode: 'host' })
 
-    expect(screen.getByLabelText(PROVIDER_LABEL).tagName).toBe('INPUT')
-    expect(screen.getByLabelText(MODEL_LABEL).tagName).toBe('INPUT')
+    const provider = screen.getByLabelText<HTMLInputElement>(PROVIDER_LABEL)
+    const model = screen.getByLabelText<HTMLInputElement>(MODEL_LABEL)
+    expect(document.querySelectorAll('#estimator-provider-options option').length).toBe(0)
+    expect(document.querySelectorAll('#estimator-model-options option').length).toBe(0)
+    fireEvent.change(provider, { target: { value: 'manual-group' } })
+    fireEvent.blur(provider)
+    await waitFor(() => {
+      expect(savePresetOptions).toHaveBeenCalledWith({ estimatorProvider: 'manual-group' })
+    })
     expect(screen.queryByLabelText(API_KEY_LABEL)).toBeNull()
     expect(screen.getByText(/no API key is needed/)).not.toBeNull()
     expect(screen.getByText(/not determined yet/)).not.toBeNull()

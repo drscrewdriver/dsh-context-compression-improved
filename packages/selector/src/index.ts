@@ -7,13 +7,84 @@ import {
   type default as SettingsService,
 } from '@deepseek-ai/dsh-settings'
 import {
+  buildEstimatorCatalog,
   CONTEXT_COMPRESSION_SETTINGS_NAMESPACE,
   ContextCompressionSettingsSchema,
+  type EstimatorCatalogDeps,
 } from 'dsh-context-compression-improved-runtime'
 import {
   decorateAgentPresets,
   resolveCompressionModulePaths,
 } from './preset-overlay.ts'
+
+/** The route the estimator settings card fetches for its host dropdowns. */
+const ESTIMATOR_CATALOG_ROUTE = '/api/dsh-context-compression-improved/estimator-catalog'
+
+/** The minimal face of the DSH `webServer` service this plugin uses. */
+interface WebServerLike {
+  register(route: {
+    kind: 'exact'
+    path: string
+    handler: (req: unknown, res: unknown) => unknown
+  }): () => void
+}
+
+/** The injected services the estimator-catalog route reads (typed locally). */
+interface CatalogAwareContext {
+  webServer?: unknown
+  llm?: EstimatorCatalogDeps['llm']
+  agentDefaultModel?: { currentSelection?: () => { provider?: unknown, model?: unknown } | undefined }
+  effect(cleanup: () => void, label?: string): void
+}
+
+function asWebServer(value: unknown): WebServerLike | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const candidate = value as { register?: unknown }
+  return typeof candidate.register === 'function' ? (value as WebServerLike) : undefined
+}
+
+/**
+ * Serve `GET /api/dsh-context-compression-improved/estimator-catalog` — the
+ * settings card's host-route dropdowns (live provider/model groups from the DSH
+ * `llm` service plus the effective selection). Best effort: without the
+ * `webServer` service the plugin keeps working, only the HTTP API is missing.
+ */
+function registerEstimatorCatalogRoute(ctx: Context): void {
+  ctx.inject(['webServer', 'llm', 'agentDefaultModel'], (injected) => {
+    const rctx = injected as unknown as CatalogAwareContext
+    const webServer = asWebServer(rctx.webServer)
+    if (webServer === undefined) return
+    const off = webServer.register({
+      kind: 'exact',
+      path: ESTIMATOR_CATALOG_ROUTE,
+      handler: (_req, res) => {
+        const resTyped = res as {
+          writeHead: (code: number, headers?: Record<string, string>) => void
+          end: (body?: string) => void
+        }
+        if (typeof resTyped?.writeHead !== 'function' || typeof resTyped?.end !== 'function') return
+        const defaults = rctx.agentDefaultModel
+        const deps: EstimatorCatalogDeps = {
+          ...(rctx.llm === undefined ? {} : { llm: rctx.llm }),
+          ...(typeof defaults?.currentSelection === 'function'
+            ? { currentSelection: () => defaults.currentSelection?.() }
+            : {}),
+        }
+        buildEstimatorCatalog(deps).then(
+          catalog => {
+            resTyped.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-cache' })
+            resTyped.end(JSON.stringify({ ok: true, ...catalog }))
+          },
+          (error: unknown) => {
+            resTyped.writeHead(500, { 'content-type': 'application/json; charset=utf-8' })
+            resTyped.end(JSON.stringify({ ok: false, error: String((error as Error)?.message ?? error) }))
+          },
+        )
+      },
+    })
+    rctx.effect(() => off, 'contextCompressionSelector.estimator-catalog route')
+  })
+}
 
 // Harness 0.1.1 exposed a namespace-branding helper; 0.1.2 validates the
 // same public literal at SettingsProvider.register/get instead.
@@ -60,6 +131,12 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.inject(['settings'], (settingsCtx) => {
     acquireSettingsRegistration(settingsCtx)
   })
+
+  // The settings card's host-route dropdowns read this route; it must live on
+  // this top-level fiber because the isolated `toolResultPruner` cannot reach
+  // `webServer`/`llm` through `ctx.get` (dsh-perm-gate's receiver route
+  // demonstrates the same contract).
+  registerEstimatorCatalogRoute(ctx)
 
   if (config.presetOverlay !== true) return
 
