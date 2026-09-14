@@ -926,6 +926,13 @@ function codePointLength$1(text) {
 	for (const _point of text) count++;
 	return count;
 }
+/** Count the lines present in the original but absent from the replacement. */
+function countOmittedLines(original, replacement) {
+	const omitted = original.split("\n").length - replacement.split("\n").length;
+	return omitted > 0 ? omitted : void 0;
+}
+/** Routed-context utilization required before capacity-pressure History may age sent history. */
+const CAPACITY_PRESSURE_RATIO = .7;
 //#endregion
 //#region src/runtime/tokenpilot/locator.ts
 /** Files touched by read/grep-style tool calls inside the range. */
@@ -2248,15 +2255,6 @@ function emitCompressionAudit(logger, record) {
 *
 * @module dsh-context-compression-improved-runtime
 */
-const BS = String.fromCharCode(10);
-/** Count the lines present in the original but absent from the replacement. */
-function countOmittedLines(original, replacement) {
-	const omitted = original.split(BS).length - replacement.split(BS).length;
-	return omitted > 0 ? omitted : void 0;
-}
-const RICH_BLOCK_PRESSURE_COST = 256;
-/** Routed-context utilization required before capacity-pressure History may age sent history. */
-const CAPACITY_PRESSURE_RATIO = .7;
 /** Mixed deterministic selector behind the existing `ctx.toolResultPruner` seam. */
 var ToolResultPruner = class extends Service {
 	static inject = ["tokenMeter"];
@@ -2276,36 +2274,27 @@ var ToolResultPruner = class extends Service {
 		historyMinReclaimTokens: z.number().step(1).min(1).required(false),
 		autoCompactThresholdPercent: z.number().step(1).min(50).max(90).required(false)
 	});
-	/** Resolved immutable deployment configuration. */
-	config;
-	/** Complete canonical setting document frozen when each Session first reaches this root service. */
-	sessionSettings = /* @__PURE__ */ new WeakMap();
-	/** Original result seqs whose first-exposure KEEP/REDUCE decision has committed. */
-	firstExposure = /* @__PURE__ */ new WeakMap();
-	/** Result seqs permanently exempt from further reduction (recovery outputs and registered equivalents). */
-	recoveryExemptions = /* @__PURE__ */ new WeakMap();
-	/** Per-session canonical-content hash index backing tokenpilot-inspired dedupe. */
-	dedupeTables = /* @__PURE__ */ new WeakMap();
-	/** Advisory estimator verdicts consumed by the read-state classification. */
-	estimatorVerdicts = /* @__PURE__ */ new WeakMap();
-	/** Per-session estimator failure backoff state. */
-	estimatorFailures = /* @__PURE__ */ new WeakMap();
-	/** Runtime prerequisite warnings deduplicated per Session and failure key. */
-	warnedFailures = /* @__PURE__ */ new WeakMap();
-	/** Last Adaptive postflight attempt emitted per Session; keeps diagnostics bounded and independent. */
-	postflightDiagnostics = /* @__PURE__ */ new WeakMap();
-	/** Current pre-step chain identity, shared by this producer and downstream compaction-basic. */
-	activeRequestBoundaries = /* @__PURE__ */ new WeakMap();
-	/** Boundary identity that already attempted one fully preflighted TailTrim publication. */
-	tailTrimBoundaryAttempts = /* @__PURE__ */ new WeakMap();
-	/** Last effective policy audit key emitted for each Session. */
-	policyResolutionAudits = /* @__PURE__ */ new WeakMap();
+	/** Consolidated per-session mutable state. */
+	state;
 	constructor(ctx, config = {}) {
 		super(ctx, "toolResultPruner");
 		ctx.inject(["tools", "systemPrompt"], (recoveryCtx) => {
 			installContextCompressionRetrieve(recoveryCtx);
 		});
-		this.config = resolveConfig(config);
+		this.state = {
+			config: resolveConfig(config),
+			sessionSettings: /* @__PURE__ */ new WeakMap(),
+			firstExposure: /* @__PURE__ */ new WeakMap(),
+			recoveryExemptions: /* @__PURE__ */ new WeakMap(),
+			dedupeTables: /* @__PURE__ */ new WeakMap(),
+			estimatorVerdicts: /* @__PURE__ */ new WeakMap(),
+			estimatorFailures: /* @__PURE__ */ new WeakMap(),
+			warnedFailures: /* @__PURE__ */ new WeakMap(),
+			postflightDiagnostics: /* @__PURE__ */ new WeakMap(),
+			activeRequestBoundaries: /* @__PURE__ */ new WeakMap(),
+			tailTrimBoundaryAttempts: /* @__PURE__ */ new WeakMap(),
+			policyResolutionAudits: /* @__PURE__ */ new WeakMap()
+		};
 		ctx.on("session/event", (session, event) => {
 			if (event.type === "compaction/summary") {
 				emitCompressionAudit(ctx.logger, {
@@ -2331,7 +2320,7 @@ var ToolResultPruner = class extends Service {
 		});
 		ctx.on("agent/pre-step", async ({ agent, signal, turn, step }, next) => {
 			const boundary = {};
-			this.activeRequestBoundaries.set(agent.session, boundary);
+			this.state.activeRequestBoundaries.set(agent.session, boundary);
 			try {
 				if (!signal.aborted) try {
 					this.runRequestBoundary(agent.session, turn, step - 1, signal);
@@ -2341,7 +2330,7 @@ var ToolResultPruner = class extends Service {
 				}
 				return await next();
 			} finally {
-				if (this.activeRequestBoundaries.get(agent.session) === boundary) this.activeRequestBoundaries.delete(agent.session);
+				if (this.state.activeRequestBoundaries.get(agent.session) === boundary) this.state.activeRequestBoundaries.delete(agent.session);
 			}
 		}, { prepend: true });
 		ctx.on("agent/turn-stopping", ({ agent, turn, signal }) => {
@@ -2374,14 +2363,14 @@ var ToolResultPruner = class extends Service {
 				cost += codePointLength(block.text);
 				break;
 			case "tool-call":
-				cost += RICH_BLOCK_PRESSURE_COST + codePointLength(block.name) + codePointLength(block.arguments);
+				cost += 256 + codePointLength(block.name) + codePointLength(block.arguments);
 				break;
 			case "tool-result":
-				cost += RICH_BLOCK_PRESSURE_COST + this.pressureCost(block.content);
+				cost += 256 + this.pressureCost(block.content);
 				break;
 			default: {
 				const serialized = JSON.stringify(block);
-				cost += Math.max(RICH_BLOCK_PRESSURE_COST, codePointLength(serialized));
+				cost += Math.max(256, codePointLength(serialized));
 			}
 		}
 		return cost;
@@ -2392,7 +2381,7 @@ var ToolResultPruner = class extends Service {
 	* @returns reduced content, or `null` when no reduction is required.
 	*/
 	pruneContent(blocks) {
-		return this.nativePruneContent(blocks, this.config.headChars + codePointLength(PRUNE_MARKER) + this.config.tailChars, this.config.headChars, this.config.tailChars);
+		return this.nativePruneContent(blocks, this.state.config.headChars + codePointLength(PRUNE_MARKER) + this.state.config.tailChars, this.state.config.headChars, this.state.config.tailChars);
 	}
 	/**
 	* Run one stable-surface pass. `fresh` is invoked before every request and
@@ -2456,7 +2445,7 @@ var ToolResultPruner = class extends Service {
 		return summarize(landed);
 	}
 	activeSettings(session) {
-		const frozen = this.sessionSettings.get(session);
+		const frozen = this.state.sessionSettings.get(session);
 		if (frozen !== void 0) return frozen;
 		const settings = this.ctx.get("settings")?.get(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE);
 		let resolved;
@@ -2464,7 +2453,7 @@ var ToolResultPruner = class extends Service {
 		let autoCompactThresholdSource = settings === void 0 ? "schema-default" : "host-settings";
 		let settingsInvalidFallback;
 		try {
-			resolved = settings === void 0 ? ContextCompressionSettingsSchema({ profile: this.config.profile }) : parseContextCompressionSettings(settings);
+			resolved = settings === void 0 ? ContextCompressionSettingsSchema({ profile: this.state.config.profile }) : parseContextCompressionSettings(settings);
 		} catch (error) {
 			const reason = error instanceof Error ? error.message : String(error);
 			this.auditFailure(session, "pressure", "policy-resolution", error);
@@ -2474,15 +2463,15 @@ var ToolResultPruner = class extends Service {
 			autoCompactThresholdSource = "schema-default";
 			settingsInvalidFallback = "lossless-off";
 		}
-		if (this.config.autoCompactThresholdPercent !== void 0) {
+		if (this.state.config.autoCompactThresholdPercent !== void 0) {
 			resolved = {
 				...resolved,
-				autoCompact: { thresholdPercent: this.config.autoCompactThresholdPercent }
+				autoCompact: { thresholdPercent: this.state.config.autoCompactThresholdPercent }
 			};
 			autoCompactThresholdSource = "generation-config";
 		}
 		const snapshot = deepFreeze(structuredClone(resolved));
-		this.sessionSettings.set(session, snapshot);
+		this.state.sessionSettings.set(session, snapshot);
 		emitCompressionAudit(this.ctx.logger, {
 			schemaVersion: 1,
 			kind: "policy-frozen",
@@ -2491,7 +2480,7 @@ var ToolResultPruner = class extends Service {
 			autoCompactThresholdSource,
 			...settingsInvalidFallback === void 0 ? {} : { settingsInvalidFallback },
 			settings: snapshot,
-			deploymentConfig: this.config
+			deploymentConfig: this.state.config
 		});
 		return snapshot;
 	}
@@ -2569,7 +2558,7 @@ var ToolResultPruner = class extends Service {
 		if (policy === void 0 || presetOptions?.readState !== true) return;
 		const estimatorMode = presetOptions.estimator?.mode ?? "";
 		if (estimatorMode === "") return;
-		const failures = this.estimatorFailures.get(session);
+		const failures = this.state.estimatorFailures.get(session);
 		if (isCoolingDown(failures, Date.now())) return;
 		const events = sessionEvents(session);
 		const samples = [];
@@ -2582,7 +2571,7 @@ var ToolResultPruner = class extends Service {
 			const path = toolCallPath(candidate.call.arguments);
 			if (path === void 0) continue;
 			if (isSupersededRead(events, candidate.seq, path)) continue;
-			if (this.estimatorVerdicts.get(session)?.has(candidate.seq) === true) continue;
+			if (this.state.estimatorVerdicts.get(session)?.has(candidate.seq) === true) continue;
 			samples.push({
 				seq: candidate.seq,
 				path,
@@ -2595,10 +2584,10 @@ var ToolResultPruner = class extends Service {
 		const ok = answer !== void 0 && signal.aborted === false;
 		let expired = 0;
 		if (ok && answer !== void 0) {
-			let verdicts = this.estimatorVerdicts.get(session);
+			let verdicts = this.state.estimatorVerdicts.get(session);
 			if (verdicts === void 0) {
 				verdicts = /* @__PURE__ */ new Map();
-				this.estimatorVerdicts.set(session, verdicts);
+				this.state.estimatorVerdicts.set(session, verdicts);
 			}
 			for (const verdict of parseEstimatorAnswer(answer)) {
 				if (verdicts.has(verdict.seq)) continue;
@@ -2610,7 +2599,7 @@ var ToolResultPruner = class extends Service {
 				failures: (failures?.failures ?? 0) + 1,
 				cooldownUntil: Date.now() + backoffCooldownMs((failures?.failures ?? 0) + 1)
 			};
-			this.estimatorFailures.set(session, next);
+			this.state.estimatorFailures.set(session, next);
 		}
 		emitCompressionAudit(this.ctx.logger, {
 			schemaVersion: 1,
@@ -2627,7 +2616,7 @@ var ToolResultPruner = class extends Service {
 	activePolicy(session, contextWindowTokens, stage = "pressure") {
 		const settings = this.activeSettings(session);
 		try {
-			const policy = resolvePolicy(this.config, settings.profile, settings.custom, {
+			const policy = resolvePolicy(this.state.config, settings.profile, settings.custom, {
 				...contextWindowTokens === void 0 ? {} : { contextWindowTokens },
 				autoCompactThresholdPercent: settings.autoCompact.thresholdPercent
 			});
@@ -2637,13 +2626,13 @@ var ToolResultPruner = class extends Service {
 				contextWindowTokens: contextWindowTokens ?? null,
 				route: route ?? null
 			});
-			if (this.policyResolutionAudits.get(session) !== auditKey) {
-				this.policyResolutionAudits.set(session, auditKey);
+			if (this.state.policyResolutionAudits.get(session) !== auditKey) {
+				this.state.policyResolutionAudits.set(session, auditKey);
 				const overriddenLinkedFields = [
 					"historyTriggerTokens",
 					"historyKeepRecentTokens",
 					"historyMinReclaimTokens"
-				].filter((key) => this.config[key] !== void 0).length;
+				].filter((key) => this.state.config[key] !== void 0).length;
 				emitCompressionAudit(this.ctx.logger, {
 					schemaVersion: 1,
 					kind: "policy-resolved",
@@ -2753,8 +2742,8 @@ var ToolResultPruner = class extends Service {
 	/** Emit one bounded, independently correlatable postflight cost diagnostic per completed attempt. */
 	logAdaptivePostflight(session, usage) {
 		const attemptId = String(usage.attemptId);
-		if (this.postflightDiagnostics.get(session) === attemptId) return;
-		this.postflightDiagnostics.set(session, attemptId);
+		if (this.state.postflightDiagnostics.get(session) === attemptId) return;
+		this.state.postflightDiagnostics.set(session, attemptId);
 		const key = usage.key;
 		let priceRecord;
 		let cost;
@@ -2889,10 +2878,10 @@ var ToolResultPruner = class extends Service {
 		return latest;
 	}
 	decisions(session) {
-		let decisions = this.firstExposure.get(session);
+		let decisions = this.state.firstExposure.get(session);
 		if (decisions === void 0) {
 			decisions = /* @__PURE__ */ new Set();
-			this.firstExposure.set(session, decisions);
+			this.state.firstExposure.set(session, decisions);
 		}
 		return decisions;
 	}
@@ -2904,14 +2893,14 @@ var ToolResultPruner = class extends Service {
 	*/
 	isRecoveryExempt(session, candidate) {
 		if (candidate.call.name === "context_compression_retrieve") return true;
-		return this.recoveryExemptions.get(session)?.has(candidate.seq) ?? false;
+		return this.state.recoveryExemptions.get(session)?.has(candidate.seq) ?? false;
 	}
 	/** Register a result seq as permanently exempt from further reduction. */
 	grantRecoveryExemption(session, seq) {
-		let exemptions = this.recoveryExemptions.get(session);
+		let exemptions = this.state.recoveryExemptions.get(session);
 		if (exemptions === void 0) {
 			exemptions = /* @__PURE__ */ new Set();
-			this.recoveryExemptions.set(session, exemptions);
+			this.state.recoveryExemptions.set(session, exemptions);
 		}
 		exemptions.add(seq);
 	}
@@ -3030,8 +3019,8 @@ var ToolResultPruner = class extends Service {
 		if (onlyTextBlocks(result.content) === null) return null;
 		const sourceSeq = this.rootToolResultSeq(session, candidate.seq);
 		const marker = recoveryMarker(this.sourceRef(session, sourceSeq), "tool result middle pruned");
-		let head = this.config.headChars;
-		let tail = this.config.tailChars;
+		let head = this.state.config.headChars;
+		let tail = this.state.config.tailChars;
 		for (let attempt = 0; attempt < 10; attempt += 1) {
 			const threshold = head + codePointLength(marker) + tail;
 			const content = this.nativePruneContent(result.content, threshold, head, tail, marker);
@@ -3058,10 +3047,10 @@ var ToolResultPruner = class extends Service {
 		if (text === void 0) return null;
 		const tokensBefore = exactTokens(candidate.count);
 		if (tokensBefore === void 0 || tokensBefore <= policy.freshTriggerTokens) return null;
-		let table = this.dedupeTables.get(session);
+		let table = this.state.dedupeTables.get(session);
 		if (table === void 0) {
 			table = new DedupeTable();
-			this.dedupeTables.set(session, table);
+			this.state.dedupeTables.set(session, table);
 		}
 		const hash = dedupeHash(text, "trim-eol");
 		const entry = table.get(hash);
@@ -3208,7 +3197,7 @@ var ToolResultPruner = class extends Service {
 			const block = onlyTextBlock(result.content);
 			if (policy.presetOptions?.readState === true && block !== null) {
 				const readPath = toolCallPath(candidate.call.arguments);
-				const estimatorExpired = this.estimatorVerdicts.get(session)?.get(candidate.seq) === true;
+				const estimatorExpired = this.state.estimatorVerdicts.get(session)?.get(candidate.seq) === true;
 				if (readPath !== void 0 && (isSupersededRead(events, candidate.seq, readPath) || estimatorExpired)) {
 					const plan = this.planAggregate(candidate, session, view, "superseded-read-whole-result", "pressure", void 0, "history", policy.historyMode);
 					if (plan === null) continue;
@@ -3435,10 +3424,10 @@ var ToolResultPruner = class extends Service {
 		});
 	}
 	reserveTailTrimBoundaryAttempt(session) {
-		const boundary = this.activeRequestBoundaries.get(session);
+		const boundary = this.state.activeRequestBoundaries.get(session);
 		if (boundary === void 0) return true;
-		if (this.tailTrimBoundaryAttempts.get(session) === boundary) return false;
-		this.tailTrimBoundaryAttempts.set(session, boundary);
+		if (this.state.tailTrimBoundaryAttempts.get(session) === boundary) return false;
+		this.state.tailTrimBoundaryAttempts.set(session, boundary);
 		return true;
 	}
 	uniqueAppendRoot(session, seq) {
@@ -3689,10 +3678,10 @@ var ToolResultPruner = class extends Service {
 		this.warnOnce(session, `exact-tokenizer:${gate}:${provider}\0${model}`, "context-compression %s kept original tool results because exact tokenizer counts are unavailable for %s/%s", gate, provider, model);
 	}
 	warnOnce(session, key, message, ...args) {
-		let warned = this.warnedFailures.get(session);
+		let warned = this.state.warnedFailures.get(session);
 		if (warned === void 0) {
 			warned = /* @__PURE__ */ new Set();
-			this.warnedFailures.set(session, warned);
+			this.state.warnedFailures.set(session, warned);
 		}
 		if (warned.has(key)) return;
 		warned.add(key);
