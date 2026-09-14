@@ -4,12 +4,12 @@ import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
   {
-    ignores: ['**/node_modules/**', '**/lib/**', '**/dist/**', '**/coverage/**', 'docs/**'],
+    ignores: ['**/node_modules/**', '**/lib/**', '**/dist/**', '**/scripts-dist/**', '**/coverage/**', 'docs/**'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ['packages/**/*.{ts,tsx}', 'scripts/**/*.{js,mjs}', 'eslint.config.js'],
+    files: ['packages/**/*.{ts,tsx}', 'scripts/**/*.{js,mjs,ts}', 'eslint.config.js'],
     languageOptions: {
       globals: { ...globals.browser, ...globals.node },
     },
