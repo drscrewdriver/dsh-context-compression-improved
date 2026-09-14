@@ -12,6 +12,12 @@
 - Harness 0.1.5 不再向浏览器暴露会话 `agentPreset`，客户端无法再识别 Minimal 会话；选择器保持可选，旧的不可用横幅不再出现。
 - 测试套件按 0.1.5 语义更新：cordis 插件启动需要 `.await()`，Token Meter 需要预先挂载 `SessionProjectionRegistry`，assistant 事件携带 `stream: []`，settings 命名空间为普通字符串。
 
+### 修复
+
+- 估计器卡片在 Harness 宿主通道上不再要求 API Key。选择宿主通道后只显示实时供应商/模型下拉框，并标出当前真正生效的路由（显式覆盖优先，否则跟随会话默认模型）；既不显示密钥输入框，也不再有第二个手填模型输入——端点地址、模型文本框与只写密钥均只属于直连端点通道。
+- `presetOptions` 改为按路径写入。此前整段写入会替换整个分节，导致再改动估计器的任何一个字段（供应商、模型、端点）都会删掉 `estimatorMode` 及其余全部覆盖值——估计器被静默关回关闭状态，而面板却报告保存成功。现在每个字段只写自己，`undefined` 只清除指名的那一个字段，且 confirm-on-write 校验的是同一组字段而非仅校验通道。
+- 新增回归覆盖：`packages/selector/tests/preset-options-write.client.spec.ts`（按路径写入、保留同级字段、显式清除、空改动不写、未提交写入的报错）与 `packages/selector/tests/estimator-channel.client.spec.tsx`（各通道字段、目录下拉框、手填回退）。
+
 
 ### 新增
 

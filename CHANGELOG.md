@@ -12,6 +12,12 @@ All notable changes use this file. The project follows semantic versioning after
 - Harness 0.1.5 no longer exposes the session `agentPreset` to the browser, so the client can no longer detect Minimal-only sessions; the selector stays selectable and the old unavailable banner is unreachable.
 - Test batteries updated for 0.1.5 semantics: cordis plugin starts require `.await()`, the Token Meter requires a mounted `SessionProjectionRegistry`, assistant events carry `stream: []`, and settings namespaces are plain strings.
 
+### Fixed
+
+- The estimator card no longer demands an API key on the Harness host channel. Selecting the host channel shows the live provider/model dropdowns, names the route that would actually run (explicit override, else the session default), and renders neither a key field nor a second manual model input: the base URL, the model text field, and the write-only key belong to the direct endpoint channel alone.
+- `presetOptions` writes are path-addressed. Writing the whole section replaced it, so touching any second estimator field (a provider, a model, an endpoint) deleted `estimatorMode` and every sibling override — silently switching the estimator back off while the panel still reported a successful save. Each field now writes only itself, `undefined` clears exactly the field it names, and the confirmation read validates the same field set instead of the mode alone.
+- New coverage: `packages/selector/tests/preset-options-write.client.spec.ts` (path-scoped writes, sibling preservation, explicit clears, no-op patches, uncommitted-write reporting) and `packages/selector/tests/estimator-channel.client.spec.tsx` (per-channel fields, catalog dropdowns, manual fallback).
+
 
 ### Added
 
