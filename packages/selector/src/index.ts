@@ -48,7 +48,12 @@ interface AgentDefaultModelLike {
 function asWebServer(value: unknown): WebServerLike | undefined {
   const register = (value as { register?: unknown } | undefined)?.register
   if (typeof register !== 'function') return undefined
-  return { register: register as WebServerLike['register'] }
+  // Hand back the service itself -- never a wrapper re-exporting `register`.
+  // The host reads its route tables off `this` (`this.exact` / `this.prefixes`),
+  // so a detached call makes `this` the wrapper and throws "Cannot read
+  // properties of undefined (reading 'has')" inside the host, after which the
+  // route is simply absent and the client sees a bare 404.
+  return value as WebServerLike
 }
 
 /**
