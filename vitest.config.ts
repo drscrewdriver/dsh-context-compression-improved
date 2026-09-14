@@ -18,6 +18,7 @@ export default defineConfig({
           environment: 'node',
           include: [
             'packages/selector/tests/cache-prefix-audit.spec.ts',
+            'packages/selector/tests/estimator-catalog.spec.ts',
             'packages/selector/tests/**/*.host.spec.ts',
           ],
         },
