@@ -24,7 +24,7 @@ export default tseslint.config(
   },
   {
     // Terminal normalization intentionally matches ANSI/BEL control characters.
-    files: ['packages/runtime/src/reducers.ts'],
+    files: ['packages/selector/src/runtime/reducers.ts'],
     rules: { 'no-control-regex': 'off' },
   },
 )

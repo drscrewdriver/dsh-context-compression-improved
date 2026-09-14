@@ -3,6 +3,7 @@ import { defineConfig } from 'tsdown'
 export default defineConfig({
   entry: {
     index: 'src/index.ts',
+    pruner: 'src/pruner.ts',
     invariant: 'src/invariant.ts',
     // This ESM face supplies client.d.ts. The sequential client build then
     // overwrites only client.js with the Harness lazy-CJS artifact.

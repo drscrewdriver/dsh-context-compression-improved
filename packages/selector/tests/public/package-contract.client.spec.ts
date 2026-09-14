@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 const root = resolve(import.meta.dirname, '../../..')
 
 describe('standalone package contract', () => {
-  it('keeps two packages and one install-facing dependency edge', () => {
+  it('ships one install-facing package with no intra-repo dependency edge', () => {
     const selector = JSON.parse(readFileSync(resolve(root, 'selector/package.json'), 'utf8')) as {
       name: string
       version: string
@@ -13,23 +13,16 @@ describe('standalone package contract', () => {
       peerDependencies?: Record<string, string>
       publishConfig?: { tag?: string }
     }
-    const runtime = JSON.parse(readFileSync(resolve(root, 'runtime/package.json'), 'utf8')) as {
-      name: string
-      version: string
-      dependencies?: Record<string, string>
-      publishConfig?: { tag?: string }
-    }
     expect(selector.name).toBe('dsh-context-compression-improved')
-    expect(runtime.name).toBe('dsh-context-compression-improved-runtime')
-    expect(selector.dependencies?.['dsh-context-compression-improved-runtime']).toBe(runtime.version)
-    expect(runtime.dependencies?.['@huggingface/tokenizers']).toBe('0.1.3')
+    expect(selector.dependencies?.['@huggingface/tokenizers']).toBe('0.1.3')
+    expect(Object.keys(selector.dependencies ?? {})).not.toContain('dsh-context-compression-improved-runtime')
+    expect(Object.keys(selector.peerDependencies ?? {})).not.toContain('dsh-context-compression-improved-runtime')
     expect(Object.keys(selector.peerDependencies ?? {})).not.toContain('@deepseek-ai/dsh-compaction-tool-result-pruner')
     expect(selector.peerDependencies?.['@deepseek-ai/dsh-compaction-basic'])
       .toBe('>=0.1.1-rc.2 <0.2.0')
     expect(selector.peerDependencies?.['@deepseek-ai/dsh-command-compact'])
       .toBe('>=0.1.1-rc.2 <0.2.0')
     expect(selector.publishConfig?.tag).toBe('latest')
-    expect(runtime.publishConfig?.tag).toBe('latest')
   })
 
   it('uses the community package in the one Bundle patch', () => {

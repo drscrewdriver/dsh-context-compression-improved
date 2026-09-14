@@ -1,6 +1,6 @@
+import { n as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, r as ContextCompressionSettingsSchema } from "./config.js";
 import z from "@deepseek-ai/schemastery";
 import "@deepseek-ai/dsh-settings";
-import { CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, ContextCompressionSettingsSchema } from "dsh-context-compression-improved-runtime";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { chmod, mkdtemp, readFile, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
@@ -128,7 +128,9 @@ const COMPRESSION_PACKAGES = /* @__PURE__ */ new Set([
 	"@deepseek-ai/dsh-compaction-basic",
 	"@deepseek-ai/dsh-command-compact",
 	"@deepseek-ai/dsh-compaction-tool-result-pruner",
-	"dsh-context-compression-improved-runtime"
+	"dsh-context-compression-improved-runtime",
+	"dsh-context-compression-improved",
+	"dsh-context-compression-improved/pruner"
 ]);
 /**
 * Resolve the three compression package entries once from this package.
@@ -138,7 +140,7 @@ function resolveCompressionModulePaths() {
 	return {
 		compactionBasic: modulePath("@deepseek-ai/dsh-compaction-basic", import.meta.resolve("@deepseek-ai/dsh-compaction-basic")),
 		commandCompact: modulePath("@deepseek-ai/dsh-command-compact", import.meta.resolve("@deepseek-ai/dsh-command-compact")),
-		toolResultPruner: modulePath("dsh-context-compression-improved-runtime", import.meta.resolve("dsh-context-compression-improved-runtime"))
+		toolResultPruner: modulePath("dsh-context-compression-improved/pruner", import.meta.resolve("dsh-context-compression-improved/pruner"))
 	};
 }
 /** Convert one package resolution into the absolute path preset mounting accepts. */

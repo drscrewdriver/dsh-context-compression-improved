@@ -26,15 +26,15 @@ const consumerRoot = await realpath(dirname(fileURLToPath(import.meta.url)))
 const consumerRequire = createRequire(import.meta.url)
 const selectorPackage = consumerRequire.resolve('dsh-context-compression-improved/package.json')
 const selectorRequire = createRequire(selectorPackage)
-const runtimePackage = selectorRequire.resolve('dsh-context-compression-improved-runtime/package.json')
+const prunerEntry = selectorRequire.resolve('dsh-context-compression-improved/pruner')
 const SelectorHost = await import(pathToFileURL(consumerRequire.resolve('dsh-context-compression-improved')).href)
-const Runtime = await import(pathToFileURL(selectorRequire.resolve('dsh-context-compression-improved-runtime')).href)
+const Runtime = await import(pathToFileURL(prunerEntry).href)
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(`packed component smoke: ${message}`)
 }
 
-for (const path of [selectorPackage, runtimePackage]) {
+for (const path of [selectorPackage, prunerEntry]) {
   const resolved = await realpath(path)
   assert(resolved.startsWith(`${consumerRoot}${sep}node_modules${sep}`),
     `product module resolved outside the packed consumer: ${resolved}`)
@@ -257,6 +257,10 @@ try {
   ctx.toolResultPruner.pruneSession(session, { stage: 'pressure' })
 
   const tail = audit.find(record => record.kind === 'rewrite' && record.component === 'tail-trim')
+  if (tail === undefined) {
+    console.error('TAILTRIM_DIAG', JSON.stringify(audit.filter(record =>
+      record.component === 'tail-trim' || record.kind === 'rewrite'), null, 2))
+  }
   assert(tail !== undefined, 'TailTrim did not commit from installed Runtime')
   const ref = `session://${String(session.id)}/tailtrim/${String(tail.manifestSeq)}`
   const recovered = await ctx.tools.execute({

@@ -1,7 +1,7 @@
 /**
  * One-off baseline capture: freeze the resolvePolicy output for the pre-existing
  * profiles (before 'tokenpilot-inspired' is added) into a JSON fixture used by
- * tests/tokenpilot/profile-baseline.spec.ts as the backward-compat golden.
+ * tests/runtime/tokenpilot/profile-baseline.spec.ts as the backward-compat golden.
  *
  * Usage: node scripts/capture-profile-baseline.mjs [baseline-file]
  */
@@ -9,7 +9,7 @@ import { writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
-const runtime = require('../packages/runtime/lib/index.js')
+const runtime = require('../packages/selector/lib/pruner.js')
 
 const OLD_PROFILES = ['off', 'native', 'balanced', 'cache-strict', 'savings', 'adaptive', 'custom']
 const baseConfig = runtime.resolveConfig({})
@@ -37,6 +37,6 @@ for (const profile of OLD_PROFILES) {
   }
 }
 
-const out = process.argv[2] ?? 'packages/runtime/tests/fixtures/profile-baseline.json'
+const out = process.argv[2] ?? 'packages/selector/tests/runtime/fixtures/profile-baseline.json'
 writeFileSync(out, `${JSON.stringify(snapshot, null, 2)}\n`)
 console.log(`baseline written: ${out}`)

@@ -13,7 +13,7 @@ Usage:
     python3 scripts/generate-vision-fixtures.py [--workdir DIR]
 
 Requires: pip install torch pillow
-Output:   packages/runtime/tests/fixtures/vision-golden.json
+Output:   packages/selector/tests/runtime/fixtures/vision-golden.json
 """
 
 import argparse
@@ -26,7 +26,7 @@ import types
 import urllib.request
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
-OUTPUT = REPO_ROOT / "packages/runtime/tests/fixtures/vision-golden.json"
+OUTPUT = REPO_ROOT / "packages/selector/tests/runtime/fixtures/vision-golden.json"
 REVISION = "6821d6ad3681a4b137b066b76094fa82ebd0a380"
 BASE = f"https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash-Vision-Exp/resolve/{REVISION}"
 
