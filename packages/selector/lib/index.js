@@ -564,19 +564,24 @@ const SHARED_SETTINGS = Symbol.for("dsh-context-compression-improved/settings-re
 const Config = z.object({ presetOverlay: z.boolean().default(false) });
 /** Register the persisted default read by the currently mounted root pruner. */
 function apply(ctx, config = {}) {
-	ctx.inject(["settings"], (settingsCtx) => {
-		acquireSettingsRegistration(settingsCtx);
-	});
-	registerEstimatorCatalogRoute(ctx);
-	if (config.presetOverlay !== true) return;
-	ctx.inject(["agentPresets"], (presetsCtx) => {
-		const installation = decorateAgentPresets(presetsCtx.agentPresets, {
-			modules: resolveCompressionModulePaths(),
-			excludedPresetIds: ["minimal"],
-			autoCompactThresholdPercent: () => resolveAutoCompactThresholdPercent(presetsCtx)
+	try {
+		ctx.inject(["settings"], (settingsCtx) => {
+			acquireSettingsRegistration(settingsCtx);
 		});
-		presetsCtx.effect(() => () => installation.dispose(), "contextCompressionSelector.agentPresets()");
-	});
+		registerEstimatorCatalogRoute(ctx);
+		if (config.presetOverlay !== true) return;
+		ctx.inject(["agentPresets"], (presetsCtx) => {
+			const installation = decorateAgentPresets(presetsCtx.agentPresets, {
+				modules: resolveCompressionModulePaths(),
+				excludedPresetIds: ["minimal"],
+				autoCompactThresholdPercent: () => resolveAutoCompactThresholdPercent(presetsCtx)
+			});
+			presetsCtx.effect(() => () => installation.dispose(), "contextCompressionSelector.agentPresets()");
+		});
+	} catch (error) {
+		console.error("context-compression apply() failed:", error);
+		throw error;
+	}
 }
 /**
 * Read the current Auto Compact threshold ratio at composition time. Settings
