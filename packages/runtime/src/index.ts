@@ -24,7 +24,6 @@ import type {
   TokenCount,
 } from './measurement.ts'
 import { measureForCompaction } from './measurement.ts'
-import { buildEstimatorCatalog, type EstimatorCatalogDeps } from './estimator-catalog.ts'
 import { sessionEvents } from './session-events.ts'
 import { deepSeekV4TokenizerForModel } from './deepseek-v4-tokenizer.ts'
 import { countExactCanonicalTextFields } from './token-count.ts'
@@ -157,6 +156,17 @@ export type {
 // Re-export the canonical profile list from the type module as a runtime value.
 export { COMPRESSION_PROFILES } from './types.ts'
 
+// The estimator-catalog projection is served by the selector's top-level route
+// (which injects webServer/llm/agentDefaultModel), not from inside the isolated
+// toolResultPruner service, so re-export it for that owner.
+export { buildEstimatorCatalog, resolveHostRoute } from './estimator-catalog.ts'
+export type {
+  CatalogModel,
+  CatalogProvider,
+  EstimatorCatalog,
+  EstimatorCatalogDeps,
+} from './estimator-catalog.ts'
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     toolResultPruner: ToolResultPruner
@@ -267,7 +277,6 @@ export class ToolResultPruner extends Service {
       installContextCompressionRetrieve(recoveryCtx)
     })
     this.config = resolveConfig(config)
-    this.registerEstimatorCatalogRoute(ctx)
 
     ctx.on('session/event', (session, event) => {
       if (event.type === 'compaction/summary') {
@@ -2176,103 +2185,6 @@ export class ToolResultPruner extends Service {
       ...detail,
     })
   }
-
-  /**
-   * Serve `GET /api/dsh-context-compression-improved/estimator-catalog` — the
-   * settings card's host-route dropdowns (live provider/model groups from the
-   * DSH `llm` service plus the effective selection). Best effort: when the
-   * `webServer` service is absent the plugin keeps working, only the HTTP API
-   * is missing (same runtime detection as dsh-perm-gate's routes).
-   */
-  private registerEstimatorCatalogRoute(ctx: Context): void {
-    // webServer often activates AFTER this plugin: attempt immediately, then
-    // poll until the service appears (or the plugin unmounts). Registration is
-    // best effort — its absence only degrades the card to manual inputs.
-    let settled = false
-    const attempt = (): (() => void) | undefined => {
-      if (settled) return undefined
-      let webServer: unknown
-      try {
-        webServer = ctx.get('webServer' as never)
-      } catch {
-        webServer = undefined
-      }
-      const register = (webServer as { register?: unknown } | undefined)?.register
-      if (typeof register !== 'function') return undefined
-      settled = true
-      return this.registerEstimatorCatalogHandler(ctx, register as (
-        spec: { kind: 'exact', path: string, handler: (req: unknown, res: unknown) => void },
-      ) => () => void)
-    }
-    const immediate = attempt()
-    if (immediate !== undefined) {
-      ctx.effect(() => immediate, 'dsh-context-compression-improved: estimator-catalog route')
-      return
-    }
-    const timer = setInterval(() => {
-      const late = attempt()
-      if (late !== undefined) {
-        clearInterval(timer)
-        ctx.logger?.info?.('[dsh-context-compression-improved] estimator-catalog route registered on late webServer activation')
-      }
-    }, 2_000)
-    ctx.effect(() => () => {
-      settled = true
-      clearInterval(timer)
-    }, 'dsh-context-compression-improved: estimator-catalog route retry')
-  }
-
-  private registerEstimatorCatalogHandler(
-    ctx: Context,
-    register: (spec: { kind: 'exact', path: string, handler: (req: unknown, res: unknown) => void }) => () => void,
-  ): (() => void) {
-    const deps = (): EstimatorCatalogDeps => {
-      let llm: EstimatorCatalogDeps['llm']
-      let currentSelection: EstimatorCatalogDeps['currentSelection']
-      try {
-        llm = ctx.get('llm' as never) as EstimatorCatalogDeps['llm']
-      } catch {
-        llm = undefined
-      }
-      try {
-        const defaults = ctx.get('agentDefaultModel' as never) as
-          | { currentSelection?: () => { provider?: unknown, model?: unknown } | undefined }
-          | undefined
-        currentSelection = defaults?.currentSelection?.bind(defaults)
-      } catch {
-        currentSelection = undefined
-      }
-      return {
-        ...(llm === undefined ? {} : { llm }),
-        ...(currentSelection === undefined ? {} : { currentSelection }),
-      }
-    }
-    const typedRegister = register as (
-      spec: { kind: 'exact', path: string, handler: (req: unknown, res: unknown) => void },
-    ) => () => void
-    const handler = (_req: unknown, res: unknown): void => {
-      const resTyped = res as { writeHead: (code: number, headers?: Record<string, string>) => void, end: (body?: string) => void }
-      if (typeof resTyped?.writeHead !== 'function' || typeof resTyped?.end !== 'function') return
-      buildEstimatorCatalog(deps()).then(
-        catalog => {
-          resTyped.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-cache' })
-          resTyped.end(JSON.stringify({ ok: true, ...catalog }))
-        },
-        (error: unknown) => {
-          resTyped.writeHead(500, { 'content-type': 'application/json; charset=utf-8' })
-          resTyped.end(JSON.stringify({ ok: false, error: String((error as Error)?.message ?? error) }))
-        },
-      )
-    }
-    // 0.1.1/0.1.2 客户端 API 前缀是 /endpoint，0.1.5 起改为 /api —— 两条绝对路径
-    // 都注册（各自的 (kind, path) 表项），一份处理器服务两个前缀。
-    const disposers = ['/endpoint/dsh-context-compression-improved/estimator-catalog',
-      '/api/dsh-context-compression-improved/estimator-catalog']
-      .map(path => typedRegister({ kind: 'exact', path, handler }))
-      .filter((off): off is () => void => typeof off === 'function')
-    return () => { for (const off of disposers) off() }
-  }
-
 
   private auditFailure(
     session: Session,
