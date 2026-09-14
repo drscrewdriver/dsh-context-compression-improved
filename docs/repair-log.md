@@ -292,6 +292,67 @@ the same signature.
 
 ---
 
+## D7 — The estimator catalog route never registered: a detached method lost `this`
+
+**Symptom.** The settings card's host-route dropdowns stayed empty. An authenticated
+`GET /api/dsh-context-compression-improved/estimator-catalog` answered 404 while a sibling
+plugin's `/api/dsh-perm-gate/receiver` answered 200 in the same breath.
+
+**Root cause.** `asWebServer` duck-typed the `webServer` service by pulling `register` off it
+and returning a fresh wrapper:
+
+```ts
+const register = value?.register
+return { register }          // `this` is now the wrapper
+```
+
+`dsh-host-webserver`'s `register` reads its own route tables:
+
+```js
+const table = route.kind === "exact" ? this.exact : this.prefixes;
+if (table.has(route.path)) …        // L178 — `table` is undefined, TypeError
+```
+
+`this` was the wrapper, so `this.exact` / `this.prefixes` were `undefined`, the host threw
+inside `register`, and the plugin's catch-all swallowed it. **The helper had never once
+registered a route since it was written.**
+
+**Why it stayed invisible.** On the 0.1.2 host the `dsh web` terminal prints no plugin
+`ctx.logger` output at all — a full boot produced 1350 bytes containing only Node's
+experimental warning and two `dsh web:` lines — and a plugin-load failure travels the same
+logger. A swallowed throw and a plugin that quietly did nothing were observationally
+identical. Once the diagnostic moved to `console` (as `dsh-perm-gate` already does on this
+host), the real frame appeared:
+
+```
+TypeError: Cannot read properties of undefined (reading 'has')
+    at Object.register (dsh-host-webserver/lib/index.js:178:13)
+    at Object.apply (cordis/lib/index.js:120:36)
+```
+
+**Fix.** `return value as WebServerLike` — pass the service itself; `dsh-perm-gate` works
+for exactly this reason.
+
+**Verification.** Cordis does **not** bind service methods: on a bare `Context`, both a
+detached call and a wrapped one lose `this`. On the real host, after installing this fix,
+`/api/dsh-context-compression-improved/estimator-catalog` answers **200** with a full
+catalog (four provider groups), `/endpoint/…` answers 200, perm-gate stays 200, and a
+garbage path stays 401.
+
+**Guard.** `packages/selector/tests/estimator-route-registration.host.spec.ts` now mounts a
+stand-in whose `register` reads its tables off `this`, mirroring the host. Against the
+previous implementation it fails **3 of 5** cases with `expected [] to deeply equal […]` —
+the same empty route table the host exhibited. The earlier version of that stand-in recorded
+routes in a closure, so it could never have caught this.
+
+**Withdrawn hypotheses.** Everything this ledger recorded before the fix about the cause —
+narrowing the injection gate, isolation scope, and moving to the `connection` service — was
+a false trail produced by the silence. Two of them are worth keeping as *non*-causes:
+isolation is opt-in and this row never opted in, and `connection.rpc` is the wrong transport
+here for reasons the project's own `upgrade-pitfalls` §2.1 records independently.
+
+---
+
 ## Verification ledger — `feat/ctx-preset-v2` closure
 
 Closure = `935d501` + the root-`exports` completion (`./invariant`). The working tree held
@@ -399,6 +460,20 @@ The merged package keeps **one** invariant companion, and it is the runtime's: `
 | any future single-package release | structurally impossible | — | **permanent gate** | — | inherits D3 |
 | every branch on this host | — | — | — | — | was **blocked by D6**; the profile install now completes, so real-machine verification is unblocked |
 
+### D7 per branch — the fix must travel one way only
+
+`asWebServer` has two different bodies across the branches, and they are not equivalent:
+
+| Branch | `asWebServer` returns | Verdict |
+| --- | --- | --- |
+| `compat/0.1.5` @ `d7c592d` | `value as WebServerLike` — the service itself | **correct; never had D7** |
+| `feat/ctx-preset-v2` @ `e588f1c`, `ts/0.1.2+` @ `0eb5183` | `{ register }` — a detached method | **carries D7** |
+| `baseline/pre-god-module-split`, `main` @ `e337bf5` | no such helper | n/a |
+
+The defect was introduced on the V2 line, not inherited from the 0.1.x line. That inverts the
+usual direction of these hand-offs: **the 0.1.5 replay must not copy this helper out of
+`feat/ctx-preset-v2`.** Take `compat`'s body, or the fixed one from `00afcfc`; they agree.
+
 ## Inheritance rules
 
 1. **The root manifest is the install contract**: `name`, `main`, `types`, `exports`,
@@ -416,6 +491,11 @@ The merged package keeps **one** invariant companion, and it is the runtime's: `
 5. **Profile-side hygiene**: install spec that actually resolves, no dead `overrides`. And
    before trusting any profile-side install result: reconcile dependencies **with the host
    stopped**, and test a directory's write right — never its owner (D6).
+6. **Never detach a method off a host service.** Duck typing that returns `{ register }`
+   instead of the service loses `this`, and `dsh-host-webserver.register` reads its route
+   tables off `this`. Pass the service object itself; `dsh-perm-gate` does, which is why it
+   serves its routes. The same trap applies to any service whose methods touch instance
+   state, so check the contract before narrowing a service to a single method (D7).
 
 ## Change log
 
@@ -425,3 +505,4 @@ The merged package keeps **one** invariant companion, and it is the runtime's: `
 | 2026-09-14 | D2 | `./invariant` added to the root `exports`; root and package manifests now agree. Ten-gate closure ledger added, with the gate-5 flakiness evidence and the withdrawn identity-hash criterion |
 | 2026-09-14 | D6 | Profile dependency-reconciliation blocker diagnosed: two independent `os error 5` sources (one ACL-denied directory; mapped native modules held by the live host), plus the ownership-vs-write-right criterion warning. Delivered as a dry-runnable script |
 | 2026-09-15 | D6 | **Resolved.** One plain `pnpm install` in the profile converged (`+256 -16`, exit 0); the lockfile repointed itself and the `_pacquet-stage_` residue is gone. Cleared by convergence over successive attempts, not by the ACL repair — the `katex` denial stays on record |
+| 2026-09-15 | D7 | **The estimator catalog route had never registered at all.** `asWebServer` detached `register` from the service, `this` became the wrapper, the host threw inside `register`, and a catch-all swallowed it. Fixed by passing the service itself; 200 verified on the real host; the injection, isolation and transport hypotheses recorded earlier are withdrawn |
