@@ -147,7 +147,7 @@ The gate is scoped to the **import graph**. Unreferenced build by-products such 
 and the `files` allowlist deliberately drops it from the tarball. Requiring it would mean
 widening the allowlist to ship dead weight.
 
-**Verification.** `scripts/verify-release.mjs`. Observed:
+**Verification.** `scripts-dist/verify-release.js` (compiled from `scripts/verify-release.ts`). Observed:
 
 ```text
 # untracked chunk present

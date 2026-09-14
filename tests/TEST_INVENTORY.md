@@ -15,7 +15,7 @@ legacy-test allowlist.
   under the separate `vitest.built.config.ts` gate, after `pnpm build`.
 
 The root `pnpm test`, the package-local `pnpm test` command, and
-`pnpm test:built` are release gates. `scripts/verify-release.mjs` compares the
+`pnpm test:built` are release gates. `scripts-dist/verify-release.js` (compiled from `scripts/verify-release.ts`) compares the
 checked-in spec inventory with these project rules so a new test cannot be
 silently excluded.
 
@@ -37,6 +37,6 @@ Their supported behavior is covered by active public tests:
   service identity: `packages/selector/tests/preset-overlay-loader.e2e.host.spec.ts`;
 - package/export/tarball contract:
   `packages/selector/tests/public/package-contract.client.spec.ts` and
-  `scripts/packed-install-e2e.mjs`;
+  `scripts-dist/packed-install-e2e.js` (compiled from `scripts/packed-install-e2e.ts`);
 - profile and Custom editor behavior:
   `packages/selector/tests/profiles.client.spec.tsx`.
