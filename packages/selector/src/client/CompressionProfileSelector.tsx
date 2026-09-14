@@ -385,13 +385,10 @@ interface EstimatorCatalogBody {
   readonly selection?: { readonly provider: string, readonly model: string }
 }
 
-// The host channel is `/api`, and only `/api`: the pre-0.1.2 `/endpoint` prefix
-// does not exist on this tier's hosts, so probing it first only bought a
-// guaranteed 404 round-trip before every success. The host half serves this
-// exact path through the `connection` Fetch surface, which authenticates the
-// browser session before dispatch — so the request must carry credentials,
-// which same-origin fetches do by default.
+// 0.1.1/0.1.2 客户端 API 前缀是 /endpoint（0.1.5 起改为 /api）：宿主两条路径都
+// 注册了，这里按宿主世代依次尝试，先命中哪个用哪个。
 const ESTIMATOR_CATALOG_ROUTES = [
+  '/endpoint/dsh-context-compression-improved/estimator-catalog',
   '/api/dsh-context-compression-improved/estimator-catalog',
 ]
 
@@ -402,15 +399,15 @@ function EstimatorControls({ options, disabled, save, settle, t }: EstimatorCont
   const [provider, setProvider] = useState(options.estimatorProvider ?? '')
   const mode = options.estimatorMode ?? ''
   // Host-mode dropdown source: the live provider/model-group catalog served by
-  // the runtime's estimator-catalog route on the `connection` Fetch surface.
+  // the runtime's estimator-catalog route (dsh-perm-gate receiver pattern).
   // Empty catalog (route missing / llm service absent) falls back to the
-  // manual text inputs so nothing breaks on hosts without that service.
+  // manual text inputs so nothing breaks on hosts without the webServer.
   const [catalog, setCatalog] = useState<EstimatorCatalogBody | undefined>()
   useEffect(() => {
     if (mode !== 'host') return
     let alive = true
-    // The catalog route answers once the host connection service is up; poll
-    // briefly so the dropdowns fill without reopening the panel.
+    // The catalog route answers once the host webServer/llm services are up;
+    // poll briefly so the dropdowns fill without reopening the panel.
     let attempts = 0
     const load = async (routes: readonly string[]): Promise<EstimatorCatalogBody | undefined> => {
       for (const route of routes) {
