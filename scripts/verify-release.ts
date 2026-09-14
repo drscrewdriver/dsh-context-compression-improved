@@ -6,19 +6,22 @@ import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 
-const fail = (message) => {
+const fail = (message: string): never => {
   throw new Error(`release verification: ${message}`)
 }
 
-const json = async (path) => JSON.parse(await readFile(path, 'utf8'))
+const json = async (path: string) => JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>
 const rootPackage = await json(join(root, 'package.json'))
-const selectorPackage = await json(join(root, 'packages/selector/package.json'))
+const selectorPackage = await json(join(root, 'packages/selector/package.json')) as Record<string, Record<string, unknown>>
 
-if (!rootPackage.scripts?.typecheck?.includes('pnpm run typecheck:tests')
-  || rootPackage.scripts?.['typecheck:tests'] !== 'tsc --noEmit -p tsconfig.tests.json') {
+const rootScripts = rootPackage.scripts as Record<string, string> | undefined
+const selectorScripts = selectorPackage.scripts as Record<string, string> | undefined
+
+if (!(rootScripts?.typecheck as string)?.includes('pnpm run typecheck:tests')
+  || rootScripts?.['typecheck:tests'] !== 'tsc --noEmit -p tsconfig.tests.json') {
   fail('root typecheck must include the strict active-test TypeScript gate')
 }
-if (selectorPackage.scripts?.test
+if (selectorScripts?.test
   !== 'vitest run --root ../.. --config vitest.config.ts --project runtime --project selector-host --project selector-client') {
   fail('Package-local test script is not the verified root project command')
 }
@@ -31,14 +34,14 @@ if (!ci.includes('pnpm --filter dsh-context-compression-improved test')) {
 // as a root script, CI must run exactly that script, the script must default
 // to fail-closed release mode, and that mode must refuse every skip/null
 // lifecycle outcome.
-if (rootPackage.scripts?.['test:e2e:packed'] !== 'node scripts/packed-install-e2e.mjs') {
+if (rootScripts?.['test:e2e:packed'] !== 'node scripts-dist/packed-install-e2e.js') {
   fail('root test:e2e:packed script is missing or does not run the packed E2E directly')
 }
 if (!ci.includes('pnpm run test:e2e:packed') && !ci.includes('pnpm test:e2e:packed')) {
   fail('CI does not run the packed release E2E gate')
 }
-const packedE2e = await readFile(join(root, 'scripts/packed-install-e2e.mjs'), 'utf8')
-if (!/const e2eMode = process\.env\.DSH_E2E_MODE === 'dev' \? 'dev' : 'release'/u.test(packedE2e)) {
+const packedE2e = await readFile(join(root, 'scripts/packed-install-e2e.ts'), 'utf8')
+if (!/const e2eMode\s*(:\s*'dev'\s*\|\s*'release')?\s*=\s*process\.env\.DSH_E2E_MODE === 'dev' \? 'dev' : 'release'/u.test(packedE2e)) {
   fail('packed E2E must default to release mode (dev only via an explicit DSH_E2E_MODE)')
 }
 for (const failClosed of [
@@ -49,7 +52,7 @@ for (const failClosed of [
     fail(`packed E2E release mode lost its fail-closed guard: ${failClosed}`)
   }
 }
-const packedComponents = await readFile(join(root, 'scripts/packed-components-smoke.mjs'), 'utf8')
+const packedComponents = await readFile(join(root, 'scripts/packed-components-smoke.ts'), 'utf8')
 for (const required of [
   'Runtime.measureForCompaction(visionCtx, visionImage)',
   "estimatedImageCount?.kind === 'tokenizer-estimate'",
@@ -74,20 +77,20 @@ for (const required of [
 }
 await stat(join(root, 'tsconfig.tests.json'))
 
-if (selectorPackage.dsh?.bundle?.patch !== './cordis.patch.yml') {
+if ((selectorPackage.dsh as Record<string, Record<string, string>>)?.bundle?.patch !== './cordis.patch.yml') {
   fail('selector must declare the DSH Bundle patch')
 }
-if (selectorPackage.files?.some((entry) => entry.endsWith('.css'))) {
+if ((selectorPackage.files as string[] | undefined)?.some((entry: string) => entry.endsWith('.css'))) {
   fail('selector must not rely on separately served CSS assets')
 }
-if (selectorPackage.name !== 'dsh-context-compression-improved') fail('unexpected package name')
-if (selectorPackage.publishConfig?.access !== 'public') fail('publish access is not public')
-if (selectorPackage.publishConfig?.tag !== 'latest') fail('publish tag is not latest')
+if ((selectorPackage.name as unknown as string) !== 'dsh-context-compression-improved') fail('unexpected package name')
+if ((selectorPackage.publishConfig as Record<string, string>)?.access !== 'public') fail('publish access is not public')
+if ((selectorPackage.publishConfig as Record<string, string>)?.tag !== 'latest') fail('publish tag is not latest')
 for (const peer of [
   '@deepseek-ai/dsh-command-compact',
   '@deepseek-ai/dsh-compaction-basic',
 ]) {
-  if (selectorPackage.peerDependencies?.[peer] !== '>=0.1.1-rc.2 <0.2.0') {
+  if (((selectorPackage.peerDependencies as Record<string, string>) ?? {})[peer] !== '>=0.1.1-rc.2 <0.2.0') {
     fail(`selector peer ${peer} is missing or outside the verified range`)
   }
 }
@@ -96,7 +99,14 @@ if (!notice.includes('Copyright (c) 2026 DeepSeek')) {
   fail('packages/selector does not carry the full DeepSeek Harness MIT notice')
 }
 
-const assetManifests = [
+interface AssetManifest {
+  directory: string
+  repository: string
+  modelIds: string
+  revision?: string
+}
+
+const assetManifests: AssetManifest[] = [
   {
     directory: 'deepseek-v4',
     repository: 'deepseek-ai/DeepSeek-V4-Pro',
@@ -111,7 +121,12 @@ const assetManifests = [
 ]
 for (const expected of assetManifests) {
   const assetRoot = join(root, 'packages/selector/assets', expected.directory)
-  const manifest = await json(join(assetRoot, 'manifest.json'))
+  const manifest = await json(join(assetRoot, 'manifest.json')) as {
+    repository: string
+    modelIds: string[]
+    revision?: string
+    files: Record<string, { bytes: number; sha256: string }>
+  }
   if (manifest.repository !== expected.repository) fail(`${expected.directory} manifest repository differs`)
   if (!JSON.stringify(manifest.modelIds).includes(expected.modelIds)) {
     fail(`${expected.directory} manifest model ids differ`)
@@ -125,7 +140,9 @@ for (const expected of assetManifests) {
     if (bytes.byteLength !== descriptor.bytes) fail(`${expected.directory}/${name} byte length differs from manifest`)
     if (hash !== descriptor.sha256) fail(`${expected.directory}/${name} SHA-256 differs from manifest`)
   }
-  if (!selectorPackage.files?.some(entry => entry === 'assets' || entry === `assets/${expected.directory}/*`)) {
+  if (!(selectorPackage.files as string[] | undefined)?.some(
+    entry => entry === 'assets' || entry === `assets/${expected.directory}/*`,
+  )) {
     fail(`package files list omits assets for ${expected.directory}`)
   }
 }
@@ -138,9 +155,9 @@ const forbidden = [
   { pattern: /\.\.\/\.\.\/\.\.\/(?:core|packages)\//u, label: 'monorepo-relative source import' },
 ]
 
-const walk = async (directory) => {
+const walk = async (directory: string): Promise<string[]> => {
   const entries = await readdir(directory, { withFileTypes: true })
-  const files = []
+  const files: string[] = []
   for (const entry of entries) {
     const path = join(directory, entry.name)
     if (entry.isDirectory()) files.push(...await walk(path))
@@ -175,16 +192,16 @@ for (const path of await walk(lib)) {
 const libArtifacts = await walk(lib)
 const libNames = new Set(libArtifacts.map(path => relative(lib, path).replaceAll('\\', '/')))
 const libScripts = [...libNames].filter(name => name.endsWith('.js')).sort()
-const libAllowedSuffixes = (selectorPackage.files ?? [])
+const libAllowedSuffixes = ((selectorPackage.files as unknown as string[]) ?? [])
   .filter(pattern => pattern.startsWith('lib/'))
   .map(pattern => pattern.slice(pattern.lastIndexOf('*') + 1))
 if (libAllowedSuffixes.length === 0) fail('selector package files allowlist covers no lib artifact')
-const isAllowed = name => libAllowedSuffixes.some(suffix => name.endsWith(suffix))
-const importedArtifacts = new Set()
+const isAllowed = (name: string) => libAllowedSuffixes.some(suffix => name.endsWith(suffix))
+const importedArtifacts = new Set<string>()
 for (const name of libScripts) {
   const text = await readFile(join(lib, name), 'utf8')
   for (const match of text.matchAll(/from\s*["'](\.\/[^"']+)["']/gu)) {
-    const target = match[1].slice(2)
+    const target = match[1]!.slice(2)
     if (!libNames.has(target)) fail(`lib/${name} imports missing artifact ${match[1]}`)
     importedArtifacts.add(target)
   }
@@ -192,17 +209,17 @@ for (const name of libScripts) {
 for (const name of [...libScripts, ...importedArtifacts].sort()) {
   if (!isAllowed(name)) fail(`lib/${name} is part of the load graph but the package files allowlist would drop it`)
 }
-let trackedLib
+let trackedLib: Set<string> | undefined
 try {
   trackedLib = new Set(execFileSync('git', ['ls-files', '--', 'packages/selector/lib'], { cwd: root, encoding: 'utf8' })
     .split('\n').map(line => line.trim()).filter(Boolean))
-} catch (cause) {
-  fail(`cannot read the tracked artifact list with git: ${cause.message}`)
+} catch (cause: unknown) {
+  fail(`cannot read the tracked artifact list with git: ${(cause as Error).message}`)
 }
-if (trackedLib.size === 0) fail('git tracks no packages/selector/lib artifact; a git install would ship an unbuilt package')
+if (trackedLib === undefined || trackedLib.size === 0) fail('git tracks no packages/selector/lib artifact; a git install would ship an unbuilt package')
 for (const name of [...libScripts, ...importedArtifacts].sort()) {
   const tracked = `packages/selector/lib/${name}`
-  if (!trackedLib.has(tracked)) {
+  if (!trackedLib!.has(tracked)) {
     fail(`${tracked} is not committed; a git install would fetch an incomplete artifact graph`)
   }
 }
@@ -217,7 +234,7 @@ if (!clientArtifact.includes('data-plugin-css') || !clientArtifact.includes('doc
 if (/^\s*(?:import|export)\s/mu.test(clientArtifact)) fail('client.js contains ESM syntax')
 if (/(?:\/home\/|[A-Za-z]:\\Users\\)/u.test(clientArtifact)) fail('client.js contains a developer absolute path')
 if (clientArtifact.includes('sourceMappingURL')) fail('client.js contains a source map reference')
-const clientRequires = [...clientArtifact.matchAll(/require\("([^"]+)"\)/gu)].map(match => match[1])
+const clientRequires = [...clientArtifact.matchAll(/require\("([^"]+)"\)/gu)].map(match => match[1]!).filter(Boolean)
 const allowedClientRequires = new Set([
   'react',
   'react/jsx-runtime',
@@ -227,7 +244,7 @@ for (const dependency of clientRequires) {
   if (!allowedClientRequires.has(dependency)) fail(`client.js has unexpected external dependency ${dependency}`)
 }
 
-const collectSpecs = async (directory) => (await walk(directory))
+const collectSpecs = async (directory: string) => (await walk(directory))
   .filter(path => /\.spec\.tsx?$/u.test(path))
   .map(path => relative(root, path).replaceAll('\\', '/'))
   .sort()
@@ -272,10 +289,11 @@ for (const path of [...runtimeSpecs, ...selectorSpecs]) {
   }
 }
 
-const runtime = await import(new URL('../packages/selector/lib/pruner.js', import.meta.url))
-const defaults = runtime.DEFAULT_CUSTOM_COMPRESSION_POLICY
-if (defaults?.history?.trigger !== 500_000) fail('Custom History default is not 500000')
-if (defaults?.tailTrim?.trigger !== 700_000 || defaults?.tailTrim?.enabled !== false) {
+const runtime = await import(new URL('../packages/selector/lib/pruner.js', import.meta.url).href)
+const defaults = runtime.DEFAULT_CUSTOM_COMPRESSION_POLICY as Record<string, Record<string, unknown>> | undefined
+if ((defaults?.history as Record<string, number>)?.trigger !== 500_000) fail('Custom History default is not 500000')
+if ((defaults?.tailTrim as Record<string, unknown>)?.trigger !== 700_000
+  || (defaults?.tailTrim as Record<string, unknown>)?.enabled !== false) {
   fail('Custom TailTrim default is not disabled at 700000')
 }
 
