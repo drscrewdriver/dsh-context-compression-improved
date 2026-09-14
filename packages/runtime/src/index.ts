@@ -126,16 +126,6 @@ export {
 export type { CustomPolicyResolutionOptions } from './custom-policy.ts'
 export { historicalPlaceholder, normalizeTerminalText, reduceFreshToolResult, verifyReduction } from './reducers.ts'
 export { measureForCompaction } from './measurement.ts'
-// The estimator catalog projection is consumed by the Bundle entry's top-level
-// `estimator-catalog` route (the isolated toolResultPruner fiber cannot reach
-// the host `webServer`/`llm` services through `ctx.get`).
-export { buildEstimatorCatalog, resolveHostRoute } from './estimator-catalog.ts'
-export type {
-  CatalogModel,
-  CatalogProvider,
-  EstimatorCatalog,
-  EstimatorCatalogDeps,
-} from './estimator-catalog.ts'
 export type {
   CompactionTokenView,
   MeasuredTokenSurfaceNode,
