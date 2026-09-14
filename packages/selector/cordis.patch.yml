@@ -6,3 +6,16 @@
       name: 'dsh-context-compression-improved'
       config:
         presetOverlay: true
+    # The estimator catalog route rides its own row so the compression stack
+    # stays loadable on profiles that have no host web server. Measured on the
+    # host source: `dsh-host-webserver.register` performs no authorization check
+    # and `ctx.get(name)` only asks whether the providing fiber is active, so
+    # this `inject` is belt-and-braces — the row is simply absent instead of
+    # announcing a pending route on a webServer-less profile. The two-channel
+    # registration inside the plugin covers both arrival orders on its own.
+    - id: context-compression-improved-estimator-catalog
+      name: 'dsh-context-compression-improved'
+      inject:
+        - webServer
+      config:
+        estimatorCatalogRoute: true
