@@ -1,3 +1,4 @@
+import { n as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE } from "./config.js";
 import z from "@deepseek-ai/schemastery";
 import "@deepseek-ai/dsh-settings";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -454,9 +455,14 @@ function restoreMethod(presets, snapshot) {
 }
 //#endregion
 //#region src/index.ts
-const CONTEXT_COMPRESSION_NAMESPACE = "context-compression";
-/** The route the estimator settings card fetches for its host dropdowns. */
-const ESTIMATOR_CATALOG_ROUTE = "/api/dsh-context-compression-improved/estimator-catalog";
+const CONTEXT_COMPRESSION_NAMESPACE = CONTEXT_COMPRESSION_SETTINGS_NAMESPACE;
+const ESTIMATOR_CATALOG_ROUTES = ["/endpoint/dsh-context-compression-improved/estimator-catalog", "/api/dsh-context-compression-improved/estimator-catalog"];
+/**
+* The one service the catalog route actually needs. `llm` and
+* `agentDefaultModel` are payload enrichment the handler resolves per request,
+* never reasons to withhold the route.
+*/
+const ESTIMATOR_CATALOG_ROUTE_DEPS = ["webServer"];
 function asWebServer(value) {
 	if (typeof value !== "object" || value === null) return void 0;
 	return typeof value.register === "function" ? value : void 0;
@@ -466,66 +472,116 @@ function asWebServer(value) {
 * settings card's host-route dropdowns (live provider/model groups from the DSH
 * `llm` service plus the effective selection). Best effort: without the
 * `webServer` service the plugin keeps working, only the HTTP API is missing.
+*
+* The route gates on `webServer` **alone**. `llm` and `agentDefaultModel` only
+* enrich the response and are resolved per request, so listing them here would
+* let an estimator-side service the handler never needs keep the route
+* unregistered. That failure is silent by construction — an unsatisfied
+* `ctx.inject` callback never runs, so the plugin simply has no HTTP API and
+* every request falls through to the host 404.
+*
+* Two channels cover the two arrival orders: a direct lookup catches a
+* `webServer` that is already active when the plugin loads, and `ctx.inject`
+* catches one that activates later. Both funnel into a single guarded
+* registration, because a late-arriving service must not re-register a
+* `(kind, path)` the host treats as a composition-contract violation.
 */
 function registerEstimatorCatalogRoute(ctx) {
-	ctx.inject([
-		"webServer",
-		"llm",
-		"agentDefaultModel"
-	], (injected) => {
-		const rctx = injected;
-		const webServer = asWebServer(rctx.webServer);
-		if (webServer === void 0) return;
-		const off = webServer.register({
-			kind: "exact",
-			path: ESTIMATOR_CATALOG_ROUTE,
-			handler: (_req, res) => {
-				const resTyped = res;
-				if (typeof resTyped?.writeHead !== "function" || typeof resTyped?.end !== "function") return;
-				const defaults = rctx.agentDefaultModel;
-				buildEstimatorCatalog({
-					...rctx.llm === void 0 ? {} : { llm: rctx.llm },
-					...typeof defaults?.currentSelection === "function" ? { currentSelection: () => defaults.currentSelection?.() } : {}
-				}).then((catalog) => {
-					resTyped.writeHead(200, {
-						"content-type": "application/json; charset=utf-8",
-						"cache-control": "no-cache"
-					});
-					resTyped.end(JSON.stringify({
-						ok: true,
-						...catalog
-					}));
-				}, (error) => {
-					resTyped.writeHead(500, { "content-type": "application/json; charset=utf-8" });
-					resTyped.end(JSON.stringify({
-						ok: false,
-						error: String(error?.message ?? error)
-					}));
+	const readService = (name) => {
+		try {
+			return ctx.get(name);
+		} catch {
+			return;
+		}
+	};
+	const log = (level, message, ...args) => {
+		console[level](message, ...args);
+	};
+	let registered = false;
+	const register = (webServer, channel) => {
+		if (registered) return;
+		const handler = (_req, res) => {
+			const resTyped = res;
+			if (typeof resTyped?.writeHead !== "function" || typeof resTyped?.end !== "function") return;
+			const llm = readService("llm");
+			const defaults = readService("agentDefaultModel");
+			buildEstimatorCatalog({
+				...llm === void 0 ? {} : { llm },
+				...typeof defaults?.currentSelection === "function" ? { currentSelection: () => defaults.currentSelection?.() } : {}
+			}).then((catalog) => {
+				resTyped.writeHead(200, {
+					"content-type": "application/json; charset=utf-8",
+					"cache-control": "no-cache"
 				});
-			}
-		});
-		rctx.effect(() => off, "contextCompressionSelector.estimator-catalog route");
+				resTyped.end(JSON.stringify({
+					ok: true,
+					...catalog
+				}));
+			}, (error) => {
+				resTyped.writeHead(500, { "content-type": "application/json; charset=utf-8" });
+				resTyped.end(JSON.stringify({
+					ok: false,
+					error: String(error?.message ?? error)
+				}));
+			});
+		};
+		try {
+			const disposers = ESTIMATOR_CATALOG_ROUTES.map((path) => webServer.register({
+				kind: "exact",
+				path,
+				handler
+			})).filter((off) => typeof off === "function");
+			registered = true;
+			ctx.effect(() => () => {
+				for (const off of disposers) off();
+			}, "contextCompressionSelector.estimator-catalog route");
+			log("info", "context-compression estimator catalog route registered (%s): %s", channel, ESTIMATOR_CATALOG_ROUTES.join(", "));
+		} catch (error) {
+			log("warn", "context-compression estimator catalog route registration failed (%s): %o", channel, error);
+		}
+	};
+	const active = asWebServer(readService("webServer"));
+	if (active !== void 0) {
+		register(active, "direct");
+		if (registered) return;
+	}
+	ctx.inject([...ESTIMATOR_CATALOG_ROUTE_DEPS], (injected) => {
+		const webServer = asWebServer(injected.webServer);
+		if (webServer === void 0) {
+			log("warn", "context-compression webServer exposes no register() — estimator catalog route not registered");
+			return;
+		}
+		register(webServer, "inject");
 	});
+	log("warn", "context-compression webServer not active yet — estimator catalog route pending: %s", ESTIMATOR_CATALOG_ROUTES.join(", "));
 }
 /** Symbol properties reach the shared service target through Cordis proxies. */
 const SHARED_SETTINGS = Symbol.for("dsh-context-compression-improved/settings-registration");
 /** Loader validation for the standalone Bundle opt-in. */
-const Config = z.object({ presetOverlay: z.boolean().default(false) });
+const Config = z.object({
+	presetOverlay: z.boolean().default(false),
+	estimatorCatalogRoute: z.boolean().default(false)
+});
 /** Register the persisted default read by the currently mounted root pruner. */
 function apply(ctx, config = {}) {
-	ctx.inject(["settings"], (settingsCtx) => {
-		acquireSettingsRegistration(settingsCtx);
-	});
-	registerEstimatorCatalogRoute(ctx);
-	if (config.presetOverlay !== true) return;
-	ctx.inject(["agentPresets"], (presetsCtx) => {
-		const installation = decorateAgentPresets(presetsCtx.agentPresets, {
-			modules: resolveCompressionModulePaths(),
-			excludedPresetIds: ["minimal"],
-			autoCompactThresholdPercent: () => resolveAutoCompactThresholdPercent(presetsCtx)
+	try {
+		ctx.inject(["settings"], (settingsCtx) => {
+			acquireSettingsRegistration(settingsCtx);
 		});
-		presetsCtx.effect(() => () => installation.dispose(), "contextCompressionSelector.agentPresets()");
-	});
+		if (config.estimatorCatalogRoute === true) registerEstimatorCatalogRoute(ctx);
+		if (config.presetOverlay !== true) return;
+		ctx.inject(["agentPresets"], (presetsCtx) => {
+			const installation = decorateAgentPresets(presetsCtx.agentPresets, {
+				modules: resolveCompressionModulePaths(),
+				excludedPresetIds: ["minimal"],
+				autoCompactThresholdPercent: () => resolveAutoCompactThresholdPercent(presetsCtx)
+			});
+			presetsCtx.effect(() => () => installation.dispose(), "contextCompressionSelector.agentPresets()");
+		});
+	} catch (error) {
+		console.error("context-compression selector apply failed: %o", error);
+		throw error;
+	}
 }
 /**
 * Read the current Auto Compact threshold ratio at composition time. Settings
