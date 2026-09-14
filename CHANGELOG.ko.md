@@ -14,3 +14,9 @@
 
 - ESLint 플랫 설정 베이스라인(`pnpm lint`, CI에서도 강제)과 `pnpm test:watch` TDD 루프를 추가. 죽은 임포트를 정리하고, lint 베이스라인에서 드러난 두 오류 경로를 보강했습니다.
 - 이 저장소는 이제 `WilliamShi666/dsh-context-compression-selector`의 개선 포크로 관리됩니다. 문서는 영어·중국어(간체)·일본어·한국어로 제공됩니다.
+
+### 수정
+
+- 추정기 카드가 Harness 호스트 채널에서 더 이상 API 키를 요구하지 않습니다. 호스트 채널을 선택하면 라이브 프로바이더/모델 드롭다운이 표시되고 실제로 사용될 라우트(명시적 재정의, 없으면 세션 기본 모델)를 알려줍니다. 키 입력란과 두 번째 수동 모델 입력란은 렌더링되지 않습니다 — 엔드포인트 URL, 모델 텍스트 필드, 쓰기 전용 키는 직접 연결 채널에만 속합니다.
+- `presetOptions` 쓰기가 형제 필드를 보존합니다. `settingsScope.set('presetOptions', patch)`는 섹션 전체를 교체하므로 추정기의 두 번째 필드(프로바이더, 모델, 엔드포인트)를 건드리면 `estimatorMode`와 다른 모든 재정의가 삭제되어, 패널은 저장 성공을 보고하는데도 추정기가 조용히 꺼졌습니다. 이제 패치는 저장된 섹션 위에 병합되고, `undefined`는 지목한 필드만 지우며, 변경 없는 패치는 쓰지 않고, confirm-on-write는 채널 하나가 아니라 같은 필드 집합을 검증합니다.
+- 회귀 커버리지 추가: `packages/selector/tests/preset-options-write.client.spec.ts`(병합 쓰기, 형제 필드 보존, 명시적 삭제, 변경 없음 시 무쓰기, 미커밋 쓰기 보고)와 `packages/selector/tests/estimator-channel.client.spec.tsx`(채널별 필드, 카탈로그 드롭다운, 수동 폴백).
