@@ -34,7 +34,11 @@ describe('built Harness client artifact', () => {
     }) as { apply?: unknown, inject?: unknown }
 
     expect(exported.apply).toBeTypeOf('function')
-    expect(exported.inject).toEqual(['slots', 'locale', 'settingsScope'])
+    // 0.1.5 declares only the always-present `slots` service: `locale` and
+    // `settingsScope` are resolved lazily inside apply, because a declarative
+    // inject of an absent or late service suspends apply forever and the whole
+    // UI disappears without a trace.
+    expect(exported.inject).toEqual(['slots'])
     const style = document.querySelector<HTMLStyleElement>(
       'style[data-plugin-css="dsh-context-compression-improved/CompressionProfileSelector.module.css"]',
     )

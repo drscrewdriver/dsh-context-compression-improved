@@ -7,12 +7,18 @@ import {
   type default as SettingsService,
 } from '@deepseek-ai/dsh-settings'
 import { buildEstimatorCatalog, type EstimatorCatalogDeps } from './estimator-catalog.ts'
-import { CONTEXT_COMPRESSION_SETTINGS_NAMESPACE } from './runtime/config.ts'
+import {
+  CONTEXT_COMPRESSION_SETTINGS_NAMESPACE,
+  ContextCompressionSettingsSchema,
+} from './runtime/config.ts'
 
-// The settings namespace literal is owned by the runtime config module. It was
-// once inlined here to dodge a cross-package dependency; the runtime package is
-// now part of this one, so the single source of truth is used again. The value
-// is identical ('context-compression'), so this is not a behavior change.
+// The settings namespace literal and the settings schema are owned by the
+// runtime config module. Both were once inlined/replaced here to dodge a
+// cross-package dependency (ab2175a: the namespace literal was duplicated and
+// the schema was downgraded to `z.any()`); the runtime is now part of this
+// package, so the real schema is back and the daily Custom defaults are
+// published again through settings.register(). The namespace value is
+// unchanged ('context-compression').
 const CONTEXT_COMPRESSION_NAMESPACE = CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as never
 import {
   decorateAgentPresets,
@@ -299,7 +305,7 @@ function acquireSettingsRegistration(ctx: Context): void {
       state.registrationOwner = next
       state.scope = next.settings.register(
         CONTEXT_COMPRESSION_NAMESPACE,
-        z.any(),
+        ContextCompressionSettingsSchema,
       )
     }
     if (state.owners.size === 0 && settings[SHARED_SETTINGS] === state) {
@@ -310,7 +316,7 @@ function acquireSettingsRegistration(ctx: Context): void {
   if (state.owners.size === 1) {
     state.scope = settings.register(
       CONTEXT_COMPRESSION_NAMESPACE,
-      z.any(),
+      ContextCompressionSettingsSchema,
     )
   }
 }

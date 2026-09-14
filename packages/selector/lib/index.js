@@ -1,4 +1,4 @@
-import { n as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE } from "./config.js";
+import { n as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, r as ContextCompressionSettingsSchema } from "./config.js";
 import z from "@deepseek-ai/schemastery";
 import "@deepseek-ai/dsh-settings";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -630,11 +630,11 @@ function acquireSettingsRegistration(ctx) {
 		if (state.registrationOwner === owner && state.owners.size > 0) {
 			const next = state.owners.values().next().value;
 			state.registrationOwner = next;
-			state.scope = next.settings.register(CONTEXT_COMPRESSION_NAMESPACE, z.any());
+			state.scope = next.settings.register(CONTEXT_COMPRESSION_NAMESPACE, ContextCompressionSettingsSchema);
 		}
 		if (state.owners.size === 0 && settings[SHARED_SETTINGS] === state) Reflect.deleteProperty(settings, SHARED_SETTINGS);
 	}, "contextCompressionSelector.settingsLease()");
-	if (state.owners.size === 1) state.scope = settings.register(CONTEXT_COMPRESSION_NAMESPACE, z.any());
+	if (state.owners.size === 1) state.scope = settings.register(CONTEXT_COMPRESSION_NAMESPACE, ContextCompressionSettingsSchema);
 }
 //#endregion
 export { Config, apply };
