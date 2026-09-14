@@ -23,6 +23,13 @@ const ESTIMATOR_CATALOG_ROUTES = [
   '/api/dsh-context-compression-improved/estimator-catalog',
 ] as const
 
+/**
+ * The one service the catalog route actually needs. `llm` and
+ * `agentDefaultModel` are payload enrichment the handler resolves per request,
+ * never reasons to withhold the route.
+ */
+const ESTIMATOR_CATALOG_ROUTE_DEPS: readonly ['webServer'] = ['webServer']
+
 /** Runtime detection of the host web server (same pattern as dsh-perm-gate). */
 interface WebServerLike {
   register: (spec: {
@@ -32,11 +39,10 @@ interface WebServerLike {
   }) => unknown
 }
 
-interface CatalogAwareContext {
-  effect: Context['effect']
-  webServer?: unknown
-  llm?: unknown
-  agentDefaultModel?: { currentSelection?: () => { provider?: unknown, model?: unknown } | undefined }
+/** The estimator-side service the catalog handler enriches its response with. */
+interface AgentDefaultModelLike {
+  /** Current host model-group selection, when the service exposes one. */
+  currentSelection?: () => { provider?: unknown, model?: unknown } | undefined
 }
 
 function asWebServer(value: unknown): WebServerLike | undefined {
@@ -51,27 +57,53 @@ function asWebServer(value: unknown): WebServerLike | undefined {
  * `llm` service plus the effective selection). This lives on the top-level
  * plugin context, NOT inside the isolated toolResultPruner service: a route
  * registered there can never reach the `webServer` service across the
- * isolation boundary, and the dropdowns answer 401. `ctx.inject` also fixes
- * the late-activation problem the old polling loop worked around — the handler
- * is installed the moment `webServer` appears. Best effort: without the
- * service the plugin keeps working, only the HTTP API is missing.
+ * isolation boundary.
+ *
+ * The route gates on `webServer` **alone**. `llm` and `agentDefaultModel` only
+ * enrich the response and are resolved per request, so listing them here would
+ * let an estimator-side service the handler never needs keep the route
+ * unregistered. That failure is silent by construction — an unsatisfied
+ * `ctx.inject` callback never runs, so the plugin simply has no HTTP API and
+ * every request falls through to the host 404.
+ *
+ * Two channels cover the two arrival orders: a direct lookup catches a
+ * `webServer` that is already active when the plugin loads, and `ctx.inject`
+ * catches one that activates later. Both funnel into a single guarded
+ * registration, because a late-arriving service must not re-register a
+ * `(kind, path)` the host treats as a composition-contract violation.
  */
 function registerEstimatorCatalogRoute(ctx: Context): void {
-  ctx.inject(['webServer', 'llm', 'agentDefaultModel'], (injected) => {
-    const rctx = injected as unknown as CatalogAwareContext
-    const webServer = asWebServer(rctx.webServer)
-    if (webServer === undefined) return
+  const readService = (name: string): unknown => {
+    try {
+      return (ctx as unknown as { get: (service: string) => unknown }).get(name)
+    } catch {
+      return undefined
+    }
+  }
+  // Logging must never be the reason route registration fails.
+  const log = (level: 'info' | 'warn', message: string, ...args: unknown[]): void => {
+    try {
+      ctx.logger[level](message, ...args)
+    } catch {
+      // A context without a logger still gets a working route.
+    }
+  }
+
+  let registered = false
+  const register = (webServer: WebServerLike, channel: 'direct' | 'inject'): void => {
+    if (registered) return
     const handler = (_req: unknown, res: unknown): void => {
       const resTyped = res as {
         writeHead: (code: number, headers?: Record<string, string>) => void
         end: (body?: string) => void
       }
       if (typeof resTyped?.writeHead !== 'function' || typeof resTyped?.end !== 'function') return
-      const defaults = rctx.agentDefaultModel
+      const llm = readService('llm')
+      const defaults = readService('agentDefaultModel') as AgentDefaultModelLike | undefined
       const deps: EstimatorCatalogDeps = {
-        ...(rctx.llm === undefined
+        ...(llm === undefined
           ? {}
-          : { llm: rctx.llm as NonNullable<EstimatorCatalogDeps['llm']> }),
+          : { llm: llm as NonNullable<EstimatorCatalogDeps['llm']> }),
         ...(typeof defaults?.currentSelection === 'function'
           ? { currentSelection: () => defaults.currentSelection?.() }
           : {}),
@@ -87,14 +119,37 @@ function registerEstimatorCatalogRoute(ctx: Context): void {
         },
       )
     }
-    const disposers = ESTIMATOR_CATALOG_ROUTES
-      .map(path => webServer.register({ kind: 'exact', path, handler }))
-      .filter((off): off is () => void => typeof off === 'function')
-    rctx.effect(
-      () => () => { for (const off of disposers) off() },
-      'contextCompressionSelector.estimator-catalog route',
-    )
+    try {
+      const disposers = ESTIMATOR_CATALOG_ROUTES
+        .map(path => webServer.register({ kind: 'exact', path, handler }))
+        .filter((off): off is () => void => typeof off === 'function')
+      registered = true
+      ctx.effect(
+        () => () => { for (const off of disposers) off() },
+        'contextCompressionSelector.estimator-catalog route',
+      )
+      log('info', 'context-compression estimator catalog route registered (%s): %s', channel, ESTIMATOR_CATALOG_ROUTES.join(', '))
+    } catch (error) {
+      log('warn', 'context-compression estimator catalog route registration failed (%s): %o', channel, error)
+    }
+  }
+
+  const active = asWebServer(readService('webServer'))
+  if (active !== undefined) {
+    register(active, 'direct')
+    if (registered) return
+  }
+
+  ctx.inject([...ESTIMATOR_CATALOG_ROUTE_DEPS], (injected) => {
+    const webServer = asWebServer((injected as { webServer?: unknown }).webServer)
+    if (webServer === undefined) {
+      log('warn', 'context-compression webServer exposes no register() — estimator catalog route not registered')
+      return
+    }
+    register(webServer, 'inject')
   })
+
+  log('warn', 'context-compression webServer not active yet — estimator catalog route pending: %s', ESTIMATOR_CATALOG_ROUTES.join(', '))
 }
 
 // Harness 0.1.1 exposed a namespace-branding helper; 0.1.2 validates the
