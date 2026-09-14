@@ -3,6 +3,29 @@ import { Context, Service } from "@deepseek-ai/cordis";
 import { CallId, ContentBlock } from "@deepseek-ai/dsh-llm";
 import { Session } from "@deepseek-ai/dsh-session";
 import { TokenMeasurement } from "@deepseek-ai/dsh-token-meter";
+//#region src/runtime/tokenpilot/dedup.d.ts
+/** Entry stored per first-seen content hash. */
+interface DedupeTableEntry {
+  /** First surface seq carrying this canonical content. */
+  readonly seq: number;
+  /** Session source reference of the first occurrence. */
+  readonly sourceRef: string;
+  /** Tool name of the first occurrence. */
+  readonly toolName: string;
+  /** Original full-text code points of the first occurrence. */
+  readonly originalChars: number;
+}
+/** Per-session dedup index with insertion-order eviction. */
+declare class DedupeTable {
+  private readonly maxEntries;
+  private readonly entries;
+  constructor(maxEntries?: number);
+  /** Look up the first occurrence for one canonical hash, if any. */
+  get(hash: string): DedupeTableEntry | undefined;
+  /** Record a first occurrence; existing hashes only refresh insertion order. */
+  record(hash: string, entry: DedupeTableEntry): void;
+}
+//#endregion
 //#region src/runtime/types.d.ts
 /** User-facing mixed strategy profile. */
 declare const COMPRESSION_PROFILES: readonly ["off", "native", "balanced", "cache-strict", "savings", "adaptive", "tokenpilot-inspired", "custom"];
@@ -280,6 +303,42 @@ interface PruneResult {
   readonly tokensRemoved: number;
 }
 //#endregion
+//#region src/runtime/tokenpilot/estimator.d.ts
+/** Per-session estimator failure bookkeeping for exponential backoff. */
+interface EstimatorFailures {
+  failures: number;
+  cooldownUntil: number;
+}
+//#endregion
+//#region src/pruner/state.d.ts
+/** Mutable per-session state bag used inside {@link ToolResultPruner}. */
+interface PrunerState {
+  /** Resolved immutable deployment configuration. */
+  readonly config: ResolvedConfig;
+  /** Complete canonical setting document frozen when each Session first reaches this root service. */
+  readonly sessionSettings: WeakMap<Session, ContextCompressionSettings>;
+  /** Original result seqs whose first-exposure KEEP/REDUCE decision has committed. */
+  readonly firstExposure: WeakMap<Session, Set<number>>;
+  /** Result seqs permanently exempt from further reduction (recovery outputs and registered equivalents). */
+  readonly recoveryExemptions: WeakMap<Session, Set<number>>;
+  /** Per-session canonical-content hash index backing tokenpilot-inspired dedupe. */
+  readonly dedupeTables: WeakMap<Session, DedupeTable>;
+  /** Advisory estimator verdicts consumed by the read-state classification. */
+  readonly estimatorVerdicts: WeakMap<Session, Map<number, boolean>>;
+  /** Per-session estimator failure backoff state. */
+  readonly estimatorFailures: WeakMap<Session, EstimatorFailures>;
+  /** Runtime prerequisite warnings deduplicated per Session and failure key. */
+  readonly warnedFailures: WeakMap<Session, Set<string>>;
+  /** Last Adaptive postflight attempt emitted per Session; keeps diagnostics bounded and independent. */
+  readonly postflightDiagnostics: WeakMap<Session, string>;
+  /** Current pre-step chain identity, shared by this producer and downstream compaction-basic. */
+  readonly activeRequestBoundaries: WeakMap<Session, object>;
+  /** Boundary identity that already attempted one fully preflighted TailTrim publication. */
+  readonly tailTrimBoundaryAttempts: WeakMap<Session, object>;
+  /** Last effective policy audit key emitted for each Session. */
+  readonly policyResolutionAudits: WeakMap<Session, string>;
+}
+//#endregion
 //#region src/runtime/custom-policy.d.ts
 /** Canonical Custom document accepted by Host settings and the runtime resolver. */
 declare const CustomCompressionPolicySchema: z<CustomCompressionPolicy>;
@@ -521,30 +580,8 @@ declare module '@deepseek-ai/cordis' {
 declare class ToolResultPruner extends Service {
   static inject: string[];
   static Config: z<ToolResultPruneConfig>;
-  /** Resolved immutable deployment configuration. */
-  readonly config: ResolvedConfig;
-  /** Complete canonical setting document frozen when each Session first reaches this root service. */
-  private readonly sessionSettings;
-  /** Original result seqs whose first-exposure KEEP/REDUCE decision has committed. */
-  private readonly firstExposure;
-  /** Result seqs permanently exempt from further reduction (recovery outputs and registered equivalents). */
-  private readonly recoveryExemptions;
-  /** Per-session canonical-content hash index backing tokenpilot-inspired dedupe. */
-  private readonly dedupeTables;
-  /** Advisory estimator verdicts consumed by the read-state classification. */
-  private readonly estimatorVerdicts;
-  /** Per-session estimator failure backoff state. */
-  private readonly estimatorFailures;
-  /** Runtime prerequisite warnings deduplicated per Session and failure key. */
-  private readonly warnedFailures;
-  /** Last Adaptive postflight attempt emitted per Session; keeps diagnostics bounded and independent. */
-  private readonly postflightDiagnostics;
-  /** Current pre-step chain identity, shared by this producer and downstream compaction-basic. */
-  private readonly activeRequestBoundaries;
-  /** Boundary identity that already attempted one fully preflighted TailTrim publication. */
-  private readonly tailTrimBoundaryAttempts;
-  /** Last effective policy audit key emitted for each Session. */
-  private readonly policyResolutionAudits;
+  /** Consolidated per-session mutable state. */
+  readonly state: PrunerState;
   constructor(ctx: Context, config?: ToolResultPruneConfig);
   /**
    * Measure text content in Unicode code points; non-text blocks cost zero.
