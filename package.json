@@ -1,8 +1,35 @@
 {
-  "name": "dsh-context-compression-improved-workspace",
+  "name": "dsh-context-compression-improved",
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "packages/selector/lib/index.js",
+  "types": "packages/selector/lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./packages/selector/lib/index.d.ts",
+      "default": "./packages/selector/lib/index.js"
+    },
+    "./client": {
+      "types": "./packages/selector/lib/client.d.ts",
+      "default": "./packages/selector/lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-workspace"
+      ],
+      "platform": "web"
+    },
+    "bundle": {
+      "patch": "./packages/selector/cordis.patch.yml"
+    }
+  },
   "license": "MIT",
   "packageManager": "pnpm@11.7.0",
   "engines": {
