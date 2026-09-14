@@ -302,279 +302,6 @@ window.__ModuleLoader__.load({
 			"value": "rLocJG_value"
 		};
 		//#endregion
-		//#region src/client/EstimatorControls.tsx
-		/**
-		* TokenPilot-inspired estimator channel card components.
-		*
-		* Extracted from CompressionProfileSelector.tsx to reduce god-module size.
-		*
-		* @module dsh-context-compression-improved/client/EstimatorControls
-		*/
-		/**
-		* The estimator card is gated on the tokenpilot-inspired profile, because
-		* `presetOptions` is merged into that profile alone. A card that merely
-		* disappears reads as a missing feature — the first real-machine report was
-		* exactly that — so keep the heading and its anchor id in place and spend them
-		* on the reason plus the profile that unlocks the card. The gate itself is
-		* unchanged: no estimator control exists outside tokenpilot-inspired.
-		*/
-		function EstimatorInactiveNotice({ profile, t }) {
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
-				className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.autoCompact,
-				"aria-labelledby": "context-compression-estimator-title",
-				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
-					id: "context-compression-estimator-title",
-					className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.autoCompactTitle,
-					children: t("estimator.title")
-				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-					className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.customNote,
-					children: t("estimator.inactive").replace("{profile}", profile)
-				})]
-			});
-		}
-		const ESTIMATOR_CATALOG_ROUTES = ["/api/dsh-context-compression-improved/estimator-catalog"];
-		/**
-		* TokenPilot-inspired estimator channel card. Shown only while the
-		* tokenpilot-inspired profile is selected, and split by channel:
-		*
-		* - `host` reuses the providers and credentials already configured in DSH
-		*   through the Harness `llm` service, so this card names a provider and a
-		*   model and accepts NO API key — the key field belongs to the direct channel
-		*   alone.
-		* - `direct` talks to a native OpenAI-compatible endpoint, the only channel
-		*   carrying its own base URL and write-only key.
-		*
-		* The whole card is advisory: an unconfigured or failing endpoint keeps every
-		* consumer on its rule-only fallback.
-		*/
-		function EstimatorControls({ options, disabled, save, settle, t }) {
-			const [keyDraft, setKeyDraft] = (0, react.useState)("");
-			const [baseUrl, setBaseUrl] = (0, react.useState)(options.estimatorBaseUrl ?? "");
-			const [model, setModel] = (0, react.useState)(options.estimatorModel ?? "");
-			const [provider, setProvider] = (0, react.useState)(options.estimatorProvider ?? "");
-			const mode = options.estimatorMode ?? "";
-			const [catalog, setCatalog] = (0, react.useState)();
-			(0, react.useEffect)(() => {
-				if (mode !== "host") return;
-				let alive = true;
-				let attempts = 0;
-				const load = async (routes) => {
-					for (const route of routes) try {
-						const response = await fetch(route, { headers: { "cache-control": "no-cache" } });
-						if (response.ok) return await response.json();
-					} catch {}
-				};
-				const tick = () => {
-					attempts += 1;
-					load(ESTIMATOR_CATALOG_ROUTES).then((body) => {
-						if (!alive) return;
-						if (body !== void 0 && (body.providers?.length ?? 0) > 0) {
-							setCatalog(body);
-							return;
-						}
-						if (attempts < 10) setTimeout(tick, 3e3);
-					});
-				};
-				tick();
-				return () => {
-					alive = false;
-				};
-			}, [mode]);
-			const hostProviders = catalog?.providers ?? [];
-			const providerDraft = provider;
-			const hostModels = hostProviders.filter((entry) => providerDraft === "" || entry.id === providerDraft).flatMap((entry) => entry.models.map((model) => ({
-				...model,
-				provider: entry.id
-			})));
-			const hostProvider = hostProviders.find((entry) => entry.id === providerDraft) ?? hostProviders.find((entry) => entry.id === (options.estimatorProvider ?? ""));
-			const hasKey = (options.estimatorApiKey ?? "") !== "";
-			const commit = (patch) => {
-				settle(() => save(patch));
-			};
-			const overrideProvider = options.estimatorProvider ?? "";
-			const overrideModel = options.estimatorModel ?? "";
-			const effectiveProvider = overrideProvider !== "" ? overrideProvider : catalog?.selection?.provider ?? "";
-			const effectiveModel = overrideModel !== "" ? overrideModel : catalog?.selection?.model ?? "";
-			const effectiveRoute = effectiveProvider !== "" && effectiveModel !== "" ? `${effectiveProvider} / ${effectiveModel}` : t("estimator.hostUnresolved");
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
-				className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.autoCompact,
-				"aria-labelledby": "context-compression-estimator-title",
-				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
-						id: "context-compression-estimator-title",
-						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.autoCompactTitle,
-						children: t("estimator.title")
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.customNote,
-						children: t("estimator.description")
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.field,
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("estimator.mode") }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
-							value: mode,
-							disabled,
-							onChange: (event) => {
-								settle(() => save({ estimatorMode: event.currentTarget.value }));
-							},
-							children: [
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-									value: "",
-									children: t("estimator.mode.off")
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-									value: "host",
-									children: t("estimator.mode.host")
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-									value: "direct",
-									children: t("estimator.mode.direct")
-								})
-							]
-						})]
-					}),
-					mode === "" ? null : mode === "host" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.field,
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("estimator.provider") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-								type: "text",
-								list: "estimator-provider-options",
-								value: provider,
-								disabled,
-								placeholder: t("estimator.provider.placeholder"),
-								onChange: (event) => {
-									const next = event.currentTarget.value;
-									setProvider(next);
-									if (next !== "" && hostProviders.some((entry) => entry.id === next)) commit({ estimatorProvider: next });
-								},
-								onBlur: () => {
-									if (provider !== (options.estimatorProvider ?? "")) commit({ estimatorProvider: provider });
-								}
-							})]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("datalist", {
-							id: "estimator-provider-options",
-							children: hostProviders.map((entry) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("option", {
-								value: entry.id,
-								children: [entry.name === "" ? entry.id : entry.name, entry.error === void 0 ? "" : ` (${entry.error})`]
-							}, entry.id))
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.field,
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("estimator.model") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-								type: "text",
-								list: "estimator-model-options",
-								value: model,
-								disabled,
-								placeholder: t("estimator.model.placeholder"),
-								onChange: (event) => {
-									const next = event.currentTarget.value;
-									setModel(next);
-									if (next !== "" && hostModels.some((entry) => entry.id === next)) commit({ estimatorModel: next });
-								},
-								onBlur: () => {
-									if (model !== (options.estimatorModel ?? "")) commit({ estimatorModel: model });
-								}
-							})]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("datalist", {
-							id: "estimator-model-options",
-							children: hostModels.map((entry) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-								value: entry.id,
-								children: entry.name
-							}, `${entry.provider}\0${entry.id}`))
-						}),
-						hostProvider?.error === void 0 ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.customNote,
-							children: String(hostProvider.error)
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.customNote,
-							children: t("estimator.hostReuse")
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.customNote,
-							children: t("estimator.hostRoute").replace("{route}", effectiveRoute)
-						})
-					] }) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.field,
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("estimator.baseUrl") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-								type: "text",
-								value: baseUrl,
-								disabled,
-								placeholder: "https://127.0.0.1:8000/v1",
-								onChange: (event) => {
-									setBaseUrl(event.currentTarget.value);
-								},
-								onBlur: () => {
-									if (baseUrl !== (options.estimatorBaseUrl ?? "")) commit({ estimatorBaseUrl: baseUrl });
-								}
-							})]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.field,
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("estimator.model") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-								type: "text",
-								value: model,
-								disabled,
-								placeholder: t("estimator.model.placeholder"),
-								onChange: (event) => {
-									setModel(event.currentTarget.value);
-								},
-								onBlur: () => {
-									if (model !== (options.estimatorModel ?? "")) commit({ estimatorModel: model });
-								}
-							})]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.field,
-							children: [
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("estimator.apiKey") }),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									style: {
-										display: "flex",
-										gap: "6px"
-									},
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-										type: "password",
-										autoComplete: "off",
-										spellCheck: false,
-										value: keyDraft,
-										disabled,
-										placeholder: hasKey ? t("estimator.apiKey.set") : t("estimator.apiKey.placeholder"),
-										onChange: (event) => {
-											setKeyDraft(event.currentTarget.value);
-										},
-										onBlur: () => {
-											const next = keyDraft.trim();
-											if (next === "") return;
-											settle(() => save({ estimatorApiKey: next }));
-											setKeyDraft("");
-										},
-										onKeyDown: (event) => {
-											if (event.key === "Enter") event.currentTarget.blur();
-										}
-									}), hasKey ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-										type: "button",
-										disabled,
-										onClick: () => {
-											settle(() => save({ estimatorApiKey: void 0 }));
-										},
-										children: t("estimator.apiKey.clear")
-									}) : null]
-								}),
-								hasKey ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.customNote,
-									children: t("estimator.apiKey.overwrite")
-								}) : null
-							]
-						})
-					] })
-				]
-			});
-		}
-		//#endregion
 		//#region src/client/CustomPolicyEditor.tsx
 		function CustomPolicyEditor({ value, disabled, setValue, save, reset, settle, t }) {
 			const valid = isCustomCompressionPolicy(value);
@@ -952,6 +679,318 @@ window.__ModuleLoader__.load({
 				]
 			});
 		}
+		/**
+		* The authoritative code-skeleton reducer gate for the context-compression
+		* section. Deliberately minimal — an on/off select plus its own save path —
+		* because the gate is orthogonal to every profile and carries no parameters.
+		*/
+		function CodeSkeletonControls({ value, disabled, save, settle, t }) {
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+				className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.autoCompact,
+				"aria-labelledby": "context-compression-codeskeleton-title",
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
+						id: "context-compression-codeskeleton-title",
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.autoCompactTitle,
+						children: t("codeSkeleton.title")
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.customNote,
+						children: t("codeSkeleton.description")
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.field,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("codeSkeleton.enabled") }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+							value: value ? "on" : "off",
+							disabled,
+							onChange: (event) => {
+								settle(() => save(event.currentTarget.value === "on"));
+							},
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+								value: "on",
+								children: t("codeSkeleton.enabled.on")
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+								value: "off",
+								children: t("codeSkeleton.enabled.off")
+							})]
+						})]
+					})
+				]
+			});
+		}
+		//#endregion
+		//#region src/client/EstimatorControls.tsx
+		/**
+		* TokenPilot-inspired estimator channel card components.
+		*
+		* Extracted from CompressionProfileSelector.tsx to reduce god-module size.
+		*
+		* @module dsh-context-compression-improved/client/EstimatorControls
+		*/
+		/**
+		* The estimator card is gated on the tokenpilot-inspired profile, because
+		* `presetOptions` is merged into that profile alone. A card that merely
+		* disappears reads as a missing feature — the first real-machine report was
+		* exactly that — so keep the heading and its anchor id in place and spend them
+		* on the reason plus the profile that unlocks the card. The gate itself is
+		* unchanged: no estimator control exists outside tokenpilot-inspired.
+		*/
+		function EstimatorInactiveNotice({ profile, t }) {
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+				className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.autoCompact,
+				"aria-labelledby": "context-compression-estimator-title",
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
+					id: "context-compression-estimator-title",
+					className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.autoCompactTitle,
+					children: t("estimator.title")
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+					className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.customNote,
+					children: t("estimator.inactive").replace("{profile}", profile)
+				})]
+			});
+		}
+		const ESTIMATOR_CATALOG_ROUTES = ["/api/dsh-context-compression-improved/estimator-catalog"];
+		/**
+		* TokenPilot-inspired estimator channel card. Shown only while the
+		* tokenpilot-inspired profile is selected, and split by channel:
+		*
+		* - `host` reuses the providers and credentials already configured in DSH
+		*   through the Harness `llm` service, so this card names a provider and a
+		*   model and accepts NO API key — the key field belongs to the direct channel
+		*   alone.
+		* - `direct` talks to a native OpenAI-compatible endpoint, the only channel
+		*   carrying its own base URL and write-only key.
+		*
+		* The whole card is advisory: an unconfigured or failing endpoint keeps every
+		* consumer on its rule-only fallback.
+		*/
+		function EstimatorControls({ options, disabled, save, settle, t }) {
+			const [keyDraft, setKeyDraft] = (0, react.useState)("");
+			const [baseUrl, setBaseUrl] = (0, react.useState)(options.estimatorBaseUrl ?? "");
+			const [model, setModel] = (0, react.useState)(options.estimatorModel ?? "");
+			const [provider, setProvider] = (0, react.useState)(options.estimatorProvider ?? "");
+			const mode = options.estimatorMode ?? "";
+			const [catalog, setCatalog] = (0, react.useState)();
+			(0, react.useEffect)(() => {
+				if (mode !== "host") return;
+				let alive = true;
+				let attempts = 0;
+				const load = async (routes) => {
+					for (const route of routes) try {
+						const response = await fetch(route, { headers: { "cache-control": "no-cache" } });
+						if (response.ok) return await response.json();
+					} catch {}
+				};
+				const tick = () => {
+					attempts += 1;
+					load(ESTIMATOR_CATALOG_ROUTES).then((body) => {
+						if (!alive) return;
+						if (body !== void 0 && (body.providers?.length ?? 0) > 0) {
+							setCatalog(body);
+							return;
+						}
+						if (attempts < 10) setTimeout(tick, 3e3);
+					});
+				};
+				tick();
+				return () => {
+					alive = false;
+				};
+			}, [mode]);
+			const hostProviders = catalog?.providers ?? [];
+			const providerDraft = provider;
+			const hostModels = hostProviders.filter((entry) => providerDraft === "" || entry.id === providerDraft).flatMap((entry) => entry.models.map((model) => ({
+				...model,
+				provider: entry.id
+			})));
+			const hostProvider = hostProviders.find((entry) => entry.id === providerDraft) ?? hostProviders.find((entry) => entry.id === (options.estimatorProvider ?? ""));
+			const hasKey = (options.estimatorApiKey ?? "") !== "";
+			const commit = (patch) => {
+				settle(() => save(patch));
+			};
+			const overrideProvider = options.estimatorProvider ?? "";
+			const overrideModel = options.estimatorModel ?? "";
+			const effectiveProvider = overrideProvider !== "" ? overrideProvider : catalog?.selection?.provider ?? "";
+			const effectiveModel = overrideModel !== "" ? overrideModel : catalog?.selection?.model ?? "";
+			const effectiveRoute = effectiveProvider !== "" && effectiveModel !== "" ? `${effectiveProvider} / ${effectiveModel}` : t("estimator.hostUnresolved");
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+				className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.autoCompact,
+				"aria-labelledby": "context-compression-estimator-title",
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
+						id: "context-compression-estimator-title",
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.autoCompactTitle,
+						children: t("estimator.title")
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.customNote,
+						children: t("estimator.description")
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.field,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("estimator.mode") }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+							value: mode,
+							disabled,
+							onChange: (event) => {
+								settle(() => save({ estimatorMode: event.currentTarget.value }));
+							},
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+									value: "",
+									children: t("estimator.mode.off")
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+									value: "host",
+									children: t("estimator.mode.host")
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+									value: "direct",
+									children: t("estimator.mode.direct")
+								})
+							]
+						})]
+					}),
+					mode === "" ? null : mode === "host" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.field,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("estimator.provider") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+								type: "text",
+								list: "estimator-provider-options",
+								value: provider,
+								disabled,
+								placeholder: t("estimator.provider.placeholder"),
+								onChange: (event) => {
+									const next = event.currentTarget.value;
+									setProvider(next);
+									if (next !== "" && hostProviders.some((entry) => entry.id === next)) commit({ estimatorProvider: next });
+								},
+								onBlur: () => {
+									if (provider !== (options.estimatorProvider ?? "")) commit({ estimatorProvider: provider });
+								}
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("datalist", {
+							id: "estimator-provider-options",
+							children: hostProviders.map((entry) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("option", {
+								value: entry.id,
+								children: [entry.name === "" ? entry.id : entry.name, entry.error === void 0 ? "" : ` (${entry.error})`]
+							}, entry.id))
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.field,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("estimator.model") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+								type: "text",
+								list: "estimator-model-options",
+								value: model,
+								disabled,
+								placeholder: t("estimator.model.placeholder"),
+								onChange: (event) => {
+									const next = event.currentTarget.value;
+									setModel(next);
+									if (next !== "" && hostModels.some((entry) => entry.id === next)) commit({ estimatorModel: next });
+								},
+								onBlur: () => {
+									if (model !== (options.estimatorModel ?? "")) commit({ estimatorModel: model });
+								}
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("datalist", {
+							id: "estimator-model-options",
+							children: hostModels.map((entry) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+								value: entry.id,
+								children: entry.name
+							}, `${entry.provider}\0${entry.id}`))
+						}),
+						hostProvider?.error === void 0 ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.customNote,
+							children: String(hostProvider.error)
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.customNote,
+							children: t("estimator.hostReuse")
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.customNote,
+							children: t("estimator.hostRoute").replace("{route}", effectiveRoute)
+						})
+					] }) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.field,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("estimator.baseUrl") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+								type: "text",
+								value: baseUrl,
+								disabled,
+								placeholder: "https://127.0.0.1:8000/v1",
+								onChange: (event) => {
+									setBaseUrl(event.currentTarget.value);
+								},
+								onBlur: () => {
+									if (baseUrl !== (options.estimatorBaseUrl ?? "")) commit({ estimatorBaseUrl: baseUrl });
+								}
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.field,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("estimator.model") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+								type: "text",
+								value: model,
+								disabled,
+								placeholder: t("estimator.model.placeholder"),
+								onChange: (event) => {
+									setModel(event.currentTarget.value);
+								},
+								onBlur: () => {
+									if (model !== (options.estimatorModel ?? "")) commit({ estimatorModel: model });
+								}
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.field,
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("estimator.apiKey") }),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									style: {
+										display: "flex",
+										gap: "6px"
+									},
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+										type: "password",
+										autoComplete: "off",
+										spellCheck: false,
+										value: keyDraft,
+										disabled,
+										placeholder: hasKey ? t("estimator.apiKey.set") : t("estimator.apiKey.placeholder"),
+										onChange: (event) => {
+											setKeyDraft(event.currentTarget.value);
+										},
+										onBlur: () => {
+											const next = keyDraft.trim();
+											if (next === "") return;
+											settle(() => save({ estimatorApiKey: next }));
+											setKeyDraft("");
+										},
+										onKeyDown: (event) => {
+											if (event.key === "Enter") event.currentTarget.blur();
+										}
+									}), hasKey ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										disabled,
+										onClick: () => {
+											settle(() => save({ estimatorApiKey: void 0 }));
+										},
+										children: t("estimator.apiKey.clear")
+									}) : null]
+								}),
+								hasKey ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.customNote,
+									children: t("estimator.apiKey.overwrite")
+								}) : null
+							]
+						})
+					] })
+				]
+			});
+		}
 		//#endregion
 		//#region src/client/settings-section.tsx
 		/**
@@ -1050,6 +1089,13 @@ window.__ModuleLoader__.load({
 						value: state.value?.autoCompact?.thresholdPercent ?? AUTO_COMPACT_THRESHOLD_LIMITS.default,
 						disabled: busy || !state.writable || !selectorAvailable,
 						save: saveAutoCompact,
+						settle,
+						t
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(CodeSkeletonControls, {
+						value: state.value?.codeSkeleton?.enabled ?? false,
+						disabled: busy || !state.writable || !selectorAvailable,
+						save: saveCodeSkeleton,
 						settle,
 						t
 					}),

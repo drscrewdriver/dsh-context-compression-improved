@@ -20,12 +20,10 @@ import type {} from '@deepseek-ai/dsh-settings'
 import type {
   CompactionTokenView,
   ObservedPromptUsage,
-  ProviderMeasurementKey,
   TokenCount,
 } from './runtime/measurement.ts'
 import { measureForCompaction } from './runtime/measurement.ts'
 import { sessionEvents } from './runtime/session-events.ts'
-import { deepSeekV4TokenizerForModel } from './deepseek-v4-tokenizer.ts'
 import { countExactCanonicalTextFields } from './runtime/token-count.ts'
 import type {} from '@deepseek-ai/dsh-tools'
 import {
@@ -35,7 +33,7 @@ import {
 } from './runtime/tail-trim.ts'
 import { installContextCompressionRetrieve } from './runtime/retrieve.ts'
 import type { PrunerState } from './pruner/state.ts'
-import { BS, countOmittedLines, RICH_BLOCK_PRESSURE_COST, CAPACITY_PRESSURE_RATIO } from './pruner/tuning.ts'
+import { countOmittedLines, CAPACITY_PRESSURE_RATIO } from './pruner/tuning.ts'
 import type { ToolCallInfo, SnapshotCandidate, PlannedReplacement, HistoryPlanOutcome } from './pruner/types.ts'
 import {
   onlyTextBlock,
@@ -103,7 +101,6 @@ import type {
   PruneResult,
   PruneSessionOptions,
   PruneStage,
-  ResolvedConfig,
   ToolResultPruneConfig,
 } from './runtime/types.ts'
 import { COMPRESSION_PROFILES } from './runtime/types.ts'
@@ -295,6 +292,15 @@ export class ToolResultPruner extends Service {
       // synchronous chain. Verdicts only feed the next pressure pass.
       void this.postflightEstimatorPass(agent.session, signal).catch(() => undefined)
     })
+  }
+
+  /**
+   * Measure text content in Unicode code points; non-text blocks cost zero.
+   * @param blocks - tool-result content to measure.
+   * @returns total Unicode code points across text blocks.
+   */
+  measureContent(blocks: readonly ContentBlock[]): number {
+    return measureContent(blocks)
   }
 
   /**
