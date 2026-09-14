@@ -10,6 +10,10 @@ recorded here is expected to be *re-checked*, not re-discovered.
 - One entry must contain: symptom / root cause / evidence / affected surface / fix / verification.
 - Evidence means a command and its observed output, not a description of the code.
 
+Defects that ship to the **settings surface** rather than the boot path use the `U#` series and
+keep the same six-part shape. They are recorded here because they are reported the same way —
+from a real machine, by someone who cannot tell a gate from a bug.
+
 ---
 
 ## D1 — Host plugin entry statically imports a sibling package
@@ -353,6 +357,45 @@ here for reasons the project's own `upgrade-pitfalls` §2.1 records independentl
 
 ---
 
+## U1 — The estimator card vanished off TokenPilot-inspired instead of explaining its gate
+
+**Symptom.** With any profile other than TokenPilot-inspired selected, the Settings page showed
+no estimator section at all. A reader who had configured nothing could not tell whether the
+feature was missing, broken, or gated — the first real-machine report of Defect A was exactly
+this, and it was filed alongside D7 even though the two have nothing in common.
+
+**Root cause.** The render was `current !== 'tokenpilot-inspired' ? null : <EstimatorControls …/>`.
+The condition is right: `runtime/config.ts` merges `presetOptions` over the tokenpilot-inspired
+defaults alone (`mergePresetOptions`), and `resolvePolicy(config, 'balanced').presetOptions` is
+`undefined`, so no other profile can carry an estimator channel. What was wrong is that the gate
+was *rendered as nothing*. The profile card that unlocks the section sits elsewhere on the page,
+and the one element that would have named it was the section being hidden — a gate the reader
+cannot see is indistinguishable from an absent feature.
+
+**Fix.** Render `EstimatorInactiveNotice` in place of the controls: same `<section>`, same
+`#context-compression-estimator-title` heading anchor, one paragraph naming the current profile
+and the profile that unlocks the card. Losing the heading was half the defect, so the heading
+stays. **The gate is unchanged** — no estimator control exists off TokenPilot-inspired, and no
+other profile gains `presetOptions`.
+
+**Evidence.** `packages/selector/tests/estimator-channel.client.spec.tsx` mounts the section with
+`profile: 'balanced'` and asserts the anchor still reads `Estimator (optional)`, that the notice
+contains the current profile label and `Select TokenPilot-inspired`, and that no channel select,
+no provider input and no `input[list]` exist. Counter-proof: substituting `null` for the notice
+turns that case red (`expected undefined to be 'Estimator (optional)'`) while the other six stay
+green — the guard fails against the pre-fix behaviour, so it is not vacuous.
+
+**Affected surface.** Client bundle only: `src/client/CompressionProfileSelector.tsx`,
+`src/client/locales.ts` (both dictionaries; `en` satisfies the full key set), `lib/client.js`,
+`lib/client.d.ts`. No runtime, config, or persistence change, and no change to
+`presetOptions` semantics.
+
+**Still open.** The save affordance remains unexplained in the UI — fields commit on change or
+blur with only a transient busy state, so "did that save?" has no answer on screen. That is a
+separate, larger change (explicit save button plus three-state feedback) and is not fixed here.
+
+---
+
 ## Verification ledger — `feat/ctx-preset-v2` closure
 
 Closure = `935d501` + the root-`exports` completion (`./invariant`). The working tree held
@@ -496,6 +539,11 @@ usual direction of these hand-offs: **the 0.1.5 replay must not copy this helper
    tables off `this`. Pass the service object itself; `dsh-perm-gate` does, which is why it
    serves its routes. The same trap applies to any service whose methods touch instance
    state, so check the contract before narrowing a service to a single method (D7).
+7. **A conditional the user cannot see is a defect, not a design.** If a section renders only
+   under some profile, mode, or capability, the hidden branch must say what is missing and what
+   would restore it — and keep its heading and anchor id so the panel is still findable where
+   the reader last saw it. Gating *semantics* are not what is on trial here; hiding the *reason*
+   is (U1).
 
 ## Change log
 
@@ -506,3 +554,4 @@ usual direction of these hand-offs: **the 0.1.5 replay must not copy this helper
 | 2026-09-14 | D6 | Profile dependency-reconciliation blocker diagnosed: two independent `os error 5` sources (one ACL-denied directory; mapped native modules held by the live host), plus the ownership-vs-write-right criterion warning. Delivered as a dry-runnable script |
 | 2026-09-15 | D6 | **Resolved.** One plain `pnpm install` in the profile converged (`+256 -16`, exit 0); the lockfile repointed itself and the `_pacquet-stage_` residue is gone. Cleared by convergence over successive attempts, not by the ACL repair — the `katex` denial stays on record |
 | 2026-09-15 | D7 | **The estimator catalog route had never registered at all.** `asWebServer` detached `register` from the service, `this` became the wrapper, the host threw inside `register`, and a catch-all swallowed it. Fixed by passing the service itself; 200 verified on the real host; the injection, isolation and transport hypotheses recorded earlier are withdrawn |
+| 2026-09-15 | U1 | **The estimator card was hidden by its own gate.** Off TokenPilot-inspired the section rendered `null`, so the reader saw a missing feature rather than a gated one. The heading and anchor are now kept and the hidden branch names the profile that unlocks the card; the gate itself is unchanged. Guard added with a counter-proof; the save-affordance question stays open |

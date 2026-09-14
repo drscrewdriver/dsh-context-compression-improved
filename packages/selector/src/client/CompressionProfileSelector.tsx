@@ -123,7 +123,9 @@ function SettingsCompressionProfileControls({
         settle={settle}
         t={t}
       />
-      {current !== 'tokenpilot-inspired' ? null : (
+      {current !== 'tokenpilot-inspired' ? (
+        <EstimatorInactiveNotice profile={t(`profile.${current}`)} t={t} />
+      ) : (
         <EstimatorControls
           options={state.value?.presetOptions ?? {}}
           disabled={busy || !state.writable || !selectorAvailable}
@@ -351,6 +353,29 @@ function CodeSkeletonControls({ value, disabled, save, settle, t }: CodeSkeleton
           <option value="off">{t('codeSkeleton.enabled.off')}</option>
         </select>
       </label>
+    </section>
+  )
+}
+
+interface EstimatorInactiveNoticeProps {
+  /** Already-localized label of the profile that currently owns the selector. */
+  profile: string
+  t: (key: ContextCompressionLocaleKey) => string
+}
+
+/**
+ * The estimator card is gated on the tokenpilot-inspired profile, because
+ * `presetOptions` is merged into that profile alone. A card that merely
+ * disappears reads as a missing feature — the first real-machine report was
+ * exactly that — so keep the heading and its anchor id in place and spend them
+ * on the reason plus the profile that unlocks the card. The gate itself is
+ * unchanged: no estimator control exists outside tokenpilot-inspired.
+ */
+function EstimatorInactiveNotice({ profile, t }: EstimatorInactiveNoticeProps) {
+  return (
+    <section className={css.autoCompact} aria-labelledby="context-compression-estimator-title">
+      <h3 id="context-compression-estimator-title" className={css.autoCompactTitle}>{t('estimator.title')}</h3>
+      <p className={css.customNote}>{t('estimator.inactive').replace('{profile}', profile)}</p>
     </section>
   )
 }
