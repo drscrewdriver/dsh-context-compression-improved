@@ -385,10 +385,10 @@ interface EstimatorCatalogBody {
   readonly selection?: { readonly provider: string, readonly model: string }
 }
 
-// 0.1.1/0.1.2 客户端 API 前缀是 /endpoint（0.1.5 起改为 /api）：宿主两条路径都
-// 注册了，这里按宿主世代依次尝试，先命中哪个用哪个。
+// The host channel is `/api`, and only `/api`: the pre-0.1.2 `/endpoint` prefix
+// does not exist on this tier's hosts, so probing it first only bought a
+// guaranteed 404 round-trip ahead of every successful load.
 const ESTIMATOR_CATALOG_ROUTES = [
-  '/endpoint/dsh-context-compression-improved/estimator-catalog',
   '/api/dsh-context-compression-improved/estimator-catalog',
 ]
 

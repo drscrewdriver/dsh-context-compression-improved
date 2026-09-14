@@ -561,14 +561,17 @@ const CONTEXT_COMPRESSION_NAMESPACE = CONTEXT_COMPRESSION_SETTINGS_NAMESPACE;
 /** Symbol properties reach the shared service target through Cordis proxies. */
 const SHARED_SETTINGS = Symbol.for("dsh-context-compression-improved/settings-registration");
 /** Loader validation for the standalone Bundle opt-in. */
-const Config = z.object({ presetOverlay: z.boolean().default(false) });
+const Config = z.object({
+	presetOverlay: z.boolean().default(false),
+	estimatorCatalogRoute: z.boolean().default(false)
+});
 /** Register the persisted default read by the currently mounted root pruner. */
 function apply(ctx, config = {}) {
 	try {
 		ctx.inject(["settings"], (settingsCtx) => {
 			acquireSettingsRegistration(settingsCtx);
 		});
-		registerEstimatorCatalogRoute(ctx);
+		if (config.estimatorCatalogRoute === true) registerEstimatorCatalogRoute(ctx);
 		if (config.presetOverlay !== true) return;
 		ctx.inject(["agentPresets"], (presetsCtx) => {
 			const installation = decorateAgentPresets(presetsCtx.agentPresets, {

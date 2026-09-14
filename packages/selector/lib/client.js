@@ -529,7 +529,7 @@ window.__ModuleLoader__.load({
 				]
 			});
 		}
-		const ESTIMATOR_CATALOG_ROUTES = ["/endpoint/dsh-context-compression-improved/estimator-catalog", "/api/dsh-context-compression-improved/estimator-catalog"];
+		const ESTIMATOR_CATALOG_ROUTES = ["/api/dsh-context-compression-improved/estimator-catalog"];
 		function EstimatorControls({ options, disabled, save, settle, t }) {
 			const [keyDraft, setKeyDraft] = (0, react.useState)("");
 			const [baseUrl, setBaseUrl] = (0, react.useState)(options.estimatorBaseUrl ?? "");
