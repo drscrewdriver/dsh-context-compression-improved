@@ -6,3 +6,14 @@
       name: 'dsh-context-compression-improved'
       config:
         presetOverlay: true
+    # The estimator catalog route rides its own row. Registering an HTTP route
+    # authorizes against the calling fiber, so only a fiber that declares
+    # `webServer` can reach it; a runtime probe cannot substitute. Keeping that
+    # declaration off the main row leaves the compression stack loadable on
+    # profiles that have no web server at all.
+    - id: context-compression-improved-estimator-catalog
+      name: 'dsh-context-compression-improved'
+      inject:
+        - webServer
+      config:
+        estimatorCatalogRoute: true

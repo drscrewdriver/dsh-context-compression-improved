@@ -123,7 +123,9 @@ function SettingsCompressionProfileControls({
         settle={settle}
         t={t}
       />
-      {current !== 'tokenpilot-inspired' ? null : (
+      {current !== 'tokenpilot-inspired' ? (
+        <EstimatorInactiveNotice profile={t(`profile.${current}`)} t={t} />
+      ) : (
         <EstimatorControls
           options={state.value?.presetOptions ?? {}}
           disabled={busy || !state.writable || !selectorAvailable}
@@ -355,6 +357,29 @@ function CodeSkeletonControls({ value, disabled, save, settle, t }: CodeSkeleton
   )
 }
 
+interface EstimatorInactiveNoticeProps {
+  /** Already-localized label of the profile that currently owns the selector. */
+  profile: string
+  t: (key: ContextCompressionLocaleKey) => string
+}
+
+/**
+ * The estimator card is gated on the tokenpilot-inspired profile, because
+ * `presetOptions` is merged into that profile alone. A card that merely
+ * disappears reads as a missing feature — the first real-machine report was
+ * exactly that — so keep the heading and its anchor id in place and spend them
+ * on the reason plus the profile that unlocks the card. The gate itself is
+ * unchanged: no estimator control exists outside tokenpilot-inspired.
+ */
+function EstimatorInactiveNotice({ profile, t }: EstimatorInactiveNoticeProps) {
+  return (
+    <section className={css.autoCompact} aria-labelledby="context-compression-estimator-title">
+      <h3 id="context-compression-estimator-title" className={css.autoCompactTitle}>{t('estimator.title')}</h3>
+      <p className={css.customNote}>{t('estimator.inactive').replace('{profile}', profile)}</p>
+    </section>
+  )
+}
+
 interface EstimatorControlsProps {
   options: PresetOptionsSettings
   disabled: boolean
@@ -385,10 +410,10 @@ interface EstimatorCatalogBody {
   readonly selection?: { readonly provider: string, readonly model: string }
 }
 
-// 0.1.1/0.1.2 客户端 API 前缀是 /endpoint（0.1.5 起改为 /api）：宿主两条路径都
-// 注册了，这里按宿主世代依次尝试，先命中哪个用哪个。
+// The host channel is `/api`, and only `/api`: the pre-0.1.2 `/endpoint` prefix
+// does not exist on this tier's hosts, so probing it first only bought a
+// guaranteed 404 round-trip ahead of every successful load.
 const ESTIMATOR_CATALOG_ROUTES = [
-  '/endpoint/dsh-context-compression-improved/estimator-catalog',
   '/api/dsh-context-compression-improved/estimator-catalog',
 ]
 
