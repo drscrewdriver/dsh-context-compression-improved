@@ -214,6 +214,62 @@ is replayed file by file on that branch instead.
 
 ---
 
+## D6 — Consumer profile blocks dependency reconciliation (host precondition)
+
+**Scope note.** This is *not* a defect of this repository. It is recorded here because it
+blocks the real-machine verification step that every branch needs, and because CI is
+structurally blind to it.
+
+**Symptom.** `pnpm install` in the `web` profile fails, at a **different path on every run**:
+
+```text
+cannot create directory at "...\node_modules\katex\node_modules\commander_pacquet-stage_…":
+拒绝访问。 (os error 5)
+
+failed to remove existing directory "...\node_modules\better-sqlite3" prior to swap:
+拒绝访问。 (os error 5)
+```
+
+Progress advances each run (`added 151 → 159 → 205`). The install is not wedged — it is
+walking a list of blockers, one per run.
+
+**Root cause — two independent sources of `os error 5`. Do not conflate them.**
+
+1. **ACL denies write**, at exactly one directory: `node_modules\katex\node_modules` lists
+   only `BUILTIN\Users: ReadAndExecute` and does not name the interactive user at all.
+2. **A mapped native module is held by a live process.** `better-sqlite3` grants the
+   interactive user `FullControl` on both itself and its nested `node_modules`, yet deletion
+   still fails. `session-query-sqlite` is enabled and `dsh web` is running, so
+   `better-sqlite3\build\Release\better_sqlite3.node` is mapped into that process; Windows
+   returns `ERROR_ACCESS_DENIED` when asked to delete a mapped image. No ACL change fixes
+   this one — only stopping the process does.
+
+**Criterion warning — never test this by ownership.** Measured here:
+
+| criterion | flagged |
+| --- | --- |
+| owner is not the interactive user | **211** |
+| the interactive user actually lacks write | **0** of 269 package dirs, plus **1** nested |
+
+Ownership is `BUILTIN\Administrators` almost everywhere (the profile was evidently produced
+by one elevated install), while the interactive user holds explicit `FullControl` in nearly
+all of them. An ownership-based fix would take ownership of 211 directories to solve one.
+Test the **effective write right** instead.
+
+**Affected.** Every real-machine verification on this host, on every branch — including the
+`compat/0.1.5` replay, which cannot be validated anywhere else.
+
+**Fix.** Stop `dsh web`; grant write on the one genuinely denied directory; re-run
+`pnpm install --no-frozen-lockfile`; restart. Delivered as
+`DSH-ccp-单包修复-04-node_modules依赖收敛阻塞.ps1` — diagnose / repair / re-verify, dry-run
+capable, and it never stops the service for you.
+
+**Verification.** The script's `-DryRun` reports one true target and names the one path.
+
+**Status.** Diagnosed and delivered as a script; not yet executed.
+
+---
+
 ## Verification ledger — `feat/ctx-preset-v2` closure
 
 Closure = `935d501` + the root-`exports` completion (`./invariant`). The working tree held
@@ -319,6 +375,7 @@ The merged package keeps **one** invariant companion, and it is the runtime's: `
 | `compat/0.1.5` @ `d7c592d` | no (lazy) | **absent** | n/a | needed | **inherits the whole contract** |
 | `baseline/pre-god-module-split`, `main` @ `e337bf5` | no | **absent, no `lib/`** | n/a | needed | not distributable by design |
 | any future single-package release | structurally impossible | — | **permanent gate** | — | inherits D3 |
+| every branch on this host | — | — | — | — | **blocked by D6** until the profile install stops hitting `os error 5` |
 
 ## Inheritance rules
 
@@ -334,7 +391,9 @@ The merged package keeps **one** invariant companion, and it is the runtime's: `
    validated on read, so renaming it silently discards historical tail-trim entries. This
    covers every occurrence, including `src/invariant.ts`'s `PACKAGE_NAME` and companion
    `name` — the merge does **not** rename them to match the merged package name.
-5. **Profile-side hygiene**: install spec that actually resolves, no dead `overrides`.
+5. **Profile-side hygiene**: install spec that actually resolves, no dead `overrides`. And
+   before trusting any profile-side install result: reconcile dependencies **with the host
+   stopped**, and test a directory's write right — never its owner (D6).
 
 ## Change log
 
@@ -342,3 +401,4 @@ The merged package keeps **one** invariant companion, and it is the runtime's: `
 | --- | --- | --- |
 | 2026-09-14 | D1–D5 | Ledger created; D1 fixed; D2 fixed for `dependencies`/`./pruner`; D3 gate added and verified; D4 delivered as a script; D5 recorded for `compat/0.1.5` |
 | 2026-09-14 | D2 | `./invariant` added to the root `exports`; root and package manifests now agree. Ten-gate closure ledger added, with the gate-5 flakiness evidence and the withdrawn identity-hash criterion |
+| 2026-09-14 | D6 | Profile dependency-reconciliation blocker diagnosed: two independent `os error 5` sources (one ACL-denied directory; mapped native modules held by the live host), plus the ownership-vs-write-right criterion warning. Delivered as a dry-runnable script |
