@@ -87,8 +87,10 @@ dependencies (`@huggingface/tokenizers`, `js-yaml`).
 **Verification.** `git show <branch>:package.json` field-by-field; after a real
 `dsh plugin add`, confirm `node_modules/<pkg>` exists and contains `lib/index.js`.
 
-**Status.** Fixed on the merge branch for `dependencies` / `./pruner`; `./invariant` is
-still absent from the root `exports` (parity item, not a boot blocker).
+**Status.** Fixed on the merge branch for `dependencies` / `./pruner`. `./invariant` was
+added to the root `exports` by the closure commit — the root and the package manifest now
+export the same four subpaths (`.`, `./invariant`, `./pruner`, `./client`). See the
+verification ledger below for the command-level evidence.
 
 ---
 
@@ -212,12 +214,108 @@ is replayed file by file on that branch instead.
 
 ---
 
+## Verification ledger — `feat/ctx-preset-v2` closure
+
+Closure = `935d501` + the root-`exports` completion (`./invariant`). The working tree held
+exactly that one manifest change; `lib/**` rebuilt byte-identically, so the build is
+deterministic.
+
+### Ten gates
+
+| # | Command | Result |
+| --- | --- | --- |
+| 1 | `pnpm install` | exit 0 |
+| 2 | `pnpm build` | exit 0 |
+| 3 | `pnpm typecheck` | exit 0 |
+| 4 | `pnpm lint` | exit 0 |
+| 5 | `pnpm test` | exit 1 — nondeterministic Windows set, see below |
+| 6 | `pnpm test:built` | exit 0 |
+| 7 | `pnpm verify:release` | exit 0 |
+| 8 | `pnpm pack:dry-run` | exit 0 |
+| 9 | `pnpm test:e2e:packed` (`DSH_E2E_MODE=dev`) | exit 0 |
+| 10 | `pnpm test:e2e:packed` (release mode) | **blocked** — external precondition, see below |
+
+### Gate 5 — the failure set is nondeterministic; do not cite it as "4 known failures"
+
+A single `pnpm test` run is not a baseline. Eight interleaved runs (four at `455f74f`,
+four at the closure commit), same machine, nothing else running:
+
+| Run | `455f74f` failed | closure failed |
+| --- | --- | --- |
+| 1 | 3 | 5 |
+| 2 | 3 | 2 |
+| 3 | 4 | 3 |
+| 4 | 3 | 4 |
+
+A ninth run, taken while a packed-install E2E ran concurrently, reported **9** failures at
+`455f74f` — the same commit that reported 3 in three other runs. The count tracks machine
+load, not code.
+
+Per test name, over the four quiet runs on each side:
+
+| Test | `455f74f` | closure |
+| --- | --- | --- |
+| `preset-overlay.host.spec.ts` > uses owner-only files and starts a new generation after source content changes | 4/4 | 4/4 |
+| `standing-generation.host.spec.ts` > keeps one fully-identical generation under concurrent composition of the same identity | 3/4 | 3/4 |
+| `standing-generation.host.spec.ts` > keeps one generation under concurrent and repeated composition of the same identity | 3/4 | 3/4 |
+| `standing-generation.host.spec.ts` > separates colliding equal-size generations on a whole-second metadata surface before publish | 3/4 | 3/4 |
+| `standing-generation.host.spec.ts` > switches the standing generation for an equal-length source change at a fixed threshold | 0/4 | 1/4 |
+
+Four of the five fail on both sides at identical frequency: pre-existing. The fifth failed
+once in four runs on the closure side and never on the baseline side, inside the same
+timing-sensitive `describe` block as three tests that are 3/4 flaky on *both* sides. It is
+recorded as **not excluded**, not as clean.
+
+The visible causes are Windows-only: an owner-only permission assertion (`0o700` against
+`0o666`), `fs.rename` `EPERM` during publish under concurrency, and mtime-window
+assertions that assume a coarser clock.
+
+**Consequence for review.** Any criterion phrased as "the failure set matches the baseline
+item by item" is unsatisfiable — the baseline has no single failure set. Compare
+*ever-failed* sets over at least three interleaved runs per side instead.
+
+### Gate 10 — external precondition, not a defect
+
+Release mode needs the *published* previous release to build the upgrade leg of its
+fixture. `0.1.0-beta.2` was never published, so the fixture aborts with `release gate
+requires the published previous release for the upgrade leg: packument responded 404`.
+`DSH_E2E_MODE=dev` (gate 9) is the runnable leg and passes. Blocked on publishing, not on
+this repository.
+
+### Criterion withdrawn
+
+The earlier merge plan carried "the overlay identity hash is unchanged across the merge".
+That is unsatisfiable by construction: identity is `sha256(preset.id ‖ source ‖
+JSON.stringify({modules, autoCompactThresholdPercent}))` computed over **absolute** module
+paths, so collapsing two packages into one necessarily changes it. The replacement is
+structural — `canonicalCompressionRows` stays byte-identical and the only permitted
+difference in the generated YAML is the `tool-result-pruner` row's `name` resolving to the
+merged package.
+
+### `invariant.ts` literal decision
+
+The merged package keeps **one** invariant companion, and it is the runtime's: `name =
+'context-compression-selector-runtime-invariant'`, `PACKAGE_NAME =
+'dsh-context-compression-improved-runtime'`. Both stay verbatim.
+
+- The string is the frozen provenance literal (inheritance rule 4) and is written into
+  durable session logs, so renaming it would discard historical tail-trim entries.
+- The companion's real checks (`validatePublishedTailTrim`, `sessionEvents`) belong to the
+  runtime, so the runtime identity is the semantically correct one.
+- The pre-merge `packages/selector/src/invariant.ts` companion
+  (`client-ui-context-compression-selector-invariant`, `PACKAGE_NAME =
+  'dsh-context-compression-improved'`) installed **no** checks (`install = () => {}`) and
+  was dropped by the merge. Nothing is lost: its only effect was reserving a name in the
+  invariant registry, which is keyed by the installing package either way.
+
+---
+
 ## Affected-surface matrix
 
 | Branch / version | D1 entry import | D2 install contract | D3 artifact chunks | D4 profile | Verdict |
 | --- | --- | --- | --- | --- | --- |
 | `feat/ctx-preset-v2` @ `455f74f` | **present (crash)** | partial | n/a before merge | needed | affected; D1/D2 fixed on merge branch |
-| merged single package | eliminated | fixed (`./invariant` pending) | **gated** | delivered | this change |
+| merged single package | eliminated | fixed (all four subpaths) | **gated** | delivered | this change |
 | `compat/0.1.5` @ `d7c592d` | no (lazy) | **absent** | n/a | needed | **inherits the whole contract** |
 | `baseline/pre-god-module-split`, `main` @ `e337bf5` | no | **absent, no `lib/`** | n/a | needed | not distributable by design |
 | any future single-package release | structurally impossible | — | **permanent gate** | — | inherits D3 |
@@ -233,7 +331,9 @@ is replayed file by file on that branch instead.
    must be committed. Enforced by `pnpm verify:release`.
 4. **The provenance literal `dsh-context-compression-improved-runtime` is frozen.** It is
    already written into durable session logs (`source.plugin` on tail-trim manifests) and
-   validated on read, so renaming it silently discards historical tail-trim entries.
+   validated on read, so renaming it silently discards historical tail-trim entries. This
+   covers every occurrence, including `src/invariant.ts`'s `PACKAGE_NAME` and companion
+   `name` — the merge does **not** rename them to match the merged package name.
 5. **Profile-side hygiene**: install spec that actually resolves, no dead `overrides`.
 
 ## Change log
@@ -241,3 +341,4 @@ is replayed file by file on that branch instead.
 | Date | Entry | Action |
 | --- | --- | --- |
 | 2026-09-14 | D1–D5 | Ledger created; D1 fixed; D2 fixed for `dependencies`/`./pruner`; D3 gate added and verified; D4 delivered as a script; D5 recorded for `compat/0.1.5` |
+| 2026-09-14 | D2 | `./invariant` added to the root `exports`; root and package manifests now agree. Ten-gate closure ledger added, with the gate-5 flakiness evidence and the withdrawn identity-hash criterion |

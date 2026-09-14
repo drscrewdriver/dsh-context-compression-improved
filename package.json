@@ -10,6 +10,10 @@
       "types": "./packages/selector/lib/index.d.ts",
       "default": "./packages/selector/lib/index.js"
     },
+    "./invariant": {
+      "types": "./packages/selector/lib/invariant.d.ts",
+      "default": "./packages/selector/lib/invariant.js"
+    },
     "./pruner": {
       "types": "./packages/selector/lib/pruner.d.ts",
       "default": "./packages/selector/lib/pruner.js"
