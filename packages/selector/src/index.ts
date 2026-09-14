@@ -7,13 +7,96 @@ import {
   type default as SettingsService,
 } from '@deepseek-ai/dsh-settings'
 import {
+  buildEstimatorCatalog,
   CONTEXT_COMPRESSION_SETTINGS_NAMESPACE,
   ContextCompressionSettingsSchema,
+  type EstimatorCatalogDeps,
 } from 'dsh-context-compression-improved-runtime'
 import {
   decorateAgentPresets,
   resolveCompressionModulePaths,
 } from './preset-overlay.ts'
+
+// 0.1.1/0.1.2 客户端 API 前缀是 /endpoint，0.1.5 起改为 /api —— 两条绝对路径都
+// 注册（各自的 (kind, path) 表项），一份处理器服务两个前缀。
+const ESTIMATOR_CATALOG_ROUTES = [
+  '/endpoint/dsh-context-compression-improved/estimator-catalog',
+  '/api/dsh-context-compression-improved/estimator-catalog',
+] as const
+
+/** Runtime detection of the host web server (same pattern as dsh-perm-gate). */
+interface WebServerLike {
+  register: (spec: {
+    kind: 'exact'
+    path: string
+    handler: (req: unknown, res: unknown) => void
+  }) => unknown
+}
+
+interface CatalogAwareContext {
+  effect: Context['effect']
+  webServer?: unknown
+  llm?: unknown
+  agentDefaultModel?: { currentSelection?: () => { provider?: unknown, model?: unknown } | undefined }
+}
+
+function asWebServer(value: unknown): WebServerLike | undefined {
+  const register = (value as { register?: unknown } | undefined)?.register
+  if (typeof register !== 'function') return undefined
+  return { register: register as WebServerLike['register'] }
+}
+
+/**
+ * Serve `GET /api/dsh-context-compression-improved/estimator-catalog` — the
+ * settings card's host-route dropdowns (live provider/model groups from the DSH
+ * `llm` service plus the effective selection). This lives on the top-level
+ * plugin context, NOT inside the isolated toolResultPruner service: a route
+ * registered there can never reach the `webServer` service across the
+ * isolation boundary, and the dropdowns answer 401. `ctx.inject` also fixes
+ * the late-activation problem the old polling loop worked around — the handler
+ * is installed the moment `webServer` appears. Best effort: without the
+ * service the plugin keeps working, only the HTTP API is missing.
+ */
+function registerEstimatorCatalogRoute(ctx: Context): void {
+  ctx.inject(['webServer', 'llm', 'agentDefaultModel'], (injected) => {
+    const rctx = injected as unknown as CatalogAwareContext
+    const webServer = asWebServer(rctx.webServer)
+    if (webServer === undefined) return
+    const handler = (_req: unknown, res: unknown): void => {
+      const resTyped = res as {
+        writeHead: (code: number, headers?: Record<string, string>) => void
+        end: (body?: string) => void
+      }
+      if (typeof resTyped?.writeHead !== 'function' || typeof resTyped?.end !== 'function') return
+      const defaults = rctx.agentDefaultModel
+      const deps: EstimatorCatalogDeps = {
+        ...(rctx.llm === undefined
+          ? {}
+          : { llm: rctx.llm as NonNullable<EstimatorCatalogDeps['llm']> }),
+        ...(typeof defaults?.currentSelection === 'function'
+          ? { currentSelection: () => defaults.currentSelection?.() }
+          : {}),
+      }
+      buildEstimatorCatalog(deps).then(
+        catalog => {
+          resTyped.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-cache' })
+          resTyped.end(JSON.stringify({ ok: true, ...catalog }))
+        },
+        (error: unknown) => {
+          resTyped.writeHead(500, { 'content-type': 'application/json; charset=utf-8' })
+          resTyped.end(JSON.stringify({ ok: false, error: String((error as Error)?.message ?? error) }))
+        },
+      )
+    }
+    const disposers = ESTIMATOR_CATALOG_ROUTES
+      .map(path => webServer.register({ kind: 'exact', path, handler }))
+      .filter((off): off is () => void => typeof off === 'function')
+    rctx.effect(
+      () => () => { for (const off of disposers) off() },
+      'contextCompressionSelector.estimator-catalog route',
+    )
+  })
+}
 
 // Harness 0.1.1 exposed a namespace-branding helper; 0.1.2 validates the
 // same public literal at SettingsProvider.register/get instead.
@@ -60,6 +143,8 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.inject(['settings'], (settingsCtx) => {
     acquireSettingsRegistration(settingsCtx)
   })
+
+  registerEstimatorCatalogRoute(ctx)
 
   if (config.presetOverlay !== true) return
 
