@@ -194,25 +194,35 @@ export const Config: z<Config> = z.object({
 
 /** Register the persisted default read by the currently mounted root pruner. */
 export function apply(ctx: Context, config: Config = {}): void {
-  ctx.inject(['settings'], (settingsCtx) => {
-    acquireSettingsRegistration(settingsCtx)
-  })
+  // Measured on the 0.1.2 host: a plugin-load failure surfaces only through the
+  // cordis logger, which prints nothing in the `dsh web` terminal — so a throw
+  // here is completely invisible and looks exactly like a plugin that loaded
+  // and quietly did nothing. Report it to a sink the host shows, then re-throw
+  // unchanged: behaviour is untouched, only observability is restored.
+  try {
+    ctx.inject(['settings'], (settingsCtx) => {
+      acquireSettingsRegistration(settingsCtx)
+    })
 
-  registerEstimatorCatalogRoute(ctx)
+    registerEstimatorCatalogRoute(ctx)
 
-  if (config.presetOverlay !== true) return
+    if (config.presetOverlay !== true) return
 
-  ctx.inject(['agentPresets'], (presetsCtx) => {
-    const installation = decorateAgentPresets(
-      presetsCtx.agentPresets,
-      {
-        modules: resolveCompressionModulePaths(),
-        excludedPresetIds: ['minimal'],
-        autoCompactThresholdPercent: () => resolveAutoCompactThresholdPercent(presetsCtx),
-      },
-    )
-    presetsCtx.effect(() => () => installation.dispose(), 'contextCompressionSelector.agentPresets()')
-  })
+    ctx.inject(['agentPresets'], (presetsCtx) => {
+      const installation = decorateAgentPresets(
+        presetsCtx.agentPresets,
+        {
+          modules: resolveCompressionModulePaths(),
+          excludedPresetIds: ['minimal'],
+          autoCompactThresholdPercent: () => resolveAutoCompactThresholdPercent(presetsCtx),
+        },
+      )
+      presetsCtx.effect(() => () => installation.dispose(), 'contextCompressionSelector.agentPresets()')
+    })
+  } catch (error) {
+    console.error('context-compression apply() failed:', error)
+    throw error
+  }
 }
 
 /**
