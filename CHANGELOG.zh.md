@@ -2,6 +2,23 @@
 
 > 完整历史（含上游 0.1.0 及更早版本）见 [CHANGELOG.md](CHANGELOG.md)。本文件只翻译本 fork 的新增条目。 · [English](CHANGELOG.md) · [日本語](CHANGELOG.ja.md) · [한국어](CHANGELOG.ko.md)
 
+## 0.1.1
+
+### 新增
+
+- `scripts/` 的 TypeScript 工具链：`verify-release`、`packed-components-smoke` 和 `packed-install-e2e` 现为 `.ts` 源文件，通过 `tsc` 编译至 `scripts-dist/`，消除仓库中最后三个非 TS 源文件。
+
+### 变更
+
+- `package.json` 脚本 `test:e2e:packed` 和 `verify:release` 现运行 `scripts-dist/` 中的编译产物。
+- 估计器目录路由注册加固：`asWebServer` 直接返回 service 本身（D7 修复），估计器 UI 在未激活时保留区块标题而非隐藏（U1 修复）。
+- 框架文档更正：行级 `inject: [webServer]` 非承载性（Y22）；DSH 中无 `isolate()` 实例。
+
+### 修复
+
+- 估计器目录路由自始至终从未注册，因 `asWebServer` 使 `register` 脱离 service（D7）。
+- 非 TokenPilot Profile 下估计器区块静默消失，无任何启用提示（U1）。
+
 ## Unreleased（未发布）
 
 ### 新增

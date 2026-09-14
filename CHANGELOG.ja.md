@@ -2,6 +2,23 @@
 
 > 完全な履歴（アップストリーム 0.1.0 以前を含む）は [CHANGELOG.md](CHANGELOG.md) を参照。このファイルはフォークの追加エントリーのみを翻訳したものです。 · [English](CHANGELOG.md) · [中文](CHANGELOG.zh.md) · [한국어](CHANGELOG.ko.md)
 
+## 0.1.1
+
+### 追加
+
+- `scripts/` の TypeScript ツールチェーン：`verify-release`、`packed-components-smoke`、`packed-install-e2e` が `.ts` ソースになり、`tsc` で `scripts-dist/` にコンパイルされます。リポジトリ内の最後の3つの非 TS ヽースファイルが排除されました。
+
+### 変更
+
+- `package.json` スクリプト `test:e2e:packed` と `verify:release` が `scripts-dist/` のコンパイル成果物を実行するようになりました。
+- エスティメーターカタログルート登録が硬化：`asWebServer` がサービス自体を返すように修正（D7 修正）、エステーター UI が非アクティブ時にセクション見出しを保持するように修正（U1 修正）。
+- フレームワークドキュメント修正：行レベル `inject: [webServer]` は負荷担うものではない（Y22）；DSH 全パッケージに `isolate()` なし。
+
+### 修正
+
+- エスティメーターカタログルートは `asWebServer` が `register` をサービスから切り離したため、最初から一度も登録されなかった（D7）。
+- 非 TokenPilot プロファイル時にエステーターセクションが警告なしに非表示になっていた（U1）。
+
 ## Unreleased（未リリース）
 
 ### 追加

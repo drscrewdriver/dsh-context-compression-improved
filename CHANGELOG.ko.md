@@ -2,6 +2,23 @@
 
 > 전체 히스토리(업스트림 0.1.0 이전 포함)는 [CHANGELOG.md](CHANGELOG.md)를 참고하세요. 이 파일은 포크의 추가 항목만 번역한 것입니다. · [English](CHANGELOG.md) · [中文](CHANGELOG.zh.md) · [日本語](CHANGELOG.ja.md)
 
+## 0.1.1
+
+### 추가
+
+- `scripts/`의 TypeScript 도구 체인: `verify-release`, `packed-components-smoke`, `packed-install-e2e`가 `.ts` 소스가 되어 `tsc`로 `scripts-dist/`에 컴파일됩니다. 저장소의 마지막 3개 비-TS 소스 파일이 제거되었습니다.
+
+### 변경
+
+- `package.json` 스크립트 `test:e2e:packed`와 `verify:release`가 `scripts-dist/`의 컴파일 결과물을 실행합니다.
+- 추정기 카탈로그 라우트 등록이 강화됨: `asWebServer`가 서비스 자체를 반환하도록 수정(D7 수정), 추정기 UI가 비활성 시 섹션 제목을 유지하도록 수정(U1 수정).
+- 프레임워크 문서 정정: 행 수준 `inject: [webServer]`는 부담을 지지 않음(Y22); DSH 모든 패키지에 `isolate()` 없음.
+
+### 수정
+
+- 추정기 카탈로그 라우트는 `asWebServer`가 `register`를 서비스에서 분리한导致로 처음부터 한 번도 등록되지 않았음(D7).
+- 비-TokenPilot 프로필에서 추정기 섹션이 경고 없이 사라졌음(U1).
+
 ## Unreleased(미출시)
 
 ### 추가
