@@ -191,7 +191,8 @@ describe('estimator channel card', () => {
     const { savePresetOptions } = mountEstimator({ estimatorMode: 'host' })
 
     const provider = screen.getByLabelText<HTMLInputElement>(PROVIDER_LABEL)
-    const model = screen.getByLabelText<HTMLInputElement>(MODEL_LABEL)
+    // The model field stays present and editable without a served catalog.
+    expect(screen.getByLabelText<HTMLInputElement>(MODEL_LABEL)).toBeTruthy()
     expect(document.querySelectorAll('#estimator-provider-options option').length).toBe(0)
     expect(document.querySelectorAll('#estimator-model-options option').length).toBe(0)
     fireEvent.change(provider, { target: { value: 'manual-group' } })
