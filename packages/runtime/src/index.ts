@@ -156,16 +156,7 @@ export type {
 // Re-export the canonical profile list from the type module as a runtime value.
 export { COMPRESSION_PROFILES } from './types.ts'
 
-// The estimator-catalog projection is served by the selector's top-level route
-// (which injects webServer/llm/agentDefaultModel), not from inside the isolated
-// toolResultPruner service, so re-export it for that owner.
-export { buildEstimatorCatalog, resolveHostRoute } from './estimator-catalog.ts'
-export type {
-  CatalogModel,
-  CatalogProvider,
-  EstimatorCatalog,
-  EstimatorCatalogDeps,
-} from './estimator-catalog.ts'
+
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
