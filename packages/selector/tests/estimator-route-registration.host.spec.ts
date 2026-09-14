@@ -89,7 +89,7 @@ describe('estimator catalog route registration', () => {
     ctx = runtime
     await mountWebServer(runtime, routes)
 
-    apply(runtime, {})
+    apply(runtime, { estimatorCatalogRoute: true })
     await settle()
 
     expect(routes.map(route => route.path)).toEqual([LEGACY_ROUTE, CATALOG_ROUTE])
@@ -101,7 +101,7 @@ describe('estimator catalog route registration', () => {
     const runtime = new Context()
     ctx = runtime
 
-    apply(runtime, {})
+    apply(runtime, { estimatorCatalogRoute: true })
     await settle()
     expect(routes).toHaveLength(0)
 
@@ -117,7 +117,7 @@ describe('estimator catalog route registration', () => {
     ctx = runtime
     await mountWebServer(runtime, routes)
 
-    apply(runtime, {})
+    apply(runtime, { estimatorCatalogRoute: true })
     await settle()
     const afterRegistration = routes.length
 
@@ -135,7 +135,7 @@ describe('estimator catalog route registration', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
     try {
-      expect(() => apply(runtime, {})).not.toThrow()
+      expect(() => apply(runtime, { estimatorCatalogRoute: true })).not.toThrow()
       await settle()
 
       const messages = warn.mock.calls.map(([message]) => String(message))
@@ -151,7 +151,7 @@ describe('estimator catalog route registration', () => {
     ctx = runtime
     await mountWebServer(runtime, routes)
 
-    apply(runtime, {})
+    apply(runtime, { estimatorCatalogRoute: true })
     await settle()
 
     const route = routes.find(candidate => candidate.path === CATALOG_ROUTE)
