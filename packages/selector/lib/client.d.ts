@@ -25,6 +25,7 @@ declare const zh: {
   'estimator.followHost': string;
   'estimator.mode.host': string;
   'estimator.mode.direct': string;
+  'estimator.inactive': string;
   'estimator.provider': string;
   'estimator.provider.placeholder': string;
   'estimator.model.placeholder': string;
