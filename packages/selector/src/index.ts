@@ -6,11 +6,11 @@ import {
   type SettingsScope,
   type default as SettingsService,
 } from '@deepseek-ai/dsh-settings'
-import {
-  CONTEXT_COMPRESSION_SETTINGS_NAMESPACE,
-  ContextCompressionSettingsSchema,
-} from 'dsh-context-compression-improved-runtime'
 import { buildEstimatorCatalog, type EstimatorCatalogDeps } from './estimator-catalog.ts'
+
+// Inlined from the runtime to eliminate the cross-package dependency that
+// triggered ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED on every install.
+const CONTEXT_COMPRESSION_NAMESPACE = 'context-compression' as never
 import {
   decorateAgentPresets,
   resolveCompressionModulePaths,
@@ -97,9 +97,7 @@ function registerEstimatorCatalogRoute(ctx: Context): void {
   })
 }
 
-// Harness 0.1.1 exposed a namespace-branding helper; 0.1.2 validates the
-// same public literal at SettingsProvider.register/get instead.
-const CONTEXT_COMPRESSION_NAMESPACE = CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as never
+
 
 /** Shared state forwarded through every Cordis proxy of one settings service. */
 interface SharedSettingsRegistration {
@@ -168,8 +166,10 @@ export function apply(ctx: Context, config: Config = {}): void {
 function resolveAutoCompactThresholdPercent(presetsCtx: Context): number {
   const raw = presetsCtx.get('settings')?.get(CONTEXT_COMPRESSION_NAMESPACE)
   try {
-    const parsed = ContextCompressionSettingsSchema(structuredClone(raw) as never)
-    return parsed.autoCompact.thresholdPercent
+    const record = structuredClone(raw) as Record<string, unknown> | undefined
+    const threshold = record?.autoCompact as { thresholdPercent?: number } | undefined
+    const value = typeof threshold?.thresholdPercent === 'number' ? threshold.thresholdPercent : 80
+    return Number.isFinite(value) && value >= 50 && value <= 90 ? value : 80
   } catch {
     return 80
   }
@@ -210,7 +210,7 @@ function acquireSettingsRegistration(ctx: Context): void {
       state.registrationOwner = next
       state.scope = next.settings.register(
         CONTEXT_COMPRESSION_NAMESPACE,
-        ContextCompressionSettingsSchema,
+        z.any(),
       )
     }
     if (state.owners.size === 0 && settings[SHARED_SETTINGS] === state) {
@@ -221,7 +221,7 @@ function acquireSettingsRegistration(ctx: Context): void {
   if (state.owners.size === 1) {
     state.scope = settings.register(
       CONTEXT_COMPRESSION_NAMESPACE,
-      ContextCompressionSettingsSchema,
+      z.any(),
     )
   }
 }
