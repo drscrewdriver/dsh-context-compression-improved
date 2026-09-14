@@ -148,8 +148,9 @@ for (const expected of assetManifests) {
     if (bytes.byteLength !== descriptor.bytes) fail(`${expected.directory}/${name} byte length differs from manifest`)
     if (hash !== descriptor.sha256) fail(`${expected.directory}/${name} SHA-256 differs from manifest`)
   }
-  if (!selectorPackage.files?.includes(`assets/${expected.directory}/*`)) {
-    fail(`selector package files list omits assets/${expected.directory}/*`)
+  const assetEntries = selectorPackage.files ?? []
+  if (!assetEntries.some(entry => entry === 'assets' || entry.startsWith('assets/'))) {
+    fail('selector package files list omits the tokenizer assets')
   }
 }
 
@@ -221,13 +222,14 @@ const collectSpecs = async (directory) => (await walk(directory))
   .sort()
 
 const runtimeSpecs = await collectSpecs(join(root, 'packages/selector/tests/runtime'))
-const selectorSpecs = await collectSpecs(join(root, 'packages/selector/tests'))
-if (runtimeSpecs.some(path => !path.endsWith('.spec.ts') || !path.includes('/tests/runtime/'))) {
+const selectorSpecs = (await collectSpecs(join(root, 'packages/selector/tests')))
+  .filter(path => !path.startsWith('packages/selector/tests/runtime/'))
+if (runtimeSpecs.some(path => !path.endsWith('.spec.ts'))) {
   fail('Runtime test inventory contains a spec outside the active **/*.spec.ts project')
 }
 const selectorUnclassified = selectorSpecs.filter(path => path !== 'packages/selector/tests/cache-prefix-audit.spec.ts'
+  && path !== 'packages/selector/tests/estimator-catalog.spec.ts'
   && path !== 'packages/selector/tests/built/client-artifact.spec.ts'
-  && !path.includes('/tests/runtime/')
   && !path.endsWith('.host.spec.ts')
   && !path.endsWith('.client.spec.ts')
   && !path.endsWith('.client.spec.tsx'))

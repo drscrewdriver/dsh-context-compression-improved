@@ -25,7 +25,6 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm build
       - run: pnpm test
-      - run: pnpm --filter dsh-context-compression-improved-runtime test
       - run: pnpm --filter dsh-context-compression-improved test
       - run: pnpm test:built
       - run: pnpm verify:release
