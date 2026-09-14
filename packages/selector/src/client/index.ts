@@ -10,6 +10,7 @@ import {
 import { DEFAULT_CUSTOM_COMPRESSION_POLICY } from '../profiles.ts'
 import { decodeSettings } from './decode.ts'
 import { en, zh } from './locales.ts'
+import { mergePresetOptionsPatch, presetOptionsEqual } from './preset-options.ts'
 
 export const inject = ['slots', 'locale', 'settingsScope']
 const NS = 'context-compression'
@@ -81,10 +82,18 @@ export function apply(ctx: ClientContext): void {
       () => scope.set('codeSkeleton', { enabled }),
       settings => settings.codeSkeleton.enabled === enabled,
     ),
-    savePresetOptions: options => writeAndConfirm(
-      () => scope.set('presetOptions', options),
-      settings => (settings.presetOptions?.estimatorMode ?? '') === (options.estimatorMode ?? ''),
-    ),
+    savePresetOptions: options => {
+      // The section root is replaced by whatever is written there, so merge the
+      // patch over the stored document: writing the bare patch deleted
+      // estimatorMode (and every other override) on the next field edit.
+      const current = scope.getSnapshot().value?.presetOptions
+      const next = mergePresetOptionsPatch(current, options)
+      if (presetOptionsEqual(current, next)) return Promise.resolve()
+      return writeAndConfirm(
+        () => scope.set('presetOptions', next),
+        settings => presetOptionsEqual(settings.presetOptions, next),
+      )
+    },
   })
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',

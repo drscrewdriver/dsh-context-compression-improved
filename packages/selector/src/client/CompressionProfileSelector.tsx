@@ -3,6 +3,7 @@ import type { SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { IconChevronDownOutline14, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ContextCompressionLocaleKey } from './locales.ts'
+import type { PresetOptionsPatch } from './preset-options.ts'
 import css from './CompressionProfileSelector.module.css'
 import {
   AUTO_COMPACT_THRESHOLD_LIMITS,
@@ -28,7 +29,8 @@ export interface CompressionSelectorInjected {
   resetCustom: () => Promise<void>
   saveAutoCompact: (thresholdPercent: number) => Promise<void>
   saveCodeSkeleton: (enabled: boolean) => Promise<void>
-  savePresetOptions: (options: Partial<PresetOptionsSettings>) => Promise<void>
+  /** Patch of `presetOptions` members; an explicit `undefined` clears that field. */
+  savePresetOptions: (options: PresetOptionsPatch) => Promise<void>
 }
 
 export type CompressionProfileSelectorProps =
@@ -356,16 +358,24 @@ function CodeSkeletonControls({ value, disabled, save, settle, t }: CodeSkeleton
 interface EstimatorControlsProps {
   options: PresetOptionsSettings
   disabled: boolean
-  save: (options: Partial<PresetOptionsSettings>) => Promise<void>
+  save: (options: PresetOptionsPatch) => Promise<void>
   settle: (operation: () => Promise<void>) => void
   t: (key: ContextCompressionLocaleKey) => string
 }
 
 /**
- * TokenPilot-inspired estimator endpoint card. Shown only while the
- * tokenpilot-inspired profile is selected; the key field is write-only
- * (never rendered back) and the whole card is advisory — an unconfigured or
- * failing endpoint simply keeps every consumer on its rule-only fallback.
+ * TokenPilot-inspired estimator channel card. Shown only while the
+ * tokenpilot-inspired profile is selected, and split by channel:
+ *
+ * - `host` reuses the providers and credentials already configured in DSH
+ *   through the Harness `llm` service, so this card names a provider and a
+ *   model and accepts NO API key — the key field belongs to the direct channel
+ *   alone.
+ * - `direct` talks to a native OpenAI-compatible endpoint, the only channel
+ *   carrying its own base URL and write-only key.
+ *
+ * The whole card is advisory: an unconfigured or failing endpoint keeps every
+ * consumer on its rule-only fallback.
  */
 interface CatalogModelEntry { readonly id: string, readonly name: string }
 interface CatalogProviderEntry { readonly id: string, readonly name: string, readonly models: readonly CatalogModelEntry[], readonly error?: string }
@@ -416,9 +426,20 @@ function EstimatorControls({ options, disabled, save, settle, t }: EstimatorCont
   const hostProvider = hostProviders.find(entry => entry.id === (options.estimatorProvider ?? ''))
     ?? hostProviders.find(entry => entry.id === catalog?.selection?.provider)
   const hostModels = hostProvider?.models ?? []
-  const commit = (patch: Partial<PresetOptionsSettings>) => {
+  const commit = (patch: PresetOptionsPatch) => {
     settle(() => save({ ...patch, ...(keyDraft.trim() === '' ? {} : { estimatorApiKey: keyDraft.trim() }) }))
   }
+  // What the host channel would actually call right now: an explicit override
+  // wins, otherwise the session default the catalog reports. Naming the
+  // resolved route is the whole point of this channel — the user re-enters
+  // nothing the Harness already knows.
+  const overrideProvider = options.estimatorProvider ?? ''
+  const overrideModel = options.estimatorModel ?? ''
+  const effectiveProvider = overrideProvider !== '' ? overrideProvider : catalog?.selection?.provider ?? ''
+  const effectiveModel = overrideModel !== '' ? overrideModel : catalog?.selection?.model ?? ''
+  const effectiveRoute = effectiveProvider !== '' && effectiveModel !== ''
+    ? `${effectiveProvider} / ${effectiveModel}`
+    : t('estimator.hostUnresolved')
   return (
     <section className={css.autoCompact} aria-labelledby="context-compression-estimator-title">
       <h3 id="context-compression-estimator-title" className={css.autoCompactTitle}>{t('estimator.title')}</h3>
@@ -435,42 +456,42 @@ function EstimatorControls({ options, disabled, save, settle, t }: EstimatorCont
           <option value="direct">{t('estimator.mode.direct')}</option>
         </select>
       </label>
-      {mode === '' ? null : (
+      {mode === '' ? null : mode === 'host' ? (
         <>
-          {mode === 'host' ? (
-            hostProviders.length > 0 ? (
-              <>
-                <label className={css.field}>
-                  <span>{t('estimator.provider')}</span>
-                  <select
-                    value={options.estimatorProvider ?? ''}
-                    disabled={disabled}
-                    onChange={(event) => { commit({ estimatorProvider: event.currentTarget.value, estimatorModel: '' }) }}
-                  >
-                    <option value="">{t('estimator.followHost')}</option>
-                    {hostProviders.map(entry => (
-                      <option key={entry.id} value={entry.id}>{entry.name === '' ? entry.id : entry.name}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className={css.field}>
-                  <span>{t('estimator.model')}</span>
-                  <select
-                    value={options.estimatorModel ?? ''}
-                    disabled={disabled}
-                    onChange={(event) => { commit({ estimatorModel: event.currentTarget.value }) }}
-                  >
-                    <option value="">{t('estimator.followHost')}</option>
-                    {hostModels.map(entry => (
-                      <option key={entry.id} value={entry.id}>{entry.name}</option>
-                    ))}
-                  </select>
-                </label>
-                {hostProvider?.error === undefined ? null : (
-                  <p className={css.customNote}>{String(hostProvider.error)}</p>
-                )}
-              </>
-            ) : (
+          {hostProviders.length > 0 ? (
+            <>
+              <label className={css.field}>
+                <span>{t('estimator.provider')}</span>
+                <select
+                  value={options.estimatorProvider ?? ''}
+                  disabled={disabled}
+                  onChange={(event) => { commit({ estimatorProvider: event.currentTarget.value, estimatorModel: '' }) }}
+                >
+                  <option value="">{t('estimator.followHost')}</option>
+                  {hostProviders.map(entry => (
+                    <option key={entry.id} value={entry.id}>{entry.name === '' ? entry.id : entry.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className={css.field}>
+                <span>{t('estimator.model')}</span>
+                <select
+                  value={options.estimatorModel ?? ''}
+                  disabled={disabled}
+                  onChange={(event) => { commit({ estimatorModel: event.currentTarget.value }) }}
+                >
+                  <option value="">{t('estimator.followHost')}</option>
+                  {hostModels.map(entry => (
+                    <option key={entry.id} value={entry.id}>{entry.name}</option>
+                  ))}
+                </select>
+              </label>
+              {hostProvider?.error === undefined ? null : (
+                <p className={css.customNote}>{String(hostProvider.error)}</p>
+              )}
+            </>
+          ) : (
+            <>
               <label className={css.field}>
                 <span>{t('estimator.provider')}</span>
                 <input
@@ -482,20 +503,34 @@ function EstimatorControls({ options, disabled, save, settle, t }: EstimatorCont
                   onBlur={() => { if (provider !== (options.estimatorProvider ?? '')) commit({ estimatorProvider: provider }) }}
                 />
               </label>
-            )
-          ) : (
-            <label className={css.field}>
-              <span>{t('estimator.baseUrl')}</span>
-              <input
-                type="text"
-                value={baseUrl}
-                disabled={disabled}
-                placeholder="https://127.0.0.1:8000/v1"
-                onChange={(event) => { setBaseUrl(event.currentTarget.value) }}
-                onBlur={() => { if (baseUrl !== (options.estimatorBaseUrl ?? '')) commit({ estimatorBaseUrl: baseUrl }) }}
-              />
-            </label>
+              <label className={css.field}>
+                <span>{t('estimator.model')}</span>
+                <input
+                  type="text"
+                  value={model}
+                  disabled={disabled}
+                  onChange={(event) => { setModel(event.currentTarget.value) }}
+                  onBlur={() => { if (model !== (options.estimatorModel ?? '')) commit({ estimatorModel: model }) }}
+                />
+              </label>
+            </>
           )}
+          <p className={css.customNote}>{t('estimator.hostReuse')}</p>
+          <p className={css.customNote}>{t('estimator.hostRoute').replace('{route}', effectiveRoute)}</p>
+        </>
+      ) : (
+        <>
+          <label className={css.field}>
+            <span>{t('estimator.baseUrl')}</span>
+            <input
+              type="text"
+              value={baseUrl}
+              disabled={disabled}
+              placeholder="https://127.0.0.1:8000/v1"
+              onChange={(event) => { setBaseUrl(event.currentTarget.value) }}
+              onBlur={() => { if (baseUrl !== (options.estimatorBaseUrl ?? '')) commit({ estimatorBaseUrl: baseUrl }) }}
+            />
+          </label>
           <label className={css.field}>
             <span>{t('estimator.model')}</span>
             <input

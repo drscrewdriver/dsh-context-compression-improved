@@ -25,6 +25,12 @@ All notable changes use this file. The project follows semantic versioning after
 - Added an ESLint flat-config baseline (`pnpm lint`, enforced in CI) and a `pnpm test:watch` TDD loop; removed dead imports and hardened two error paths surfaced by the lint baseline.
 - This repository is now maintained as an improved fork of `WilliamShi666/dsh-context-compression-selector`; documentation ships in English, Simplified Chinese, Japanese, and Korean.
 
+### Fixed
+
+- The estimator card no longer demands an API key on the Harness host channel. Selecting the host channel shows the live provider/model dropdowns, names the route that would actually run (explicit override, else the session default), and renders neither a key field nor a second manual model input: the base URL, the model text field, and the write-only key belong to the direct endpoint channel alone.
+- `presetOptions` writes preserve their siblings. `settingsScope.set('presetOptions', patch)` replaces the whole section, so touching any second estimator field (a provider, a model, an endpoint) deleted `estimatorMode` and every other override — silently switching the estimator back off while the panel still reported a successful save. The patch is now merged over the stored section, `undefined` clears exactly the field it names, an unchanged patch writes nothing, and the confirmation read compares the same fields instead of the channel alone.
+- New coverage: `packages/selector/tests/preset-options-write.client.spec.ts` (merged writes, sibling preservation, explicit clears, no-op patches, uncommitted-write reporting) and `packages/selector/tests/estimator-channel.client.spec.tsx` (per-channel fields, catalog dropdowns, manual fallback).
+
 ## 0.1.0 - 2026-09-03
 
 ### Added
