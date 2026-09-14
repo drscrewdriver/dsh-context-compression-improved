@@ -60,6 +60,7 @@ const DEFAULT_CUSTOM = {
 const t = (key: string) => en[key as keyof typeof en] ?? key
 
 const PROVIDER_LABEL = 'Provider'
+const CHANNEL_LABEL = 'Channel'
 const MODEL_LABEL = 'Model'
 const API_KEY_LABEL = 'API key (write-only, never echoed)'
 const BASE_URL_LABEL = 'Endpoint base URL (/v1)'
@@ -79,12 +80,12 @@ const CATALOG = {
 
 function mountEstimator(
   presetOptions: ContextCompressionSettings['presetOptions'],
-  options: { readonly catalog?: unknown } = {},
+  options: { readonly catalog?: unknown, readonly profile?: ContextCompressionSettings['profile'] } = {},
 ) {
   const state = createSnapshotStore({
     status: 'ready' as const,
     value: {
-      profile: 'tokenpilot-inspired' as const,
+      profile: options.profile ?? ('tokenpilot-inspired' as const),
       custom: structuredClone(DEFAULT_CUSTOM),
       autoCompact: { thresholdPercent: 80 },
       codeSkeleton: { enabled: false },
@@ -216,5 +217,31 @@ describe('estimator channel card', () => {
     expect(screen.queryByLabelText(API_KEY_LABEL)).toBeNull()
     expect(screen.queryByLabelText(BASE_URL_LABEL)).toBeNull()
     expect(screen.queryByLabelText(PROVIDER_LABEL)).toBeNull()
+  })
+
+  // Regression guard for the first real-machine report: the card used to render
+  // nothing at all off tokenpilot-inspired, which reads as a missing feature.
+  it('keeps the estimator section, and names the unlocking profile, off tokenpilot-inspired', () => {
+    mountEstimator({}, { profile: 'balanced' })
+
+    // The heading and its stable anchor survive, so the panel is still findable
+    // where the reader last saw it.
+    expect(document.getElementById('context-compression-estimator-title')?.textContent)
+      .toBe('Estimator (optional)')
+    // The notice names the current profile and the profile that unlocks the card.
+    const notice = screen.getByText(/ships only with the TokenPilot-inspired profile/)
+    expect(notice.textContent).toContain('“Balanced”')
+    expect(notice.textContent).toContain('Select TokenPilot-inspired')
+    // Gating semantics are unchanged: no channel control exists here.
+    expect(screen.queryByLabelText(CHANNEL_LABEL)).toBeNull()
+    expect(screen.queryByLabelText(PROVIDER_LABEL)).toBeNull()
+    expect(screen.queryByLabelText(API_KEY_LABEL)).toBeNull()
+    expect(document.querySelectorAll('input[list]').length).toBe(0)
+  })
+
+  it('drops the inactive notice once tokenpilot-inspired owns the selector', () => {
+    mountEstimator({})
+    expect(screen.queryByText(/ships only with the TokenPilot-inspired profile/)).toBeNull()
+    expect(screen.getByLabelText(CHANNEL_LABEL)).not.toBeNull()
   })
 })

@@ -10,6 +10,10 @@ recorded here is expected to be *re-checked*, not re-discovered.
 - One entry must contain: symptom / root cause / evidence / affected surface / fix / verification.
 - Evidence means a command and its observed output, not a description of the code.
 
+Defects that ship to the **settings surface** rather than the boot path use the `U#` series and
+keep the same six-part shape. They are recorded here because they are reported the same way —
+from a real machine, by someone who cannot tell a gate from a bug.
+
 ---
 
 ## D1 — Host plugin entry statically imports a sibling package
@@ -292,6 +296,106 @@ the same signature.
 
 ---
 
+## D7 — The estimator catalog route never registered: a detached method lost `this`
+
+**Symptom.** The settings card's host-route dropdowns stayed empty. An authenticated
+`GET /api/dsh-context-compression-improved/estimator-catalog` answered 404 while a sibling
+plugin's `/api/dsh-perm-gate/receiver` answered 200 in the same breath.
+
+**Root cause.** `asWebServer` duck-typed the `webServer` service by pulling `register` off it
+and returning a fresh wrapper:
+
+```ts
+const register = value?.register
+return { register }          // `this` is now the wrapper
+```
+
+`dsh-host-webserver`'s `register` reads its own route tables:
+
+```js
+const table = route.kind === "exact" ? this.exact : this.prefixes;
+if (table.has(route.path)) …        // L178 — `table` is undefined, TypeError
+```
+
+`this` was the wrapper, so `this.exact` / `this.prefixes` were `undefined`, the host threw
+inside `register`, and the plugin's catch-all swallowed it. **The helper had never once
+registered a route since it was written.**
+
+**Why it stayed invisible.** On the 0.1.2 host the `dsh web` terminal prints no plugin
+`ctx.logger` output at all — a full boot produced 1350 bytes containing only Node's
+experimental warning and two `dsh web:` lines — and a plugin-load failure travels the same
+logger. A swallowed throw and a plugin that quietly did nothing were observationally
+identical. Once the diagnostic moved to `console` (as `dsh-perm-gate` already does on this
+host), the real frame appeared:
+
+```
+TypeError: Cannot read properties of undefined (reading 'has')
+    at Object.register (dsh-host-webserver/lib/index.js:178:13)
+    at Object.apply (cordis/lib/index.js:120:36)
+```
+
+**Fix.** `return value as WebServerLike` — pass the service itself; `dsh-perm-gate` works
+for exactly this reason.
+
+**Verification.** Cordis does **not** bind service methods: on a bare `Context`, both a
+detached call and a wrapped one lose `this`. On the real host, after installing this fix,
+`/api/dsh-context-compression-improved/estimator-catalog` answers **200** with a full
+catalog (four provider groups), `/endpoint/…` answers 200, perm-gate stays 200, and a
+garbage path stays 401.
+
+**Guard.** `packages/selector/tests/estimator-route-registration.host.spec.ts` now mounts a
+stand-in whose `register` reads its tables off `this`, mirroring the host. Against the
+previous implementation it fails **3 of 5** cases with `expected [] to deeply equal […]` —
+the same empty route table the host exhibited. The earlier version of that stand-in recorded
+routes in a closure, so it could never have caught this.
+
+**Withdrawn hypotheses.** Everything this ledger recorded before the fix about the cause —
+narrowing the injection gate, isolation scope, and moving to the `connection` service — was
+a false trail produced by the silence. Two of them are worth keeping as *non*-causes:
+isolation is opt-in and this row never opted in, and `connection.rpc` is the wrong transport
+here for reasons the project's own `upgrade-pitfalls` §2.1 records independently.
+
+---
+
+## U1 — The estimator card vanished off TokenPilot-inspired instead of explaining its gate
+
+**Symptom.** With any profile other than TokenPilot-inspired selected, the Settings page showed
+no estimator section at all. A reader who had configured nothing could not tell whether the
+feature was missing, broken, or gated — the first real-machine report of Defect A was exactly
+this, and it was filed alongside D7 even though the two have nothing in common.
+
+**Root cause.** The render was `current !== 'tokenpilot-inspired' ? null : <EstimatorControls …/>`.
+The condition is right: `runtime/config.ts` merges `presetOptions` over the tokenpilot-inspired
+defaults alone (`mergePresetOptions`), and `resolvePolicy(config, 'balanced').presetOptions` is
+`undefined`, so no other profile can carry an estimator channel. What was wrong is that the gate
+was *rendered as nothing*. The profile card that unlocks the section sits elsewhere on the page,
+and the one element that would have named it was the section being hidden — a gate the reader
+cannot see is indistinguishable from an absent feature.
+
+**Fix.** Render `EstimatorInactiveNotice` in place of the controls: same `<section>`, same
+`#context-compression-estimator-title` heading anchor, one paragraph naming the current profile
+and the profile that unlocks the card. Losing the heading was half the defect, so the heading
+stays. **The gate is unchanged** — no estimator control exists off TokenPilot-inspired, and no
+other profile gains `presetOptions`.
+
+**Evidence.** `packages/selector/tests/estimator-channel.client.spec.tsx` mounts the section with
+`profile: 'balanced'` and asserts the anchor still reads `Estimator (optional)`, that the notice
+contains the current profile label and `Select TokenPilot-inspired`, and that no channel select,
+no provider input and no `input[list]` exist. Counter-proof: substituting `null` for the notice
+turns that case red (`expected undefined to be 'Estimator (optional)'`) while the other six stay
+green — the guard fails against the pre-fix behaviour, so it is not vacuous.
+
+**Affected surface.** Client bundle only: `src/client/CompressionProfileSelector.tsx`,
+`src/client/locales.ts` (both dictionaries; `en` satisfies the full key set), `lib/client.js`,
+`lib/client.d.ts`. No runtime, config, or persistence change, and no change to
+`presetOptions` semantics.
+
+**Still open.** The save affordance remains unexplained in the UI — fields commit on change or
+blur with only a transient busy state, so "did that save?" has no answer on screen. That is a
+separate, larger change (explicit save button plus three-state feedback) and is not fixed here.
+
+---
+
 ## Verification ledger — `feat/ctx-preset-v2` closure
 
 Closure = `935d501` + the root-`exports` completion (`./invariant`). The working tree held
@@ -399,6 +503,20 @@ The merged package keeps **one** invariant companion, and it is the runtime's: `
 | any future single-package release | structurally impossible | — | **permanent gate** | — | inherits D3 |
 | every branch on this host | — | — | — | — | was **blocked by D6**; the profile install now completes, so real-machine verification is unblocked |
 
+### D7 per branch — the fix must travel one way only
+
+`asWebServer` has two different bodies across the branches, and they are not equivalent:
+
+| Branch | `asWebServer` returns | Verdict |
+| --- | --- | --- |
+| `compat/0.1.5` @ `d7c592d` | `value as WebServerLike` — the service itself | **correct; never had D7** |
+| `feat/ctx-preset-v2` @ `e588f1c`, `ts/0.1.2+` @ `0eb5183` | `{ register }` — a detached method | **carries D7** |
+| `baseline/pre-god-module-split`, `main` @ `e337bf5` | no such helper | n/a |
+
+The defect was introduced on the V2 line, not inherited from the 0.1.x line. That inverts the
+usual direction of these hand-offs: **the 0.1.5 replay must not copy this helper out of
+`feat/ctx-preset-v2`.** Take `compat`'s body, or the fixed one from `00afcfc`; they agree.
+
 ## Inheritance rules
 
 1. **The root manifest is the install contract**: `name`, `main`, `types`, `exports`,
@@ -416,6 +534,16 @@ The merged package keeps **one** invariant companion, and it is the runtime's: `
 5. **Profile-side hygiene**: install spec that actually resolves, no dead `overrides`. And
    before trusting any profile-side install result: reconcile dependencies **with the host
    stopped**, and test a directory's write right — never its owner (D6).
+6. **Never detach a method off a host service.** Duck typing that returns `{ register }`
+   instead of the service loses `this`, and `dsh-host-webserver.register` reads its route
+   tables off `this`. Pass the service object itself; `dsh-perm-gate` does, which is why it
+   serves its routes. The same trap applies to any service whose methods touch instance
+   state, so check the contract before narrowing a service to a single method (D7).
+7. **A conditional the user cannot see is a defect, not a design.** If a section renders only
+   under some profile, mode, or capability, the hidden branch must say what is missing and what
+   would restore it — and keep its heading and anchor id so the panel is still findable where
+   the reader last saw it. Gating *semantics* are not what is on trial here; hiding the *reason*
+   is (U1).
 
 ## Change log
 
@@ -425,3 +553,5 @@ The merged package keeps **one** invariant companion, and it is the runtime's: `
 | 2026-09-14 | D2 | `./invariant` added to the root `exports`; root and package manifests now agree. Ten-gate closure ledger added, with the gate-5 flakiness evidence and the withdrawn identity-hash criterion |
 | 2026-09-14 | D6 | Profile dependency-reconciliation blocker diagnosed: two independent `os error 5` sources (one ACL-denied directory; mapped native modules held by the live host), plus the ownership-vs-write-right criterion warning. Delivered as a dry-runnable script |
 | 2026-09-15 | D6 | **Resolved.** One plain `pnpm install` in the profile converged (`+256 -16`, exit 0); the lockfile repointed itself and the `_pacquet-stage_` residue is gone. Cleared by convergence over successive attempts, not by the ACL repair — the `katex` denial stays on record |
+| 2026-09-15 | D7 | **The estimator catalog route had never registered at all.** `asWebServer` detached `register` from the service, `this` became the wrapper, the host threw inside `register`, and a catch-all swallowed it. Fixed by passing the service itself; 200 verified on the real host; the injection, isolation and transport hypotheses recorded earlier are withdrawn |
+| 2026-09-15 | U1 | **The estimator card was hidden by its own gate.** Off TokenPilot-inspired the section rendered `null`, so the reader saw a missing feature rather than a gated one. The heading and anchor are now kept and the hidden branch names the profile that unlocks the card; the gate itself is unchanged. Guard added with a counter-proof; the save-affordance question stays open |
