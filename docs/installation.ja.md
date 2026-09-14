@@ -2,7 +2,9 @@
 
 > [English](installation.md) · [中文](installation.zh.md) · [日本語](installation.ja.md) · [한국어](installation.ko.md)
 
-このガイドでは、ソースからフォークをインストールします。フォークはまだ npm に公開されておらず、内部パッケージ名は意図的にアップストリームと同一です（`dsh-context-compression-improved` と、その正確なバージョン依�?`dsh-context-compression-improved-runtime`）�?
+このガイドではソースからフォークをインストールします。フォークはまだ npm に公開されておらず、
+パッケージ名は意図的に上流と同一です（`dsh-context-compression-improved` の単一パッケージで、
+以前は別パッケージだった runtime も同梱されます）。
 
 ## 前提条件
 

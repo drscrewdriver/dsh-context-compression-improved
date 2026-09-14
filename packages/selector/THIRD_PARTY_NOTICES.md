@@ -24,7 +24,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-The separately installed `dsh-context-compression-improved-runtime` dependency carries the official DeepSeek tokenizer assets and their exact license/provenance manifest.
+This package carries the official DeepSeek tokenizer assets, with their exact license and
+provenance manifests, under `assets/`.
 
 This package depends on `js-yaml` under MIT; its production dependency `argparse` is licensed under Python-2.0. Their NPM packages carry the dependency license texts.
 

@@ -9,7 +9,12 @@ dsh plugin --profile web add dsh-context-compression-improved@latest
 dsh --profile web --dump-config
 ```
 
-This one command automatically installs the exact `dsh-context-compression-improved-runtime` dependency. The Bundle contributes Host settings, the Web UI, and a reversible preset overlay. All presets except the exact built-in `minimal` id receive the compression stack; switching non-Minimal presets preserves the saved selector settings. Minimal pauses plugin compression without deleting the setting.
+This one command installs the single `dsh-context-compression-improved` package: the compression
+runtime, the Host settings, the Web UI and the reversible preset overlay all ship in it.
+The Bundle contributes Host settings, the Web UI, and a reversible preset overlay. All presets
+except the exact built-in `minimal` id receive the compression stack; switching non-Minimal
+presets preserves the saved selector settings. Minimal pauses plugin compression without
+deleting the setting.
 
 Verified compatibility: DeepSeek Harness `dsh-v0.1.1-rc.2` and `dsh-v0.1.2-alpha.5`, Node `^22.19.0 || >=24`. No Harness core patch is required.
 
