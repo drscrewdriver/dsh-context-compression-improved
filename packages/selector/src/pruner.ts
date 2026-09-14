@@ -37,6 +37,30 @@ import { installContextCompressionRetrieve } from './runtime/retrieve.ts'
 import type { PrunerState } from './pruner/state.ts'
 import { BS, countOmittedLines, RICH_BLOCK_PRESSURE_COST, CAPACITY_PRESSURE_RATIO } from './pruner/tuning.ts'
 import type { ToolCallInfo, SnapshotCandidate, PlannedReplacement, HistoryPlanOutcome } from './pruner/types.ts'
+import {
+  onlyTextBlock,
+  onlyTextBlocks,
+  countToolContent,
+  exactTokens,
+  sameProviderMeasurementKey,
+  unavailableCount,
+  recoveryMarker,
+  summarize,
+  emptyResult,
+  measureContent,
+  pressureCost,
+  nativePruneContent,
+} from './pruner/content.ts'
+import {
+  hasOpenTurn,
+  rootToolResultSeq,
+  sourceRef as sourceRefFn,
+  latestCompletedToolStep,
+  routeAuditFact,
+  tokenizerAuditFact,
+  isError,
+  historyOutcome,
+} from './pruner/session.ts'
 import { buildLocatorBlock, findCompactionTrace } from './runtime/tokenpilot/locator.ts'
 import { clusterOmittedLines, isSupersededRead, toolCallPath } from './runtime/tokenpilot/read-state.ts'
 import {
@@ -261,7 +285,7 @@ export class ToolResultPruner extends Service {
     ctx.on('agent/turn-stopping', ({ agent, turn, signal }) => {
       if (signal.aborted) return
       try {
-        const step = this.latestCompletedToolStep(agent.session, turn)
+        const step = latestCompletedToolStep(agent.session, turn)
         if (step !== undefined) this.runRequestBoundary(agent.session, turn, step, signal)
       } catch (error: unknown) {
         this.auditFailure(agent.session, 'fresh', 'terminal-pass', error)
@@ -274,53 +298,12 @@ export class ToolResultPruner extends Service {
   }
 
   /**
-   * Measure text content in Unicode code points; non-text blocks cost zero.
-   * @param blocks - tool-result content to measure.
-   * @returns total Unicode code points across text blocks.
-   */
-  measureContent(blocks: readonly ContentBlock[]): number {
-    let chars = 0
-    for (const block of blocks) {
-      if (block.type === 'text') chars += codePointLength(block.text)
-    }
-    return chars
-  }
-
-  private pressureCost(blocks: readonly ContentBlock[]): number {
-    let cost = 0
-    for (const block of blocks) {
-      switch (block.type) {
-        case 'text':
-        case 'reasoning':
-          cost += codePointLength(block.text)
-          break
-        case 'tool-call':
-          cost += RICH_BLOCK_PRESSURE_COST
-            + codePointLength(block.name)
-            + codePointLength(block.arguments)
-          break
-        case 'tool-result':
-          cost += RICH_BLOCK_PRESSURE_COST + this.pressureCost(block.content)
-          break
-        default: {
-          // ContentBlockMap is merge-extensible. Unknown model-visible blocks
-          // scale with their durable JSON payload instead of receiving a fixed
-          // token that a large provider block could bypass.
-          const serialized = JSON.stringify(block)
-          cost += Math.max(RICH_BLOCK_PRESSURE_COST, codePointLength(serialized))
-        }
-      }
-    }
-    return cost
-  }
-
-  /**
    * Apply the configured native head/middle/tail transform.
    * @param blocks - original tool-result content.
    * @returns reduced content, or `null` when no reduction is required.
    */
   pruneContent(blocks: readonly ContentBlock[]): ContentBlock[] | null {
-    return this.nativePruneContent(
+    return nativePruneContent(
       blocks,
       this.state.config.headChars + codePointLength(PRUNE_MARKER) + this.state.config.tailChars,
       this.state.config.headChars,
@@ -631,7 +614,7 @@ export class ToolResultPruner extends Service {
       )
       // Route changes must produce a fresh audit record even when the policy
       // object is unchanged, or the dedupe would hide a mid-session reroute.
-      const route = this.routeAuditFact(session)
+      const route = routeAuditFact(session)
       const auditKey = JSON.stringify({
         policy,
         contextWindowTokens: contextWindowTokens ?? null,
@@ -666,7 +649,7 @@ export class ToolResultPruner extends Service {
                   : policy.microDeadlineTokens === undefined ? 'fixed-preset' : 'auto-compact-linked',
           },
           ...route === undefined ? {} : { route },
-          ...route === undefined ? {} : this.tokenizerAuditFact(route),
+          ...route === undefined ? {} : tokenizerAuditFact(route),
         })
       }
       return policy
@@ -683,24 +666,7 @@ export class ToolResultPruner extends Service {
     }
   }
 
-  /** Routed provider/model when the durable request header names one route. */
-  private routeAuditFact(session: Session): { provider: string, model: string } | undefined {
-    const header = session.requestHeader()?.config
-    if (header === undefined || header.provider.length === 0 || header.model.length === 0) return undefined
-    return { provider: header.provider, model: header.model }
-  }
 
-  /** Bundled tokenizer identity for one route, when the route is eligible. */
-  private tokenizerAuditFact(route: { provider: string, model: string }): { tokenizer: { repository: string, revision: string } } {
-    // Reuse the measurement eligibility boundary: a DeepSeek model id routed
-    // through another provider never used the bundled tokenizer.
-    const eligible = route.provider === 'deepseek' || route.provider === 'deepseek-official'
-    const identity = eligible ? deepSeekV4TokenizerForModel(route.model)?.countText('') : undefined
-    if (identity?.kind === 'exact-tokenizer') {
-      return { tokenizer: { repository: identity.tokenizerId, revision: identity.tokenizerRevision } }
-    }
-    return { tokenizer: { repository: 'unavailable', revision: 'unavailable' } }
-  }
 
   private contextWindowForRequest(
     session: Session,
@@ -965,14 +931,6 @@ export class ToolResultPruner extends Service {
     })
   }
 
-  private latestCompletedToolStep(session: Session, turn: number): number | undefined {
-    let latest: number | undefined
-    for (const event of sessionEvents(session)) {
-      if (event.type === 'step/end' && event.data.turn === turn) latest = event.data.step
-    }
-    return latest
-  }
-
   private decisions(session: Session): Set<number> {
     let decisions = this.state.firstExposure.get(session)
     if (decisions === undefined) {
@@ -1076,7 +1034,7 @@ export class ToolResultPruner extends Service {
       if (aggregateAvailable && total > policy.aggregateTriggerTokens) {
         const remaining = candidates
           .filter(candidate => !this.isRecoveryExempt(session, candidate))
-          .sort((a, b) => Number(this.isError(a)) - Number(this.isError(b))
+          .sort((a, b) => Number(isError(a)) - Number(isError(b))
             || (plans.get(b.seq)?.tokensAfter ?? exactTokens(b.count) ?? 0)
               - (plans.get(a.seq)?.tokensAfter ?? exactTokens(a.count) ?? 0))
         for (const candidate of remaining) {
@@ -1166,7 +1124,7 @@ export class ToolResultPruner extends Service {
           ? unavailableCount(`surface node ${String(seq)} contains unsupported rich tool-result content`)
           : measured.get(seq) ?? unavailableCount(`surface node ${String(seq)} is absent from the atomic token view`),
         shadowedHeuristicTokenCount,
-        characterPressure: this.pressureCost(content),
+        characterPressure: pressureCost(content),
       })
     }
     return candidates
@@ -1184,13 +1142,13 @@ export class ToolResultPruner extends Service {
     if (tokensBefore === undefined || tokensBefore <= policy.nativeTriggerTokens) return null
     const result = candidate.event.data.message.content[0]
     if (onlyTextBlocks(result.content) === null) return null
-    const sourceSeq = this.rootToolResultSeq(session, candidate.seq)
-    const marker = recoveryMarker(this.sourceRef(session, sourceSeq), 'tool result middle pruned')
+    const sourceSeq = rootToolResultSeq(session, candidate.seq)
+    const marker = recoveryMarker(sourceRefFn(session, sourceSeq), 'tool result middle pruned')
     let head = this.state.config.headChars
     let tail = this.state.config.tailChars
     for (let attempt = 0; attempt < 10; attempt += 1) {
       const threshold = head + codePointLength(marker) + tail
-      const content = this.nativePruneContent(result.content, threshold, head, tail, marker)
+      const content = nativePruneContent(result.content, threshold, head, tail, marker)
       if (content !== null) {
         const plan = this.plan(
           candidate,
@@ -1263,7 +1221,7 @@ export class ToolResultPruner extends Service {
     if (entry === undefined) {
       table.record(hash, {
         seq: candidate.seq,
-        sourceRef: this.sourceRef(session, candidate.seq),
+        sourceRef: sourceRefFn(session, candidate.seq),
         toolName: candidate.call.name,
         originalChars: codePointLength(text),
       })
@@ -1285,7 +1243,7 @@ export class ToolResultPruner extends Service {
     const tokensBefore = exactTokens(candidate.count)
     if (tokensBefore === undefined || tokensBefore <= policy.freshTriggerTokens) return null
     const sourceSeq = candidate.seq
-    const sourceRef = this.sourceRef(session, sourceSeq)
+    const sourceRef = sourceRefFn(session, sourceSeq)
     const textBlock = onlyTextBlock(result.content)
     if (textBlock !== null) {
       let budgetChars = Math.max(1, Math.floor(codePointLength(textBlock.text) * 0.75))
@@ -1340,7 +1298,7 @@ export class ToolResultPruner extends Service {
     component: CompressionAuditComponent = 'aggregate',
     historyMode?: HistoryMode,
   ): PlannedReplacement | null {
-    if (this.isError(candidate)) {
+    if (isError(candidate)) {
       return this.planErrorEvidence(
         candidate,
         session,
@@ -1351,8 +1309,8 @@ export class ToolResultPruner extends Service {
         historyMode,
       )
     }
-    const sourceSeq = this.rootToolResultSeq(session, candidate.seq)
-    const sourceRef = this.sourceRef(session, sourceSeq)
+    const sourceSeq = rootToolResultSeq(session, candidate.seq)
+    const sourceRef = sourceRefFn(session, sourceSeq)
     const text = [
       '[Tool result reduced to satisfy the completed-step aggregate budget]',
       `tool: ${candidate.call.name}`,
@@ -1384,13 +1342,13 @@ export class ToolResultPruner extends Service {
     component: CompressionAuditComponent = 'aggregate',
     historyMode?: HistoryMode,
   ): PlannedReplacement | null {
-    if (!this.isError(candidate)) return null
+    if (!isError(candidate)) return null
     const result = candidate.event.data.message.content[0]
     const blocks = onlyTextBlocks(result.content)
     if (blocks === null) return null
     const text = blocks.map(block => block.text).join('\n')
-    const sourceSeq = this.rootToolResultSeq(session, candidate.seq)
-    const sourceRef = this.sourceRef(session, sourceSeq)
+    const sourceSeq = rootToolResultSeq(session, candidate.seq)
+    const sourceRef = sourceRefFn(session, sourceSeq)
     const output = historicalPlaceholder({
       toolName: candidate.call.name,
       sourceRef,
@@ -1421,15 +1379,6 @@ export class ToolResultPruner extends Service {
     return plan !== null && (targetTokens === undefined || plan.tokensAfter <= targetTokens)
       ? plan
       : null
-  }
-
-  private isError(candidate: SnapshotCandidate): boolean {
-    const result = candidate.event.data.message.content[0]
-    return result.isError === true || candidate.event.data.error !== undefined
-  }
-
-  private historyOutcome(plans: readonly PlannedReplacement[]): HistoryPlanOutcome {
-    return { kind: 'planned', plans: [...plans] }
   }
 
   private planHistoricalAging(
@@ -1518,7 +1467,7 @@ export class ToolResultPruner extends Service {
           continue
         }
       }
-      const sourceSeq = this.rootToolResultSeq(session, candidate.seq)
+      const sourceSeq = rootToolResultSeq(session, candidate.seq)
       if (block === null) {
         const plan = this.planAggregate(
           candidate,
@@ -1538,7 +1487,7 @@ export class ToolResultPruner extends Service {
       }
       const output = historicalPlaceholder({
         toolName: candidate.call.name,
-        sourceRef: this.sourceRef(session, sourceSeq),
+        sourceRef: sourceRefFn(session, sourceSeq),
         charsBefore: codePointLength(block.text),
         isError: result.isError === true || candidate.event.data.error !== undefined,
         text: block.text,
@@ -1549,7 +1498,7 @@ export class ToolResultPruner extends Service {
         argumentsText: candidate.call.arguments,
         text: block.text,
         budgetChars: 1_200,
-        sourceRef: this.sourceRef(session, sourceSeq),
+        sourceRef: sourceRefFn(session, sourceSeq),
         isError: result.isError === true || candidate.event.data.error !== undefined,
       }
       if (!verifyReduction(verifyInput, output)) continue
@@ -1580,7 +1529,7 @@ export class ToolResultPruner extends Service {
     }
     // Linked batches must reach the deadline target; unlinked batches keep
     // the traditional minimum-reclaim commit threshold.
-    if (reclaim >= batchTarget && planned.length > 0) return this.historyOutcome(planned)
+    if (reclaim >= batchTarget && planned.length > 0) return historyOutcome(planned)
     return lastChance
       ? { kind: 'cannot-reach-deadline-target', reclaim, required }
       : { kind: 'insufficient-reclaim', reclaim, required }
@@ -1653,7 +1602,7 @@ export class ToolResultPruner extends Service {
         })
       return
     }
-    if (!this.hasOpenTurn(session)) {
+    if (!hasOpenTurn(session)) {
       this.auditComponent(session, policy, 'tail-trim', 'pressure', 'skipped',
         'no-open-turn', {
           measurementKind: 'exact-tokenizer',
@@ -1876,7 +1825,7 @@ export class ToolResultPruner extends Service {
       }
     }
     const charsBefore = candidate.characterPressure
-    const charsAfter = this.pressureCost(content)
+    const charsAfter = pressureCost(content)
     return {
       candidate,
       content,
@@ -1968,7 +1917,7 @@ export class ToolResultPruner extends Service {
       )
       return []
     }
-    if (!this.hasOpenTurn(session)) {
+    if (!hasOpenTurn(session)) {
       throw new Error('tool-result pruning cannot append a surface replacement outside any open turn')
     }
     const landed: PrunedEntry[] = []
@@ -2184,130 +2133,6 @@ export class ToolResultPruner extends Service {
     this.ctx.logger.warn(message, ...args)
   }
 
-  /** Surface replacements are durable turn work; reject before writing the audit half. */
-  private hasOpenTurn(session: Session): boolean {
-    let open = false
-    for (const event of sessionEvents(session)) {
-      if (event.type === 'turn/start') open = true
-      else if (event.type === 'turn/end') open = false
-    }
-    return open
-  }
-
-  private rootToolResultSeq(session: Session, seq: number): number {
-    const events = sessionEvents(session)
-    let current = seq
-    const seen = new Set<number>()
-    while (!seen.has(current)) {
-      seen.add(current)
-      const event = events[current]
-      if (event?.type !== 'tool/result' || typeof event.surfaceOp !== 'object') return current
-      const previous = event.sourceEventSeqs?.[0]
-      if (previous === undefined) return current
-      current = previous
-    }
-    return seq
-  }
-
-  private sourceRef(session: Session, seq: number): string {
-    return `session://${session.id}/event/${String(seq)}`
-  }
-
-  private nativePruneContent(
-    blocks: readonly ContentBlock[],
-    thresholdChars: number,
-    headChars: number,
-    tailChars: number,
-    marker: string = PRUNE_MARKER,
-  ): ContentBlock[] | null {
-    const totalChars = this.measureContent(blocks)
-    if (totalChars <= thresholdChars) return null
-    const markerChars = codePointLength(marker)
-    const safeHead = Math.max(0, Math.min(headChars, thresholdChars - markerChars))
-    const safeTail = Math.max(0, Math.min(tailChars, thresholdChars - markerChars - safeHead))
-    const removedStart = safeHead
-    const removedEnd = totalChars - safeTail
-    const pruned: ContentBlock[] = []
-    let consumed = 0
-    let markerInserted = false
-    for (const block of blocks) {
-      if (block.type !== 'text') {
-        pruned.push(block)
-        continue
-      }
-      const points = Array.from(block.text)
-      const blockStart = consumed
-      const blockEnd = blockStart + points.length
-      const headEnd = Math.min(points.length, Math.max(0, removedStart - blockStart))
-      const tailStart = Math.min(points.length, Math.max(0, removedEnd - blockStart))
-      const intersectsRemoved = blockStart < removedEnd && blockEnd > removedStart
-      const insertion = intersectsRemoved && !markerInserted ? marker : ''
-      if (insertion !== '') markerInserted = true
-      const text = points.slice(0, headEnd).join('') + insertion + points.slice(tailStart).join('')
-      if (text !== '') pruned.push({ ...block, text })
-      consumed = blockEnd
-    }
-    if (!markerInserted) return null
-    const charsAfter = this.measureContent(pruned)
-    return charsAfter <= thresholdChars && charsAfter < totalChars ? pruned : null
-  }
-}
-
-function onlyTextBlock(blocks: readonly ContentBlock[]): Extract<ContentBlock, { type: 'text' }> | null {
-  return blocks.length === 1 && blocks[0]?.type === 'text' ? blocks[0] : null
-}
-
-function onlyTextBlocks(blocks: readonly ContentBlock[]): readonly Extract<ContentBlock, { type: 'text' }>[] | null {
-  return blocks.every((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text')
-    ? blocks
-    : null
-}
-
-function countToolContent(blocks: readonly ContentBlock[], view: CompactionTokenView): TokenCount {
-  const text = onlyTextBlocks(blocks)
-  if (text === null) return unavailableCount('tool result contains unsupported rich content')
-  return countExactCanonicalTextFields(
-    text.map(block => block.text),
-    candidate => view.countCanonicalText(candidate),
-    'tool result replacement',
-  )
-}
-
-function exactTokens(count: TokenCount): number | undefined {
-  return count.kind === 'exact-tokenizer' ? count.tokens : undefined
-}
-
-function sameProviderMeasurementKey(
-  left: Readonly<ProviderMeasurementKey>,
-  right: Readonly<ProviderMeasurementKey>,
-): boolean {
-  return left.provider === right.provider
-    && left.baseUrlClass === right.baseUrlClass
-    && left.apiRoute === right.apiRoute
-    && left.modelId === right.modelId
-    && left.requestTemplateRevision === right.requestTemplateRevision
-    && left.tokenizerRevision === right.tokenizerRevision
-    && left.modality === right.modality
-}
-
-function unavailableCount(reason: string): TokenCount {
-  return Object.freeze({ kind: 'unavailable', reason })
-}
-
-function recoveryMarker(sourceRef: string, label: string): string {
-  return `\n\n[... ${label}; source=${sourceRef}; use context_compression_retrieve if needed ...]\n\n`
-}
-
-function summarize(entries: readonly PrunedEntry[]): PruneResult {
-  return {
-    pruned: entries,
-    charsRemoved: entries.reduce((sum, entry) => sum + entry.charsBefore - entry.charsAfter, 0),
-    tokensRemoved: entries.reduce((sum, entry) => sum + entry.tokensBefore - entry.tokensAfter, 0),
-  }
-}
-
-function emptyResult(): PruneResult {
-  return { pruned: [], charsRemoved: 0, tokensRemoved: 0 }
 }
 
 export default ToolResultPruner

@@ -584,13 +584,6 @@ declare class ToolResultPruner extends Service {
   readonly state: PrunerState;
   constructor(ctx: Context, config?: ToolResultPruneConfig);
   /**
-   * Measure text content in Unicode code points; non-text blocks cost zero.
-   * @param blocks - tool-result content to measure.
-   * @returns total Unicode code points across text blocks.
-   */
-  measureContent(blocks: readonly ContentBlock[]): number;
-  private pressureCost;
-  /**
    * Apply the configured native head/middle/tail transform.
    * @param blocks - original tool-result content.
    * @returns reduced content, or `null` when no reduction is required.
@@ -622,10 +615,6 @@ declare class ToolResultPruner extends Service {
    */
   private postflightEstimatorPass;
   private activePolicy;
-  /** Routed provider/model when the durable request header names one route. */
-  private routeAuditFact;
-  /** Bundled tokenizer identity for one route, when the route is eligible. */
-  private tokenizerAuditFact;
   private contextWindowForRequest;
   private runRequestBoundary;
   /** Resolve historical-aging authority without accepting caller-supplied elevation. */
@@ -642,7 +631,6 @@ declare class ToolResultPruner extends Service {
   private logAdaptivePostflight;
   /** Decide one already-planned History batch from adjacent request-level facts only. */
   private adaptiveHistoryAllowed;
-  private latestCompletedToolStep;
   private decisions;
   /**
    * TokenPilot-style skipReduction: recovery tool output is permanently exempt
@@ -667,8 +655,6 @@ declare class ToolResultPruner extends Service {
   private planAggregate;
   /** Preserve bounded diagnostic evidence whenever an all-text error is reduced. */
   private planErrorEvidence;
-  private isError;
-  private historyOutcome;
   private planHistoricalAging;
   private protectedHistoryResultSeqs;
   /** Select the newest completed tool calls and token tail for History-derived stages. */
@@ -687,11 +673,6 @@ declare class ToolResultPruner extends Service {
   private auditPublicationFailure;
   private warnExactUnavailable;
   private warnOnce;
-  /** Surface replacements are durable turn work; reject before writing the audit half. */
-  private hasOpenTurn;
-  private rootToolResultSeq;
-  private sourceRef;
-  private nativePruneContent;
 }
 //#endregion
 export { AUTO_COMPACT_THRESHOLD_LIMITS, type AutoCompactSettings, COMPRESSION_PROFILES, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, type CodeSkeletonSettings, type CompactionTokenView, type CompressionPolicy, type CompressionProfile, type ContextCompressionSettings, ContextCompressionSettingsSchema, type CustomCompressionBudget, type CustomCompressionPolicy, CustomCompressionPolicySchema, type CustomCompressionPolicyV1, type CustomCompressionPolicyV2, type CustomCompressionPolicyV3, type CustomCompressionUnit, type CustomHistoryPolicy, type CustomPolicyResolutionOptions, type CustomPrefixPolicy, type CustomTailTrimPolicy, DEFAULTS, DEFAULT_CUSTOM_COMPRESSION_POLICY, type HistoryMode, type MeasuredTokenSurfaceNode, PRUNE_MARKER, type PruneResult, type PruneSessionOptions, type PruneStage, type PrunedEntry, type ResolvedConfig, type ToolResultPruneConfig, ToolResultPruner, ToolResultPruner as default, codePointLength, historicalPlaceholder, isCompressionProfile, isValidAutoCompactThresholdPercent, measureForCompaction, normalizeTerminalText, parseContextCompressionSettings, reduceFreshToolResult, resolveConfig, resolveCustomPolicy, resolvePolicy, verifyReduction };
