@@ -470,9 +470,14 @@ function asWebServer(value) {
 * Serve `GET /api/dsh-context-compression-improved/estimator-catalog` — the
 * settings card's host-route dropdowns (live provider/model groups from the DSH
 * `llm` service plus the effective selection). This lives on the top-level
-* plugin context, NOT inside the isolated toolResultPruner service: a route
-* registered there can never reach the `webServer` service across the
-* isolation boundary.
+* plugin context, NOT inside the isolated toolResultPruner service.
+*
+* (The isolation reason this placement was originally justified with — "a route
+* registered there can never reach `webServer` across the isolation boundary" —
+* is **unverified**: no `@deepseek-ai` package calls `.isolate(`, so there is no
+* boundary to cross here. Top-level placement is still the right choice, for a
+* reason that needs no framework rule: the route is host-wide, not
+* per-pruner-instance. Don't promote the isolation wording into a rule.)
 *
 * The route gates on `webServer` **alone**. `llm` and `agentDefaultModel` only
 * enrich the response and are resolved per request, so listing them here would
