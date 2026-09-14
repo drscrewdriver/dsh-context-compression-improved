@@ -27,6 +27,11 @@ interface FakeResponse {
   body?: string
 }
 
+/** The state `register` reads off its own `this`, mirroring the host service. */
+interface WebServerStub {
+  tables: { exact: Map<string, RegisteredRoute> }
+}
+
 let ctx: Context | undefined
 
 afterEach(async () => {
@@ -47,10 +52,17 @@ async function mountWebServer(runtime: Context, routes: RegisteredRoute[]): Prom
     name: 'fake-webserver',
     apply(webCtx) {
       webCtx.provide('webServer', {
-        register(route: RegisteredRoute) {
-          if (routes.some(existing => existing.kind === route.kind && existing.path === route.path)) {
+        // Mirrors dsh-host-webserver: `register` reads its route table off
+        // `this`. A caller that detaches the method and invokes it standalone
+        // makes `this` the wrapper and fails here, exactly as the host does --
+        // which is the defect this spec exists to catch.
+        tables: { exact: new Map<string, RegisteredRoute>() },
+        register(this: WebServerStub, route: RegisteredRoute) {
+          const table = this.tables.exact
+          if (table.has(route.path)) {
             throw new Error(`webserver: duplicate ${route.kind} route "${route.path}"`)
           }
+          table.set(route.path, route)
           routes.push(route)
           return () => {}
         },

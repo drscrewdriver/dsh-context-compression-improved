@@ -463,9 +463,8 @@ const ESTIMATOR_CATALOG_ROUTES = ["/endpoint/dsh-context-compression-improved/es
 */
 const ESTIMATOR_CATALOG_ROUTE_DEPS = ["webServer"];
 function asWebServer(value) {
-	const register = value?.register;
-	if (typeof register !== "function") return void 0;
-	return { register };
+	if (typeof value?.register !== "function") return void 0;
+	return value;
 }
 /**
 * Serve `GET /api/dsh-context-compression-improved/estimator-catalog` — the
