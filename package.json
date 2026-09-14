@@ -20,8 +20,7 @@
     "test:e2e:packed": "node scripts/packed-install-e2e.mjs",
     "test:unit": "vitest run",
     "verify:release": "node scripts/verify-release.mjs",
-    "pack:dry-run": "pnpm -r --if-present run pack:dry-run",
-    "prepare": "node -e \"require('fs').accessSync('packages/selector/lib/index.js')\" || pnpm -r --if-present run bundle"
+    "pack:dry-run": "pnpm -r --if-present run pack:dry-run"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.1",
