@@ -11,7 +11,7 @@ import {
   deepSeekV4TokenizerForModel,
 } from '../../src/deepseek-v4-tokenizer.ts'
 
-const RUNTIME_ROOT = new URL('../', import.meta.url)
+const RUNTIME_ROOT = new URL('../../', import.meta.url)
 
 describe('bundled DeepSeek tokenizer artifact registry', () => {
   it('resolves each exact API model id to its pinned artifact identity', () => {
