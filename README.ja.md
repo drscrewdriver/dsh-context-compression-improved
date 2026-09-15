@@ -43,7 +43,7 @@
 
 同じ設定セクションで、圧縮プロファイルの選択、Auto Compact トリガーレベルの調整、コードスケルトン圧縮のトグルが行えます。トグルは変更時に即保存され、再読み込み時には保存済みの状態が表示されます。
 
-![Context Compression Selector 設定 UI](docs/assets/context-compression-selector-settings.png)
+![Context Compression Selector 設定 UI](packages/selector/assets/screenshots/context-compression-selector-settings.png)
 
 ## インストール
 
