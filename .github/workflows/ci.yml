@@ -24,6 +24,12 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm build
+      # scripts/ is compiled to the gitignored scripts-dist/, and nothing above this
+      # point builds it. Without this step verify:release and test:e2e:packed both
+      # die with MODULE_NOT_FOUND on a clean checkout — which is what kept this
+      # workflow red on every push to main while the same gates passed locally,
+      # where scripts-dist/ had been built by hand once.
+      - run: pnpm build:scripts
       - run: pnpm test
       - run: pnpm --filter dsh-context-compression-improved test
       - run: pnpm test:built
