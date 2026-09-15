@@ -8,7 +8,7 @@ This guide installs the fork from source. The fork is not yet published to npm; 
 
 - Node `^22.19.0 || >=24` and pnpm `11.7.0` (`corepack enable` picks the pinned version from `packageManager`).
 - A DeepSeek Harness installation compatible with the `0.1.1-rc.2` peer range (verified against the official `dsh-v0.1.2-alpha.5` release).
-- A DeepSeek V4 model route (`deepseek-v4-flash`, `deepseek-v4-pro`, or `deepseek-v4-flash-vision-exp`). Lossy compression â€?including the code-skeleton gate â€?requires the exact bundled tokenizer; other routes fail open and keep original tool results.
+- A DeepSeek V4 model route (`deepseek-v4-flash`, `deepseek-v4-pro`, or `deepseek-v4-flash-vision-exp`). Lossy compression â€” including the code-skeleton gate â€” requires the exact bundled tokenizer; other routes fail open and keep original tool results.
 - Git.
 
 ## 1. Build from source
@@ -29,7 +29,7 @@ The selector package is the single Bundle entry; the runtime comes along as its 
 ```sh
 cd packages/selector
 pnpm pack
-# â†?dsh-context-compression-improved-0.1.0.tgz
+# â†’ dsh-context-compression-improved-0.1.0.tgz
 cd ../..
 ```
 
@@ -44,17 +44,17 @@ dsh plugin --profile web add packages/selector/dsh-context-compression-improved-
 dsh --profile web --dump-config
 ```
 
-Restart the selected profile after installation. The config dump should list the selector Bundle as active. Do **not** install or wire the selector and runtime packages separately â€?the runtime is installed automatically.
+Restart the selected profile after installation. The config dump should list the selector Bundle as active. Do **not** install or wire the selector and runtime packages separately â€” the runtime is installed automatically.
 
 ## 4. Turn on the code-skeleton gate
 
-Open DeepSeek Harness settings â†?**Context compression selector**:
+Open DeepSeek Harness settings â†’ **Context compression selector**:
 
 1. Pick a compression profile (the gate is orthogonal to all of them).
-2. Optionally adjust the Auto Compact trigger level (50â€?0%, default 80%).
+2. Optionally adjust the Auto Compact trigger level (50â€“90%, default 80%).
 3. Set **Code skeleton compression** to **On**. The toggle saves on change.
 
-Like all selector settings, the value is frozen when a session first observes it â€?the gate affects newly observed sessions, never a task that is already running.
+Like all selector settings, the value is frozen when a session first observes it â€” the gate affects newly observed sessions, never a task that is already running.
 
 ## 5. Update or remove
 
