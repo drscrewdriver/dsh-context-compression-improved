@@ -327,7 +327,7 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
   /**
    * Peers a headless official profile can never provide: pure web-host UI
    * packages supplied by the web app, not the CLI installation. The list is
-   * REVIEWED and exact â€?any OTHER unresolved selector peer fails the gate,
+   * REVIEWED and exact â€” any OTHER unresolved selector peer fails the gate,
    * and every web/client peer is still import-verified from the built
    * client libraries below.
    */
@@ -387,7 +387,7 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
    * the release gate resolves and imports instead. Fail-closed parts: every
    * RUNTIME peer (the engine surface the headless host must provide) and the
    * selector's node entry with a callable apply(). The selector's remaining
-   * unresolved peers must equal the REVIEWED web-only whitelist above â€?
+   * unresolved peers must equal the REVIEWED web-only whitelist above â€”
    * anything else (a newly missing host dependency) fails immediately.
    */
   const provePluginLoads = async () => {
@@ -437,7 +437,7 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
 
   /**
    * Boot the official profile FOR REAL through the CLI's own profile-boot
-   * path â€?not --dump-config, which composes YAML without booting or
+   * path â€” not --dump-config, which composes YAML without booting or
    * executing plugins. The probe mounts the full bundle tree (selector
    * included), then proves: the settings service resolves the registered
    * document (before the upgrade: the previous release's schema defaults;
@@ -602,9 +602,9 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
     added = true
     await run('pnpm', ['install', '--frozen-lockfile', '--ignore-scripts'], { cwd: worktree })
     // A source checkout ships no built artifacts (install above skips
-    // prepare scripts). The boot probes run the REAL web profile â€?
+    // prepare scripts). The boot probes run the REAL web profile â€”
     // dsh-base + dsh-web-app, the only bundle that mounts agent-presets and
-    // therefore the selector's preset overlay â€?so build both library faces
+    // therefore the selector's preset overlay â€” so build both library faces
     // AND the web frontend; the healed profiles/node_modules fallback also
     // symlinks the CLI's own workspace packages.
     await run('pnpm', ['run', 'build'], { cwd: worktree })
@@ -620,7 +620,7 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
 
     // Boot the profile once on the previous release. This asserts the added
     // bundle layer is live before any update and heals
-    // $DSH_HOME/profiles/node_modules â€?the shared-module fallback the
+    // $DSH_HOME/profiles/node_modules â€” the shared-module fallback the
     // plugin's harness peers resolve through in every later raw-node proof.
     const addedDump = await dumpConfig()
     assert(addedDump.includes('context-compression-selector-bundle'),
@@ -1006,7 +1006,7 @@ try {
       candidateVersion,
     )
   } else {
-    // Auto-provision a clean official checkout so the standard add â†?up â†?
+    // Auto-provision a clean official checkout so the standard add â†’ up â†’
     // remove lifecycle runs without manual setup. Release mode fails closed;
     // only dev mode may skip with an explicit marker.
     const cloneRoot = join(artifactRoot, 'official-clone')

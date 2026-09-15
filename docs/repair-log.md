@@ -499,7 +499,7 @@ The merged package keeps **one** invariant companion, and it is the runtime's: `
 | `feat/ctx-preset-v2` @ `455f74f` | **present (crash)** | partial | n/a before merge | needed | affected; D1/D2 fixed on merge branch |
 | merged single package | eliminated | fixed (all four subpaths) | **gated** | delivered | this change |
 | `compat/0.1.5` @ `d7c592d` | no (lazy) | **absent** | n/a | needed | **inherits the whole contract** |
-| `ts/0.1.5` @ `refactor/ts-0.1.5-merge` | no | **fixed by the R3 replay** (root manifest is the install surface, `./pruner` + `./invariant` declared) | **gated** (shared `lib/config.js` chunk added by the replay) | needed (script delivered) | contract inherited; D7 re-checked and the route defect it masked fixed 鈥?see below |
+| `ts/0.1.5` @ `refactor/ts-0.1.5-merge` | no | **fixed by the R3 replay** (root manifest is the install surface, `./pruner` + `./invariant` declared) | **gated** (shared `lib/config.js` chunk added by the replay) | needed (script delivered) | contract inherited; D7 re-checked and the route defect it masked fixed —see below |
 | `baseline/pre-god-module-split`, `main` @ `e337bf5` | no | **absent, no `lib/`** | n/a | needed | not distributable by design |
 | any future single-package release | structurally impossible | — | **permanent gate** | — | inherits D3 |
 | every branch on this host | — | — | — | — | was **blocked by D6**; the profile install now completes, so real-machine verification is unblocked |
@@ -513,13 +513,13 @@ The merged package keeps **one** invariant companion, and it is the runtime's: `
 | `compat/0.1.5` @ `d7c592d` | `value as WebServerLike` — the service itself | **correct; never had D7** |
 | `feat/ctx-preset-v2` @ `e588f1c`, `ts/0.1.2+` @ `0eb5183` | `{ register }` — a detached method | **carries D7** |
 | `baseline/pre-god-module-split`, `main` @ `e337bf5` | no such helper | n/a |
-| `ts/0.1.5` @ `refactor/ts-0.1.5-merge` | `value as WebServerLike` 鈥?the service itself | **correct; never had D7**. The helper was taken from this line, not from the V2 line |
+| `ts/0.1.5` @ `refactor/ts-0.1.5-merge` | `value as WebServerLike` —the service itself | **correct; never had D7**. The helper was taken from this line, not from the V2 line |
 
 The defect was introduced on the V2 line, not inherited from the 0.1.x line. That inverts the
 usual direction of these hand-offs: **the 0.1.5 replay must not copy this helper out of
 `feat/ctx-preset-v2`.** Take `compat`'s body, or the fixed one from `00afcfc`; they agree.
 
-## `ts/0.1.5` (compat) verdicts 鈥?2026-09-15
+## `ts/0.1.5` (compat) verdicts —2026-09-15
 
 Branch `refactor/ts-0.1.5-merge`, the R3 replay of the single-package install contract
 (`6941d2f` merge, `e511fe8` contract specs, `165f495` route registration, `e7e927c` lint
@@ -527,14 +527,14 @@ paths, `66c8c63` toolchain sweep, `6f2cb51` rebuilt artifacts, `75e3327` setting
 
 | Defect | Verdict on this line |
 | --- | --- |
-| D1 鈥?host entry statically imports a sibling package | **unaffected.** This line had already inlined the namespace and downgraded the settings schema to `z.any()` (`ab2175a`) to keep the entry free of cross-package imports; the replay removed the reason for both. |
-| D2 鈥?root manifest missing the install contract | **fixed by the replay.** The root manifest is the install surface again: `name`, `main`, `types`, `exports` (`.`, `./invariant`, `./pruner`, `./client`), `dependencies`, `dsh`. |
-| D3 鈥?build chunks not committed | **gated here too.** The replay reintroduced a shared chunk (`lib/config.js`, imported by both entries through the settings schema), so the artifact-graph gate was run red 鈫?green: 11 artifacts, every relative import resolves, every non-CSS artifact is inside the `files` whitelist and tracked, no `.css` entry declared. |
-| D4 鈥?consumer profile leftovers | **same status as the other lines**: the hygiene script is delivered, the profile side is a host precondition the operator runs. |
-| D5 鈥?`compat/0.1.5` predates the install contract | **this replay is the D5 action.** |
-| D6 鈥?profile blocks dependency reconciliation | **unchanged.** No `os error 5` in this round; the `katex` write gap is still on the books for the next subtree replacement. |
-| D7 鈥?estimator catalog route never registered | **the detached-method body was never here**, but the route still had a registration defect of its own: the injection gate asked for `webServer`, `llm` and `agentDefaultModel`, and an unsatisfied `ctx.inject` callback is silent, so a usable `webServer` with a late `llm` left the plugin with no HTTP API at all. Fixed by `165f495` (dual prefix, guarded two-channel registration, per-request service resolution, `console` lifecycle lines); guard `estimator-route-registration.host.spec.ts`, six cases, falsified against the old gate (4 of 6 red). |
-| U1 鈥?the estimator card hides itself | **present, not fixed on this line.** The 0.1.5 client still renders nothing when the profile or channel does not enable the estimator, so the block disappears without saying why. The 0.1.2 line fixed this in `bb1f496`; this replay did not carry the client change. Recorded here so it is not silently inherited 鈥?porting it is a client-side item, not part of the install contract. |
+| D1 —host entry statically imports a sibling package | **unaffected.** This line had already inlined the namespace and downgraded the settings schema to `z.any()` (`ab2175a`) to keep the entry free of cross-package imports; the replay removed the reason for both. |
+| D2 —root manifest missing the install contract | **fixed by the replay.** The root manifest is the install surface again: `name`, `main`, `types`, `exports` (`.`, `./invariant`, `./pruner`, `./client`), `dependencies`, `dsh`. |
+| D3 —build chunks not committed | **gated here too.** The replay reintroduced a shared chunk (`lib/config.js`, imported by both entries through the settings schema), so the artifact-graph gate was run red 鈫?green: 11 artifacts, every relative import resolves, every non-CSS artifact is inside the `files` whitelist and tracked, no `.css` entry declared. |
+| D4 —consumer profile leftovers | **same status as the other lines**: the hygiene script is delivered, the profile side is a host precondition the operator runs. |
+| D5 —`compat/0.1.5` predates the install contract | **this replay is the D5 action.** |
+| D6 —profile blocks dependency reconciliation | **unchanged.** No `os error 5` in this round; the `katex` write gap is still on the books for the next subtree replacement. |
+| D7 —estimator catalog route never registered | **the detached-method body was never here**, but the route still had a registration defect of its own: the injection gate asked for `webServer`, `llm` and `agentDefaultModel`, and an unsatisfied `ctx.inject` callback is silent, so a usable `webServer` with a late `llm` left the plugin with no HTTP API at all. Fixed by `165f495` (dual prefix, guarded two-channel registration, per-request service resolution, `console` lifecycle lines); guard `estimator-route-registration.host.spec.ts`, six cases, falsified against the old gate (4 of 6 red). |
+| U1 —the estimator card hides itself | **present, not fixed on this line.** The 0.1.5 client still renders nothing when the profile or channel does not enable the estimator, so the block disappears without saying why. The 0.1.2 line fixed this in `bb1f496`; this replay did not carry the client change. Recorded here so it is not silently inherited —porting it is a client-side item, not part of the install contract. |
 
 **Estimator defects as first reported (`D-1` route, `D-2` save awareness).** `D-1` is D7 above;
 on this line it was the over-broad gate, now fixed. `D-2` (explicit save button with three-state
@@ -598,3 +598,6 @@ caused.
 | 2026-09-15 | D6 | **Resolved.** One plain `pnpm install` in the profile converged (`+256 -16`, exit 0); the lockfile repointed itself and the `_pacquet-stage_` residue is gone. Cleared by convergence over successive attempts, not by the ACL repair — the `katex` denial stays on record |
 | 2026-09-15 | D7 | **The estimator catalog route had never registered at all.** `asWebServer` detached `register` from the service, `this` became the wrapper, the host threw inside `register`, and a catch-all swallowed it. Fixed by passing the service itself; 200 verified on the real host; the injection, isolation and transport hypotheses recorded earlier are withdrawn |
 | 2026-09-15 | U1 | **The estimator card was hidden by its own gate.** Off TokenPilot-inspired the section rendered `null`, so the reader saw a missing feature rather than a gated one. The heading and anchor are now kept and the hidden branch names the profile that unlocks the card; the gate itself is unchanged. Guard added with a counter-proof; the save-affordance question stays open |
+| 2026-09-15 | doc corruption — mechanism | **Diagnosed.** A damaged spot is the 2-byte prefix of a three-byte UTF-8 character followed by `0x3F`: the character lost its third byte and, in most spots, the byte that followed it was consumed too (a double-byte-code-page decode/write pair collapse; 0 or 1 bytes lost per spot). The damage is **inherited, not produced here**: the newest valid blob of every affected file is `e337bf5`, while the same files are already defective at the `compat/0.1.5` baseline `d7c592d` and at `04f86e4`. Ten files carry it, not five — `README.{zh,ja,ko}.md` and `scripts/packed-install-e2e.mjs` were missed by the earlier note |
+| 2026-09-15 | doc corruption — repaired | **Batch I / T-I2.** All ten files repaired by restoring each damaged spot from `e337bf5`, with three independent checks: the restored character must carry the surviving 2-byte prefix; re-corrupting the repair reproduces the previous bytes exactly (so the edit touches nothing but the damage, and no line, no EOL and no other character moves); and the repair must agree with the valid ancestor everywhere outside the restored spots. Every affected file is now valid UTF-8. The English `README.md` is the clean case: ten spots, all `—`/quote characters plus their following space, zero other differences from the ancestor |
+| 2026-09-15 | ledger encoding | The twelve `—` characters in this file had been mangled to `鈥?` by the PowerShell port of the ledger (the 0.1.2 source has none); restored. Same class as the doc corruption above, introduced by that one-time port rather than inherited |
