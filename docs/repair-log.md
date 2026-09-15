@@ -415,7 +415,7 @@ deterministic.
 | 7 | `pnpm verify:release` | exit 0 |
 | 8 | `pnpm pack:dry-run` | exit 0 |
 | 9 | `pnpm test:e2e:packed` (`DSH_E2E_MODE=dev`) | exit 0 |
-| 10 | `pnpm test:e2e:packed` (release mode) | **blocked** — external precondition, see below |
+| 10 | `pnpm test:e2e:packed` (release mode) | exit 0 — upgrade leg skipped until the first publish, see below |
 
 ### Gate 5 — the failure set is nondeterministic; do not cite it as "4 known failures"
 
@@ -456,13 +456,38 @@ assertions that assume a coarser clock.
 item by item" is unsatisfiable — the baseline has no single failure set. Compare
 *ever-failed* sets over at least three interleaved runs per side instead.
 
-### Gate 10 — external precondition, not a defect
+### Gate 10 — a defect in this repository, not an external precondition
 
-Release mode needs the *published* previous release to build the upgrade leg of its
-fixture. `0.1.0-beta.2` was never published, so the fixture aborts with `release gate
-requires the published previous release for the upgrade leg: packument responded 404`.
-`DSH_E2E_MODE=dev` (gate 9) is the runnable leg and passes. Blocked on publishing, not on
-this repository.
+Release mode builds the upgrade leg of its fixture from the *published* previous release.
+The fixture named that predecessor as the pinned literal `0.1.0-beta.2`, a version that only
+ever existed under this package's pre-rename name: it 404s under the published name and
+appears nowhere in the repository's 12-revision history. Every release-mode run therefore
+aborted with `release gate requires the published previous release for the upgrade leg:
+packument responded 404`.
+
+This was recorded here as an external precondition. That was wrong. The literal was a
+fixture defect — exactly the hardcoded-version class this repository's own doctrine names —
+and it is fixed: the predecessor is now whatever the registry actually offers, resolved by
+publication order from `packument.time` (not semver order, which avoids a semver dependency
+and handles prereleases), and `predecessorFound` keys both release-mode gates instead of a
+hardcoded version.
+
+| Registry state | `upgradeLeg` | Release outcome |
+| --- | --- | --- |
+| package unpublished (404) | `skipped-package-not-published` | pass, skip recorded |
+| published, no other version | `skipped-no-earlier-release` | pass, skip recorded |
+| published, earlier version exists | `installed` | pass only when the leg installed |
+| any other fetch or tarball failure | — | throws |
+
+Only the third row runs the leg. Where a predecessor exists the gate stays fail-closed: a
+leg reporting anything other than `installed` throws. Where none exists the skip is never
+silent — it is emitted as `UPGRADE_LEG_SKIPPED <reason>` in the report, and
+`officialCloneSmoke` falls back to that marker rather than passing vacuous on a package that
+has never shipped.
+
+This is a one-time bridge. Once the first version is published, `predecessorFound` is true
+on every subsequent run and the upgrade leg is a hard requirement again — which is the
+state the gate was always meant to enforce.
 
 ### Criterion withdrawn
 
