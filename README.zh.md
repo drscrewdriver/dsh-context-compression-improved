@@ -43,7 +43,7 @@
 
 在同一设置区内选择压缩 Profile、调整 Auto Compact 触发水位，并开关代码骨架压缩。开关即改即存，刷新后显示已保存状态。
 
-![Context Compression Selector 设置界面](docs/assets/context-compression-selector-settings.png)
+![Context Compression Selector 设置界面](packages/selector/assets/screenshots/context-compression-selector-settings.png)
 
 ## 安装
 

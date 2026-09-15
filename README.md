@@ -43,7 +43,7 @@ Properties:
 
 Choose a compression profile, set the Auto Compact trigger level, and toggle code-skeleton compression in the same settings section. The toggle saves on change and shows the saved state on reload.
 
-![Context Compression Selector settings UI](docs/assets/context-compression-selector-settings.png)
+![Context Compression Selector settings UI](packages/selector/assets/screenshots/context-compression-selector-settings.png)
 
 ## Install
 

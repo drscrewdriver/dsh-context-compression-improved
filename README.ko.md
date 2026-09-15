@@ -43,7 +43,7 @@
 
 동일한 설정 섹션에서 압축 프로파일 선택, Auto Compact 트리거 레벨 조정, 코드 스켈레톤 압축 토글을 모두 처리할 수 있습니다. 토글은 변경 시 즉시 저장되며, 다시 불러올 때 저장된 상태가 표시됩니다.
 
-![Context Compression Selector 설정 UI](docs/assets/context-compression-selector-settings.png)
+![Context Compression Selector 설정 UI](packages/selector/assets/screenshots/context-compression-selector-settings.png)
 
 ## 설치
 
