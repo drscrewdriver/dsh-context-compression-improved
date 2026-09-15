@@ -2,7 +2,7 @@
 
 > [English](installation.md) · [中文](installation.zh.md) · [日本語](installation.ja.md) · [한국어](installation.ko.md)
 
-本教程从源码安装本 fork。fork 尚未发布 npm 包；内部包名有意保持与上游一致（`dsh-context-compression-improved` 及其精确版本依赖 `dsh-context-compression-improved-runtime`）。
+本教程从源码安装本 fork。本 fork 相对上游已重命名（`dsh-context-compression-selector` → `dsh-context-compression-improved`），且尚未发布 npm 包。源码与会话日志中出现的 `dsh-context-compression-improved-runtime` 是冻结的溯源标识，并非包依赖——运行时依赖只有 `@huggingface/tokenizers` 和 `js-yaml`。
 
 ## 前置条件
 

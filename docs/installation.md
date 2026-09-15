@@ -2,7 +2,7 @@
 
 > [English](installation.md) · [中文](installation.zh.md) · [日本語](installation.ja.md) · [한국어](installation.ko.md)
 
-This guide installs the fork from source. The fork is not yet published to npm; the internal package names intentionally stay upstream's (`dsh-context-compression-improved` + its exact-version runtime dependency `dsh-context-compression-improved-runtime`).
+This guide installs the fork from source. The fork is renamed relative to upstream (`dsh-context-compression-selector` → `dsh-context-compression-improved`) and is not yet published to npm. The literal `dsh-context-compression-improved-runtime` that appears in the source and in durable session logs is a frozen provenance label, not a package dependency — the runtime dependencies are `@huggingface/tokenizers` and `js-yaml`.
 
 ## Prerequisites
 

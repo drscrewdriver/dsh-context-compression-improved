@@ -2,7 +2,7 @@
 
 > [English](installation.md) · [中文](installation.zh.md) · [日本語](installation.ja.md) · [한국어](installation.ko.md)
 
-이 가이드는 포크를 소스에서 설치하는 방법을 다룹니다. 포크는 아직 npm에 게시되지 않았으며, 내부 패키지 이름은 의도적으로 업스트림과 동일합니다(`dsh-context-compression-improved` 및 정확한 버전 의존성 `dsh-context-compression-improved-runtime`).
+이 가이드는 포크를 소스에서 설치하는 방법을 다룹니다. 이 포크는 업스트림에 대해 이름이 변경되었으며(`dsh-context-compression-selector` → `dsh-context-compression-improved`), 아직 npm에 게시되지 않았습니다. 소스와 세션 로그에 나타나는 `dsh-context-compression-improved-runtime`은 동결된 프로버넌스 라벨이며 패키지 의존성이 아닙니다. 런타임 의존성은 `@huggingface/tokenizers`와 `js-yaml`뿐입니다.
 
 ## 사전 요구 사항
 

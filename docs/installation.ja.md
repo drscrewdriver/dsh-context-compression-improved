@@ -2,7 +2,7 @@
 
 > [English](installation.md) · [中文](installation.zh.md) · [日本語](installation.ja.md) · [한국어](installation.ko.md)
 
-このガイドでは、ソースからフォークをインストールします。フォークはまだ npm に公開されておらず、内部パッケージ名は意図的にアップストリームと同一です（`dsh-context-compression-improved` と、その正確なバージョン依存 `dsh-context-compression-improved-runtime`）。
+このガイドでは、ソースからフォークをインストールします。このフォークはアップストリームに対して名前が変更されており（`dsh-context-compression-selector` → `dsh-context-compression-improved`）、まだ npm に公開されていません。ソースおよびセッションログに現れる `dsh-context-compression-improved-runtime` は凍結された来歴ラベルであり、パッケージ依存ではありません。実行時の依存は `@huggingface/tokenizers` と `js-yaml` のみです。
 
 ## 前提条件
 
