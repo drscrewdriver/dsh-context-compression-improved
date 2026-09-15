@@ -10,3 +10,10 @@ peerDependencyRules:
 allowBuilds:
   esbuild: true
   "@huggingface/tokenizers": true
+
+# GHSA-2883-xcg3-v3hh - js-yaml < 4.3.2 does not bound CPU use for empty merge
+# sources. @deepseek-ai/cordis-plugin-include and @deepseek-ai/dsh-agent-presets
+# both declare ranges that already allow the patch, yet keep resolving 4.3.1, so
+# the floor is pinned here instead of waiting on their next release.
+overrides:
+  js-yaml@<4.3.2: ^4.3.2
