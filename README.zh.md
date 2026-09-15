@@ -39,6 +39,21 @@
 - **会话冻结**：与所有选择器设置一致，修改只影响新观察的会话。
 - **严格解析**：`codeSkeleton` 必须恰好是 `{ enabled: boolean }`；畸形输入在运行时侧抛错、浏览器侧显示不可读。
 
+### 出处，以及这些数字是谁的
+
+骨架化思路借鉴自 **[Headroom](https://github.com/headroomlabs-ai/headroom)**（Apache-2.0）——
+一个面向 AI Agent 的上下文压缩层，把 JSON、源码与散文分别交给不同压缩器（JSON 走
+`SmartCrusher`，代码走 `CodeCompressor`），其骨架化变换位于
+`crates/headroom-core/src/transforms/live_zone.rs` 与 `smart_crusher/planning.rs`。
+
+**降幅数字是 Headroom 的，不是本插件的。** Headroom 公开的官方口径原文如下：
+
+> 20% fewer tokens for coding agents, **60–95% fewer tokens for JSON**, same answers.
+
+其中 **最高降 95%** 即出自这一句：口径为 JSON 载荷，由 Headroom 自家压缩器在其自家基准上测得，
+也正是本门机制的同源出处。本仓库**不含任何自己的 benchmark**，因此**不自称任何降幅百分比**；
+要数字，请到源头读。
+
 ## 设置界面
 
 在同一设置区内选择压缩 Profile、调整 Auto Compact 触发水位，并开关代码骨架压缩。开关即改即存，刷新后显示已保存状态。
@@ -82,4 +97,5 @@ pnpm verify:release
 
 - 上游项目与全部既有工作：[WilliamShi666/dsh-context-compression-selector](https://github.com/WilliamShi666/dsh-context-compression-selector)，作者 WilliamShi666（MIT）。
 - fork 新增内容（代码骨架门、工具链、多语文档）：drscrewdriver。
+- 代码骨架机制来源：[Headroom](https://github.com/headroomlabs-ai/headroom)（Apache-2.0）——见上文「出处，以及这些数字是谁的」。
 - MIT——见 [LICENSE](LICENSE)（保留上游版权声明）；内置 tokenizer 来源见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

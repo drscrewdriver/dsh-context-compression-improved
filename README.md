@@ -39,6 +39,23 @@ Properties:
 - **Session-frozen**: like all selector settings, changes affect newly observed sessions only.
 - **Strictly parsed**: `codeSkeleton` must be exactly `{ enabled: boolean }`; malformed values throw on the runtime side and show as unreadable in the browser UI.
 
+### Provenance, and whose numbers these are
+
+The skeletonization approach is borrowed from **[Headroom](https://github.com/headroomlabs-ai/headroom)**
+(Apache-2.0) — a context-compression layer for AI agents that routes JSON, source code and prose
+through separate compressors (`SmartCrusher` for JSON, `CodeCompressor` for code), with its
+skeleton transform living in `crates/headroom-core/src/transforms/live_zone.rs` and
+`smart_crusher/planning.rs`.
+
+**The reduction figures are Headroom's, not this plugin's.** Headroom's published claim, verbatim:
+
+> 20% fewer tokens for coding agents, **60–95% fewer tokens for JSON**, same answers.
+
+The headline — **up to 95% fewer tokens** — comes from that sentence: JSON payloads, measured by
+Headroom's own compressors on Headroom's own benchmarks. That is the same source this gate draws
+its mechanism from. This repository ships **no benchmark of its own**, so it claims **no reduction
+percentage of its own**; read the measurements at the source.
+
 ## Settings UI
 
 Choose a compression profile, set the Auto Compact trigger level, and toggle code-skeleton compression in the same settings section. The toggle saves on change and shows the saved state on reload.
@@ -82,4 +99,5 @@ Contributions follow the upstream discipline: add the failing regression first, 
 
 - Upstream project and all prior work: [WilliamShi666/dsh-context-compression-selector](https://github.com/WilliamShi666/dsh-context-compression-selector) by WilliamShi666 (MIT).
 - Fork additions (code-skeleton gate, tooling, localized docs): drscrewdriver.
+- Code-skeleton mechanism: [Headroom](https://github.com/headroomlabs-ai/headroom) (Apache-2.0) — see "Provenance, and whose numbers these are" above.
 - MIT — see [LICENSE](LICENSE) (upstream copyright notice retained) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for bundled tokenizer provenance.
