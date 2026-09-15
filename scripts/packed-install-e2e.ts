@@ -694,8 +694,22 @@ try {
   }>()
   const previousRelease = '0.1.0-beta.2'
   let upgradeLeg = 'skipped-no-network'
+  // A package that has never been published under this name has no upgrade
+  // leg to exercise: there is no predecessor to install. Treat that as an
+  // explicit skip rather than a failure, or the gate blocks this package's
+  // very first release. Once the package IS on the registry a missing
+  // predecessor stays fatal — see the release-mode checks below.
+  let packagePublished = true
   for (const name of ['dsh-context-compression-improved']) {
     try {
+      const packument = await fetch(`https://registry.npmjs.org/${name}`)
+      if (packument.status === 404) {
+        packagePublished = false
+        upgradeLeg = 'skipped-package-not-published'
+        previousVersions.clear()
+        break
+      }
+      if (!packument.ok) throw new Error(`packument responded ${packument.status}`)
       const response = await fetch(`https://registry.npmjs.org/${name}/${previousRelease}`)
       if (!response.ok) throw new Error(`packument responded ${response.status}`)
       const manifest = await response.json() as Record<string, any>
@@ -996,7 +1010,7 @@ try {
     }
   }
 
-  if (e2eMode === 'release' && upgradeLeg !== 'installed') {
+  if (e2eMode === 'release' && packagePublished && upgradeLeg !== 'installed') {
     throw new Error(`release gate requires the upgrade leg to run; it reported: ${upgradeLeg}`)
   }
   if (e2eMode === 'release' && officialCloneSmoke === null) {
