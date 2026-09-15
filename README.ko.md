@@ -39,6 +39,23 @@
 - **세션 고정**: 다른 셀렉터 설정과 마찬가지로 변경 사항은 새로 관찰된 세션에만 적용됩니다.
 - **엄격한 파싱**: `codeSkeleton`은 정확히 `{ enabled: boolean }`이어야 합니다. 잘못된 값은 런타임 쪽에서 예외를 던지고, 브라우저 UI에서는 읽을 수 없음으로 표시됩니다.
 
+### 출처, 그리고 이 수치는 누구의 것인가
+
+스켈레톤화 접근은 **[Headroom](https://github.com/headroomlabs-ai/headroom)**(Apache-2.0)에서
+차용했습니다. AI 에이전트용 컨텍스트 압축 계층으로, JSON·소스 코드·산문을 각각 다른 압축기로
+분기하며(JSON은 `SmartCrusher`, 코드는 `CodeCompressor`), 스켈레톤 변환은
+`crates/headroom-core/src/transforms/live_zone.rs`와 `smart_crusher/planning.rs`에 있습니다.
+
+**감축 수치는 Headroom의 것이며 이 플러그인의 것이 아닙니다.** Headroom이 공개한 공식 표현은
+다음과 같습니다.
+
+> 20% fewer tokens for coding agents, **60–95% fewer tokens for JSON**, same answers.
+
+**최대 95% 감축**이라는 수치는 이 문장에서 나온 것이며, 기준은 JSON 페이로드이고 Headroom 자체
+압축기가 Headroom 자체 벤치마크에서 측정한 값입니다. 이 게이트의 메커니즘은 여기에 동원(同源)을
+둡니다. 이 저장소는 **자체 벤치마크가 전혀 없으므로 자체 감축률을 주장하지 않습니다.** 수치가
+필요하면 출처에서 확인하십시오.
+
 ## 설정 UI
 
 동일한 설정 섹션에서 압축 프로파일 선택, Auto Compact 트리거 레벨 조정, 코드 스켈레톤 압축 토글을 모두 처리할 수 있습니다. 토글은 변경 시 즉시 저장되며, 다시 불러올 때 저장된 상태가 표시됩니다.
@@ -82,4 +99,5 @@ pnpm verify:release
 
 - 업스트림 프로젝트와 기존의 모든 작업: [WilliamShi666/dsh-context-compression-selector](https://github.com/WilliamShi666/dsh-context-compression-selector), 작성자 WilliamShi666(MIT).
 - 포크에서 추가된 것(코드 스켈레톤 게이트, 툴체인, 다국어 문서): drscrewdriver.
+- 코드 스켈레톤 메커니즘 출처: [Headroom](https://github.com/headroomlabs-ai/headroom) (Apache-2.0) — 위의 "출처, 그리고 이 수치는 누구의 것인가"를 참조하십시오.
 - MIT——[LICENSE](LICENSE)(업스트림 저작권 표기 유지) 참고. 번들된 토크나이저의 출처는 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

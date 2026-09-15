@@ -39,6 +39,24 @@
 - **セッション凍結**：他のセレクター設定と同様、変更は新しく観測されたセッションにのみ適用されます。
 - **厳格なパース**：`codeSkeleton` は正確に `{ enabled: boolean }` である必要があります。不正な値はランタイム側でスローされ、ブラウザー UI 側では読み取り不能として表示されます。
 
+### 出典、そしてこの数値は誰のものか
+
+スケルトン化のアプローチは **[Headroom](https://github.com/headroomlabs-ai/headroom)**
+（Apache-2.0）から借用しています。AI エージェント向けのコンテキスト圧縮レイヤーで、JSON・
+ソースコード・散文をそれぞれ別の圧縮器に振り分け（JSON は `SmartCrusher`、コードは
+`CodeCompressor`）、スケルトン変換は
+`crates/headroom-core/src/transforms/live_zone.rs` と `smart_crusher/planning.rs` にあります。
+
+**削減率は Headroom のものであり、本プラグインのものではありません。** Headroom が公開している
+公式な表現は次のとおりです。
+
+> 20% fewer tokens for coding agents, **60–95% fewer tokens for JSON**, same answers.
+
+**最大 95% 削減**という数字はこの一文によるもので、口径は JSON ペイロード、Headroom 自身の
+圧縮器が Headroom 自身のベンチマークで測定した値です。本ゲートの機構はここに同源があります。
+本リポジトリは**独自のベンチマークを一切持たない**ため、**独自の削減率を主張しません**。
+数値が必要な場合は出典で確認してください。
+
 ## 設定 UI
 
 同じ設定セクションで、圧縮プロファイルの選択、Auto Compact トリガーレベルの調整、コードスケルトン圧縮のトグルが行えます。トグルは変更時に即保存され、再読み込み時には保存済みの状態が表示されます。
@@ -82,4 +100,5 @@ pnpm verify:release
 
 - アップストリームのプロジェクトと既存のすべての成果：[WilliamShi666/dsh-context-compression-selector](https://github.com/WilliamShi666/dsh-context-compression-selector)（作者 WilliamShi666、MIT）。
 - フォークによる追加（コードスケルトンゲート、ツールチェーン、多言語ドキュメント）：drscrewdriver。
+- コードスケルトン機構の出典：[Headroom](https://github.com/headroomlabs-ai/headroom)（Apache-2.0）——上記「出典、そしてこの数値は誰のものか」を参照。
 - MIT——[LICENSE](LICENSE)（アップストリームの著作権表示を保持）を参照。同梱トークナイザーの出所は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
