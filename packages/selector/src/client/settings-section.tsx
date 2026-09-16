@@ -16,7 +16,7 @@ import {
 } from '../profiles.ts'
 import type { CompressionProfileSelectorProps } from './CompressionProfileSelector.tsx'
 import { AutoCompactThresholdControls, CodeSkeletonControls } from './CompressionProfileControls.tsx'
-import { EstimatorControls } from './EstimatorControls.tsx'
+import { EstimatorControls, EstimatorInactiveNotice } from './EstimatorControls.tsx'
 import { CustomPolicyEditor, editableCustom } from './CustomPolicyEditor.tsx'
 
 /** Full-page Settings surface backed by the same durable selector state. */
@@ -102,7 +102,9 @@ export function SettingsCompressionProfileControls({
         settle={settle}
         t={t}
       />
-      {current !== 'tokenpilot-inspired' ? null : (
+      {current !== 'tokenpilot-inspired' ? (
+        <EstimatorInactiveNotice profile={t(`profile.${current}`)} t={t} />
+      ) : (
         <EstimatorControls
           options={state.value?.presetOptions ?? {}}
           disabled={busy || !state.writable || !selectorAvailable}

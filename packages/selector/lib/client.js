@@ -727,6 +727,31 @@ window.__ModuleLoader__.load({
 		*
 		* @module dsh-context-compression-improved/client/EstimatorControls
 		*/
+		/**
+		* The estimator card is gated on the tokenpilot-inspired profile, because
+		* `presetOptions` is merged into that profile alone. A card that merely
+		* disappears reads as a missing feature — the first real-machine report was
+		* exactly that — so keep the heading and its anchor id in place and spend them
+		* on the reason plus the profile that unlocks the card. The gate itself is
+		* unchanged: no estimator control exists outside tokenpilot-inspired.
+		*
+		* Exported from the estimator card's own module so the gated card and its
+		* explanation cannot drift apart.
+		*/
+		function EstimatorInactiveNotice({ profile, t }) {
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+				className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.autoCompact,
+				"aria-labelledby": "context-compression-estimator-title",
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
+					id: "context-compression-estimator-title",
+					className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.autoCompactTitle,
+					children: t("estimator.title")
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+					className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.customNote,
+					children: t("estimator.inactive").replace("{profile}", profile)
+				})]
+			});
+		}
 		const ESTIMATOR_CATALOG_ROUTE = "/api/dsh-context-compression-improved/estimator-catalog";
 		/**
 		* TokenPilot-inspired estimator channel card. Shown only while the
@@ -1070,7 +1095,10 @@ window.__ModuleLoader__.load({
 						settle,
 						t
 					}),
-					current !== "tokenpilot-inspired" ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EstimatorControls, {
+					current !== "tokenpilot-inspired" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EstimatorInactiveNotice, {
+						profile: t(`profile.${current}`),
+						t
+					}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EstimatorControls, {
 						options: state.value?.presetOptions ?? {},
 						disabled: busy || !state.writable || false,
 						save: savePresetOptions,
@@ -1152,6 +1180,7 @@ window.__ModuleLoader__.load({
 			"estimator.mode.off": "关闭（纯规则）",
 			"estimator.mode.host": "宿主模型（复用已配置供应商）",
 			"estimator.mode.direct": "直连 OpenAI 兼容端点",
+			"estimator.inactive": "估计器只随「TokenPilot 启发模式」提供：该模式的预设选项（去重指针、摘要定位块、读取状态语义与估计器通道）不会合并进其他 Profile，因此当前 Profile「{profile}」下没有可配置的估计器通道。选择「TokenPilot 启发模式」后，本区块会出现「通道」选择，可复用已配置供应商（宿主模型）或直连 OpenAI 兼容端点。",
 			"estimator.provider": "供应商",
 			"estimator.provider.placeholder": "留空则跟随会话默认模型，可从下拉选择或自定义输入",
 			"estimator.model.placeholder": "留空则跟随会话默认模型，可从下拉选择或自定义输入",
@@ -1247,6 +1276,7 @@ window.__ModuleLoader__.load({
 			"estimator.mode.off": "Off (rule-only)",
 			"estimator.mode.host": "Host model (reuse configured providers)",
 			"estimator.mode.direct": "Direct OpenAI-compatible endpoint",
+			"estimator.inactive": "The estimator ships only with the TokenPilot-inspired profile: that profile’s preset options (dedupe pointers, summary locators, read-state semantics, and the estimator channel) are never merged into another profile, so the current profile “{profile}” has no estimator channel to configure. Select TokenPilot-inspired and this section gains a Channel choice — reuse configured providers (host model) or a direct OpenAI-compatible endpoint.",
 			"estimator.provider": "Provider",
 			"estimator.provider.placeholder": "Empty follows the session default model; pick from the dropdown or type a custom id",
 			"estimator.model.placeholder": "Empty follows the session default model; pick from the dropdown or type a custom id",
