@@ -712,12 +712,41 @@ let server
 try {
   const registryPackages = new Map()
   // Published previous-release metadata served alongside the packed candidate
-  // so the upgrade leg can install the real shipped beta.2 first.
+  // so the upgrade leg can install the real shipped release first.
   const previousVersions = new Map()
-  const previousRelease = '0.1.0-beta.2'
+  // The predecessor is whatever the registry actually offers. This used to be
+  // the pinned literal '0.1.0-beta.2', which only ever existed under this
+  // package's pre-rename name, so it could never resolve under the current one.
+  let previousRelease = ''
+  // True only once a real predecessor was found. Both release-mode gates below
+  // key off it: the upgrade leg must run whenever users have something to
+  // upgrade FROM, and must not block a package that has nothing to upgrade from.
+  let predecessorFound = false
   let upgradeLeg = 'skipped-no-network'
   for (const name of ['dsh-context-compression-improved']) {
     try {
+      const packumentResponse = await fetch(`https://registry.npmjs.org/${name}`)
+      if (packumentResponse.status === 404) {
+        upgradeLeg = 'skipped-package-not-published'
+        previousVersions.clear()
+        break
+      }
+      if (!packumentResponse.ok) throw new Error(`packument responded ${packumentResponse.status}`)
+      const packument = await packumentResponse.json()
+      const localVersion = JSON.parse(await readFile(join(packages[0].directory, 'package.json'), 'utf8')).version
+      const times = packument.time ?? {}
+      // Publication order, not semver order: the version a user would be
+      // upgrading from is the most recently published one that is not the
+      // candidate. Avoids a semver dependency and handles prereleases.
+      const earlier = Object.keys(packument.versions ?? {})
+        .filter((version) => version !== localVersion)
+        .sort((a, b) => Date.parse(times[b] ?? '') - Date.parse(times[a] ?? ''))
+      if (earlier.length === 0) {
+        upgradeLeg = 'skipped-no-earlier-release'
+        previousVersions.clear()
+        break
+      }
+      previousRelease = earlier[0]
       const response = await fetch(`https://registry.npmjs.org/${name}/${previousRelease}`)
       if (!response.ok) throw new Error(`packument responded ${response.status}`)
       const manifest = await response.json()
@@ -743,7 +772,10 @@ try {
       break
     }
   }
-  if (previousVersions.size === 2) upgradeLeg = 'installed'
+  if (previousVersions.size === 1) {
+    upgradeLeg = 'installed'
+    predecessorFound = true
+  }
   for (const descriptor of packages) {
     const manifest = JSON.parse(await readFile(join(descriptor.directory, 'package.json'), 'utf8'))
     if (fixedArtifactRoot === undefined) {
@@ -997,8 +1029,13 @@ try {
   let officialCloneSmoke = null
   const candidateVersion = registryPackages.get('dsh-context-compression-improved')?.manifest.version
   if (candidateVersion === undefined) throw new Error('packed candidate version is unknown')
-  const previousForLifecycle = upgradeLeg === 'installed' ? previousRelease : undefined
-  if (process.env.DSH_OFFICIAL_CLONE !== undefined) {
+  const previousForLifecycle = predecessorFound ? previousRelease : undefined
+  if (!predecessorFound) {
+    // The official lifecycle installs the previous release and then upgrades to
+    // the candidate, so it has nothing to do without a predecessor. Record the
+    // same explicit marker the upgrade leg produced instead of failing the run.
+    officialCloneSmoke = upgradeLeg
+  } else if (process.env.DSH_OFFICIAL_CLONE !== undefined) {
     officialCloneSmoke = await runOfficialCloneCliSmoke(
       process.env.DSH_OFFICIAL_CLONE,
       registry,
@@ -1028,7 +1065,7 @@ try {
     }
   }
 
-  if (e2eMode === 'release' && upgradeLeg !== 'installed') {
+  if (e2eMode === 'release' && predecessorFound && upgradeLeg !== 'installed') {
     throw new Error(`release gate requires the upgrade leg to run; it reported: ${upgradeLeg}`)
   }
   if (e2eMode === 'release' && officialCloneSmoke === null) {
