@@ -58,3 +58,9 @@ overrides:
   '@deepseek-ai/schemastery': '3.18.2'
   '@deepseek-ai/dsh-client-ui-session': '0.1.5-rc.2'
   '@deepseek-ai/dsh-api-session-controller': '0.1.5-rc.2'
+  # Scoped, not global: @deepseek-ai/cordis-plugin-include (^4.1.0) and
+  # @deepseek-ai/dsh-agent-presets resolve js-yaml 4.3.1 from ranges that already
+  # allow the patched release, so pin the vulnerable ones without waiting on their
+  # next release. GHSA-2883-xcg3-v3hh: js-yaml < 4.3.2 does not bound CPU use for
+  # empty merge sources.
+  'js-yaml@<4.3.2': '^4.3.2'
