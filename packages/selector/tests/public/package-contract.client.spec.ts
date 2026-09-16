@@ -39,7 +39,7 @@ describe('standalone package contract', () => {
       expect(rootManifest.exports?.[specifier]).toBeDefined()
     }
     expect(rootManifest.dependencies?.['@huggingface/tokenizers']).toBe('0.1.3')
-    expect(rootManifest.dependencies?.['js-yaml']).toBe('^4.2.0')
+    expect(rootManifest.dependencies?.['js-yaml']).toBe('^4.3.2')
     expect(rootManifest.dsh?.bundle?.patch).toBe('./packages/selector/cordis.patch.yml')
     expect(rootManifest.dsh?.client?.inject).toEqual([
       '@deepseek-ai/dsh-client-locale',
