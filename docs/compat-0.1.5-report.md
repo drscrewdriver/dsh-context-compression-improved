@@ -47,9 +47,25 @@ compaction 深度插件（直接依赖 tokenMeter / session surface 写路径）
 | `pnpm verify:release` | ✅ OK |
 | `pnpm test:e2e:packed`（dev） | ✅ EXIT=0；upgrade leg 与 official-clone leg 因 npm 前版未发布 / clone 不可达按设计跳过并输出标记 |
 
+### 三补、本机 0.1.5 静态装载核查（2026-09-17，实测）
+
+真机 0.1.5 宿主装载在本机**不可达**（本机宿主为 0.1.2-rc.1），故改为在源码层面取证：
+
+| 检查项 | 结果 | 证据 |
+|---|---|---|
+| 提交的 `lib/**` 非陈旧 | ✅ | `pnpm run build` 后 `git status --porcelain` 为空；两次独立 `npm pack` 的 shasum 相同（`424bd137…`）→ 构建可复现 |
+| `lib/*.js` 的依赖面 vs 0.1.5 提供的包 | ✅ 零缺失 | 实拉 0.1.5-rc.2 tarball 解包，从 `super(ctx,"…")` 提取服务名；插件注入/读取的 `settings`/`tokenMeter`/`invariants`/`sessions`/`tools`/`systemPrompt`/`llm`/`agentPresets`/`agents`/`webServer`/`settingsScope` 全部存在 |
+| `dsh-client-runtime` 是否残留 | ✅ 0 次 | registry 上该包最新版止于 `0.1.1-rc.2`，0.1.5 确已移除 |
+| `cordis.patch.yml` / `dsh.plugin.json` 引用的服务 | ✅ | `inject: [webServer]` 独立成行，`webServer` 缺席时只丢 HTTP 路由、压缩栈照常装载（刻意降级） |
+| 全部 peer 区间在 registry 可解析 | ✅ | 19 个 `@deepseek-ai/dsh-*` 均解析到 `0.1.5-rc.2` |
+| `pnpm test:built` | ✅ | `vitest.built.config.ts` 真正 `Function(code)()` 执行 `lib/client.js` |
+| **真机 0.1.5 宿主装载** | **未验证** | 本机无 0.1.5 宿主 |
+
+`pnpm test` 连跑 4 次：1 次全绿、3 次失败，**失败 100% 集中在 `standing-generation.host.spec.ts`**（`:333` 整秒 mtime 竞态、`:580`/`:595` 5s 超时、`EPERM rename`）——Windows 环境性竞态，非 0.1.5 适配引入。
+
 ## 四、已知问题与后续项
 
-1. **release 模式 e2e**：需先发布 `0.1.0-beta.2`（或调整脚本的前版基线）并把 official clone tag 改为 `dsh-v0.1.5-rc.2`；合回主线前应补一次完整 release 模式验证。
+1. **release 模式 e2e**：official clone tag 与三连断言已改钉 `dsh-v0.1.5-rc.2`（commit `fb2c4b9e`、tree `bd7dd6d9`），客户端 peer 清单里的 `dsh-client-runtime` 已换成 `dsh-client-store`——此前这条腿**从未真正跑过**：它拿 `dsh-v0.1.1-rc.2` 宿主去验证一条声明只兼容 `>=0.1.5-rc.2` 的插件线，且 `proveBuiltClientPeersLoad()` 无条件解析已被移除的 `dsh-client-runtime`，必然抛错。仍需先发布一个前版（或调整脚本的前版基线）才能跑完 release 模式。
 2. **stamp 窗口测试抖动**：Windows mtime 精度所致，可考虑在测试内跳过 win32 或提高窗口粒度。
 3. **Minimal 门控降级**：待官方恢复浏览器侧 preset 暴露后恢复。
 4. 0.1.1-rc.2 兼容 shim（session-events 双路径）仅保留在本分支，合主线时按主线支持的宿主范围决定去留。
