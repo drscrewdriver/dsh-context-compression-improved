@@ -294,10 +294,10 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
     tree: await git('rev-parse', 'HEAD^{tree}'),
     status: await git('status', '--porcelain'),
   }
-  assert(before.tag === 'dsh-v0.1.1-rc.2', `official clone tag is ${before.tag}`)
-  assert(before.commit === 'b150a551b8d465e31e418e1b2eaf5e79bbb7d28e',
+  assert(before.tag === 'dsh-v0.1.5-rc.2', `official clone tag is ${before.tag}`)
+  assert(before.commit === 'fb2c4b9e698e30edb738bca4cf0618587db7d203',
     `official clone commit is ${before.commit}`)
-  assert(before.tree === '53915efe4e2126cc7779b73dfc8a3bcec5318c44',
+  assert(before.tree === 'bd7dd6d90010a35d3d6ff9f12c1f6207d5b6fe38',
     `official clone tree is ${before.tree}`)
   assert(before.status === '', 'official clone is dirty before CLI smoke')
 
@@ -347,7 +347,7 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
   const proveBuiltClientPeersLoad = async () => {
     const clientPeers = [
       '@deepseek-ai/dsh-client-locale',
-      '@deepseek-ai/dsh-client-runtime',
+      '@deepseek-ai/dsh-client-store',
       '@deepseek-ai/dsh-client-ui-primitives',
       '@deepseek-ai/dsh-client-ui-settings',
       '@deepseek-ai/dsh-client-ui-slots',
@@ -356,7 +356,7 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
     ]
     // pnpm's isolated layout keeps each package's dependents in ITS own
     // node_modules, so anchor resolution at the packages that actually
-    // depend on the client stack: the web-app bundle (locale, runtime,
+    // depend on the client stack: the web-app bundle (locale, store,
     // ui-settings, ui-workspace), the client-locale package (react,
     // ui-primitives, ui-slots), and the web app.
     const anchors = JSON.stringify([
@@ -1049,7 +1049,7 @@ try {
     const cloneRoot = join(artifactRoot, 'official-clone')
     try {
       await run('git', [
-        'clone', '--depth', '1', '--branch', 'dsh-v0.1.1-rc.2',
+        'clone', '--depth', '1', '--branch', 'dsh-v0.1.5-rc.2',
         'https://github.com/deepseek-ai/deepseek-harness.git', cloneRoot,
       ])
       officialCloneSmoke = await runOfficialCloneCliSmoke(
