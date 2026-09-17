@@ -52,7 +52,6 @@
   },
   "scripts": {
     "bundle": "tsdown --config tsdown.config.ts && tsdown --config tsdown.client.config.ts",
-    "prepack": "pnpm run bundle",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --root ../.. --config vitest.config.ts --project runtime --project selector-host --project selector-client",
     "pack:dry-run": "npm pack --dry-run"
