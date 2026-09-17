@@ -167,6 +167,32 @@ export interface EstimatorOutcomeAuditRecord extends CompressionAuditBase {
   readonly ok: boolean
 }
 
+/** Lifecycle of one human-gated review proposal. Only numeric and enum fields — never content. */
+export interface ReviewOutcomeAuditRecord extends CompressionAuditBase {
+  readonly kind: 'review-outcome'
+  /** Stable proposal id (sha-256 digest cut, 12 hex chars). */
+  readonly proposalId: string
+  /** Reduction kind the proposal came from. */
+  readonly proposalKind: 'estimator' | 'dedup' | 'read-state'
+  readonly event:
+    | 'enqueue'
+    | 'expire'
+    | 'decide'
+    | 'apply-void'
+    | 'apply-receipt'
+  /** Human decision (decide events only). */
+  readonly decision?: 'approved' | 'rejected' | 'ignored'
+  /** Execution receipt state (apply-receipt only). */
+  readonly receiptStatus?: 'applied' | 'deferred'
+  /** Aligned reason code (deferred receipts and void applications only). */
+  readonly reasonCode?: string
+  readonly itemSeqs: readonly number[]
+  readonly tokensBefore: number
+  readonly tokensAfter: number
+  /** Turn index the event happened at. */
+  readonly turnIndex?: number
+}
+
 /** Closed version-one context-compression audit vocabulary. */
 export type CompressionAuditRecord =
   | CompressionPolicyFrozenAuditRecord
@@ -177,6 +203,7 @@ export type CompressionAuditRecord =
   | NativeAutoCompactAuditRecord
   | SummaryLocatorAuditRecord
   | EstimatorOutcomeAuditRecord
+  | ReviewOutcomeAuditRecord
 
 /** Minimal logger method consumed by the audit publisher. */
 export interface CompressionAuditLogger {

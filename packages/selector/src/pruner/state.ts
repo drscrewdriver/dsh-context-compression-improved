@@ -8,10 +8,23 @@
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { DedupeTable } from '../runtime/tokenpilot/dedup.ts'
 import type { EstimatorFailures } from '../runtime/tokenpilot/estimator.ts'
+import type { ReviewQueue, ReviewQueueStore } from '../runtime/tokenpilot/review-queue.ts'
 import type {
   ContextCompressionSettings,
   ResolvedConfig,
 } from '../runtime/types.ts'
+
+/** Four-state per-session outcome counters behind the floating-window summary row. */
+export interface ReviewSessionSummary {
+  /** Rewrites that landed through the automatic path while review mode served this session. */
+  autoApplied: number
+  /** Approved proposals whose merged batch executed with an applied receipt. */
+  reviewApplied: number
+  /** Pending proposals that expired unhandled at a turn boundary. */
+  expired: number
+  /** Approved proposals voided at the apply point (digest mismatch et al). */
+  voided: number
+}
 
 /** Mutable per-session state bag used inside {@link ToolResultPruner}. */
 export interface PrunerState {
@@ -40,4 +53,18 @@ export interface PrunerState {
   readonly tailTrimBoundaryAttempts: WeakMap<Session, object>
   /** Last effective policy audit key emitted for each Session. */
   readonly policyResolutionAudits: WeakMap<Session, string>
+  /**
+   * TokenPilot-inspired R4: shared review-queue store. Starts as the in-memory
+   * fail-open fallback; swapped to the storageDomain-backed adapter when (and
+   * if) that seam opens successfully.
+   */
+  reviewStore: ReviewQueueStore
+  /** Per-session review queue carrying the frozen timeout policy. */
+  readonly reviewQueues: WeakMap<Session, ReviewQueue>
+  /** Last observed turn index per Session: the monotonic clock for review expiries. */
+  readonly reviewClocks: WeakMap<Session, number>
+  /** Estimator-reported remaining turns Ŝ per Session; advisory only. */
+  readonly estimatorRemainingTurns: WeakMap<Session, number>
+  /** Four-state outcome counters per Session (floating-window summary row). */
+  readonly reviewSummaries: WeakMap<Session, ReviewSessionSummary>
 }

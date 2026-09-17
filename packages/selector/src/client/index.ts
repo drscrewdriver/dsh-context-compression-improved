@@ -12,6 +12,7 @@ import { DEFAULT_CUSTOM_COMPRESSION_POLICY } from '../profiles.ts'
 import { decodeSettings } from './decode.ts'
 import { en, zh } from './locales.ts'
 import { planPresetOptionsOps, presetOptionsOpsAccepted } from './preset-options.ts'
+import { ReviewOverlay, renderReviewOverlay } from './ReviewOverlay.tsx'
 
 /**
  * Harness 0.1.5 mounts the web core's `slots` service on the client context
@@ -140,6 +141,22 @@ export function apply(ctx: ClientContext): void {
     }, ContextCompressionSettingsSection))
   } catch (error) {
     console.warn('[dsh-context-compression-improved] settings.section 注册失败(新宿主已收编):', error)
+  }
+
+  // TokenPilot-inspired R4：审查浮窗挂在 shell.overlay（dsh-tidychat 先例：
+  // 该层默认点击穿透，卡片自持指针事件）。reviewMode 关闭或无 pending 时组件
+  // 渲染 null —— 与 0.1.2 宿主（无此 slot）同构的降级语义：注册失败不影响设置卡。
+  // （本文件是 .ts：元素构造在 ReviewOverlay.renderReviewOverlay，不能内联 JSX。）
+  try {
+    ctx.slots.inject('shell.overlay', () => ctx.slots.register(
+      { name: 'shell.overlay', id: 'context-compression-review' },
+      () => {
+        const scope = ctx.settingsScope.bind<ContextCompressionSettings>({ namespace: NS, decode: decodeSettings })
+        return renderReviewOverlay(scope, ctx.locale.bind(NS) as (key: string) => string)
+      },
+    ))
+  } catch (error) {
+    console.warn('[dsh-context-compression-improved] shell.overlay 注册失败(宿主无浮层或已收编):', error)
   }
 }
 
