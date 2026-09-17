@@ -126,4 +126,48 @@ describe('context-compression audit records', () => {
       }, record)
     }).not.toThrow()
   })
+
+  it('keeps review-outcome records free of proposal content', () => {
+    const record: CompressionAuditRecord = {
+      schemaVersion: 1,
+      kind: 'review-outcome',
+      sessionId: 'review-session',
+      proposalId: 'a1b2c3d4e5f6',
+      proposalKind: 'read-state',
+      event: 'apply-receipt',
+      receiptStatus: 'applied',
+      itemSeqs: [7, 9],
+      tokensBefore: 1400,
+      tokensAfter: 1000,
+      turnIndex: 12,
+    }
+
+    const line = formatCompressionAudit(record)
+    const parsed = JSON.parse(line.slice(COMPRESSION_AUDIT_PREFIX.length)) as CompressionAuditRecord
+    expect(parsed).toEqual(record)
+    // Only ids, enums, and numbers: no digests, no content fields.
+    expect(line).not.toContain('digest')
+    expect(line).not.toContain('"content"')
+    expect(line).not.toContain('"text"')
+    expect(line).not.toContain('apiKey')
+  })
+
+  it('carries reason codes on void and deferred review events', () => {
+    const record: CompressionAuditRecord = {
+      schemaVersion: 1,
+      kind: 'review-outcome',
+      sessionId: 'review-session',
+      proposalId: 'b2c3d4e5f6a1',
+      proposalKind: 'dedup',
+      event: 'apply-void',
+      reasonCode: 'review_receipt_digest_invalid',
+      itemSeqs: [3],
+      tokensBefore: 5000,
+      tokensAfter: 4000,
+    }
+    const parsed = JSON.parse(
+      formatCompressionAudit(record).slice(COMPRESSION_AUDIT_PREFIX.length),
+    ) as CompressionAuditRecord
+    expect(parsed).toEqual(record)
+  })
 })

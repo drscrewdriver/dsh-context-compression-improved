@@ -275,3 +275,104 @@ export function EstimatorControls({ options, disabled, save, settle, t }: Estima
     </section>
   )
 }
+
+interface ReviewModeControlsProps {
+  options: PresetOptionsSettings
+  disabled: boolean
+  save: (options: PresetOptionsPatch) => Promise<void>
+  settle: (operation: () => Promise<void>) => void
+  t: (key: ContextCompressionLocaleKey) => string
+}
+
+/**
+ * TokenPilot-inspired review-mode card (beta). When enabled, edge/high-impact
+ * reduction candidates queue for manual approval and execute in one merged
+ * batch at the next turn boundary; the numeric fields tune the benefit model.
+ * Numeric drafts commit on blur and only when they parse to a value the
+ * runtime schema accepts, so an invalid keystroke never disables the panel.
+ */
+export function ReviewModeControls({ options, disabled, save, settle, t }: ReviewModeControlsProps) {
+  const [turnsDraft, setTurnsDraft] = useState(String(options.reviewTimeoutTurns ?? 6))
+  const [alphaDraft, setAlphaDraft] = useState(String(options.cacheHitDiscountAlpha ?? 0.1))
+  const [highImpactDraft, setHighImpactDraft] = useState(String(options.reviewHighImpactTokens ?? 4000))
+  const reviewMode = options.reviewMode ?? false
+  const commit = (patch: PresetOptionsPatch) => {
+    settle(() => save(patch))
+  }
+  const commitTurns = (): void => {
+    const next = Number(turnsDraft)
+    if (!Number.isSafeInteger(next) || next < 1 || next === (options.reviewTimeoutTurns ?? 6)) return
+    commit({ reviewTimeoutTurns: next })
+  }
+  const commitAlpha = (): void => {
+    const next = Number(alphaDraft)
+    if (!Number.isFinite(next) || next <= 0 || next >= 1 || next === (options.cacheHitDiscountAlpha ?? 0.1)) return
+    commit({ cacheHitDiscountAlpha: next })
+  }
+  const commitHighImpact = (): void => {
+    const next = Number(highImpactDraft)
+    if (!Number.isSafeInteger(next) || next < 0 || next === (options.reviewHighImpactTokens ?? 4000)) return
+    commit({ reviewHighImpactTokens: next })
+  }
+  return (
+    <section className={css.autoCompact} aria-labelledby="context-compression-review-title">
+      <h3 id="context-compression-review-title" className={css.autoCompactTitle}>{t('review.title')}</h3>
+      <p className={css.customNote}>{t('review.description')}</p>
+      <label className={css.field}>
+        <span>{t('review.enabled')}</span>
+        <select
+          value={reviewMode ? 'on' : 'off'}
+          disabled={disabled}
+          onChange={(event) => { settle(() => save({ reviewMode: event.currentTarget.value === 'on' })) }}
+        >
+          <option value="off">{t('review.enabled.off')}</option>
+          <option value="on">{t('review.enabled.on')}</option>
+        </select>
+      </label>
+      {reviewMode ? (
+        <>
+          <label className={css.field}>
+            <span>{t('review.timeoutTurns')}</span>
+            <input
+              type="number"
+              min={1}
+              step={1}
+              value={turnsDraft}
+              disabled={disabled}
+              onChange={(event) => { setTurnsDraft(event.currentTarget.value) }}
+              onBlur={commitTurns}
+              onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }}
+            />
+          </label>
+          <label className={css.field}>
+            <span>{t('review.alpha')}</span>
+            <input
+              type="number"
+              min={0.01}
+              max={0.99}
+              step={0.05}
+              value={alphaDraft}
+              disabled={disabled}
+              onChange={(event) => { setAlphaDraft(event.currentTarget.value) }}
+              onBlur={commitAlpha}
+              onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }}
+            />
+          </label>
+          <label className={css.field}>
+            <span>{t('review.highImpact')}</span>
+            <input
+              type="number"
+              min={0}
+              step={500}
+              value={highImpactDraft}
+              disabled={disabled}
+              onChange={(event) => { setHighImpactDraft(event.currentTarget.value) }}
+              onBlur={commitHighImpact}
+              onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur() }}
+            />
+          </label>
+        </>
+      ) : null}
+    </section>
+  )
+}

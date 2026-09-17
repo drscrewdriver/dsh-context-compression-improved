@@ -135,6 +135,11 @@ export interface PresetOptionsSettings {
   readonly estimatorBaseUrl?: string
   readonly estimatorApiKey?: string
   readonly estimatorTimeoutMs?: number
+  /** Review-mode overrides (beta); mirrors the runtime PresetOptions.reviewMode. */
+  readonly reviewMode?: boolean
+  readonly reviewTimeoutTurns?: number
+  readonly cacheHitDiscountAlpha?: number
+  readonly reviewHighImpactTokens?: number
 }
 
 /**
@@ -148,9 +153,10 @@ export function decodePresetOptionsSettings(value: unknown): PresetOptionsSettin
   const allowed = new Set([
     'dedupeToolResults', 'summaryLocator', 'prefixStabilizer', 'readState', 'estimatorMode',
     'estimatorProvider', 'estimatorModel', 'estimatorBaseUrl', 'estimatorApiKey', 'estimatorTimeoutMs',
+    'reviewMode', 'reviewTimeoutTurns', 'cacheHitDiscountAlpha', 'reviewHighImpactTokens',
   ])
   if (Object.keys(value).some(key => !allowed.has(key))) return undefined
-  for (const key of ['dedupeToolResults', 'summaryLocator', 'prefixStabilizer', 'readState'] as const) {
+  for (const key of ['dedupeToolResults', 'summaryLocator', 'prefixStabilizer', 'readState', 'reviewMode'] as const) {
     const entry = value[key]
     if (entry !== undefined && typeof entry !== 'boolean') return undefined
   }
@@ -168,6 +174,23 @@ export function decodePresetOptionsSettings(value: unknown): PresetOptionsSettin
       || estimatorTimeoutMs < 100 || estimatorTimeoutMs > 60_000)) {
     return undefined
   }
+  const reviewTimeoutTurns = value.reviewTimeoutTurns
+  if (reviewTimeoutTurns !== undefined
+    && (typeof reviewTimeoutTurns !== 'number' || !Number.isSafeInteger(reviewTimeoutTurns) || reviewTimeoutTurns < 1)) {
+    return undefined
+  }
+  const cacheHitDiscountAlpha = value.cacheHitDiscountAlpha
+  if (cacheHitDiscountAlpha !== undefined
+    && (typeof cacheHitDiscountAlpha !== 'number' || !Number.isFinite(cacheHitDiscountAlpha)
+      || cacheHitDiscountAlpha <= 0 || cacheHitDiscountAlpha >= 1)) {
+    return undefined
+  }
+  const reviewHighImpactTokens = value.reviewHighImpactTokens
+  if (reviewHighImpactTokens !== undefined
+    && (typeof reviewHighImpactTokens !== 'number' || !Number.isSafeInteger(reviewHighImpactTokens)
+      || reviewHighImpactTokens < 0)) {
+    return undefined
+  }
   const decoded: {
     -readonly [K in keyof PresetOptionsSettings]: PresetOptionsSettings[K]
   } = {}
@@ -181,6 +204,10 @@ export function decodePresetOptionsSettings(value: unknown): PresetOptionsSettin
   if (value.estimatorBaseUrl !== undefined) decoded.estimatorBaseUrl = value.estimatorBaseUrl as string
   if (value.estimatorApiKey !== undefined) decoded.estimatorApiKey = value.estimatorApiKey as string
   if (estimatorTimeoutMs !== undefined) decoded.estimatorTimeoutMs = estimatorTimeoutMs as number
+  if (value.reviewMode !== undefined) decoded.reviewMode = value.reviewMode as boolean
+  if (reviewTimeoutTurns !== undefined) decoded.reviewTimeoutTurns = reviewTimeoutTurns as number
+  if (cacheHitDiscountAlpha !== undefined) decoded.cacheHitDiscountAlpha = cacheHitDiscountAlpha as number
+  if (reviewHighImpactTokens !== undefined) decoded.reviewHighImpactTokens = reviewHighImpactTokens as number
   return decoded
 }
 

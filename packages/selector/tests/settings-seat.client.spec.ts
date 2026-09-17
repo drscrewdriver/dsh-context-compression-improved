@@ -37,7 +37,7 @@ function collectRegistrations(): { declared: string[]; registrations: CapturedRe
       inject: (slot: string, factory: () => (() => void) | Generator<() => void>) => {
         declared.push(slot)
         const result = factory()
-        const steps: Iterable<() => void> = typeof (result as IteratorObject)?.[Symbol.iterator] === 'function'
+        const steps: Iterable<() => void> = typeof (result as { [Symbol.iterator]?: unknown })?.[Symbol.iterator] === 'function'
           ? (result as Generator<() => void>)
           : [result as () => void]
         for (const step of steps) { void step }
@@ -58,11 +58,12 @@ describe('settings-seat contract (standalone settings.section only)', () => {
     expect(inject).toEqual(['slots', 'locale', 'settingsScope'])
   })
 
-  it('injects exactly the settings.section seat and nothing else', () => {
+  it('injects exactly the settings.section seat plus the shell.overlay float', () => {
     const { declared, registrations } = collectRegistrations()
-    expect(declared).toEqual(['settings.section'])
-    expect(registrations).toHaveLength(1)
+    expect(declared).toEqual(['settings.section', 'shell.overlay'])
+    expect(registrations).toHaveLength(2)
     expect(registrations[0]!.slot).toBe('settings.section')
+    expect(registrations[1]!.slot).toBe('shell.overlay')
   })
 
   it('pins the section identity (id/order/label/locale) and the panel component', () => {
