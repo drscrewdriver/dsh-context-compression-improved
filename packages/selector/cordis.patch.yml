@@ -6,16 +6,23 @@
       name: 'dsh-context-compression-improved'
       config:
         presetOverlay: true
-    # The estimator catalog route rides its own row so the compression stack
-    # stays loadable on profiles that have no host web server. Measured on the
-    # host source: `dsh-host-webserver.register` performs no authorization check
-    # and `ctx.get(name)` only asks whether the providing fiber is active, so
-    # this `inject` is belt-and-braces — the row is simply absent instead of
+    # The HTTP routes ride their own row so the compression stack stays loadable
+    # on profiles that have no host web server. Measured on the host source:
+    # `dsh-host-webserver.register` performs no authorization check and
+    # `ctx.get(name)` only asks whether the providing fiber is active, so this
+    # `inject` is belt-and-braces — the row is simply absent instead of
     # announcing a pending route on a webServer-less profile. The two-channel
     # registration inside the plugin covers both arrival orders on its own.
+    #
+    # `reviewQueueRoute` belongs here and not on the bundle row: it gates the
+    # R4 human-review endpoints (`/review-queue`, `/review-decide`) and was
+    # never turned on, so the review overlay polled two 404s and the panel
+    # could not open. Both flags are set on exactly one row, so each route is
+    # registered exactly once.
     - id: context-compression-improved-estimator-catalog
       name: 'dsh-context-compression-improved'
       inject:
         - webServer
       config:
         estimatorCatalogRoute: true
+        reviewQueueRoute: true
