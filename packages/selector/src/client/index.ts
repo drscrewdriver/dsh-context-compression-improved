@@ -125,38 +125,10 @@ export function apply(ctx: ClientContext): void {
       },
     }
   }
-  // 设置 → 插件 → 上下文压缩卡片。槽名随宿主版本演变：0.1.5-rc.2 的 SlotMap
-  // 声明 `settings.plugins.tab`，0.1.2/0.1.3 叫 `settings.plugin.item`。未声明槽
-  // 的注册会在激活期抛错，故 inject 调用与工厂体都各自 try/catch，任一失败不
-  // 影响另一处（双槽冗余同 dsh-prime-memory；id+key 双写兼容 Desktop list 与
-  // CLI keyed 两种槽声明，同 dsh-thinking-levels）。
-  const registerSettingsCard = (slotName: 'settings.plugins.tab' | 'settings.plugin.item'): void => {
-    try {
-      ctx.slots.inject(slotName, () => {
-        try {
-          return ctx.slots.register({
-            name: slotName,
-            id: NS,
-            key: NS,
-            order: 17,
-            label: () => ctx.locale.bind(NS)('nav'),
-            locale: NS,
-            inject: injected,
-          }, ContextCompressionSettingsSection)
-        } catch (error) {
-          console.warn(`[dsh-context-compression-improved] ${slotName} 注册失败(宿主未声明该槽):`, error)
-          return () => {}
-        }
-      })
-    } catch (error) {
-      console.warn(`[dsh-context-compression-improved] ${slotName} 注入失败(宿主未声明该槽):`, error)
-    }
-  }
-  registerSettingsCard('settings.plugins.tab')
-  registerSettingsCard('settings.plugin.item')
-
   // 设置 → 上下文压缩 直挂分节（0.1.1 契约；0.1.5 官方分节也注册在此，未声明槽
-  // 的注册会在激活期抛错，故 try/catch 守卫 —— 同 dsh-prime-memory 的双槽冗余）
+  // 的注册会在激活期抛错，故 try/catch 守卫 —— 同 dsh-prime-memory 的双槽冗余）。
+  // 只挂这一处：再注册 `settings.plugins.tab` / `settings.plugin.item` 会在
+  // 设置里同时出现独立分节和插件卡片，重复展示同一张面板。
   try {
     ctx.slots.inject('settings.section', () => ctx.slots.register({
       name: 'settings.section',

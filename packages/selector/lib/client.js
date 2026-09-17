@@ -1459,30 +1459,6 @@ window.__ModuleLoader__.load({
 					}
 				};
 			};
-			const registerSettingsCard = (slotName) => {
-				try {
-					ctx.slots.inject(slotName, () => {
-						try {
-							return ctx.slots.register({
-								name: slotName,
-								id: NS,
-								key: NS,
-								order: 17,
-								label: () => ctx.locale.bind(NS)("nav"),
-								locale: NS,
-								inject: injected
-							}, ContextCompressionSettingsSection);
-						} catch (error) {
-							console.warn(`[dsh-context-compression-improved] ${slotName} 注册失败(宿主未声明该槽):`, error);
-							return () => {};
-						}
-					});
-				} catch (error) {
-					console.warn(`[dsh-context-compression-improved] ${slotName} 注入失败(宿主未声明该槽):`, error);
-				}
-			};
-			registerSettingsCard("settings.plugins.tab");
-			registerSettingsCard("settings.plugin.item");
 			try {
 				ctx.slots.inject("settings.section", () => ctx.slots.register({
 					name: "settings.section",
