@@ -1,4 +1,4 @@
-﻿#!/bin/sh
+#!/bin/sh
 # lib freshness gate (runs before every push from this repo).
 #
 # The plugin ships lib/ as a committed artifact and never builds on the
