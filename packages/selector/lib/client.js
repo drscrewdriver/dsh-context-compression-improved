@@ -1419,34 +1419,23 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region src/client/index.ts
-		const inject = ["slots"];
+		const inject = [
+			"slots",
+			"locale",
+			"settingsScope"
+		];
 		const NS = "context-compression";
 		function sameCustomPolicy(left, right) {
 			if (left.version !== 3 || right.version !== 3) return false;
 			return left.version === right.version && left.unit === right.unit && left.prefixPolicy === right.prefixPolicy && left.fresh.enabled === right.fresh.enabled && left.fresh.trigger === right.fresh.trigger && left.fresh.target === right.fresh.target && left.aggregate.enabled === right.aggregate.enabled && left.aggregate.trigger === right.aggregate.trigger && left.aggregate.target === right.aggregate.target && left.history.enabled === right.history.enabled && left.history.trigger === right.history.trigger && left.history.keepRecentToolCalls === right.history.keepRecentToolCalls && left.history.keepRecentTokens === right.history.keepRecentTokens && left.history.minReclaim === right.history.minReclaim && left.tailTrim.enabled === right.tailTrim.enabled && left.tailTrim.trigger === right.tailTrim.trigger;
 		}
 		function apply(ctx) {
-			const getService = (name) => {
-				try {
-					const getter = ctx.get;
-					if (typeof getter === "function") return getter.call(ctx, name);
-					return ctx[name];
-				} catch {
-					return;
-				}
-			};
-			const locale = getService("locale");
-			const settingsScope = getService("settingsScope");
-			if (locale === void 0 || settingsScope === void 0) {
-				console.warn("[dsh-context-compression-improved] client services locale/settingsScope unavailable; settings panel not registered");
-				return;
-			}
-			locale.register(NS, {
+			ctx.locale.register(NS, {
 				zh,
 				en
 			});
 			const injected = () => {
-				const scope = settingsScope.bind({
+				const scope = ctx.settingsScope.bind({
 					namespace: NS,
 					decode: decodeSettings
 				});
