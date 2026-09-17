@@ -117,9 +117,6 @@ function bindInjected(
   const stub = createScopeStub(settings, commit)
   let options: Record<string, unknown> | undefined
   const ctx = {
-    get: (name: string) => (name === 'locale'
-      ? { register: () => {} }
-      : name === 'settingsScope' ? { bind: () => (stub as unknown as { scope: unknown }).scope } : undefined),
     slots: {
       inject: (_slot: string, factory: () => (() => void) | Generator<() => void>) => {
         const result = factory()
@@ -130,7 +127,10 @@ function bindInjected(
         return () => {}
       },
     },
-    locale: { bind: () => (key: string) => key },
+    // apply consumes the services through their declarative-inject faces
+    // (ctx.locale / ctx.settingsScope), the same shape cordis binds on the host.
+    locale: { bind: () => (key: string) => key, register: () => {} },
+    settingsScope: { bind: () => (stub as unknown as { scope: unknown }).scope },
   }
   apply(ctx as never)
   if (options === undefined) throw new Error('the settings card never registered')
