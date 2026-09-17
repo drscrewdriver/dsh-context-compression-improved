@@ -113,7 +113,9 @@ function bindInjected(
         return typeof result === 'function' ? result : () => {}
       },
       register: (registerOptions: Record<string, unknown>) => {
-        options = registerOptions
+        // The R4 overlay registration rides the same slots service; only the
+        // settings card carries the inject factory these tests drive.
+        if (registerOptions.name === 'settings.section') options = registerOptions
         return () => {}
       },
     },
@@ -165,6 +167,30 @@ describe('presetOptions writes preserve sibling fields', () => {
     const { injected, sectionOf } = bindInjected({ estimatorMode: 'direct', estimatorApiKey: 'sk-stored' })
     await injected.savePresetOptions({ estimatorApiKey: undefined })
     expect(sectionOf('presetOptions')).toEqual({ estimatorMode: 'direct' })
+  })
+
+  it('writes the review-mode fields without touching estimator siblings (R4)', async () => {
+    const { injected, sectionOf } = bindInjected({ estimatorMode: 'host' })
+    await injected.savePresetOptions({
+      reviewMode: true,
+      reviewTimeoutTurns: 8,
+      cacheHitDiscountAlpha: 0.2,
+      reviewHighImpactTokens: 6000,
+    })
+    expect(sectionOf('presetOptions')).toEqual({
+      estimatorMode: 'host',
+      reviewMode: true,
+      reviewTimeoutTurns: 8,
+      cacheHitDiscountAlpha: 0.2,
+      reviewHighImpactTokens: 6000,
+    })
+    await injected.savePresetOptions({ reviewMode: undefined })
+    expect(sectionOf('presetOptions')).toEqual({
+      estimatorMode: 'host',
+      reviewTimeoutTurns: 8,
+      cacheHitDiscountAlpha: 0.2,
+      reviewHighImpactTokens: 6000,
+    })
   })
 
   it('writes nothing when the patch already matches the stored section', async () => {

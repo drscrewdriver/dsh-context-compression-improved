@@ -390,7 +390,11 @@ function parsePresetOptionsSettings(value) {
 		"estimatorModel",
 		"estimatorBaseUrl",
 		"estimatorApiKey",
-		"estimatorTimeoutMs"
+		"estimatorTimeoutMs",
+		"reviewMode",
+		"reviewTimeoutTurns",
+		"cacheHitDiscountAlpha",
+		"reviewHighImpactTokens"
 	]);
 	const unknown = Object.keys(value).find((key) => !allowed.has(key));
 	if (unknown !== void 0) throw new TypeError(`Context-compression presetOptions: unknown key "${unknown}"`);
@@ -398,7 +402,8 @@ function parsePresetOptionsSettings(value) {
 		"dedupeToolResults",
 		"summaryLocator",
 		"prefixStabilizer",
-		"readState"
+		"readState",
+		"reviewMode"
 	]) {
 		const entry = value[key];
 		if (entry !== void 0 && typeof entry !== "boolean") throw new TypeError(`Context-compression presetOptions.${key} must be a boolean`);
@@ -407,6 +412,12 @@ function parsePresetOptionsSettings(value) {
 	if (estimatorMode !== void 0 && estimatorMode !== "" && estimatorMode !== "host" && estimatorMode !== "direct") throw new TypeError("Context-compression presetOptions.estimatorMode must be \"\", \"host\", or \"direct\"");
 	const estimatorTimeoutMs = value.estimatorTimeoutMs;
 	if (estimatorTimeoutMs !== void 0 && (typeof estimatorTimeoutMs !== "number" || !Number.isSafeInteger(estimatorTimeoutMs) || estimatorTimeoutMs < 100 || estimatorTimeoutMs > 6e4)) throw new TypeError("Context-compression presetOptions.estimatorTimeoutMs must be an integer between 100 and 60000");
+	const reviewTimeoutTurns = value.reviewTimeoutTurns;
+	if (reviewTimeoutTurns !== void 0 && (typeof reviewTimeoutTurns !== "number" || !Number.isSafeInteger(reviewTimeoutTurns) || reviewTimeoutTurns < 1)) throw new TypeError("Context-compression presetOptions.reviewTimeoutTurns must be an integer of at least 1");
+	const cacheHitDiscountAlpha = value.cacheHitDiscountAlpha;
+	if (cacheHitDiscountAlpha !== void 0 && (typeof cacheHitDiscountAlpha !== "number" || !Number.isFinite(cacheHitDiscountAlpha) || cacheHitDiscountAlpha <= 0 || cacheHitDiscountAlpha >= 1)) throw new TypeError("Context-compression presetOptions.cacheHitDiscountAlpha must be a number strictly between 0 and 1");
+	const reviewHighImpactTokens = value.reviewHighImpactTokens;
+	if (reviewHighImpactTokens !== void 0 && (typeof reviewHighImpactTokens !== "number" || !Number.isSafeInteger(reviewHighImpactTokens) || reviewHighImpactTokens < 0)) throw new TypeError("Context-compression presetOptions.reviewHighImpactTokens must be a non-negative integer");
 	for (const key of [
 		"estimatorProvider",
 		"estimatorModel",
@@ -427,6 +438,10 @@ function parsePresetOptionsSettings(value) {
 	if (value.estimatorBaseUrl !== void 0) result.estimatorBaseUrl = value.estimatorBaseUrl;
 	if (value.estimatorApiKey !== void 0) result.estimatorApiKey = value.estimatorApiKey;
 	if (estimatorTimeoutMs !== void 0) result.estimatorTimeoutMs = estimatorTimeoutMs;
+	if (value.reviewMode !== void 0) result.reviewMode = value.reviewMode;
+	if (reviewTimeoutTurns !== void 0) result.reviewTimeoutTurns = reviewTimeoutTurns;
+	if (cacheHitDiscountAlpha !== void 0) result.cacheHitDiscountAlpha = cacheHitDiscountAlpha;
+	if (reviewHighImpactTokens !== void 0) result.reviewHighImpactTokens = reviewHighImpactTokens;
 	return result;
 }
 /** Settings schema used by the user-facing profile selector. */
@@ -629,7 +644,11 @@ const PRESET_OPTION_DEFAULTS = deepFreeze({
 	summaryLocator: true,
 	prefixStabilizer: true,
 	readState: true,
-	estimator: { mode: "" }
+	estimator: { mode: "" },
+	reviewMode: false,
+	reviewTimeoutTurns: 6,
+	cacheHitDiscountAlpha: .1,
+	reviewHighImpactTokens: 4e3
 });
 /**
 * Merge persisted presetOptions overrides over the tokenpilot-inspired
@@ -645,7 +664,11 @@ function mergePresetOptions(overrides) {
 		summaryLocator: overrides.summaryLocator ?? PRESET_OPTION_DEFAULTS.summaryLocator,
 		prefixStabilizer: overrides.prefixStabilizer ?? PRESET_OPTION_DEFAULTS.prefixStabilizer,
 		readState: overrides.readState ?? PRESET_OPTION_DEFAULTS.readState,
-		estimator: { mode: overrides.estimatorMode ?? PRESET_OPTION_DEFAULTS.estimator.mode }
+		estimator: { mode: overrides.estimatorMode ?? PRESET_OPTION_DEFAULTS.estimator.mode },
+		reviewMode: overrides.reviewMode ?? PRESET_OPTION_DEFAULTS.reviewMode,
+		reviewTimeoutTurns: overrides.reviewTimeoutTurns ?? PRESET_OPTION_DEFAULTS.reviewTimeoutTurns,
+		cacheHitDiscountAlpha: overrides.cacheHitDiscountAlpha ?? PRESET_OPTION_DEFAULTS.cacheHitDiscountAlpha,
+		reviewHighImpactTokens: overrides.reviewHighImpactTokens ?? PRESET_OPTION_DEFAULTS.reviewHighImpactTokens
 	});
 }
 /**

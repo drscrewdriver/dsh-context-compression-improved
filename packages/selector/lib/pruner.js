@@ -1259,33 +1259,59 @@ function buildEstimatorSystemPrompt() {
 		"For each numbered historical file read, decide whether the live agent is likely to",
 		"reference that exact file state again later in the session. Reads whose file was",
 		"already rewritten, or whose task has visibly moved on, are expired.",
-		"Answer with ONLY a JSON array: [{\"seq\":<number>,\"expired\":<boolean>}]."
+		"Answer with ONLY a JSON array: [{\"seq\":<number>,\"expired\":<boolean>}].",
+		"Optionally, if you can estimate how many user turns remain in this session, answer",
+		"with {\"expectedRemainingTurns\":<number>,\"items\":[{\"seq\":<number>,\"expired\":<boolean>}]}",
+		"instead; omit the field when you cannot estimate it."
 	].join(" ");
 }
 function buildEstimatorUserPrompt(samples) {
 	return samples.map((sample) => `{"seq":${String(sample.seq)},"path":${JSON.stringify(sample.path)},"turn":${String(sample.turn)}}`).join("\n");
 }
-/** Parse the estimator answer; anything malformed yields no verdicts. */
-function parseEstimatorAnswer(text) {
+function parseVerdictArray(value) {
+	if (!Array.isArray(value)) return [];
+	const verdicts = [];
+	for (const entry of value) {
+		if (typeof entry !== "object" || entry === null) continue;
+		const record = entry;
+		if (typeof record.seq !== "number" || typeof record.expired !== "boolean") continue;
+		verdicts.push({
+			seq: record.seq,
+			expired: record.expired
+		});
+	}
+	return verdicts;
+}
+/**
+* Parse the estimator answer including the optional session-level
+* `expectedRemainingTurns`. Accepts both the legacy bare verdict array and the
+* extended object form; anything malformed yields no verdicts and no Ŝ.
+*/
+function parseEstimatorAnswerDetailed(text) {
+	const objectStart = text.indexOf("{");
+	const objectEnd = text.lastIndexOf("}");
+	if (objectStart >= 0 && objectEnd > objectStart) try {
+		const parsed = JSON.parse(text.slice(objectStart, objectEnd + 1));
+		if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+			const record = parsed;
+			const verdicts = parseVerdictArray(record.verdicts ?? record.items);
+			if (verdicts.length > 0) {
+				const turns = record.expectedRemainingTurns;
+				if (typeof turns === "number" && Number.isFinite(turns) && turns >= 0) return {
+					verdicts,
+					expectedRemainingTurns: Math.floor(turns)
+				};
+				return { verdicts };
+			}
+		}
+	} catch {}
 	const start = text.indexOf("[");
 	const end = text.lastIndexOf("]");
-	if (start < 0 || end <= start) return [];
+	if (start < 0 || end <= start) return { verdicts: [] };
 	try {
-		const parsed = JSON.parse(text.slice(start, end + 1));
-		if (!Array.isArray(parsed)) return [];
-		const verdicts = [];
-		for (const entry of parsed) {
-			if (typeof entry !== "object" || entry === null) continue;
-			const record = entry;
-			if (typeof record.seq !== "number" || typeof record.expired !== "boolean") continue;
-			verdicts.push({
-				seq: record.seq,
-				expired: record.expired
-			});
-		}
-		return verdicts;
+		return { verdicts: parseVerdictArray(JSON.parse(text.slice(start, end + 1))) };
 	} catch {
-		return [];
+		return { verdicts: [] };
 	}
 }
 /** One channel-bound estimator. `ask` resolves undefined on any failure. */
@@ -1430,6 +1456,361 @@ function dedupePlaceholder(entry, originalChars) {
 		`original_chars=${String(originalChars)};`,
 		"use context_compression_retrieve with this source if the omitted evidence is necessary.]"
 	].join(" ");
+}
+//#endregion
+//#region src/runtime/tokenpilot/proposal.ts
+/**
+* TokenPilot-inspired R4: benefit model for the human-gated review pipeline.
+*
+* Pure functions only: the classifier needs no I/O, no session state, and no
+* host services, so every decision is unit-testable and audit-replayable.
+*
+* The cost model follows the TokenPilot paper's cache-accounting view: one
+* merged mutation pays a one-time tail KV-cache refill penalty of
+* `(1−α)·tailTokens`, and every later turn recovers the reclaimed tokens at
+* the cache-hit discount `α`:
+*
+* ```
+* R              = Σ(tokensBefore − tokensAfter)   // net reclaimed tokens
+* paybackTurns   = (1−α)·tailTokens / (α·R)        // one-time refill / per-turn saving
+* expectedSaving = α·R·max(0, Ŝ − paybackTurns)    // Ŝ = estimated remaining turns
+* ```
+*
+* `expectedSaving` is only produced when Ŝ is known (the estimator answered
+* with `expectedRemainingTurns`); it is never fabricated from a guess.
+*/
+/**
+* Aggregate the batch-level benefit of a set of reduction candidates.
+*
+* Individual candidates whose replacement would grow the context contribute
+* zero recovery (they never make a batch look better than dropping them).
+*/
+function computeBenefit(candidates, input) {
+	const { alpha, tailTokens, remainingTurns } = input;
+	let recoveredTokens = 0;
+	for (const candidate of candidates) recoveredTokens += Math.max(0, candidate.tokensBefore - candidate.tokensAfter);
+	const penaltyTokens = (1 - alpha) * tailTokens;
+	const perTurnSaving = alpha * recoveredTokens;
+	if (perTurnSaving <= 0) return remainingTurns === void 0 ? {
+		recoveredTokens,
+		penaltyTokens
+	} : {
+		recoveredTokens,
+		penaltyTokens,
+		expectedSaving: -penaltyTokens
+	};
+	const paybackTurns = penaltyTokens / perTurnSaving;
+	if (remainingTurns === void 0) return {
+		recoveredTokens,
+		penaltyTokens,
+		paybackTurns
+	};
+	return {
+		recoveredTokens,
+		penaltyTokens,
+		paybackTurns,
+		expectedSaving: perTurnSaving * Math.max(0, remainingTurns - paybackTurns)
+	};
+}
+/**
+* Stable proposal identity: the sha-256 of the serialized item digests, cut to
+* 12 hex chars. Stable across re-enqueues of the same content so a repeated
+* classification cannot duplicate a pending proposal.
+*/
+function proposalId(itemDigests) {
+	const hash = createHash("sha256");
+	for (const digest of itemDigests) hash.update(digest);
+	hash.update(String(itemDigests.length));
+	return hash.digest("hex").slice(0, 12);
+}
+/**
+* Canonical content digest reused from the dedup hash: plain-text results hash
+* through the dedupe canonicalization; rich blocks fall back to canonical JSON
+* so every candidate is freezable.
+*/
+function contentDigest(content) {
+	return dedupeHash(flattenPlainText(content) ?? JSON.stringify(content), "trim-eol");
+}
+function proposalKindFor(candidate, estimatorSeqs) {
+	if (estimatorSeqs?.has(candidate.sourceSeq) === true) return "estimator";
+	if (candidate.reducer === "dedupe-pointer") return "dedup";
+	return "read-state";
+}
+/**
+* Triage planned replacements into the three review-mode buckets.
+*
+* Per candidate (R is per candidate, never cross-credited):
+* - `tokensAfter ≥ tokensBefore` → drop (nothing to recover);
+* - `tokensBefore ≥ reviewHighImpactTokens` → review ("直接送审": high impact
+*   always waits for a human, even when the payback band would pass it);
+* - `paybackTurns ≤ 1`, or Ŝ known and `paybackTurns ≤ 0.25·Ŝ` → auto;
+* - Ŝ known and `paybackTurns ∈ (1, 3]` → review;
+* - everything else (Ŝ unknown with a slow payback) → drop.
+*/
+function classifyCandidates(candidates, input) {
+	const auto = [];
+	const review = [];
+	const drop = [];
+	for (const candidate of candidates) {
+		const benefit = computeBenefit([candidate], input);
+		if (benefit.recoveredTokens <= 0) {
+			drop.push(candidate);
+			continue;
+		}
+		const highImpact = candidate.tokensBefore >= input.reviewHighImpactTokens;
+		const payback = benefit.paybackTurns;
+		if (!highImpact && payback !== void 0) {
+			if (payback <= 1 || input.remainingTurns !== void 0 && payback <= .25 * input.remainingTurns) {
+				auto.push(candidate);
+				continue;
+			}
+			if (!(input.remainingTurns !== void 0 && payback <= 3)) {
+				drop.push(candidate);
+				continue;
+			}
+		}
+		const item = {
+			seq: candidate.sourceSeq,
+			component: candidate.component,
+			kind: proposalKindFor(candidate, input.estimatorSeqs),
+			tokensBefore: candidate.tokensBefore,
+			tokensAfter: candidate.tokensAfter,
+			digest: contentDigest(candidate.content)
+		};
+		review.push({
+			id: proposalId([item.digest]),
+			kind: item.kind,
+			items: [item],
+			benefit
+		});
+	}
+	return {
+		auto,
+		review,
+		drop
+	};
+}
+//#endregion
+//#region src/runtime/tokenpilot/review-queue.ts
+/** In-memory store: the fail-open fallback when no durable seam is available. */
+var MemoryReviewStore = class {
+	sessions = /* @__PURE__ */ new Map();
+	load(sessionId) {
+		return this.sessions.get(sessionId);
+	}
+	save(sessionId, record) {
+		this.sessions.set(sessionId, record);
+	}
+	ids() {
+		return [...this.sessions.keys()];
+	}
+};
+var ReviewQueue = class {
+	store;
+	options;
+	constructor(store, options) {
+		this.store = store;
+		this.options = options;
+	}
+	/**
+	* Fail-open store access: a throwing seam must never break the compression
+	* pipeline. Reads degrade to "no stored record"; writes degrade to losing
+	* durability for that call (the store itself is expected to warn).
+	*/
+	safeLoad(sessionId) {
+		try {
+			return this.store.load(sessionId);
+		} catch {
+			return;
+		}
+	}
+	safeSave(sessionId, record) {
+		try {
+			this.store.save(sessionId, record);
+		} catch {}
+	}
+	sessionRecord(sessionId) {
+		return this.safeLoad(sessionId) ?? {
+			version: 1,
+			proposals: []
+		};
+	}
+	/**
+	* Queue one classified proposal. A repeated classification of the same
+	* content re-does nothing but refresh the patience clock, so re-enqueue
+	* cannot duplicate a live proposal.
+	* @returns `false` when an identical live proposal already exists.
+	*/
+	enqueue(sessionId, skeleton, turnIndex) {
+		const record = this.sessionRecord(sessionId);
+		const existing = record.proposals.find((entry) => entry.id === skeleton.id);
+		if (existing !== void 0 && existing.status !== "expired") {
+			existing.lastTurnIndex = turnIndex;
+			this.safeSave(sessionId, record);
+			return false;
+		}
+		const proposal = {
+			id: skeleton.id,
+			sessionId,
+			kind: skeleton.kind,
+			items: skeleton.items.map((item) => ({ ...item })),
+			benefit: { ...skeleton.benefit },
+			status: "pending",
+			enqueuedTurn: turnIndex,
+			lastTurnIndex: turnIndex
+		};
+		this.safeSave(sessionId, {
+			version: 1,
+			proposals: [...record.proposals.filter((entry) => entry.id !== skeleton.id), proposal]
+		});
+		return true;
+	}
+	/** Live pending proposals of one session, oldest enqueue first. */
+	listPending(sessionId) {
+		return this.sessionRecord(sessionId).proposals.filter((entry) => entry.status === "pending").sort((left, right) => left.enqueuedTurn - right.enqueuedTurn);
+	}
+	/** Approved proposals waiting for the next turn-boundary batch. */
+	listApproved(sessionId) {
+		return this.sessionRecord(sessionId).proposals.filter((entry) => entry.status === "approved").sort((left, right) => left.enqueuedTurn - right.enqueuedTurn);
+	}
+	/**
+	* Transition one pending proposal. Idempotent: deciding an unknown id or a
+	* non-pending proposal changes nothing and reports the miss.
+	*/
+	decide(sessionId, id, decision) {
+		const record = this.sessionRecord(sessionId);
+		const proposal = record.proposals.find((entry) => entry.id === id);
+		if (proposal === void 0) return {
+			ok: false,
+			reason: "unknown-proposal"
+		};
+		if (proposal.status !== "pending") return {
+			ok: false,
+			reason: "not-pending"
+		};
+		proposal.status = decision;
+		this.safeSave(sessionId, record);
+		return { ok: true };
+	}
+	/**
+	* Expire every pending proposal whose patience has run out at this turn
+	* boundary. Expired proposals are removed from the store (the summary view
+	* aggregates them from the audit log instead).
+	* @returns the expired proposals, for the caller's audit emission.
+	*/
+	expireTurn(sessionId, turnIndex) {
+		const record = this.sessionRecord(sessionId);
+		const keep = [];
+		const expired = [];
+		for (const proposal of record.proposals) {
+			if (proposal.status === "pending" && turnIndex - proposal.lastTurnIndex > this.options.timeoutTurns) {
+				expired.push({
+					...proposal,
+					status: "expired"
+				});
+				continue;
+			}
+			keep.push(proposal);
+		}
+		if (expired.length > 0) this.safeSave(sessionId, {
+			version: 1,
+			proposals: keep
+		});
+		return expired;
+	}
+	/**
+	* Settle an approved proposal with its execution receipt and retire it from
+	* the live store. The caller is responsible for auditing the receipt; the
+	* queue only records which proposal left and why.
+	*/
+	recordReceipt(sessionId, id, receipt) {
+		const record = this.sessionRecord(sessionId);
+		const proposal = record.proposals.find((entry) => entry.id === id);
+		if (proposal === void 0 || proposal.status !== "approved") return void 0;
+		this.safeSave(sessionId, {
+			version: 1,
+			proposals: record.proposals.filter((entry) => entry.id !== id)
+		});
+		return {
+			...proposal,
+			receipt
+		};
+	}
+};
+//#endregion
+//#region src/runtime/tokenpilot/review-storage.ts
+/** Domain name — `UNIT_NAME_RE` (`/^[a-z][a-z0-9_]*$/`) allows no hyphens. */
+const REVIEW_STORAGE_DOMAIN = "context_compression_review";
+/** The one declared table: one record per session id. */
+const REVIEW_STORAGE_TABLE = "sessions";
+/** Structural validator: accepts exactly the shape this module persists. */
+function reviewSessionRecordValidator() {
+	return { safeParse(value) {
+		if (typeof value !== "object" || value === null) return { success: false };
+		const record = value;
+		if (record.version !== 1 || !Array.isArray(record.proposals)) return { success: false };
+		for (const proposal of record.proposals) {
+			if (typeof proposal !== "object" || proposal === null) return { success: false };
+			const entry = proposal;
+			if (typeof entry.id !== "string" || typeof entry.sessionId !== "string") return { success: false };
+			if (entry.kind !== "estimator" && entry.kind !== "dedup" && entry.kind !== "read-state") return { success: false };
+			if (entry.status !== "pending" && entry.status !== "approved") return { success: false };
+			if (!Number.isSafeInteger(entry.enqueuedTurn) || !Number.isSafeInteger(entry.lastTurnIndex)) return { success: false };
+			if (!Array.isArray(entry.items) || typeof entry.benefit !== "object" || entry.benefit === null) return { success: false };
+			for (const item of entry.items) {
+				if (typeof item !== "object" || item === null) return { success: false };
+				const one = item;
+				if (!Number.isSafeInteger(one.seq) || typeof one.digest !== "string") return { success: false };
+			}
+		}
+		return {
+			success: true,
+			data: value
+		};
+	} };
+}
+function reviewStorageSpec() {
+	return {
+		name: REVIEW_STORAGE_DOMAIN,
+		version: 1,
+		layout: "per-record",
+		tables: { [REVIEW_STORAGE_TABLE]: { valueSchema: reviewSessionRecordValidator() } }
+	};
+}
+/** Adapter presenting the sync KV face the queue expects over the domain table. */
+var StorageDomainReviewStore = class {
+	table;
+	constructor(table) {
+		this.table = table;
+	}
+	load(sessionId) {
+		const value = this.table.get(sessionId);
+		return typeof value === "object" && value !== null ? value : void 0;
+	}
+	save(sessionId, record) {
+		this.table.put(sessionId, record).catch(() => void 0);
+	}
+	ids() {
+		return [...this.table.keys()];
+	}
+};
+/**
+* Attempt to open the review storage domain through the optional
+* `storageDomain` seam.
+* @param getService - resolved once with the seam name; `undefined` means the
+* host lacks the service.
+* @returns the durable store, or `undefined` when the seam is absent or fails
+* (the caller falls back to the in-memory store and logs one warning).
+*/
+async function openReviewStorage(getService) {
+	let service;
+	try {
+		service = getService("storageDomain");
+	} catch {
+		return;
+	}
+	if (service === void 0 || service === null) return void 0;
+	return new StorageDomainReviewStore((await service.open(reviewStorageSpec())).table(REVIEW_STORAGE_TABLE));
 }
 //#endregion
 //#region src/runtime/reducers.ts
@@ -2465,8 +2846,18 @@ var ToolResultPruner = class extends Service {
 			postflightDiagnostics: /* @__PURE__ */ new WeakMap(),
 			activeRequestBoundaries: /* @__PURE__ */ new WeakMap(),
 			tailTrimBoundaryAttempts: /* @__PURE__ */ new WeakMap(),
-			policyResolutionAudits: /* @__PURE__ */ new WeakMap()
+			policyResolutionAudits: /* @__PURE__ */ new WeakMap(),
+			reviewStore: new MemoryReviewStore(),
+			reviewQueues: /* @__PURE__ */ new WeakMap(),
+			reviewClocks: /* @__PURE__ */ new WeakMap(),
+			estimatorRemainingTurns: /* @__PURE__ */ new WeakMap(),
+			reviewSummaries: /* @__PURE__ */ new WeakMap()
 		};
+		openReviewStorage((name) => this.ctx.get(name)).then((store) => {
+			if (store !== void 0) this.state.reviewStore = store;
+		}).catch(() => {
+			this.ctx.logger.warn("context-compression review storage unavailable; keeping in-memory review queue");
+		});
 		ctx.on("session/event", (session, event) => {
 			if (event.type === "compaction/summary") {
 				emitCompressionAudit(ctx.logger, {
@@ -2495,6 +2886,7 @@ var ToolResultPruner = class extends Service {
 			this.state.activeRequestBoundaries.set(agent.session, boundary);
 			try {
 				if (!signal.aborted) try {
+					this.reviewClock(agent.session, turn);
 					this.runRequestBoundary(agent.session, turn, step - 1, signal);
 				} catch (error) {
 					this.auditFailure(agent.session, "fresh", "request-boundary", error);
@@ -2513,6 +2905,12 @@ var ToolResultPruner = class extends Service {
 			} catch (error) {
 				this.auditFailure(agent.session, "fresh", "terminal-pass", error);
 				ctx.logger.warn("context-compression terminal pass failed open: %o", error);
+			}
+			try {
+				this.expireReviewProposals(agent.session, turn);
+				this.applyApprovedProposals(agent.session);
+			} catch (error) {
+				ctx.logger.warn("context-compression review turn-boundary pass failed open: %o", error);
 			}
 			this.postflightEstimatorPass(agent.session, signal).catch(() => void 0);
 		});
@@ -2556,7 +2954,7 @@ var ToolResultPruner = class extends Service {
 			const exactUnavailable = eligible.some((candidate) => candidate.count.kind !== "exact-tokenizer");
 			if (exactUnavailable) this.warnExactUnavailable(session, view, "native");
 			const planned = eligible.map((candidate) => this.planNative(candidate, session, stage, policy, view)).filter((entry) => entry !== null);
-			landed.push(...this.landAll(session, planned));
+			landed.push(...this.landAll(session, this.triageForReview(session, policy, planned)));
 			if (landed.length === 0) {
 				const exact = eligible.flatMap((candidate) => candidate.count.kind === "exact-tokenizer" ? [candidate.count.tokens] : []);
 				this.auditComponent(session, policy, "native-tool-result", "pressure", "skipped", exactUnavailable ? "exact-tokenizer-unavailable" : exact.length === 0 ? "no-tool-result-candidates" : Math.max(...exact) <= policy.nativeTriggerTokens ? "at-or-below-trigger" : planned.length === 0 ? "no-valid-reduction" : "recovery-tool-unavailable", {
@@ -2578,13 +2976,13 @@ var ToolResultPruner = class extends Service {
 			if (historyOutcome.kind === "planned") {
 				const capacityPressure = this.capacityPressureActive(session, view, policy);
 				historyAllowed = this.adaptiveHistoryAllowed(session, view, historyOutcome.plans, capacityPressure);
-				if (historyAllowed) landed.push(...this.landAll(session, historyOutcome.plans));
+				if (historyAllowed) landed.push(...this.landAll(session, this.triageForReview(session, policy, historyOutcome.plans)));
 			}
 		} else {
 			historyAllowed = this.historyAllowed(session, policy, view);
 			if (historyAllowed) {
 				historyOutcome = this.planHistoricalAging(session, policy, view);
-				if (historyOutcome.kind === "planned") landed.push(...this.landAll(session, historyOutcome.plans));
+				if (historyOutcome.kind === "planned") landed.push(...this.landAll(session, this.triageForReview(session, policy, historyOutcome.plans)));
 			}
 		}
 		if (!landed.some((entry) => entry.stage === "pressure")) this.auditHistoryEvaluation(session, policy, view, historyAllowed, historyOutcome);
@@ -2739,7 +3137,9 @@ var ToolResultPruner = class extends Service {
 				verdicts = /* @__PURE__ */ new Map();
 				this.state.estimatorVerdicts.set(session, verdicts);
 			}
-			for (const verdict of parseEstimatorAnswer(answer)) {
+			const detailed = parseEstimatorAnswerDetailed(answer);
+			if (detailed.expectedRemainingTurns !== void 0) this.state.estimatorRemainingTurns.set(session, detailed.expectedRemainingTurns);
+			for (const verdict of detailed.verdicts) {
 				if (verdicts.has(verdict.seq)) continue;
 				verdicts.set(verdict.seq, verdict.expired);
 				if (verdict.expired) expired += 1;
@@ -2763,10 +3163,304 @@ var ToolResultPruner = class extends Service {
 			ok
 		});
 	}
+	/**
+	* The per-session review queue, or `undefined` while review mode is off
+	* (every review path must then behave exactly like before).
+	*/
+	reviewQueueFor(session, policy) {
+		const presetOptions = policy?.presetOptions;
+		if (presetOptions?.reviewMode !== true) return void 0;
+		let queue = this.state.reviewQueues.get(session);
+		if (queue === void 0) {
+			queue = new ReviewQueue(this.state.reviewStore, { timeoutTurns: presetOptions.reviewTimeoutTurns });
+			this.state.reviewQueues.set(session, queue);
+		}
+		return queue;
+	}
+	/**
+	* Monotonic per-session turn clock for review patience and expiry. Bumped by
+	* the agent loop payloads (`pre-step` / `turn-stopping`); passes without a
+	* turn coordinate reuse the last observed value.
+	*/
+	reviewClock(session, turn) {
+		const previous = this.state.reviewClocks.get(session) ?? 0;
+		const next = typeof turn === "number" && Number.isSafeInteger(turn) && turn > previous ? turn : previous;
+		this.state.reviewClocks.set(session, next);
+		return next;
+	}
+	auditReviewOutcome(session, proposal, event, extra = {}, turnIndex) {
+		const tokensBefore = proposal.items.reduce((sum, item) => sum + item.tokensBefore, 0);
+		const tokensAfter = proposal.items.reduce((sum, item) => sum + item.tokensAfter, 0);
+		emitCompressionAudit(this.ctx.logger, {
+			schemaVersion: 1,
+			kind: "review-outcome",
+			sessionId: String(session.id),
+			proposalId: proposal.id,
+			proposalKind: proposal.kind,
+			event,
+			...extra.decision === void 0 ? {} : { decision: extra.decision },
+			...extra.receiptStatus === void 0 ? {} : { receiptStatus: extra.receiptStatus },
+			...extra.reasonCode === void 0 ? {} : { reasonCode: extra.reasonCode },
+			itemSeqs: proposal.items.map((item) => item.seq),
+			tokensBefore,
+			tokensAfter,
+			...turnIndex === void 0 ? {} : { turnIndex }
+		});
+	}
+	/**
+	* Review-mode triage hook: classify one pass's planned replacements and
+	* withhold the review bucket from landing, enqueuing it for human approval
+	* instead. With review mode off (or nothing planned) this is the identity.
+	*
+	* The digest freezes each candidate's ORIGINAL surface content, so the apply
+	* point can prove "what is removed now is what was approved then".
+	*/
+	triageForReview(session, policy, plans) {
+		const queue = this.reviewQueueFor(session, policy);
+		if (queue === void 0 || plans.length === 0) return plans;
+		const presetOptions = policy.presetOptions;
+		const estimatorVerdicts = this.state.estimatorVerdicts.get(session);
+		const estimatorSeqs = new Set([...estimatorVerdicts?.entries() ?? []].filter(([, expired]) => expired).map(([seq]) => seq));
+		const input = {
+			alpha: presetOptions.cacheHitDiscountAlpha,
+			tailTokens: Math.max(1, policy.historyKeepRecentTokens),
+			reviewHighImpactTokens: presetOptions.reviewHighImpactTokens,
+			...this.state.estimatorRemainingTurns.get(session) === void 0 ? {} : { remainingTurns: this.state.estimatorRemainingTurns.get(session) },
+			estimatorSeqs
+		};
+		const classified = classifyCandidates(plans.map((plan) => ({
+			sourceSeq: plan.sourceSeq,
+			tokensBefore: plan.tokensBefore,
+			tokensAfter: plan.tokensAfter,
+			component: plan.component,
+			reducer: plan.reducer,
+			content: plan.candidate.event.data.message.content[0].content
+		})), input);
+		const autoSeqs = new Set(classified.auto.map((candidate) => candidate.sourceSeq));
+		const clock = this.reviewClock(session);
+		for (const skeleton of classified.review) if (queue.enqueue(String(session.id), skeleton, clock)) this.auditReviewOutcome(session, {
+			id: skeleton.id,
+			kind: skeleton.kind,
+			items: skeleton.items
+		}, "enqueue", {}, clock);
+		return plans.filter((plan) => autoSeqs.has(plan.sourceSeq));
+	}
+	/**
+	* Execute every approved proposal of one session as ONE merged replacement
+	* batch at the current turn boundary, following the upstream applied-receipt
+	* discipline: applied receipts are built only from real mutation evidence —
+	* estimates never cross into applied savings.
+	*
+	* Per proposal: every item's frozen digest is re-checked against the current
+	* surface content; any mismatch voids the whole proposal (deferred with a
+	* reason code) instead of deleting something the user never approved.
+	* Fail-open: any unexpected error only logs and leaves the queue intact.
+	*/
+	applyApprovedProposals(session) {
+		const policy = this.activePolicy(session);
+		const queue = this.reviewQueueFor(session, policy);
+		if (queue === void 0) return;
+		const sessionId = String(session.id);
+		const approved = [...queue.listApproved(sessionId)];
+		if (approved.length === 0) return;
+		try {
+			const view = measureForCompaction(this.ctx, session);
+			const candidatesBySeq = new Map(this.snapshot(session, view).map((candidate) => [candidate.seq, candidate]));
+			const settled = [];
+			const now = (/* @__PURE__ */ new Date()).toISOString();
+			for (const proposal of approved) {
+				const voidedReason = this.reviewProposalVoided(session, proposal);
+				if (voidedReason !== void 0) {
+					settled.push({
+						proposal,
+						receipt: {
+							status: "deferred",
+							reasonCode: voidedReason,
+							estimatedTokens: proposal.benefit.recoveredTokens,
+							updatedAt: now
+						}
+					});
+					continue;
+				}
+				const batchPlans = [];
+				let planned = true;
+				for (const item of proposal.items) {
+					const candidate = candidatesBySeq.get(item.seq);
+					if (candidate === void 0) {
+						planned = false;
+						break;
+					}
+					const plan = this.planAggregate(candidate, session, view, "review-approved-whole-result", "pressure", void 0, "history", policy?.historyMode);
+					if (plan === null) {
+						planned = false;
+						break;
+					}
+					batchPlans.push(plan);
+				}
+				if (!planned || batchPlans.length === 0) {
+					settled.push({
+						proposal,
+						receipt: {
+							status: "deferred",
+							reasonCode: "review_receipt_execution_invalid",
+							estimatedTokens: proposal.benefit.recoveredTokens,
+							updatedAt: now
+						}
+					});
+					continue;
+				}
+				const landed = this.landAll(session, batchPlans);
+				if (landed.length === 0) {
+					settled.push({
+						proposal,
+						receipt: {
+							status: "deferred",
+							reasonCode: "review_receipt_execution_invalid",
+							estimatedTokens: proposal.benefit.recoveredTokens,
+							updatedAt: now
+						}
+					});
+					continue;
+				}
+				const landedForProposal = new Map(landed.map((entry) => [entry.originalSeq, entry]));
+				const measuredItems = proposal.items.map((item) => {
+					const entry = landedForProposal.get(item.seq);
+					return entry === void 0 ? item : {
+						...item,
+						tokensBefore: entry.tokensBefore,
+						tokensAfter: entry.tokensAfter
+					};
+				});
+				const appliedTokens = measuredItems.reduce((sum, item) => sum + item.tokensBefore - item.tokensAfter, 0);
+				settled.push({
+					proposal,
+					auditItems: measuredItems,
+					receipt: {
+						status: "applied",
+						estimatedTokens: proposal.benefit.recoveredTokens,
+						appliedTokens,
+						updatedAt: now
+					}
+				});
+			}
+			for (const { proposal, auditItems, receipt } of settled) {
+				queue.recordReceipt(sessionId, proposal.id, receipt);
+				const summary = this.reviewSummaryFor(session);
+				if (receipt.status === "applied") summary.reviewApplied += 1;
+				else summary.voided += 1;
+				this.auditReviewOutcome(session, auditItems === void 0 ? proposal : {
+					...proposal,
+					items: auditItems
+				}, receipt.status === "applied" ? "apply-receipt" : "apply-void", receipt.status === "applied" ? { receiptStatus: "applied" } : {
+					receiptStatus: "deferred",
+					reasonCode: receipt.reasonCode
+				});
+			}
+		} catch (error) {
+			this.ctx.logger.warn("context-compression review apply failed open: %o", error);
+		}
+	}
+	/**
+	* Current surface content at one seq: the newest covering replacement's
+	* blocks when the seq was rewritten, otherwise the original event's blocks.
+	* The replace range is `{startSeq,endSeq}` on 0.1.5 and `{start,end}` on
+	* 0.1.2, so both field spellings are read.
+	*/
+	surfaceContentAt(session, seq) {
+		let content;
+		for (const event of sessionEvents(session)) {
+			if (event.type !== "tool/result") continue;
+			const op = event.surfaceOp;
+			if (typeof op === "object" && op.op === "replace") {
+				const range = op;
+				const start = range.startSeq ?? range.start;
+				const end = range.endSeq ?? range.end;
+				if (start !== void 0 && end !== void 0 && start <= seq && seq <= end) content = event.data.message.content[0].content;
+			}
+		}
+		if (content !== void 0) return content;
+		const original = sessionEvents(session).find((entry) => entry.seq === seq);
+		return original?.type === "tool/result" ? original.data.message.content[0].content : void 0;
+	}
+	/**
+	* The execution-point digest check: `undefined` when every item's frozen
+	* digest still matches the current surface content, otherwise the aligned
+	* reason code explaining the void.
+	*/
+	reviewProposalVoided(session, proposal) {
+		for (const item of proposal.items) {
+			const current = this.surfaceContentAt(session, item.seq);
+			if (current === void 0) return "review_receipt_missing_candidate";
+			if (contentDigest(current) !== item.digest) return "review_receipt_digest_invalid";
+		}
+	}
+	reviewSummaryFor(session) {
+		let summary = this.state.reviewSummaries.get(session);
+		if (summary === void 0) {
+			summary = {
+				autoApplied: 0,
+				reviewApplied: 0,
+				expired: 0,
+				voided: 0
+			};
+			this.state.reviewSummaries.set(session, summary);
+		}
+		return summary;
+	}
+	/** Live pending review proposals of one session; empty when review mode is off. */
+	listReviewProposals(session) {
+		return this.reviewQueueFor(session, this.activePolicy(session))?.listPending(String(session.id)) ?? [];
+	}
+	/**
+	* Every session's live pending proposals, for the floating window's
+	* aggregate badge (the client carries no session id of its own).
+	*/
+	listAllReviewProposals() {
+		const ids = this.state.reviewStore.ids?.() ?? [];
+		const reader = new ReviewQueue(this.state.reviewStore, { timeoutTurns: 1 });
+		return ids.map((sessionId) => ({
+			sessionId,
+			proposals: [...reader.listPending(sessionId)]
+		})).filter((entry) => entry.proposals.length > 0);
+	}
+	/** Four-state outcome counters of one session (floating-window summary row). */
+	reviewSummary(session) {
+		return { ...this.reviewSummaryFor(session) };
+	}
+	/**
+	* Record one human decision. Returns the outcome, or `undefined` when
+	* review mode is off for this session (the route maps that to 503).
+	*/
+	decideReviewProposal(session, proposalId, decision) {
+		const queue = this.reviewQueueFor(session, this.activePolicy(session));
+		if (queue === void 0) return void 0;
+		const sessionId = String(session.id);
+		const pending = queue.listPending(sessionId).find((entry) => entry.id === proposalId);
+		const outcome = queue.decide(sessionId, proposalId, decision);
+		if (outcome.ok && pending !== void 0) this.auditReviewOutcome(session, pending, "decide", { decision }, this.reviewClock(session));
+		return outcome;
+	}
+	/**
+	* Expire stale pending proposals at one turn boundary and audit each.
+	* Public because tests drive it directly; the turn-stopping handler calls
+	* it with the loop's own turn index.
+	*/
+	expireReviewProposals(session, turnIndex) {
+		const queue = this.reviewQueueFor(session, this.activePolicy(session));
+		if (queue === void 0) return [];
+		const clock = this.reviewClock(session, turnIndex);
+		const expired = queue.expireTurn(String(session.id), clock);
+		if (expired.length > 0) this.reviewSummaryFor(session).expired += expired.length;
+		for (const proposal of expired) this.auditReviewOutcome(session, proposal, "expire", {}, clock);
+		return expired;
+	}
 	activePolicy(session, contextWindowTokens, stage = "pressure") {
 		const settings = this.activeSettings(session);
 		try {
-			const policy = resolvePolicy(this.state.config, settings.profile, settings.custom, {
+			const policy = resolvePolicy(settings.presetOptions === void 0 ? this.state.config : {
+				...this.state.config,
+				presetOptions: settings.presetOptions
+			}, settings.profile, settings.custom, {
 				...contextWindowTokens === void 0 ? {} : { contextWindowTokens },
 				autoCompactThresholdPercent: settings.autoCompact.thresholdPercent
 			});
@@ -3087,7 +3781,8 @@ var ToolResultPruner = class extends Service {
 				if (total > policy.aggregateTargetTokens) this.ctx.logger.warn("context-compression fresh aggregate residual: %d tokens exceed target %d", total, policy.aggregateTargetTokens);
 			}
 		}
-		const landed = this.landAll(session, candidates.map((candidate) => plans.get(candidate.seq)).filter((plan) => plan !== void 0));
+		const freshCandidates = candidates.map((candidate) => plans.get(candidate.seq)).filter((plan) => plan !== void 0);
+		const landed = this.landAll(session, this.triageForReview(session, policy, freshCandidates));
 		const freshLanded = landed.some((entry) => entry.stage === "fresh" && plans.get(entry.originalSeq)?.component === "fresh");
 		const aggregateLanded = landed.some((entry) => entry.stage === "fresh" && plans.get(entry.originalSeq)?.component === "aggregate");
 		if (!freshLanded) this.auditComponent(session, policy, "fresh", "fresh", policy.freshEnabled ? "skipped" : "disabled", !policy.freshEnabled ? "profile-policy" : !exactAvailable ? "exact-tokenizer-unavailable" : (maxCandidateTokens ?? 0) <= policy.freshTriggerTokens ? "at-or-below-trigger" : freshPlanned > 0 && aggregatePlanned > 0 ? "superseded-by-aggregate" : freshPlanned === 0 ? "no-valid-reduction" : "recovery-tool-unavailable", {
@@ -3661,6 +4356,7 @@ var ToolResultPruner = class extends Service {
 			tokenizerId: plan.tokenizerId,
 			tokenizerRevision: plan.tokenizerRevision
 		});
+		if (plan.reducer !== "review-approved-whole-result") this.reviewSummaryFor(session).autoApplied += 1;
 		return {
 			originalSeq: candidate.seq,
 			sourceSeq: plan.sourceSeq,

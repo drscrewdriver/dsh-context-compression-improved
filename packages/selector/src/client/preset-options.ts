@@ -20,6 +20,7 @@ import type { PresetOptionsSettings } from '../profiles.ts'
 const PRESET_OPTION_KEYS = [
   'dedupeToolResults', 'summaryLocator', 'prefixStabilizer', 'readState', 'estimatorMode',
   'estimatorProvider', 'estimatorModel', 'estimatorBaseUrl', 'estimatorApiKey', 'estimatorTimeoutMs',
+  'reviewMode', 'reviewTimeoutTurns', 'cacheHitDiscountAlpha', 'reviewHighImpactTokens',
 ] as const
 
 /** One partial edit of `presetOptions`; `undefined` clears the named field. */

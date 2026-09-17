@@ -11,6 +11,7 @@ import { DEFAULT_CUSTOM_COMPRESSION_POLICY } from '../profiles.ts'
 import { decodeSettings } from './decode.ts'
 import { en, zh } from './locales.ts'
 import { mergePresetOptionsPatch, presetOptionsEqual } from './preset-options.ts'
+import { renderReviewOverlay } from './ReviewOverlay.tsx'
 
 export const inject = ['slots', 'locale', 'settingsScope']
 const NS = 'context-compression'
@@ -103,6 +104,19 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: injected,
   }, ContextCompressionSettingsSection))
+
+  // TokenPilot-inspired R4：审查浮窗挂在 shell.overlay（dsh-tidychat 先例：
+  // 该层默认点击穿透，卡片自持指针事件）。reviewMode 关闭或无 pending 时组件
+  // 渲染 null；注册失败不影响设置卡。0.1.2 宿主的 slot 名联合未收录该浮层，
+  // 与既有 namespace 同款 `as never` 窄化。
+  try {
+    ctx.slots.inject('shell.overlay' as never, () => ctx.slots.register(
+      { name: 'shell.overlay', id: 'context-compression-review' } as never,
+      () => renderReviewOverlay(scope, ctx.locale.bind(NS) as (key: string) => string),
+    ))
+  } catch (error) {
+    console.warn('[dsh-context-compression-improved] shell.overlay 注册失败(宿主无浮层或已收编):', error)
+  }
 }
 
 export type {

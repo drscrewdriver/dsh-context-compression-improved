@@ -29,6 +29,13 @@ interface Config {
    * 0.1.5 replay — cite the host source.
    */
   estimatorCatalogRoute?: boolean;
+  /**
+   * Register the review pipeline's HTTP routes (pending-queue read + decide
+   * write) on this row. Same Bundle opt-in semantics as
+   * `estimatorCatalogRoute`; without the routes the floating window has no
+   * transport and simply never appears.
+   */
+  reviewQueueRoute?: boolean;
 }
 /** Loader validation for the standalone Bundle opt-in. */
 declare const Config: z<Config>;
