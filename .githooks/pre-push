@@ -1,0 +1,37 @@
+﻿#!/bin/sh
+# lib freshness gate (runs before every push from this repo).
+#
+# The plugin ships lib/ as a committed artifact and never builds on the
+# client at install time, so a stale lib pushed to a branch is what users
+# actually download. Rebuild here and refuse the push when the committed
+# lib no longer matches the committed sources.
+#
+# Skip conditions:
+# - the branch does not track a lib directory (non-plugin branches);
+# - pnpm or the build itself fails for reasons unrelated to freshness
+#   (the push is allowed, the build problem surfaces in CI/typecheck).
+
+ROOT="$(git rev-parse --show-toplevel)"
+LIB_DIR="packages/selector/lib"
+
+# Nothing to guard on branches without the shipped artifact.
+if [ ! -f "$ROOT/$LIB_DIR/index.js" ]; then
+  exit 0
+fi
+
+echo "[pre-push] rebuilding lib to verify freshness..."
+if ! (cd "$ROOT" && pnpm build >/dev/null 2>&1); then
+  echo "[pre-push] WARNING: pnpm build failed; skipping the lib freshness check." >&2
+  exit 0
+fi
+
+drift="$(git -C "$ROOT" diff --name-only -- "$LIB_DIR"; git -C "$ROOT" diff --cached --name-only -- "$LIB_DIR")"
+if [ -n "$drift" ]; then
+  echo >&2 "[pre-push] BLOCKED: packages/selector/lib drifted from the committed sources."
+  echo >&2 "[pre-push] The build just refreshed it. Review and commit the lib changes:"
+  echo >&2 "[pre-push]   git add packages/selector/lib && git commit --amend --no-edit   (or a follow-up commit)"
+  echo >&2 "[pre-push] Then push again."
+  exit 1
+fi
+
+exit 0
