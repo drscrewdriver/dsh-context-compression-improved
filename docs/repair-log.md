@@ -357,6 +357,63 @@ here for reasons the project's own `upgrade-pitfalls` §2.1 records independentl
 
 ---
 
+## D8 — The root manifest had no `files`, so npm packed the whole checkout
+
+**Symptom.** None at boot — which is why it survived. The installed plugin carried the
+repository's sources, tests and tooling. The copy in the live web profile held **164** entries:
+47 `src/` files, 45 test files, `scripts/`, `.githooks/pre-push`, `.github/workflows/ci.yml`,
+`eslint.config.js`, the TypeScript/vitest configs, and the nested duplicate `package.json`
+and `dsh.plugin.json`.
+
+**Root cause.** The repository root carries `main` / `exports` / `dsh.bundle.patch` but declared
+no `files` field, so npm fell back to "everything not in `.gitignore`". The root is the git
+install surface, so that fallback is the artifact every consumer installs.
+
+**Evidence.**
+
+```
+cd <repo> && npm pack --dry-run --json     # 163 entries, 14.04 MB unpacked
+```
+
+Against the live install, `Get-ChildItem -Recurse -File` over
+`~/.dsh/profiles/web/node_modules/dsh-context-compression-improved` returned 164 entries with
+`packages/selector/src` present.
+
+**Affected surface.** Every install and every distribution channel. There is no runtime symptom,
+so nothing was failing. `pnpm pack:dry-run` could not have caught it: `pnpm -r` never packs the
+repository root, so the gate only ever inspected the workspace member.
+
+**Fix.** Whitelist the packed surface on the root manifest. `packages/selector/lib`,
+`packages/selector/assets` and `packages/selector/cordis.patch.yml` must all stay, because
+`pruner.js` resolves `new URL('../assets/deepseek-v4/', import.meta.url)` — the `lib/` ↔
+`assets/` relative layout is load-bearing and a flattened whitelist breaks the tokenizer.
+`packages/selector/dsh.plugin.json` and the nested `package.json` stay **in the repository**
+(an out-of-tree consumer may read them) and simply stop being packed.
+
+**Verification.** `npm pack --dry-run --json` now reports **46** entries / 12.99 MB unpacked;
+`Compare-Object` against the baseline shows 117 removed and **0 added**, and no path matching
+`src/`, `tests/`, `.githooks/`, `.github/`, `scripts/`, `tsconfig`, `vitest`,
+`packages/selector/package.json` or `dsh.plugin.json` survives. The packed tarball was then
+extracted and re-checked from the inside: all 4 relative imports in `lib/*.js` resolve, both
+asset roots exist with 4 files each, `tokenizer.json` reads at 6 367 146 bytes, and every
+`main` / `types` / `exports` / `dsh.bundle.patch` entry is present. The 21 files making up the
+runtime surface of the *live* install are all still shipped (0 missing).
+
+**Guard.** `packages/selector/tests/public/package-contract.client.spec.ts` asserts the
+whitelist contains the three load-bearing patterns and no `src` / `tests` / `.githooks` /
+`.github` / `scripts` entry, and the root `pack:dry-run` script now also packs the repository
+root, so the surface this defect lived on is inside the gate.
+
+**Note — `dsh.plugin.json` is not a discovery path.** A root `dsh.plugin.json` was added
+believing it restored plugin discovery; it did not, and it was reverted. Searching
+`dsh\.plugin\.json` across the whole `@deepseek-ai` install, the DSH app packages and
+`dsh-app-boot` returns **0 hits**; profile bundles are decided by `package.json`'s
+`dsh.bundle.patch` (`readProfileManifest(...).dsh?.bundle?.patch !== void 0`). The file is kept
+only because 18 sibling plugin repositories ship one and an out-of-tree consumer cannot be
+ruled out from this machine.
+
+---
+
 ## U1 — The estimator card vanished off TokenPilot-inspired instead of explaining its gate
 
 **Symptom.** With any profile other than TokenPilot-inspired selected, the Settings page showed
@@ -393,6 +450,71 @@ green — the guard fails against the pre-fix behaviour, so it is not vacuous.
 **Still open.** The save affordance remains unexplained in the UI — fields commit on change or
 blur with only a transient busy state, so "did that save?" has no answer on screen. That is a
 separate, larger change (explicit save button plus three-state feedback) and is not fixed here.
+
+---
+
+## U2 — "Settings were not saved" came from an orphan writer lock, not from this plugin
+
+**Symptom.** Toggling anything under Settings → Context compression reported
+"Context compression settings were not saved." Reads stayed healthy; only writes failed.
+
+**Root cause.** An orphan `~/.dsh/settings.yaml.lock` — **0 bytes**, 18 hours old — blocked
+`withFileLock` in `@deepseek-ai/dsh-atomic-write`. `persistSection` waits
+`DEFAULT_LOCK_WAIT_MS = 2e3` and then throws, `write()` rejects, the settings client swallows
+the rejection and resolves normally, and the plugin sees only "the value did not change" and
+reports its generic failure. The module documents the behaviour: *the contender never removes
+an existing lock … orphan recovery is an operator action.*
+
+**Evidence.** A probe build printed
+`mode=host writable=true status=ready value=kept revision=0->0 accepts=true` with the delayed
+re-read still at `revision=0` — the read side fully healthy, the write never landing.
+`settings.yaml`'s mtime was four hours old at the moment of the click, so `persist()` never ran.
+The 0-byte lock means `open(..., 'wx')` succeeded and the process died before writing its pid;
+a healthy lock in the same codebase (`~/.dsh/task-board/ledger-v2.lock`) is 102 bytes and
+minutes fresh.
+
+**Affected surface.** Any plugin writing through `ctx.settingsScope` — nothing plugin-specific.
+
+**Fix.** Operator action: delete the orphan lock. No restart and no rollback — the lock is
+recreated by the next write, and the failed writes never applied. Verified by deleting it and
+re-saving: `reviewMode: true` landed in `settings.yaml` and the lock was not recreated.
+
+**Withdrawn hypotheses.** A root `dsh.plugin.json` (see D8's note), a decoded-shape mismatch and
+a plugin-side write bug were all false. The host logic was proven correct with a temporary spec
+driving the real `SettingsProvider` and `ContextCompressionSettingsSchema`: the revision moved
+`0→1` and the value persisted. `writable` is not evidence either — `dsh-settings-file` returns
+`true` unconditionally.
+
+**Guard.** None available in-process: the failure is a host-state precondition, not a code path.
+It is recorded here so the next reporter is not sent hunting through the plugin.
+
+## U3 — Re-saving the value that was already stored was reported as a failed save
+
+**Symptom.** Saving an option that already held the chosen value reported
+"Context compression settings were not saved." — while the stored value was in fact correct.
+
+**Root cause.** The Host's `bumpRevision` is guarded by `deepEqualJson` and moves only when the
+RAW section changes, so a write that restates the stored value cannot move it. `writeAndConfirm`
+fenced success on `after.revision !== beforeRevision`, so an idempotent no-op failed that fence.
+Five of the six writers were exposed; only `savePresetOptions` escaped, because
+`planPresetOptionsOps` filters no-ops at its own layer.
+
+**Evidence.** With the test double corrected to bump the revision only on a real change, 5 cases
+failed with `promise rejected "Error: Context compression settings were not saved."` at
+`writeAndConfirm` (`src/client/index.ts:89`) — `select`, `saveCodeSkeleton`, `saveAutoCompact`,
+`saveCustom`, `resetCustom` — while `savePresetOptions` passed.
+
+**Affected surface.** The settings write path of this plugin only.
+
+**Fix.** Confirm on the value the user sees, before spending a write that cannot change anything.
+The revision fence still guards every real write.
+
+**Verification.** The five cases resolve; both counter-cases still reject — a patch whose target
+is not yet held, and a real write the Host refuses.
+
+**Guard.** The same spec. Worth recording: the double was itself complicit — it bumped the
+revision on *every* write and let `set`/`unset` ignore the `commit` flag that `mutate` honoured,
+so it was more forgiving than the Host and could not reproduce the defect at all.
 
 ---
 
@@ -601,3 +723,6 @@ caused.
 | 2026-09-15 | doc corruption — mechanism | **Diagnosed.** A damaged spot is the 2-byte prefix of a three-byte UTF-8 character followed by `0x3F`: the character lost its third byte and, in most spots, the byte that followed it was consumed too (a double-byte-code-page decode/write pair collapse; 0 or 1 bytes lost per spot). The damage is **inherited, not produced here**: the newest valid blob of every affected file is `e337bf5`, while the same files are already defective at the `compat/0.1.5` baseline `d7c592d` and at `04f86e4`. Ten files carry it, not five — `README.{zh,ja,ko}.md` and `scripts/packed-install-e2e.mjs` were missed by the earlier note |
 | 2026-09-15 | doc corruption — repaired | **Batch I / T-I2.** All ten files repaired by restoring each damaged spot from `e337bf5`, with three independent checks: the restored character must carry the surviving 2-byte prefix; re-corrupting the repair reproduces the previous bytes exactly (so the edit touches nothing but the damage, and no line, no EOL and no other character moves); and the repair must agree with the valid ancestor everywhere outside the restored spots. Every affected file is now valid UTF-8. The English `README.md` is the clean case: ten spots, all `—`/quote characters plus their following space, zero other differences from the ancestor |
 | 2026-09-15 | ledger encoding | The twelve `—` characters in this file had been mangled to `鈥?` by the PowerShell port of the ledger (the 0.1.2 source has none); restored. Same class as the doc corruption above, introduced by that one-time port rather than inherited |
+| 2026-09-18 | D8 | **The packed surface was the whole checkout.** The root manifest had no `files`, so 163 packed entries — 47 `src`, 45 test files, scripts, CI, hooks and the nested duplicate manifests — shipped inside the installed plugin. Cut to 46. `pnpm pack:dry-run` never packed the repository root, so it could not have caught this; it does now |
+| 2026-09-18 | U2 | **"Settings were not saved" was an orphan `settings.yaml.lock`**, not a plugin defect: `withFileLock` waits 2 s, `persist` rejects, and the settings client swallows the reason. Cleared by operator action. The root `dsh.plugin.json` claim and every plugin-side hypothesis are withdrawn |
+| 2026-09-18 | U3 | **An idempotent no-op write was reported as a failure.** The revision does not move when the raw section is unchanged, so re-saving the stored value failed `writeAndConfirm`'s fence for 5 of the 6 writers. Now confirmed on the value; the revision fence still guards real writes |
