@@ -1191,6 +1191,16 @@ function buildLocatorBlock(events, shadowedRange) {
 //#endregion
 //#region src/runtime/reducers.ts
 /** Deterministic, evidence-backed reducers for fresh tool results. */
+/** Ranked-first ordering: ranked ids keep their rank, the rest append in order. */
+function rankedFirst(items, ranking) {
+	if (ranking === void 0 || ranking.length === 0) return items;
+	const ranked = /* @__PURE__ */ new Map();
+	for (const id of ranking) {
+		const found = items.find((item) => item.id === id);
+		if (found !== void 0 && !ranked.has(id)) ranked.set(id, found);
+	}
+	return [...ranked.values(), ...items.filter((item) => !ranked.has(item.id))];
+}
 const ANSI_PATTERN = /\u001B(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007]*(?:\u0007|\u001B\\))/gu;
 const IMPORTANT_PATTERN = new RegExp([
 	String.raw`\b(?:error|failed|failure|fatal|panic|exception|warning|warn|conflict|denied|forbidden|`,
@@ -1212,7 +1222,6 @@ const CODE_DECORATOR_PATTERN = /^\s*@[\w.]+/;
 const CODE_COMMENT_PATTERN = /^\s*(?:\/\/|#|\/\*|\*)/;
 const MARKDOWN_HEADING_PATTERN = /^#{1,6}\s+\S/;
 const LIST_ITEM_PATTERN = /^\s*(?:[-*+]|\d+[.)])\s+\S/;
-const TABLE_ROW_PATTERN = /^\s*\|/;
 const FENCE_PATTERN = /^\s*(?:```|~~~)/;
 const UUID_PATTERN = /\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b/g;
 const LONG_HEX_PATTERN = /\b[0-9a-fA-F]{64,}\b/g;
@@ -1245,7 +1254,7 @@ function placeholderizeLongStrings(line) {
 * @param input - original result text, recovery source, and output budget.
 * @returns a verified candidate, or `null` when every reducer fails open.
 */
-function reduceFreshToolResult(input) {
+function reduceFreshToolResult(input, ranking) {
 	const normalized = normalizeTerminalLines(input.text);
 	const prepared = {
 		...input,
@@ -1256,13 +1265,13 @@ function reduceFreshToolResult(input) {
 	const name = input.toolName.toLowerCase();
 	const candidates = [];
 	if (looksLikeJson(normalized.text)) candidates.push(() => reduceJson(prepared));
-	if (isSearchTool(name, command)) candidates.push(() => reduceSearch(prepared));
+	if (isSearchTool(name, command)) candidates.push(() => reduceSearch(prepared, ranking?.files));
 	if (isGitCommand(name, command)) candidates.push(() => reduceGit(prepared, command));
 	if (isPackageCommand(command)) candidates.push(() => reducePatternLog(prepared, "hypa-package", packagePattern()));
 	if (isBuildOrTestCommand(command)) candidates.push(() => reducePatternLog(prepared, "hypa-build-test", buildPattern()));
 	if (input.codeSkeleton === true && looksLikeSourceCode(normalized.text)) candidates.push(() => reduceCodeSkeleton(prepared));
 	if (looksLikeHtml(normalized.text)) candidates.push(() => reduceHtml(prepared));
-	if (looksLikeDocument(normalized.text)) candidates.push(() => reduceDocSkeleton(prepared));
+	if (looksLikeDocument(normalized.text)) candidates.push(() => reduceDocSkeleton(prepared, ranking?.sections));
 	if (isShellTool(name) || command !== "") candidates.push(() => reduceShell(prepared));
 	candidates.push(() => reduceProseKeep(prepared));
 	if (isReadTool(name)) candidates.push(() => reduceHead(prepared, "pi-head"));
@@ -1540,7 +1549,7 @@ function shrinkJson(value, depth) {
 * (withheld file/match counts) — never silently truncated. Outputs without
 * any `path:line` form fail open to salience.
 */
-function reduceSearch(input) {
+function reduceSearch(input, fileRanking) {
 	const groups = /* @__PURE__ */ new Map();
 	const ungrouped = [];
 	input.lines.forEach((line) => {
@@ -1562,9 +1571,12 @@ function reduceSearch(input) {
 	if (groups.size === 0) return reduceSalient(input, "search-salience");
 	const totalMatches = [...groups.values()].reduce((sum, rows) => sum + rows.length, 0);
 	const locatorFor = (path, rows) => `## ${path} (${String(rows.length)} matches)  ${rows.map((row) => `L${String(row.fileLine)}`).join(",")}`;
-	const allLocators = [...groups].map(([path, rows]) => locatorFor(path, rows));
 	const perFile = /* @__PURE__ */ new Map();
-	for (const [path, rows] of groups) perFile.set(path, [...rows].sort((a, b) => a.important === b.important ? a.fileLine - b.fileLine : a.important ? -1 : 1));
+	for (const entry of rankedFirst([...groups.entries()].map(([id, rows]) => ({
+		id,
+		rows
+	})), fileRanking)) perFile.set(entry.id, [...entry.rows].sort((a, b) => a.important === b.important ? a.fileLine - b.fileLine : a.important ? -1 : 1));
+	const allLocators = [...perFile.keys()].map((path) => locatorFor(path, groups.get(path)));
 	const headerFor = (l2Rows, omitted) => `[search results compressed; ${String(groups.size)} files, ${String(totalMatches)} matches; ${String(l2Rows)} content rows shown, ${String(omitted)} matches omitted; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"})]`;
 	const fillL2 = (output, quotaChars) => {
 		let used = 0;
@@ -1866,7 +1878,7 @@ function originalEnd(lines, index) {
 * when nothing is elidable or the budget cannot be met, so the next candidate
 * takes over.
 */
-function reduceDocSkeleton(input) {
+function reduceDocSkeleton(input, sectionRanking) {
 	const lines = input.lines;
 	const keep = new Array(lines.length).fill(false);
 	const headingIndex = [];
@@ -1888,6 +1900,13 @@ function reduceDocSkeleton(input) {
 	}
 	const sectionStarts = [-1, ...headingIndex];
 	const sectionEnds = [...headingIndex, lines.length];
+	const sections = headingIndex.map((heading, position) => ({
+		id: lines[heading].text.replace(/^#+\s*/, "").trim(),
+		heading,
+		from: heading + 1,
+		to: position + 1 < headingIndex.length ? headingIndex[position + 1] : lines.length
+	}));
+	const floorKeep = new Array(lines.length).fill(false);
 	for (let section = 0; section < sectionStarts.length; section++) {
 		const from = sectionStarts[section] + 1;
 		const to = sectionEnds[section];
@@ -1898,52 +1917,77 @@ function reduceDocSkeleton(input) {
 			if (first === -1) first = index;
 			last = index;
 		}
-		if (first !== -1) keep[first] = true;
-		if (last !== -1) keep[last] = true;
+		if (first !== -1) floorKeep[first] = true;
+		if (last !== -1) floorKeep[last] = true;
 	}
-	let tableRows = 0;
-	let fenceOpen = false;
-	for (let index = 0; index < lines.length; index++) {
-		const line = lines[index].text;
-		if (FENCE_PATTERN.test(line)) {
-			fenceOpen = !fenceOpen;
-			tableRows = 0;
-			continue;
-		}
-		if (fenceOpen || line.trim() === "") continue;
-		if (TABLE_ROW_PATTERN.test(line)) {
-			if (tableRows < 2) keep[index] = true;
-			tableRows += 1;
-			continue;
-		}
-		tableRows = 0;
-	}
-	const kept = [];
-	let index = 0;
-	let firstElided;
-	while (index < lines.length) {
-		if (keep[index]) {
-			kept.push(lines[index].text);
-			index += 1;
-			continue;
-		}
-		const runStart = index;
-		while (index < lines.length && !keep[index]) index += 1;
-		const start = lines[runStart].originalLine;
-		const end = originalEnd(lines, index - 1);
-		if (end >= start) {
-			if (firstElided === void 0) firstElided = {
-				start,
-				end
-			};
+	/** Emit the skeleton for one keep-set: header, kept lines, R9 range markers. */
+	const assemble = (flags, budget) => {
+		const kept = [];
+		let index = 0;
+		let firstElided;
+		while (index < lines.length) {
+			if (flags[index]) {
+				kept.push(lines[index].text);
+				index += 1;
+				continue;
+			}
+			const runStart = index;
+			while (index < lines.length && !flags[index]) index += 1;
+			const start = lines[runStart].originalLine;
+			const end = originalEnd(lines, index - 1);
+			if (firstElided === void 0) firstElided = start;
 			kept.push(elidedRangeMarker(start, end));
 		}
+		const hint = firstElided === void 0 ? "" : `,"start_line":${String(firstElided)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}`;
+		kept.unshift(`[document compressed by doc-skeleton; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"${hint}})]`);
+		return {
+			text: fitLines(kept, budget, input.sourceRef),
+			...firstElided === void 0 ? {} : { firstElided }
+		};
+	};
+	const combine = (base, overlay) => lines.map((_, index) => (base[index] ?? false) || (overlay[index] ?? false));
+	const mechanical = assemble(combine(keep, floorKeep), input.budgetChars);
+	if (mechanical.text === null) return null;
+	if (sectionRanking === void 0 || sectionRanking.length === 0) return {
+		text: mechanical.text,
+		reducer: "doc-skeleton",
+		lossy: true
+	};
+	const cap = Math.min(input.budgetChars, codePointLength(input.text) - 1);
+	const rankedFloor = new Array(lines.length).fill(false);
+	for (const section of sections) for (let index = section.from; index < section.to; index++) {
+		if (lines[index].text.trim() === "") continue;
+		rankedFloor[index] = true;
+		break;
 	}
-	const hint = firstElided === void 0 ? "" : `,"start_line":${String(firstElided.start)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}`;
-	kept.unshift(`[document compressed by doc-skeleton; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"${hint}})]`);
-	const text = fitLines(kept, input.budgetChars, input.sourceRef);
-	return text === null ? null : {
-		text,
+	/** Exact packed-output size of a keep-set: header + kept lines + markers. */
+	const packedSize = (flags) => {
+		let size = 180;
+		let index = 0;
+		while (index < lines.length) {
+			if (flags[index]) {
+				size += codePointLength(lines[index].text) + 1;
+				index += 1;
+				continue;
+			}
+			const runStart = index;
+			while (index < lines.length && !flags[index]) index += 1;
+			size += codePointLength(elidedRangeMarker(lines[runStart].originalLine, originalEnd(lines, index - 1))) + 1;
+		}
+		return size;
+	};
+	const fill = new Array(lines.length).fill(false);
+	for (const section of rankedFirst(sections, sectionRanking)) for (let index = section.from; index < section.to; index++) {
+		if (rankedFloor[index] || fill[index] || lines[index].text.trim() === "") continue;
+		fill[index] = true;
+		if (packedSize(combine(combine(keep, rankedFloor), fill)) > cap) {
+			fill[index] = false;
+			break;
+		}
+	}
+	const ranked = assemble(combine(combine(keep, rankedFloor), fill), cap);
+	return ranked.text === null ? null : {
+		text: ranked.text,
 		reducer: "doc-skeleton",
 		lossy: true
 	};
@@ -2395,6 +2439,131 @@ function documentCensus(text, omittedLines) {
 	return `${String(omittedLines)} lines omitted (sections: ${summary})`;
 }
 //#endregion
+//#region src/runtime/tokenpilot/sidechannel.ts
+/** One bound side channel. `ask` resolves `undefined` on ANY failure. */
+var SideChannel = class {
+	ctx;
+	options;
+	constructor(ctx, options) {
+		this.ctx = ctx;
+		this.options = options;
+	}
+	get enabled() {
+		return this.options.estimatorMode === "host" || this.options.estimatorMode === "direct";
+	}
+	async ask(request) {
+		const timeoutMs = this.options.estimatorTimeoutMs ?? 3e3;
+		const timeout = AbortSignal.timeout(timeoutMs);
+		const signal = typeof AbortSignal.any === "function" ? AbortSignal.any([request.signal, timeout]) : timeout;
+		try {
+			if (this.options.estimatorMode === "host") return await this.askHost(request.system, request.user, signal);
+			if (this.options.estimatorMode === "direct") return await this.askDirect(request.system, request.user, signal);
+			return;
+		} catch {
+			return;
+		}
+	}
+	/** Failure-open wrapper that also records one audit record per call. */
+	async askAudited(request) {
+		const now = Date.now();
+		const text = await this.ask(request);
+		const audit = {
+			ok: text !== void 0,
+			latencyMs: Date.now() - now,
+			...this.identity() !== void 0 ? { channel: this.identity() } : {},
+			...text === void 0 ? { reason: "channel returned no content (timeout, non-2xx, parse failure, or reasoning ate the 256-token budget)" } : {}
+		};
+		return {
+			...text === void 0 ? {} : { text },
+			audit
+		};
+	}
+	identity() {
+		if (this.options.estimatorMode === "direct") return `direct:${this.options.estimatorModel ?? ""}`;
+		if (this.options.estimatorMode === "host") {
+			const route = this.resolveHostRoute();
+			return route === void 0 ? "host" : `host:${route.provider}/${route.model}`;
+		}
+	}
+	/** Same host-route resolution as the estimator: explicit, then host default. */
+	resolveHostRoute() {
+		const provider = this.options.estimatorProvider ?? "";
+		const model = this.options.estimatorModel ?? "";
+		if (provider.length > 0 && model.length > 0) return {
+			provider,
+			model
+		};
+		try {
+			const selected = this.ctx.get("agentDefaultModel")?.currentSelection?.();
+			const selectedProvider = selected?.provider ?? "";
+			const selectedModel = selected?.model ?? "";
+			if (selectedProvider.length > 0 && selectedModel.length > 0) return {
+				provider: provider.length > 0 ? provider : selectedProvider,
+				model: model.length > 0 ? model : selectedModel
+			};
+		} catch {}
+	}
+	async askHost(system, user, signal) {
+		let llm;
+		try {
+			llm = this.ctx.get("llm");
+		} catch {
+			return;
+		}
+		if (llm?.stream === void 0) return void 0;
+		const route = this.resolveHostRoute();
+		if (route === void 0) return void 0;
+		let text = "";
+		const stream = llm.stream({
+			provider: route.provider,
+			model: route.model,
+			messages: [{
+				role: "user",
+				content: [{
+					type: "text",
+					text: user
+				}]
+			}],
+			system,
+			temperature: 0,
+			reasoningEffort: "off",
+			maxTokens: 256,
+			signal
+		});
+		for await (const chunk of stream) if (chunk.type === "text-delta" && typeof chunk.text === "string") text += chunk.text;
+		else if (chunk.type === "finish" && chunk.text === void 0) break;
+		return text.trim().length > 0 ? text : void 0;
+	}
+	async askDirect(system, user, signal) {
+		const baseUrl = this.options.estimatorBaseUrl;
+		if (baseUrl === void 0 || baseUrl.length === 0) return void 0;
+		const headers = { "content-type": "application/json" };
+		if (this.options.estimatorApiKey !== void 0 && this.options.estimatorApiKey.length > 0) headers.authorization = `Bearer ${this.options.estimatorApiKey}`;
+		const model = this.options.estimatorModel ?? "";
+		if (model.length === 0) return void 0;
+		const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/chat/completions`, {
+			method: "POST",
+			headers,
+			body: JSON.stringify({
+				model,
+				messages: [{
+					role: "system",
+					content: system
+				}, {
+					role: "user",
+					content: user
+				}],
+				temperature: 0,
+				max_tokens: 256
+			}),
+			signal
+		});
+		if (!response.ok) return void 0;
+		const text = (await response.json()).choices?.[0]?.message?.content;
+		return typeof text === "string" && text.trim().length > 0 ? text : void 0;
+	}
+};
+//#endregion
 //#region src/runtime/tokenpilot/estimator.ts
 /** Exponential backoff with a 5-minute cap: 1s, 2s, 4s, … */
 function backoffCooldownMs(failures) {
@@ -2468,109 +2637,21 @@ function parseEstimatorAnswerDetailed(text) {
 var Estimator = class {
 	ctx;
 	options;
+	channel;
 	constructor(ctx, options) {
 		this.ctx = ctx;
 		this.options = options;
+		this.channel = new SideChannel(ctx, options);
 	}
 	get enabled() {
 		return this.options.estimatorMode === "host" || this.options.estimatorMode === "direct";
 	}
 	async ask(system, user, signal) {
-		const timeoutMs = this.options.estimatorTimeoutMs ?? 3e3;
-		const timeout = AbortSignal.timeout(timeoutMs);
-		const signal2 = typeof AbortSignal.any === "function" ? AbortSignal.any([signal, timeout]) : timeout;
-		try {
-			if (this.options.estimatorMode === "host") return await this.askHost(system, user, signal2);
-			if (this.options.estimatorMode === "direct") return await this.askDirect(system, user, signal2);
-			return;
-		} catch {
-			return;
-		}
-	}
-	/**
-	* Resolve the host LLM route. Explicit estimator provider/model win; with
-	* them empty, reuse the route the harness already has configured via the
-	* optional `agentDefaultModel` service's current selection (same seam as
-	* dsh-prime-memory's resolveModelRoute) — the user must not re-enter a
-	* provider/model the host already knows.
-	*/
-	resolveHostRoute() {
-		const provider = this.options.estimatorProvider ?? "";
-		const model = this.options.estimatorModel ?? "";
-		if (provider.length > 0 && model.length > 0) return {
-			provider,
-			model
-		};
-		try {
-			const selected = this.ctx.get("agentDefaultModel")?.currentSelection?.();
-			const selectedProvider = selected?.provider ?? "";
-			const selectedModel = selected?.model ?? "";
-			if (selectedProvider.length > 0 && selectedModel.length > 0) return {
-				provider: provider.length > 0 ? provider : selectedProvider,
-				model: model.length > 0 ? model : selectedModel
-			};
-		} catch {}
-	}
-	async askHost(system, user, signal) {
-		let llm;
-		try {
-			llm = this.ctx.get("llm");
-		} catch {
-			return;
-		}
-		if (llm?.stream === void 0) return void 0;
-		const route = this.resolveHostRoute();
-		if (route === void 0) return void 0;
-		const provider = route.provider;
-		const model = route.model;
-		let text = "";
-		const stream = llm.stream({
-			provider,
-			model,
-			messages: [{
-				role: "user",
-				content: [{
-					type: "text",
-					text: user
-				}]
-			}],
+		return this.channel.ask({
 			system,
-			temperature: 0,
-			reasoningEffort: "off",
-			maxTokens: 256,
+			user,
 			signal
 		});
-		for await (const chunk of stream) if ((chunk.type === "text-delta" || chunk.type === "reasoning-delta") && typeof chunk.text === "string") text += chunk.text;
-		else if (chunk.type === "finish" && chunk.text === void 0) break;
-		return text.trim().length > 0 ? text : void 0;
-	}
-	async askDirect(system, user, signal) {
-		const baseUrl = this.options.estimatorBaseUrl;
-		if (baseUrl === void 0 || baseUrl.length === 0) return void 0;
-		const headers = { "content-type": "application/json" };
-		if (this.options.estimatorApiKey !== void 0 && this.options.estimatorApiKey.length > 0) headers.authorization = `Bearer ${this.options.estimatorApiKey}`;
-		const model = this.options.estimatorModel ?? "";
-		if (model.length === 0) return void 0;
-		const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/chat/completions`, {
-			method: "POST",
-			headers,
-			body: JSON.stringify({
-				model,
-				messages: [{
-					role: "system",
-					content: system
-				}, {
-					role: "user",
-					content: user
-				}],
-				temperature: 0,
-				max_tokens: 256
-			}),
-			signal
-		});
-		if (!response.ok) return void 0;
-		const text = (await response.json()).choices?.[0]?.message?.content;
-		return typeof text === "string" && text.trim().length > 0 ? text : void 0;
 	}
 };
 //#endregion
