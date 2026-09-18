@@ -55,4 +55,28 @@ describe('tokenpilot read-state helpers', () => {
     expect(clusterOmittedLines('fine', 1)).toBe('1 lines omitted (1 info)')
     expect(clusterOmittedLines('fine', 0)).toBeUndefined()
   })
+
+  // R8 census: a document's dropped content is described by its section
+  // headings, not by an error/warn/info histogram that is always 0/0/N.
+  it('lists section headings for document content instead of the info census', () => {
+    const doc = [
+      '# User Guide',
+      'Intro paragraph.',
+      '## Installation',
+      'Run the installer.',
+      '## Configuration',
+      'Set the flags.',
+      '## Troubleshooting',
+      'Check the logs.',
+      '## Reference',
+      'Appendix material.',
+    ].join('\n')
+    const census = clusterOmittedLines(doc, 40)
+    expect(census).toBe(
+      '40 lines omitted (sections: User Guide · Installation · Configuration · Troubleshooting · Reference)',
+    )
+    for (const heading of ['Installation', 'Troubleshooting', 'Reference']) {
+      expect(census).toContain(heading)
+    }
+  })
 })
