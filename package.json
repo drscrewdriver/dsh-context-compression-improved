@@ -1,7 +1,11 @@
 {
   "name": "dsh-context-compression-improved",
-  "version": "0.1.0",
-  "private": true,
+  "version": "0.3.0",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public",
+    "tag": "dsh-0.1.5"
+  },
   "type": "module",
   "main": "packages/selector/lib/index.js",
   "types": "packages/selector/lib/index.d.ts",
