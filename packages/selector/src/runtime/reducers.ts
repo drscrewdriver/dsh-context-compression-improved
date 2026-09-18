@@ -127,13 +127,23 @@ export function historicalPlaceholder(input: {
   readonly compact?: boolean
 }): ReducerOutput {
   const anchor = input.compact ? '' : importantAnchor(input.text, 360)
+  // The retrieve hint starts at the anchor's ORIGINAL line: that is the one
+  // row of context worth re-reading first (R9b site).
+  const anchorLine = input.compact
+    ? undefined
+    : (normalizeTerminalLines(input.text).folded
+      .find(line => IMPORTANT_PATTERN.test(line.text))
+      ?? undefined)?.originalLine
+  const retrieveHint = anchorLine === undefined
+    ? `retrieve: context_compression_retrieve({"ref":"${input.sourceRef}"})`
+    : `retrieve: context_compression_retrieve({"ref":"${input.sourceRef}","start_line":${String(anchorLine)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}})`
   const lines = [
     '[Old tool result content cleared from active context]',
     `tool: ${input.toolName || 'unknown'}`,
     `status: ${input.isError ? 'error' : 'completed'}`,
     `original_chars: ${String(input.charsBefore)}`,
     `source: ${input.sourceRef}`,
-    'retrieve: context_compression_retrieve({"ref":"' + input.sourceRef + '"})',
+    retrieveHint,
   ]
   if (anchor !== '') lines.push(`retained_anchor: ${anchor}`)
   return {
@@ -295,12 +305,29 @@ function foldNonAdjacentRepeats(folded: readonly NormalizedLine[]): NormalizedLi
   return result
 }
 
+/** Default line window a retrieve hint suggests the model paste. */
+const RETRIEVE_HINT_MAX_LINES = 80
+
+/**
+ * Continuous-mask marker (R9b): cites the ORIGINAL-event line range it elides
+ * and carries a pasteable retrieve hint starting at the first elided line.
+ * Falls back to the compact plain marker when the hint would not fit.
+ */
 function reduceHead(input: PreparedInput, reducer: string): ReducerOutput | null {
   const marker = omissionMarker(input, reducer)
   const available = input.budgetChars - codePointLength(marker) - 1
   if (available <= 0) return null
   const head = takeWholeLinesFromHead(input.text, available)
   if (head === input.text || head === '') return null
+  const keptCount = head.split('\n').length
+  const firstElided = input.lines[keptCount]
+  if (firstElided !== undefined) {
+    const elidedEnd = originalEnd(input.lines, input.lines.length - 1)
+    const ranged = rangeOmissionMarker(input, reducer, firstElided.originalLine, elidedEnd)
+    if (codePointLength(head) + codePointLength(ranged) + 1 <= input.budgetChars) {
+      return { text: `${head}\n${ranged}`, reducer, lossy: true }
+    }
+  }
   return { text: `${head}\n${marker}`, reducer, lossy: true }
 }
 
@@ -310,6 +337,14 @@ function reduceTail(input: PreparedInput, reducer: string): ReducerOutput | null
   if (available <= 0) return null
   const tail = takeWholeLinesFromTail(input.text, available)
   if (tail === input.text || tail === '') return null
+  const firstKept = input.lines.length - tail.split('\n').length
+  if (firstKept > 0) {
+    const elidedEnd = originalEnd(input.lines, firstKept - 1)
+    const ranged = rangeOmissionMarker(input, reducer, input.lines[0]!.originalLine, elidedEnd)
+    if (codePointLength(ranged) + codePointLength(tail) + 1 <= input.budgetChars) {
+      return { text: `${ranged}\n${tail}`, reducer, lossy: true }
+    }
+  }
   return { text: `${marker}\n${tail}`, reducer, lossy: true }
 }
 
@@ -494,56 +529,57 @@ function reduceSearch(input: PreparedInput): ReducerOutput | null {
 }
 
 function reduceGit(input: PreparedInput, command: string): ReducerOutput | null {
-  const lines = splitLines(input.text)
+  const lines = input.lines
   const lower = command.toLowerCase()
   let keep: string[]
   let reducer: string
   if (/\bgit\s+(?:diff|show)\b/.test(lower)) {
     reducer = 'hypa-git-diff'
-    keep = lines.filter(line => /^(?:diff --git|index |--- |\+\+\+ |@@ |[+-](?![+-]))/.test(line)
+    keep = lines.map(line => line.text).filter(line => /^(?:diff --git|index |--- |\+\+\+ |@@ |[+-](?![+-]))/.test(line)
       || IMPORTANT_PATTERN.test(line))
   } else if (/\bgit\s+(?:status|switch|checkout|merge|rebase|cherry-pick)\b/.test(lower)) {
     reducer = 'hypa-git-status'
-    keep = lines.filter(line => GIT_STATUS_PATTERN.test(line)
+    keep = lines.map(line => line.text).filter(line => GIT_STATUS_PATTERN.test(line)
       || IMPORTANT_PATTERN.test(line))
   } else {
     reducer = 'hypa-git-log'
-    keep = lines.filter(line => /^(?:commit\s+[0-9a-f]+|Author:|Date:|[0-9a-f]{7,}\s)/i.test(line)
+    keep = lines.map(line => line.text).filter(line => /^(?:commit\s+[0-9a-f]+|Author:|Date:|[0-9a-f]{7,}\s)/i.test(line)
       || IMPORTANT_PATTERN.test(line))
   }
   if (keep.length === 0) return reduceSalient(input, reducer)
-  const header = `[git output compressed; source: ${input.sourceRef}]`
-  const text = fitLines([header, ...keep, ...lines.slice(-8)], input.budgetChars, input.sourceRef)
+  const header = `[git output compressed; ${scannedTotals(input, keep.length)}; source: ${input.sourceRef}; scatter-masked: retrieve with context_compression_retrieve({"ref":"${input.sourceRef}","query":"<keyword>"}) for missed rows]`
+  const text = fitLines([header, ...keep, ...lines.slice(-8).map(line => line.text)], input.budgetChars, input.sourceRef)
   return text === null ? null : { text, reducer, lossy: true }
 }
 
 function reducePatternLog(input: PreparedInput, reducer: string, pattern: RegExp): ReducerOutput | null {
-  const lines = splitLines(input.text)
-  const important = lines.filter(line => pattern.test(line) || IMPORTANT_PATTERN.test(line) || STATUS_PATTERN.test(line))
-  const header = `[command output compressed by ${reducer}; source: ${input.sourceRef}]`
-  const text = fitLines([header, ...important, ...lines.slice(-20)], input.budgetChars, input.sourceRef)
+  const lines = input.lines
+  const kept = lines.filter(line => pattern.test(line.text) || IMPORTANT_PATTERN.test(line.text) || STATUS_PATTERN.test(line.text))
+  const header = `[command output compressed by ${reducer}; ${scannedTotals(input, kept.length)}; source: ${input.sourceRef}; scatter-masked: retrieve with context_compression_retrieve({"ref":"${input.sourceRef}","query":"<keyword>"}) for missed rows]`
+  const text = fitLines([header, ...kept.map(line => line.text), ...lines.slice(-20).map(line => line.text)], input.budgetChars, input.sourceRef)
   return text === null ? null : { text, reducer, lossy: true }
 }
 
 function reduceShell(input: PreparedInput): ReducerOutput | null {
-  const lines = splitLines(input.text)
-  const important = lines.filter(line => IMPORTANT_PATTERN.test(line))
+  const lines = input.lines
+  const important = lines.filter(line => IMPORTANT_PATTERN.test(line.text))
   if (important.length === 0) return reduceTail(input, 'pi-tail')
-  const header = `[shell/log output compressed; source: ${input.sourceRef}]`
-  const text = fitLines([header, ...important, '--- final output ---', ...lines.slice(-40)], input.budgetChars, input.sourceRef)
+  const header = `[shell/log output compressed; ${scannedTotals(input, important.length)}; source: ${input.sourceRef}; scatter-masked: retrieve with context_compression_retrieve({"ref":"${input.sourceRef}","query":"<keyword>"}) for missed rows]`
+  const text = fitLines([header, ...important.map(line => line.text), '--- final output ---', ...lines.slice(-40).map(line => line.text)], input.budgetChars, input.sourceRef)
   return text === null ? null : { text, reducer: 'shell-salience-tail', lossy: true }
 }
 
 function reduceSalient(input: PreparedInput, reducer: string): ReducerOutput | null {
-  const lines = splitLines(input.text)
+  const lines = input.lines
   if (lines.length < 3) return reduceHead(input, reducer)
   const marker = omissionMarker(input, reducer)
   const headBudget = Math.max(1, Math.floor((input.budgetChars - codePointLength(marker)) * 0.34))
   const tailBudget = headBudget
   const head = takeWholeLinesFromHead(input.text, headBudget)
   const tail = takeWholeLinesFromTail(input.text, tailBudget)
-  const salient = lines.filter(line => IMPORTANT_PATTERN.test(line) || STATUS_PATTERN.test(line)).slice(0, 24)
-  const text = fitLines([head, ...salient, marker, tail], input.budgetChars, input.sourceRef)
+  const salient = lines.filter(line => IMPORTANT_PATTERN.test(line.text) || STATUS_PATTERN.test(line.text)).slice(0, 24)
+  const keptCount = head.split('\n').length + salient.length + tail.split('\n').length
+  const text = fitLines([head, ...salient.map(line => line.text), `${marker} [${scannedTotals(input, keptCount)}]`, tail], input.budgetChars, input.sourceRef)
   return text === null ? null : { text, reducer, lossy: true }
 }
 
@@ -640,9 +676,9 @@ function reduceDocSkeleton(input: PreparedInput): ReducerOutput | null {
     }
     tableRows = 0
   }
-  const header = `[document compressed by doc-skeleton; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"})]`
-  const kept: string[] = [header]
+  const kept: string[] = []
   let index = 0
+  let firstElided: { readonly start: number, readonly end: number } | undefined
   while (index < lines.length) {
     if (keep[index]) {
       kept.push(lines[index]!.text)
@@ -653,8 +689,15 @@ function reduceDocSkeleton(input: PreparedInput): ReducerOutput | null {
     while (index < lines.length && !keep[index]) index += 1
     const start = lines[runStart]!.originalLine
     const end = originalEnd(lines, index - 1)
-    if (end >= start) kept.push(elidedRangeMarker(start, end))
+    if (end >= start) {
+      if (firstElided === undefined) firstElided = { start, end }
+      kept.push(elidedRangeMarker(start, end))
+    }
   }
+  const hint = firstElided === undefined
+    ? ''
+    : `,"start_line":${String(firstElided.start)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}`
+  kept.unshift(`[document compressed by doc-skeleton; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"${hint}})]`)
   const text = fitLines(kept, input.budgetChars, input.sourceRef)
   return text === null ? null : { text, reducer: 'doc-skeleton', lossy: true }
 }
@@ -674,8 +717,8 @@ function reduceProseKeep(input: PreparedInput): ReducerOutput | null {
   const last = lines[lines.length - 1]!
   const tailLine = last.originalLineEnd ?? last.originalLine
   const markerTemplate = elidedRangeMarker(first.originalLine, tailLine)
-  const sourceNote = `; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"})`
-  const reserved = codePointLength(markerTemplate) + codePointLength(sourceNote) + 2
+  const sourceNoteTemplate = `; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"})`
+  const reserved = codePointLength(markerTemplate) + codePointLength(sourceNoteTemplate) + 2
   const bodyBudget = input.budgetChars - reserved
   if (bodyBudget <= 0) return null
   const headBudget = Math.floor(bodyBudget / 2)
@@ -701,6 +744,7 @@ function reduceProseKeep(input: PreparedInput): ReducerOutput | null {
   const elidedStart = lines[headCount]!.originalLine
   const elidedEnd = originalEnd(lines, lines.length - tailCount - 1)
   if (elidedEnd < elidedStart) return null
+  const sourceNote = `; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}","start_line":${String(elidedStart)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}})`
   const text = [
     ...lines.slice(0, headCount).map(line => line.text),
     elidedRangeMarker(elidedStart, elidedEnd) + sourceNote,
@@ -719,11 +763,17 @@ function reduceProseKeep(input: PreparedInput): ReducerOutput | null {
  * @returns a verified candidate, or `null` when the text is not code-like.
  */
 function reduceCodeSkeleton(input: PreparedInput): ReducerOutput | null {
-  const lines = splitLines(input.text)
+  const lines = input.lines.map(line => line.text)
   const kept: string[] = []
   let elided = 0
+  let firstElided: { readonly start: number, readonly end: number } | undefined
   const flushElided = (): void => {
-    if (elided > 0) kept.push(`[... ${String(elided)} lines elided ...]`)
+    if (elided > 0) {
+      const start = input.lines[index - elided]?.originalLine ?? 0
+      const end = originalEnd(input.lines, index - 1)
+      if (firstElided === undefined) firstElided = { start, end }
+      kept.push(elidedRangeMarker(start, end))
+    }
     elided = 0
   }
   let depth = 0
@@ -845,15 +895,19 @@ function reduceCodeSkeleton(input: PreparedInput): ReducerOutput | null {
     index += 1
   }
   flushElided()
-  return finishSkeleton(kept, lines, input)
+  return finishSkeleton(kept, lines, input, firstElided)
 }
 
 function finishSkeleton(
   kept: readonly string[],
   lines: readonly string[],
   input: PreparedInput,
+  firstElided: { readonly start: number, readonly end: number } | undefined,
 ): ReducerOutput | null {
-  const header = `[code output compressed by hypa-code-skeleton; source: ${input.sourceRef}]`
+  const hint = firstElided === undefined
+    ? ''
+    : `; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}","start_line":${String(firstElided.start)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}})`
+  const header = `[code output compressed by hypa-code-skeleton; source: ${input.sourceRef}${hint}]`
   const text = fitLines([header, ...kept, ...lines.slice(-4)], input.budgetChars, input.sourceRef)
   return text === null ? null : { text, reducer: 'hypa-code-skeleton', lossy: true }
 }
@@ -909,6 +963,27 @@ function looksLikeSourceCode(text: string): boolean {
 
 function omissionMarker(input: PreparedInput, reducer: string): string {
   return `[... ${reducer} omitted content; original_chars=${String(codePointLength(input.text))}; source=${input.sourceRef}; retrieve with context_compression_retrieve ...]`
+}
+
+/**
+ * Continuous-mask marker (R9b): an original-event line range plus a pasteable
+ * retrieve hint whose start_line is the first elided line. Line numbers point
+ * at the RAW event because retrieve reads raw events (D8).
+ */
+function rangeOmissionMarker(
+  input: PreparedInput,
+  reducer: string,
+  elidedStart: number,
+  elidedEnd: number,
+): string {
+  return `[... lines ${String(elidedStart)}-${String(elidedEnd)} elided (${String(elidedEnd - elidedStart + 1)} lines); ${reducer}; original_chars=${String(codePointLength(input.text))}; source=${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}","start_line":${String(elidedStart)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}}) ...]`
+}
+
+/** Scatter-mask note (R9b): totals instead of fragmented per-run ranges. */
+function scannedTotals(input: PreparedInput, kept: number): string {
+  const last = input.lines[input.lines.length - 1]
+  const lastLine = Math.max(last?.originalLineEnd ?? 0, last?.originalLine ?? 0, input.lines.length)
+  return `lines 1-${String(lastLine)} scanned, ${String(kept)} kept`
 }
 
 function importantAnchor(text: string, maxChars: number): string {

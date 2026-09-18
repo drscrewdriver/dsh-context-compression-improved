@@ -76,6 +76,6 @@ export function dedupePlaceholder(entry: DedupeTableEntry, originalChars: number
   return [
     `[... identical to the earlier ${entry.toolName} result; first seen at ${entry.sourceRef};`,
     `original_chars=${String(originalChars)};`,
-    'use context_compression_retrieve with this source if the omitted evidence is necessary.]',
+    'retrieve with context_compression_retrieve({"ref":"' + entry.sourceRef + '","start_line":1}) if the omitted evidence is necessary.]',
   ].join(' ')
 }

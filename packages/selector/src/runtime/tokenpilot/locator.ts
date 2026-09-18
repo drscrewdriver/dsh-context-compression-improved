@@ -118,7 +118,7 @@ export function buildLocatorBlock(
     `- seq range: ${String(shadowedRange.start)}-${String(shadowedRange.end)}`,
     ...[...spillFiles].map(path => `- spill file: ${path}`),
     ...[...touchedFiles].map(path => `- file touched: ${path}`),
-    '(Use `read <spill file>` or `context_compression_retrieve` with a `session://` source to restore exact text.)',
+    '(Use `read <spill file>` or `context_compression_retrieve` with a `session://` source — pass start_line/max_lines to window the text — to restore exact text.)',
   ]
   return {
     text: lines.join('\n'),

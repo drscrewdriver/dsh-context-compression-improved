@@ -70,8 +70,11 @@ function unavailableCount(reason: string): TokenCount {
 
 // ── Recovery markers ────────────────────────────────────────────────────
 
-function recoveryMarker(sourceRef: string, label: string): string {
-  return `\n\n[... ${label}; source=${sourceRef}; use context_compression_retrieve if needed ...]\n\n`
+function recoveryMarker(sourceRef: string, label: string, startLine?: number): string {
+  const hint = startLine === undefined
+    ? 'use context_compression_retrieve if needed'
+    : `retrieve with context_compression_retrieve({"ref":"${sourceRef}","start_line":${String(startLine)},"max_lines":80})`
+  return `\n\n[... ${label}; source=${sourceRef}; ${hint} ...]\n\n`
 }
 
 // ── Content measurement ─────────────────────────────────────────────────
@@ -124,11 +127,11 @@ function nativePruneContent(
   thresholdChars: number,
   headChars: number,
   tailChars: number,
-  marker: string = PRUNE_MARKER,
+  marker: string | ((startLine: number) => string) = PRUNE_MARKER,
 ): ContentBlock[] | null {
   const totalChars = measureContent(blocks)
   if (totalChars <= thresholdChars) return null
-  const markerChars = codePointLength(marker)
+  const markerChars = codePointLength(typeof marker === 'function' ? marker(1) : marker)
   const safeHead = Math.max(0, Math.min(headChars, thresholdChars - markerChars))
   const safeTail = Math.max(0, Math.min(tailChars, thresholdChars - markerChars - safeHead))
   const removedStart = safeHead
@@ -136,9 +139,14 @@ function nativePruneContent(
   const pruned: ContentBlock[] = []
   let consumed = 0
   let markerInserted = false
+  // '\n' count in the RAW event text before the current block (retrieve scans
+  // the original event; blocks are joined with '\n'). Line numbers therefore
+  // never depend on what the pruning removed.
+  let newlinesBefore = 0
   for (const block of blocks) {
     if (block.type !== 'text') {
       pruned.push(block)
+      newlinesBefore += 1
       continue
     }
     const points = Array.from(block.text)
@@ -147,10 +155,15 @@ function nativePruneContent(
     const headEnd = Math.min(points.length, Math.max(0, removedStart - blockStart))
     const tailStart = Math.min(points.length, Math.max(0, removedEnd - blockStart))
     const intersectsRemoved = blockStart < removedEnd && blockEnd > removedStart
-    const insertion = intersectsRemoved && !markerInserted ? marker : ''
+    // The elided region starts on the event line after the retained head.
+    const headText = points.slice(0, headEnd).join('')
+    const insertion = intersectsRemoved && !markerInserted && typeof marker === 'function'
+      ? marker(1 + newlinesBefore + headText.split('\n').length - 1)
+      : intersectsRemoved && !markerInserted ? marker : ''
     if (insertion !== '') markerInserted = true
     const text = points.slice(0, headEnd).join('') + insertion + points.slice(tailStart).join('')
     if (text !== '') pruned.push({ ...block, text })
+    newlinesBefore += block.text.split('\n').length - 1 + 1
     consumed = blockEnd
   }
   if (!markerInserted) return null
