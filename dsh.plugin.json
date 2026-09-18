@@ -1,0 +1,22 @@
+{
+  "id": "dsh-external/dsh-context-compression-improved",
+  "name": "dsh-context-compression-improved",
+  "version": "0.4.0-beta.1",
+  "description": {
+    "en": "Auditable tool-result context-compression selector with code-skeleton gate, TokenPilot review pipeline, and Headroom homologous token compression for DeepSeek Harness.",
+    "zh": "可审计的上下文压缩选择器：集成代码骨架门禁、TokenPilot 审查管线与 Headroom 同源 Token 压缩能力，适用于 DeepSeek Harness。"
+  },
+  "homepage": "https://github.com/drscrewdriver/dsh-context-compression-improved",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/drscrewdriver/dsh-context-compression-improved.git"
+  },
+  "license": "MIT",
+  "engines": {
+    "dsh": ">=0.1.5-rc.1 <0.2.0-0"
+  },
+  "components": {
+    "host": "packages/selector/lib/index.js",
+    "client": "packages/selector/lib/client.js"
+  }
+}
