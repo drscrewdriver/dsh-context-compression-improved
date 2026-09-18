@@ -64,6 +64,9 @@ export function buildEstimatorSystemPrompt(): string {
     'reference that exact file state again later in the session. Reads whose file was',
     'already rewritten, or whose task has visibly moved on, are expired.',
     'Answer with ONLY a JSON array: [{"seq":<number>,"expired":<boolean>}].',
+    'Optionally, if you can estimate how many user turns remain in this session, answer',
+    'with {"expectedRemainingTurns":<number>,"items":[{"seq":<number>,"expired":<boolean>}]}',
+    'instead; omit the field when you cannot estimate it.',
   ].join(' ')
 }
 
@@ -73,25 +76,69 @@ export function buildEstimatorUserPrompt(samples: readonly EstimatorSample[]): s
   return lines.join('\n')
 }
 
-/** Parse the estimator answer; anything malformed yields no verdicts. */
-export function parseEstimatorAnswer(text: string): EstimatorVerdict[] {
+/** One estimator answer: per-read verdicts plus the optional session-level Ŝ. */
+export interface EstimatorAnswer {
+  readonly verdicts: EstimatorVerdict[]
+  /**
+   * Estimator-reported remaining turns Ŝ for the benefit model. `undefined`
+   * whenever the model stayed on the legacy array format, omitted the field,
+   * or produced anything non-numeric — it is never guessed here.
+   */
+  readonly expectedRemainingTurns?: number
+}
+
+function parseVerdictArray(value: unknown): EstimatorVerdict[] {
+  if (!Array.isArray(value)) return []
+  const verdicts: EstimatorVerdict[] = []
+  for (const entry of value) {
+    if (typeof entry !== 'object' || entry === null) continue
+    const record = entry as { seq?: unknown, expired?: unknown }
+    if (typeof record.seq !== 'number' || typeof record.expired !== 'boolean') continue
+    verdicts.push({ seq: record.seq, expired: record.expired })
+  }
+  return verdicts
+}
+
+/**
+ * Parse the estimator answer including the optional session-level
+ * `expectedRemainingTurns`. Accepts both the legacy bare verdict array and the
+ * extended object form; anything malformed yields no verdicts and no Ŝ.
+ */
+export function parseEstimatorAnswerDetailed(text: string): EstimatorAnswer {
+  const objectStart = text.indexOf('{')
+  const objectEnd = text.lastIndexOf('}')
+  if (objectStart >= 0 && objectEnd > objectStart) {
+    try {
+      const parsed: unknown = JSON.parse(text.slice(objectStart, objectEnd + 1))
+      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+        const record = parsed as { expectedRemainingTurns?: unknown, verdicts?: unknown, items?: unknown }
+        const verdicts = parseVerdictArray(record.verdicts ?? record.items)
+        if (verdicts.length > 0) {
+          const turns = record.expectedRemainingTurns
+          if (typeof turns === 'number' && Number.isFinite(turns) && turns >= 0) {
+            return { verdicts, expectedRemainingTurns: Math.floor(turns) }
+          }
+          return { verdicts }
+        }
+      }
+    } catch {
+      // Fall through to the legacy array extraction.
+    }
+  }
   const start = text.indexOf('[')
   const end = text.lastIndexOf(']')
-  if (start < 0 || end <= start) return []
+  if (start < 0 || end <= start) return { verdicts: [] }
   try {
     const parsed: unknown = JSON.parse(text.slice(start, end + 1))
-    if (!Array.isArray(parsed)) return []
-    const verdicts: EstimatorVerdict[] = []
-    for (const entry of parsed) {
-      if (typeof entry !== 'object' || entry === null) continue
-      const record = entry as { seq?: unknown, expired?: unknown }
-      if (typeof record.seq !== 'number' || typeof record.expired !== 'boolean') continue
-      verdicts.push({ seq: record.seq, expired: record.expired })
-    }
-    return verdicts
+    return { verdicts: parseVerdictArray(parsed) }
   } catch {
-    return []
+    return { verdicts: [] }
   }
+}
+
+/** Parse the estimator verdicts; the optional Ŝ rides on the Detailed variant. */
+export function parseEstimatorAnswer(text: string): EstimatorVerdict[] {
+  return parseEstimatorAnswerDetailed(text).verdicts
 }
 
 /** One channel-bound estimator. `ask` resolves undefined on any failure. */

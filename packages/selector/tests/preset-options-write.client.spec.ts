@@ -123,7 +123,9 @@ function bindInjected(
         return typeof result === 'function' ? result : () => {}
       },
       register: (registerOptions: Record<string, unknown>) => {
-        options = registerOptions
+        // The R4 overlay registration rides the same slots service; only the
+        // settings card carries the inject factory these tests drive.
+        if (registerOptions.name === 'settings.section') options = registerOptions
         return () => {}
       },
     },
@@ -144,6 +146,37 @@ describe('presetOptions writes are path-addressed', () => {
     await injected.savePresetOptions({ estimatorProvider: 'local-35b' })
     expect(snapshot()['presetOptions']).toEqual({ estimatorMode: 'host', estimatorProvider: 'local-35b' })
     expect(writes).toEqual([[{ op: 'set', path: ['presetOptions', 'estimatorProvider'], value: 'local-35b' }]])
+  })
+
+  it('writes and clears the review-mode fields without touching estimator siblings', async () => {
+    const { injected, writes, snapshot } = bindInjected({ estimatorMode: 'host' })
+    await injected.savePresetOptions({
+      reviewMode: true,
+      reviewTimeoutTurns: 8,
+      cacheHitDiscountAlpha: 0.2,
+      reviewHighImpactTokens: 6000,
+    })
+    expect(snapshot()['presetOptions']).toEqual({
+      estimatorMode: 'host',
+      reviewMode: true,
+      reviewTimeoutTurns: 8,
+      cacheHitDiscountAlpha: 0.2,
+      reviewHighImpactTokens: 6000,
+    })
+    await injected.savePresetOptions({ reviewMode: undefined })
+    expect(snapshot()['presetOptions']).toEqual({
+      estimatorMode: 'host',
+      reviewTimeoutTurns: 8,
+      cacheHitDiscountAlpha: 0.2,
+      reviewHighImpactTokens: 6000,
+    })
+    for (const batch of writes) {
+      for (const op of batch) {
+        expect(op.path).toEqual(['presetOptions', op.path[1] ?? ''])
+        expect(['reviewMode', 'reviewTimeoutTurns', 'cacheHitDiscountAlpha', 'reviewHighImpactTokens'])
+          .toContain(op.path[1])
+      }
+    }
   })
 
   it('never replaces the whole section, so sibling overrides survive', async () => {

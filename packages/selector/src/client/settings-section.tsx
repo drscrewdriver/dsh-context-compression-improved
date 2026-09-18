@@ -16,7 +16,7 @@ import {
 } from '../profiles.ts'
 import type { CompressionProfileSelectorProps } from './CompressionProfileSelector.tsx'
 import { AutoCompactThresholdControls, CodeSkeletonControls } from './CompressionProfileControls.tsx'
-import { EstimatorControls, EstimatorInactiveNotice } from './EstimatorControls.tsx'
+import { EstimatorControls, EstimatorInactiveNotice, ReviewModeControls } from './EstimatorControls.tsx'
 import { CustomPolicyEditor, editableCustom } from './CustomPolicyEditor.tsx'
 
 /** Full-page Settings surface backed by the same durable selector state. */
@@ -105,13 +105,22 @@ export function SettingsCompressionProfileControls({
       {current !== 'tokenpilot-inspired' ? (
         <EstimatorInactiveNotice profile={t(`profile.${current}`)} t={t} />
       ) : (
-        <EstimatorControls
-          options={state.value?.presetOptions ?? {}}
-          disabled={busy || !state.writable || !selectorAvailable}
-          save={savePresetOptions}
-          settle={settle}
-          t={t}
-        />
+        <>
+          <EstimatorControls
+            options={state.value?.presetOptions ?? {}}
+            disabled={busy || !state.writable || !selectorAvailable}
+            save={savePresetOptions}
+            settle={settle}
+            t={t}
+          />
+          <ReviewModeControls
+            options={state.value?.presetOptions ?? {}}
+            disabled={busy || !state.writable || !selectorAvailable}
+            save={savePresetOptions}
+            settle={settle}
+            t={t}
+          />
+        </>
       )}
       <div className={css.pricing}>{t('pricing.disclosure')}</div>
       {current !== 'custom' || draft === null || !selectorAvailable ? null : (
