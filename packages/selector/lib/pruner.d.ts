@@ -624,11 +624,24 @@ interface ReducerOutput {
   readonly lossy: boolean;
 }
 /**
+ * Optional side-channel ranking (S1a/S1b) handed to the form-dispatched
+ * reducers. Selection and order ONLY — the mechanical fold stays the sole
+ * content authority, and `undefined` reproduces the mechanical output
+ * byte-for-byte. The ranking itself always comes from outside the reducers:
+ * the mechanical layer never calls a model.
+ */
+interface ReductionRanking {
+  /** Search file paths, most relevant first (S1a). Unknown paths are ignored. */
+  readonly files?: readonly string[];
+  /** Document section heading texts, most relevant first (S1b). */
+  readonly sections?: readonly string[];
+}
+/**
  * Select a reducer from verified tool, command, and content evidence.
  * @param input - original result text, recovery source, and output budget.
  * @returns a verified candidate, or `null` when every reducer fails open.
  */
-declare function reduceFreshToolResult(input: ReducerInput): ReducerOutput | null;
+declare function reduceFreshToolResult(input: ReducerInput, ranking?: ReductionRanking): ReducerOutput | null;
 /**
  * Build a recoverable placeholder for an old tool result.
  * @param input - tool identity, source reference, size, status, and retained evidence.

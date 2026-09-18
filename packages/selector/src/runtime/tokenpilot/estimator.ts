@@ -14,20 +14,9 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { PresetOptionsSettings } from '../types.ts'
+import { SideChannel, type HostLlmLike } from './sidechannel.ts'
 
-/** The minimal face of the Harness `llm` service this module consumes. */
-export interface HostLlmLike {
-  stream(request: {
-    provider: string
-    model: string
-    messages: readonly { readonly role: 'user', readonly content: readonly { readonly type: 'text', readonly text: string }[] }[]
-    system?: string
-    temperature?: number
-    reasoningEffort?: string
-    maxTokens?: number
-    signal?: AbortSignal
-  }): AsyncIterable<{ readonly type: string, readonly text?: string }>
-}
+export type { HostLlmLike }
 
 /** One sampled historical read offered to the estimator. */
 export interface EstimatorSample {
@@ -143,119 +132,20 @@ export function parseEstimatorAnswer(text: string): EstimatorVerdict[] {
 
 /** One channel-bound estimator. `ask` resolves undefined on any failure. */
 export class Estimator {
+  private readonly channel: SideChannel
+
   constructor(
     private readonly ctx: Context,
     private readonly options: PresetOptionsSettings,
-  ) {}
+  ) {
+    this.channel = new SideChannel(ctx, options)
+  }
 
   get enabled(): boolean {
     return this.options.estimatorMode === 'host' || this.options.estimatorMode === 'direct'
   }
 
   async ask(system: string, user: string, signal: AbortSignal): Promise<string | undefined> {
-    const timeoutMs = this.options.estimatorTimeoutMs ?? 3_000
-    const timeout = AbortSignal.timeout(timeoutMs)
-    const signal2 = typeof AbortSignal.any === 'function' ? AbortSignal.any([signal, timeout]) : timeout
-    try {
-      if (this.options.estimatorMode === 'host') return await this.askHost(system, user, signal2)
-      if (this.options.estimatorMode === 'direct') return await this.askDirect(system, user, signal2)
-      return undefined
-    } catch {
-      return undefined
-    }
-  }
-
-  /**
-   * Resolve the host LLM route. Explicit estimator provider/model win; with
-   * them empty, reuse the route the harness already has configured via the
-   * optional `agentDefaultModel` service's current selection (same seam as
-   * dsh-prime-memory's resolveModelRoute) — the user must not re-enter a
-   * provider/model the host already knows.
-   */
-  private resolveHostRoute(): { provider: string, model: string } | undefined {
-    const provider = this.options.estimatorProvider ?? ''
-    const model = this.options.estimatorModel ?? ''
-    if (provider.length > 0 && model.length > 0) return { provider, model }
-    try {
-      const defaults = this.ctx.get('agentDefaultModel' as never) as
-        | { currentSelection?: () => { provider?: string, model?: string } | undefined }
-        | undefined
-      const selected = defaults?.currentSelection?.()
-      const selectedProvider = selected?.provider ?? ''
-      const selectedModel = selected?.model ?? ''
-      if (selectedProvider.length > 0 && selectedModel.length > 0) {
-        return {
-          provider: provider.length > 0 ? provider : selectedProvider,
-          model: model.length > 0 ? model : selectedModel,
-        }
-      }
-    } catch {
-      // optional service; absence must not throw
-    }
-    return undefined
-  }
-
-  private async askHost(system: string, user: string, signal: AbortSignal): Promise<string | undefined> {
-    let llm: HostLlmLike | undefined
-    try {
-      llm = this.ctx.get('llm' as never) as HostLlmLike | undefined
-    } catch {
-      return undefined
-    }
-    if (llm?.stream === undefined) return undefined
-    const route = this.resolveHostRoute()
-    if (route === undefined) return undefined
-    const provider = route.provider
-    const model = route.model
-    let text = ''
-    const stream = llm.stream({
-      provider,
-      model,
-      messages: [{ role: 'user', content: [{ type: 'text', text: user }] }],
-      system,
-      temperature: 0,
-      reasoningEffort: 'off',
-      maxTokens: 256,
-      signal,
-    })
-    for await (const chunk of stream) {
-      if ((chunk.type === 'text-delta' || chunk.type === 'reasoning-delta') && typeof chunk.text === 'string') {
-        text += chunk.text
-      } else if (chunk.type === 'finish' && chunk.text === undefined) {
-        break
-      }
-    }
-    return text.trim().length > 0 ? text : undefined
-  }
-
-  private async askDirect(system: string, user: string, signal: AbortSignal): Promise<string | undefined> {
-    const baseUrl = this.options.estimatorBaseUrl
-    if (baseUrl === undefined || baseUrl.length === 0) return undefined
-    const headers: Record<string, string> = { 'content-type': 'application/json' }
-    if (this.options.estimatorApiKey !== undefined && this.options.estimatorApiKey.length > 0) {
-      headers.authorization = `Bearer ${this.options.estimatorApiKey}`
-    }
-    const model = this.options.estimatorModel ?? ''
-    if (model.length === 0) return undefined
-    const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: user },
-        ],
-        temperature: 0,
-        max_tokens: 256,
-      }),
-      signal,
-    })
-    if (!response.ok) return undefined
-    const payload = (await response.json()) as {
-      choices?: { message?: { content?: string } }[]
-    }
-    const text = payload.choices?.[0]?.message?.content
-    return typeof text === 'string' && text.trim().length > 0 ? text : undefined
+    return this.channel.ask({ system, user, signal })
   }
 }
