@@ -73,7 +73,10 @@ describe('hypa-code-skeleton reducer', () => {
     expect(output?.text).toContain('export interface Options {')
     expect(output?.text).toContain('export function runJob(job: string,')
     expect(output?.text).toContain('class Runner {')
-    expect(output?.text).toContain('lines elided')
+    // R9b: elision markers cite original-event line ranges instead of a bare
+    // count, and the header hint carries a pasteable start_line.
+    expect(output?.text).toMatch(/\[\.\.\. lines \d+-\d+ elided \(\d+ lines\)/)
+    expect(output?.text).toContain('"start_line":')
     expect(output?.text).not.toContain('const started = Date.now()')
     expect(output?.text).toContain(SOURCE_REF)
     expect(verifyReduction(input, output!)).toBe(true)

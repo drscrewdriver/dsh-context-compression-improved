@@ -1553,11 +1553,13 @@ export class ToolResultPruner extends Service {
     const result = candidate.event.data.message.content[0]
     if (onlyTextBlocks(result.content) === null) return null
     const sourceSeq = rootToolResultSeq(session, candidate.seq)
-    const marker = recoveryMarker(sourceRefFn(session, sourceSeq), 'tool result middle pruned')
+    // R9b site: the marker's retrieve hint starts at the event line right
+    // after the retained head, computed inside nativePruneContent.
+    const marker = (startLine: number): string => recoveryMarker(sourceRefFn(session, sourceSeq), 'tool result middle pruned', startLine)
     let head = this.state.config.headChars
     let tail = this.state.config.tailChars
     for (let attempt = 0; attempt < 10; attempt += 1) {
-      const threshold = head + codePointLength(marker) + tail
+      const threshold = head + codePointLength(marker(1)) + tail
       const content = nativePruneContent(result.content, threshold, head, tail, marker)
       if (content !== null) {
         const plan = this.plan(
