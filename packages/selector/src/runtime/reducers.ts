@@ -55,6 +55,10 @@ const CODE_STRUCTURE_PATTERN = new RegExp([
 const PYTHON_STRUCTURE_PATTERN = /^\s*(?:async\s+)?def\s|^\s*class\s/
 const CODE_DECORATOR_PATTERN = /^\s*@[\w.]+/
 const CODE_COMMENT_PATTERN = /^\s*(?:\/\/|#|\/\*|\*)/
+const MARKDOWN_HEADING_PATTERN = /^#{1,6}\s+\S/
+const LIST_ITEM_PATTERN = /^\s*(?:[-*+]|\d+[.)])\s+\S/
+const TABLE_ROW_PATTERN = /^\s*\|/
+const FENCE_PATTERN = /^\s*(?:```|~~~)/
 
 /**
  * Select a reducer from verified tool, command, and content evidence.
@@ -74,8 +78,12 @@ export function reduceFreshToolResult(input: ReducerInput): ReducerOutput | null
   if (isPackageCommand(command)) candidates.push(() => reducePatternLog(prepared, 'hypa-package', packagePattern()))
   if (isBuildOrTestCommand(command)) candidates.push(() => reducePatternLog(prepared, 'hypa-build-test', buildPattern()))
   if (input.codeSkeleton === true && looksLikeSourceCode(normalized.text)) candidates.push(() => reduceCodeSkeleton(prepared))
-  if (isReadTool(name)) candidates.push(() => reduceHead(prepared, 'pi-head'))
+  // Form-dispatched prose candidates (R8/R8b): classification reads content
+  // shape only — never the tool name, the path extension, or the command.
+  if (looksLikeDocument(normalized.text)) candidates.push(() => reduceDocSkeleton(prepared))
   if (isShellTool(name) || command !== '') candidates.push(() => reduceShell(prepared))
+  candidates.push(() => reduceProseKeep(prepared))
+  if (isReadTool(name)) candidates.push(() => reduceHead(prepared, 'pi-head'))
   candidates.push(() => reduceSalient(prepared, 'generic-salience'))
 
   for (const make of candidates) {
@@ -368,6 +376,169 @@ function reduceSalient(input: PreparedInput, reducer: string): ReducerOutput | n
   const salient = lines.filter(line => IMPORTANT_PATTERN.test(line) || STATUS_PATTERN.test(line)).slice(0, 24)
   const text = fitLines([head, ...salient, marker, tail], input.budgetChars, input.sourceRef)
   return text === null ? null : { text, reducer, lossy: true }
+}
+
+/**
+ * Require content evidence of a structured document: enough Markdown heading
+ * lines among a bounded prefix. Pure form evidence — tool names, path
+ * extensions, and commands are never read (MCP output has no predictable
+ * identity). Real logs and build output carry no `#`-heading lines, which is
+ * the misjudgment guard.
+ * @param text - normalized result text.
+ * @returns whether the text qualifies as a structured document.
+ */
+export function looksLikeDocument(text: string): boolean {
+  const lines = splitLines(text)
+  let headings = 0
+  for (const line of lines.slice(0, 400)) {
+    if (MARKDOWN_HEADING_PATTERN.test(line)) {
+      headings += 1
+      if (headings >= 3) return true
+    }
+  }
+  return false
+}
+
+/** One R9-spec elision marker: an original-event line range plus its count. */
+function elidedRangeMarker(start: number, end: number): string {
+  return `[... lines ${String(start)}-${String(end)} elided (${String(end - start + 1)} lines) ...]`
+}
+
+/** Original-event end line of folded entry `lines[index]`. */
+function originalEnd(lines: readonly NormalizedLine[], index: number): number {
+  const line = lines[index]
+  return line?.originalLineEnd ?? line?.originalLine ?? 0
+}
+
+/**
+ * Keep a document skeleton: the heading hierarchy, each section's first and
+ * last content line, list-item starts, table headers, and fence markers,
+ * eliding the remaining bodies with R9 line-range markers. Fails open (null)
+ * when nothing is elidable or the budget cannot be met, so the next candidate
+ * takes over.
+ */
+function reduceDocSkeleton(input: PreparedInput): ReducerOutput | null {
+  const lines = input.lines
+  const keep = new Array<boolean>(lines.length).fill(false)
+  const headingIndex: number[] = []
+  let inFence = false
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index]!.text
+    if (FENCE_PATTERN.test(line)) {
+      inFence = !inFence
+      keep[index] = true
+      continue
+    }
+    if (!inFence && MARKDOWN_HEADING_PATTERN.test(line)) {
+      headingIndex.push(index)
+      keep[index] = true
+      continue
+    }
+    if (IMPORTANT_PATTERN.test(line)) keep[index] = true
+    else if (!inFence && LIST_ITEM_PATTERN.test(line)) keep[index] = true
+  }
+  // Section boundaries: each section keeps its first and last content line.
+  const sectionStarts = [-1, ...headingIndex]
+  const sectionEnds = [...headingIndex, lines.length]
+  for (let section = 0; section < sectionStarts.length; section++) {
+    const from = sectionStarts[section]! + 1
+    const to = sectionEnds[section]!
+    let first = -1
+    let last = -1
+    for (let index = from; index < to; index++) {
+      if (lines[index]!.text.trim() === '') continue
+      if (first === -1) first = index
+      last = index
+    }
+    if (first !== -1) keep[first] = true
+    if (last !== -1) keep[last] = true
+  }
+  // Table blocks keep their first two rows (header + separator).
+  let tableRows = 0
+  let fenceOpen = false
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index]!.text
+    if (FENCE_PATTERN.test(line)) {
+      fenceOpen = !fenceOpen
+      tableRows = 0
+      continue
+    }
+    if (fenceOpen || line.trim() === '') continue
+    if (TABLE_ROW_PATTERN.test(line)) {
+      if (tableRows < 2) keep[index] = true
+      tableRows += 1
+      continue
+    }
+    tableRows = 0
+  }
+  const header = `[document compressed by doc-skeleton; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"})]`
+  const kept: string[] = [header]
+  let index = 0
+  while (index < lines.length) {
+    if (keep[index]) {
+      kept.push(lines[index]!.text)
+      index += 1
+      continue
+    }
+    const runStart = index
+    while (index < lines.length && !keep[index]) index += 1
+    const start = lines[runStart]!.originalLine
+    const end = originalEnd(lines, index - 1)
+    if (end >= start) kept.push(elidedRangeMarker(start, end))
+  }
+  const text = fitLines(kept, input.budgetChars, input.sourceRef)
+  return text === null ? null : { text, reducer: 'doc-skeleton', lossy: true }
+}
+
+/**
+ * Universal prose fallback (R8b, the main force): keep the head AND the tail
+ * of any non-code text and one R9 line-range marker for everything elided in
+ * between. Unstructured prose (85%+ of large results) previously landed on
+ * head-only truncation; a tail keep preserves conclusions and closing state.
+ * Fails open for code-like text and when the budget cannot hold both ends.
+ */
+function reduceProseKeep(input: PreparedInput): ReducerOutput | null {
+  const lines = input.lines
+  if (lines.length < 8) return null
+  if (looksLikeSourceCode(input.text)) return null
+  const first = lines[0]!
+  const last = lines[lines.length - 1]!
+  const tailLine = last.originalLineEnd ?? last.originalLine
+  const bodyChars = codePointLength(input.text)
+  const markerTemplate = elidedRangeMarker(first.originalLine, tailLine)
+  const sourceNote = `; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"})`
+  const reserved = codePointLength(markerTemplate) + codePointLength(sourceNote) + 2
+  const bodyBudget = input.budgetChars - reserved
+  if (bodyBudget <= 0) return null
+  const headBudget = Math.floor(bodyBudget / 2)
+  const tailBudget = bodyBudget - headBudget
+  let headCount = 0
+  let used = 0
+  while (headCount < lines.length) {
+    const cost = codePointLength(lines[headCount]!.text) + (headCount === 0 ? 0 : 1)
+    if (used + cost > headBudget) break
+    used += cost
+    headCount += 1
+  }
+  let tailCount = 0
+  used = 0
+  while (tailCount < lines.length - headCount) {
+    const index = lines.length - 1 - tailCount
+    const cost = codePointLength(lines[index]!.text) + (tailCount === 0 ? 0 : 1)
+    if (used + cost > tailBudget) break
+    used += cost
+    tailCount += 1
+  }
+  if (headCount === 0 || tailCount === 0 || headCount + tailCount >= lines.length) return null
+  const elidedStart = lines[headCount]!.originalLine
+  const elidedEnd = originalEnd(lines, lines.length - tailCount - 1)
+  if (elidedEnd < elidedStart) return null
+  const text = [
+    ...lines.slice(0, headCount).map(line => line.text),
+    elidedRangeMarker(elidedStart, elidedEnd) + sourceNote,
+    ...lines.slice(lines.length - tailCount).map(line => line.text),
+  ].join('\n')
+  return { text, reducer: 'prose-keep', lossy: true }
 }
 
 /**

@@ -112,12 +112,20 @@ describe('hypa-code-skeleton reducer', () => {
     expect(codePointLength(output!.text)).toBeLessThanOrEqual(1_200)
   })
 
-  it('leaves prose on the existing head reducer', () => {
+  // R8b moved this landing spot on purpose: unstructured prose used to fall
+  // to pi-head (head-only — middle and tail dropped); it now goes through the
+  // universal prose-keep reducer, which retains head AND tail plus an R9
+  // line-range marker. Code-like read results still land on pi-head (the
+  // prose-keep path declines looksLikeSourceCode), pinned two cases below.
+  it('lands read-tool prose on the prose-keep reducer with head and tail', () => {
     const prose = Array.from({ length: 200 }, (_, i) =>
       `Paragraph ${String(i)} explains a concept in plain sentences with no code structure at all.`).join('\n')
     const input = readInput(prose)
     const output = reduceFreshToolResult(input)
-    expect(output?.reducer).toBe('pi-head')
+    expect(output?.reducer).toBe('prose-keep')
+    const lines = output!.text.split('\n')
+    expect(lines[0]).toContain('Paragraph 0')
+    expect(lines.at(-1)).toContain('Paragraph 199')
   })
 
   it('does not fire on small or sparse content', () => {
