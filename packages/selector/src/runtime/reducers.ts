@@ -62,6 +62,13 @@ const FENCE_PATTERN = /^\s*(?:```|~~~)/
 const UUID_PATTERN = /\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b/g
 const LONG_HEX_PATTERN = /\b[0-9a-fA-F]{64,}\b/g
 const LONG_BASE64_PATTERN = /[A-Za-z0-9+/]{200,}={0,2}/g
+const HTML_TAG_PATTERN = /<!DOCTYPE html|<html\b|<head\b|<div\b|<span\b|<script\b|<style\b|<body\b|<p>|<table\b|<a\s/i
+const HTML_COMMENT_PATTERN = /<!--[\s\S]*?-->/g
+const HTML_DROPPED_ELEMENTS = /<(script|style|noscript|svg|head)\b[^>]*>[\s\S]*?<\/\1\s*>/gi
+const HTML_DATA_URI_PATTERN = /\s(?:src|href)="data:[^"]*"/gi
+const HTML_TAG_PATTERN_FULL = /<([a-z][a-z0-9]*)((?:\s[^<>]*?)?)\/?>/gi
+const HTML_INLINE_TAG_PATTERN = /<\/?(?:em|strong|b|i|u|s|code|small|sub|sup|span|br)\b[^<>]*>/gi
+const HTML_WHITELISTED_ATTRIBUTES = /\s(?:href|src|alt|title|id)="[^"]*"/gi
 const ADJACENT_REPEAT_MARKER = '[previous line repeated'
 /** Non-adjacent folding only pays off once a line recurs enough to beat the marker cost. */
 const NON_ADJACENT_FOLD_THRESHOLD = 3
@@ -100,6 +107,7 @@ export function reduceFreshToolResult(input: ReducerInput): ReducerOutput | null
   if (input.codeSkeleton === true && looksLikeSourceCode(normalized.text)) candidates.push(() => reduceCodeSkeleton(prepared))
   // Form-dispatched prose candidates (R8/R8b): classification reads content
   // shape only — never the tool name, the path extension, or the command.
+  if (looksLikeHtml(normalized.text)) candidates.push(() => reduceHtml(prepared))
   if (looksLikeDocument(normalized.text)) candidates.push(() => reduceDocSkeleton(prepared))
   if (isShellTool(name) || command !== '') candidates.push(() => reduceShell(prepared))
   candidates.push(() => reduceProseKeep(prepared))
@@ -607,6 +615,126 @@ export function looksLikeDocument(text: string): boolean {
 /** One R9-spec elision marker: an original-event line range plus its count. */
 function elidedRangeMarker(start: number, end: number): string {
   return `[... lines ${String(start)}-${String(end)} elided (${String(end - start + 1)} lines) ...]`
+}
+
+/**
+ * Require content evidence of HTML: enough lines carrying real markup tags
+ * among a bounded prefix. Angle-bracket prose (TS generics, comparisons) does
+ * not match the tag list, which is the misjudgment guard.
+ */
+function looksLikeHtml(text: string): boolean {
+  const lines = splitLines(text)
+  let tags = 0
+  for (const line of lines.slice(0, 400)) {
+    if (HTML_TAG_PATTERN.test(line)) {
+      tags += 1
+      if (tags >= 3) return true
+    }
+  }
+  return false
+}
+
+const HTML_DROPPED_OPEN = /<(script|style|noscript|svg|head)\b[^>]*>/i
+
+/**
+ * Two-stage HTML reduction (R13). HTML previously fell into `pi-head`, which
+ * keeps exactly the useless `<head>` metadata and drops the body.
+ *
+ * Stage 1 (`html-slim`) is a deterministic, line-aligned slimming pass:
+ * comments, script/style/noscript/svg/head elements (single- or multi-line),
+ * data URIs, non-whitelisted attributes, and inline-tag markup disappear;
+ * every surviving line keeps its original-event position for the R9 ranges.
+ * Stage 2 (`html-skeleton`) runs only when the slim output still exceeds the
+ * budget: heading hierarchy, each section's first line, and table header rows
+ * survive; the rest is elided with original-event line ranges.
+ */
+function reduceHtml(input: PreparedInput): ReducerOutput | null {
+  interface SlimLine { readonly text: string, readonly index: number }
+  const slim: SlimLine[] = []
+  let dropping: string | null = null
+  input.lines.forEach((line, index) => {
+    let text = line.text
+    if (dropping !== null) {
+      const close = new RegExp(`</${dropping}\\s*>`, 'i').exec(text)
+      if (close === null) return
+      text = text.slice(close.index + close[0].length)
+      dropping = null
+    }
+    text = text.replace(HTML_COMMENT_PATTERN, '')
+    text = text.replace(HTML_DROPPED_ELEMENTS, '')
+    const open = HTML_DROPPED_OPEN.exec(text)
+    if (open !== null) {
+      const close = new RegExp(`</${open[1] ?? ''}\\s*>`, 'i').exec(text.slice(open.index))
+      if (close !== null) {
+        const end = open.index + open[0].length + close.index + close[0].length
+        text = text.slice(0, open.index) + text.slice(end)
+      } else {
+        dropping = open[1] ?? null
+        text = text.slice(0, open.index)
+      }
+    }
+    text = text.replace(HTML_DATA_URI_PATTERN, '')
+    text = text.replace(HTML_TAG_PATTERN_FULL, (match: string, name: string, attrs: string) =>
+      `<${name}${attrs.match(HTML_WHITELISTED_ATTRIBUTES)?.join('') ?? ''}>`)
+    text = text.replace(HTML_INLINE_TAG_PATTERN, '')
+    text = text.trim()
+    if (text !== '') slim.push({ text, index })
+  })
+  if (slim.length === 0) return null
+
+  const buildHeader = (reducer: string, firstElided?: { readonly start: number }): string => {
+    const startLine = firstElided === undefined ? '' : `,"start_line":${String(firstElided.start)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}`
+    return `[html compressed by ${reducer}; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"${startLine}})]`
+  }
+
+  const slimChars = slim.reduce((sum, line) => sum + codePointLength(line.text) + 1, 0)
+  if (slimChars + 160 <= input.budgetChars) {
+    const text = fitLines([buildHeader('html-slim'), ...slim.map(line => line.text)], input.budgetChars, input.sourceRef)
+    if (text !== null) return { text, reducer: 'html-slim', lossy: true }
+  }
+
+  // Stage 2: tag-aware skeleton over the slimmed lines.
+  const keep = new Array<boolean>(slim.length).fill(false)
+  let tableRows = 0
+  let lastHeading = -2
+  for (let position = 0; position < slim.length; position++) {
+    const text = slim[position]!.text
+    if (/<h[1-6]\b/i.test(text)) {
+      keep[position] = true
+      lastHeading = position
+      continue
+    }
+    if (lastHeading === position - 1) {
+      // First content line of the section keeps one sentence of context.
+      keep[position] = true
+      continue
+    }
+    if (/<table\b|<tr\b|<th\b/i.test(text)) {
+      if (tableRows < 1) keep[position] = true
+      tableRows += 1
+      continue
+    }
+    if (!/<\/(tr|table)\b/i.test(text)) tableRows = 0
+    if (IMPORTANT_PATTERN.test(text)) keep[position] = true
+  }
+  const kept: string[] = []
+  let position = 0
+  let firstElided: number | undefined
+  while (position < slim.length) {
+    if (keep[position]) {
+      kept.push(slim[position]!.text)
+      position += 1
+      continue
+    }
+    const runStart = position
+    while (position < slim.length && !keep[position]) position += 1
+    const start = input.lines[slim[runStart]!.index]!.originalLine
+    const end = originalEnd(input.lines, slim[position - 1]!.index)
+    if (firstElided === undefined) firstElided = start
+    kept.push(elidedRangeMarker(start, end))
+  }
+  const text = fitLines([buildHeader('html-skeleton', firstElided === undefined ? undefined : { start: firstElided }), ...kept], input.budgetChars, input.sourceRef)
+  return text === null ? null : { text, reducer: 'html-skeleton', lossy: true }
 }
 
 /** Original-event end line of folded entry `lines[index]`. */
