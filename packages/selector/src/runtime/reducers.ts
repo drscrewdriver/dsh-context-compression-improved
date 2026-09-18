@@ -287,41 +287,126 @@ function shrinkJson(value: unknown, depth: number): unknown {
   return result
 }
 
+/**
+ * Two-tier search folding (R10). L1 is a LOSSLESS per-file locator —
+ * `## <path> (<N> matches)  L12,L15,…` — one line number per hit, taken from
+ * the hit's own `path:line` prefix (falling back to the original-event line).
+ * L2 is the content quota, water-filled round-robin so no file vanishes and
+ * no file runs more than one row ahead of another; the budget is reserved for
+ * L1 first. When L1 itself cannot fit, the shortfall is ANNOUNCED
+ * (withheld file/match counts) — never silently truncated. Outputs without
+ * any `path:line` form fail open to salience.
+ */
 function reduceSearch(input: PreparedInput): ReducerOutput | null {
-  const lines = splitLines(input.text)
-  const groups = new Map<string, Array<{ line: string; important: boolean }>>()
-  const ungrouped: Array<{ line: string; important: boolean }> = []
-  for (const line of lines) {
-    const match = PATH_LINE_PATTERN.exec(line)
-    const row = { line, important: IMPORTANT_PATTERN.test(line) }
+  interface Row { readonly text: string, readonly fileLine: number, readonly important: boolean }
+  const groups = new Map<string, Row[]>()
+  const ungrouped: Row[] = []
+  input.lines.forEach((line) => {
+    const match = PATH_LINE_PATTERN.exec(line.text)
+    const row: Row = {
+      text: line.text,
+      fileLine: match !== null ? Number(match[2]) : line.originalLine,
+      important: IMPORTANT_PATTERN.test(line.text),
+    }
     if (match === null) {
       ungrouped.push(row)
-      continue
+      return
     }
     const path = match[1] ?? '<unknown>'
     const bucket = groups.get(path) ?? []
     bucket.push(row)
     groups.set(path, bucket)
-  }
+  })
   if (groups.size === 0) return reduceSalient(input, 'search-salience')
-  const selected: string[] = []
-  let omitted = 0
+
+  const totalMatches = [...groups.values()].reduce((sum, rows) => sum + rows.length, 0)
+  const locatorFor = (path: string, rows: readonly Row[]): string =>
+    `## ${path} (${String(rows.length)} matches)  ${rows.map(row => `L${String(row.fileLine)}`).join(',')}`
+  const allLocators = [...groups].map(([path, rows]) => locatorFor(path, rows))
+  // Rows within a file are offered to the quota important-first, then by line.
+  const perFile = new Map<string, Row[]>()
   for (const [path, rows] of groups) {
-    const keep = new Set<number>([0, rows.length - 1])
-    rows.forEach((row, index) => { if (row.important) keep.add(index) })
-    for (let index = 0; index < rows.length && keep.size < 5; index++) keep.add(index)
-    const indexes = [...keep].filter(index => index >= 0).sort((a, b) => a - b)
-    selected.push(`## ${path} (${String(rows.length)} matches)`)
-    for (const index of indexes) {
-      const row = rows[index]
-      if (row !== undefined) selected.push(row.line)
-    }
-    omitted += rows.length - indexes.length
+    perFile.set(path, [...rows].sort((a, b) => a.important === b.important
+      ? a.fileLine - b.fileLine
+      : a.important ? -1 : 1))
   }
-  for (const row of ungrouped.filter(row => row.important).slice(0, 12)) selected.push(row.line)
-  const header = `[search results compressed; ${String(omitted)} matches omitted; source: ${input.sourceRef}]`
-  const text = fitLines([header, ...selected], input.budgetChars, input.sourceRef)
-  return text === null ? null : { text, reducer: 'search-by-file', lossy: true }
+
+  const headerFor = (l2Rows: number, omitted: number): string =>
+    `[search results compressed; ${String(groups.size)} files, ${String(totalMatches)} matches; ${String(l2Rows)} content rows shown, ${String(omitted)} matches omitted; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"})]`
+
+  // L2 water-filling: one unchosen row per file per round, so no file
+  // disappears and no file outpaces another by more than one round. Important
+  // rows are offered first within each file.
+  const fillL2 = (output: string[], quotaChars: number): { shown: number, omitted: number } => {
+    let used = 0
+    let shown = 0
+    let round = 0
+    let progress = true
+    while (progress && round < 512) {
+      progress = false
+      for (const rows of perFile.values()) {
+        if (round >= rows.length) continue
+        const row = rows[round]!
+        const cost = codePointLength(row.text) + 1
+        if (used + cost > quotaChars) continue
+        output.push(row.text)
+        used += cost
+        shown += 1
+        progress = true
+      }
+      round += 1
+    }
+    // Locator-less important rows keep their bounded salience slot.
+    for (const row of ungrouped.filter(entry => entry.important).slice(0, 12)) {
+      const cost = codePointLength(row.text) + 1
+      if (used + cost > quotaChars) break
+      output.push(row.text)
+      used += cost
+      shown += 1
+    }
+    return { shown, omitted: totalMatches - shown }
+  }
+
+  const finish = (output: readonly string[]): ReducerOutput | null => {
+    const text = output.join('\n')
+    return text.includes(input.sourceRef) ? { text, reducer: 'search-by-file', lossy: true } : null
+  }
+
+  const headerProbe = headerFor(0, 0)
+  const budget = input.budgetChars - codePointLength(headerProbe) - 2
+  if (budget <= 0) return null
+  const locatorCost = allLocators.reduce((sum, line) => sum + codePointLength(line) + 1, 0)
+  if (locatorCost > budget) {
+    // Visible degradation: include locators while they fit, ANNOUNCE the rest.
+    // The announcement line's own cost is reserved up front so the final text
+    // stays inside the budget and survives verifyReduction.
+    const announcementReserve = 160
+    const output: string[] = []
+    let used = 0
+    let withheldFiles = 0
+    let withheldMatches = 0
+    for (let index = 0; index < allLocators.length; index++) {
+      const cost = codePointLength(allLocators[index]!) + 1 + announcementReserve
+      if (used + cost > budget) {
+        withheldFiles = allLocators.length - index
+        withheldMatches = totalMatches
+          - [...groups.values()].slice(0, index).reduce((sum, rows) => sum + rows.length, 0)
+        break
+      }
+      output.push(allLocators[index]!)
+      used += cost - announcementReserve
+    }
+    if (withheldFiles > 0) {
+      output.push(`[L1 locator partially withheld: ${String(withheldFiles)} file(s) / ${String(withheldMatches)} matches' line lists did not fit the budget; retrieve for the full hit list]`)
+    }
+    const { shown, omitted } = fillL2(output, Math.max(0, budget - used - (withheldFiles > 0 ? announcementReserve : 0)))
+    output.unshift(headerFor(shown, omitted + withheldMatches))
+    return finish(output)
+  }
+  const output: string[] = [...allLocators]
+  const { shown, omitted } = fillL2(output, budget - locatorCost)
+  output.unshift(headerFor(shown, omitted))
+  return finish(output)
 }
 
 function reduceGit(input: PreparedInput, command: string): ReducerOutput | null {
