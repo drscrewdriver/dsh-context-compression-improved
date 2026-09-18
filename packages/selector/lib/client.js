@@ -1927,23 +1927,58 @@ window.__ModuleLoader__.load({
 					namespace: NS,
 					decode: decodeSettings
 				});
-				const writeAndConfirm = async (write, accepts) => {
-					const beforeRevision = scope.getSnapshot().revision;
-					await write();
+				const writeAndConfirm = async (label, write, accepts) => {
+					const before = scope.getSnapshot();
+					try {
+						await write();
+					} catch (error) {
+						console.error("[cc-probe] write-rejected", {
+							label,
+							error: error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+						});
+						throw error;
+					}
 					const after = scope.getSnapshot();
-					if (after.status !== "ready" || after.value === void 0 || after.revision === beforeRevision || !accepts(after.value)) throw new Error("Context compression settings were not saved.");
+					const statusNotReady = after.status !== "ready";
+					const valueMissing = after.value === void 0;
+					const revisionUnchanged = after.revision === before.revision;
+					const notAccepted = after.value === void 0 ? void 0 : !accepts(after.value);
+					if (statusNotReady || valueMissing || revisionUnchanged || notAccepted === true) {
+						const probe = `[probe label=${label} status=${after.status} value=${valueMissing ? "undefined" : "kept"} revision=${String(before.revision)}->${String(after.revision)} accepts=${notAccepted === void 0 ? "n/a" : String(notAccepted)} beforeStatus=${before.status} beforeValue=${before.value === void 0 ? "undefined" : "kept"}]`;
+						console.error("[cc-probe] save-failed", {
+							label,
+							before: {
+								status: before.status,
+								hasValue: before.value !== void 0,
+								revision: before.revision
+							},
+							after: {
+								status: after.status,
+								hasValue: !valueMissing,
+								revision: after.revision,
+								accepts: notAccepted
+							},
+							flags: {
+								statusNotReady,
+								valueMissing,
+								revisionUnchanged,
+								notAccepted
+							}
+						});
+						throw new Error(`Context compression settings were not saved. ${probe}`);
+					}
 				};
 				return {
 					hooks: { compression: scope },
-					select: (profile) => writeAndConfirm(() => scope.set("profile", profile), (settings) => settings.profile === profile),
-					saveCustom: (custom) => writeAndConfirm(() => scope.set("custom", custom), (settings) => isCustomCompressionPolicy(settings.custom) && sameCustomPolicy(settings.custom, custom)),
-					resetCustom: () => writeAndConfirm(() => scope.set("custom", structuredClone(DEFAULT_CUSTOM_COMPRESSION_POLICY)), (settings) => isCustomCompressionPolicy(settings.custom) && sameCustomPolicy(settings.custom, DEFAULT_CUSTOM_COMPRESSION_POLICY)),
-					saveAutoCompact: (thresholdPercent) => writeAndConfirm(() => scope.set("autoCompact", { thresholdPercent }), (settings) => settings.autoCompact.thresholdPercent === thresholdPercent),
-					saveCodeSkeleton: (enabled) => writeAndConfirm(() => scope.set("codeSkeleton", { enabled }), (settings) => settings.codeSkeleton.enabled === enabled),
+					select: (profile) => writeAndConfirm("select", () => scope.set("profile", profile), (settings) => settings.profile === profile),
+					saveCustom: (custom) => writeAndConfirm("saveCustom", () => scope.set("custom", custom), (settings) => isCustomCompressionPolicy(settings.custom) && sameCustomPolicy(settings.custom, custom)),
+					resetCustom: () => writeAndConfirm("resetCustom", () => scope.set("custom", structuredClone(DEFAULT_CUSTOM_COMPRESSION_POLICY)), (settings) => isCustomCompressionPolicy(settings.custom) && sameCustomPolicy(settings.custom, DEFAULT_CUSTOM_COMPRESSION_POLICY)),
+					saveAutoCompact: (thresholdPercent) => writeAndConfirm("saveAutoCompact", () => scope.set("autoCompact", { thresholdPercent }), (settings) => settings.autoCompact.thresholdPercent === thresholdPercent),
+					saveCodeSkeleton: (enabled) => writeAndConfirm("saveCodeSkeleton", () => scope.set("codeSkeleton", { enabled }), (settings) => settings.codeSkeleton.enabled === enabled),
 					savePresetOptions: (options) => {
 						const ops = planPresetOptionsOps(scope.getSnapshot().value?.presetOptions, options);
 						if (ops.length === 0) return Promise.resolve();
-						return writeAndConfirm(() => scope.mutate(ops), (settings) => presetOptionsOpsAccepted(settings.presetOptions, ops));
+						return writeAndConfirm(`savePresetOptions[${ops.map((op) => `${op.op} ${op.path.join(".")}`).join("; ")}]`, () => scope.mutate(ops), (settings) => presetOptionsOpsAccepted(settings.presetOptions, ops));
 					}
 				};
 			};
