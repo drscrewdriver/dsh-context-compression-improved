@@ -210,7 +210,7 @@ export function ReviewOverlay({ scope, t }: ReviewOverlayProps) {
       }
     }
     pull()
-    let unsubscribe = (): void => {}
+    let unsubscribe: () => void
     try {
       unsubscribe = scope.subscribe(pull)
     } catch {

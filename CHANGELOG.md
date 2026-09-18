@@ -2,6 +2,33 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
+## Unreleased (feat/ctx-compression-v2-compat015)
+
+### Added
+
+- Batch-level benefit pricing (R1): a review pass is priced as ONE merged mutation — the
+  tail KV-cache refill penalty is paid once per batch instead of per candidate, so real
+  batches (5×50k with a 64k tail) reach the auto band instead of all dropping.
+- Original-event line mapping (R9a): terminal normalization returns folded lines that each
+  carry their 1-based original-event line number; `retrieve` reads raw events, so printed
+  ranges resolve to the right lines.
+- Document skeleton and universal prose keep (R8/R8b): structured documents keep headings,
+  section first/last lines, list starts and table headers; every other non-code text keeps
+  head AND tail with an R9 line-range marker (prose was previously head-only truncated).
+- Two-tier search folding (R10, fixes D8): a lossless per-file L1 locator plus a
+  water-filled L2 content quota.
+- Non-adjacent frequency folding (R11): separated exact repeats (up to 8.37% of large
+  results) fold to first occurrence plus one counted marker.
+- Long-string placeholders (R12): base64/hex/UUID blobs become length summaries with a
+  16-char recognition prefix.
+- Two-stage HTML reduction (R13, fixes D9): `html-slim` then `html-skeleton`, line-aligned
+  so original line numbers survive.
+- R9b anchors: contiguous masks cite original line ranges, scatter masks report
+  `lines 1-N scanned, K kept`, and every retrieve hint carries a pasteable
+  `{"ref":…,"start_line":N,"max_lines":80}`.
+- Document census: omitted-document summaries list section headings instead of a constant
+  `0 error, 0 warn, N info` histogram.
+
 ## Unreleased (compat/0.1.5)
 
 ### Changed

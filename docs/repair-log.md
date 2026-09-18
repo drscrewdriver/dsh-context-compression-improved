@@ -357,6 +357,59 @@ here for reasons the project's own `upgrade-pitfalls` §2.1 records independentl
 
 ---
 
+## D8 — The search reducer dropped 21.2% of hits and never reported where they went
+
+**Symptom.** Large `grep`/`rg` results compressed by `search-by-file` lost every hit the
+per-file "first 4 + last" rule did not keep, and the file header only said `(592 matches)`
+with no line numbers. The model could not tell which hits were dropped or where to re-read.
+
+**Root cause.** `reduceSearch` filled each file's keep-set from index 0 (`keep.size < 5`)
+and reported only counts. Nothing in the output identified the omitted hit positions, so the
+loss was invisible and unrecoverable except by re-running the search.
+
+**Evidence.** 14 real sessions (18.6M characters, DSH 0.1.5-rc.2): 186 search events /
+5,301 hits; per-file median 18, p90 55, max 592; 1,122 hits (21.2%) discarded silently.
+
+**Affected surface.** `packages/selector/src/runtime/reducers.ts` (`reduceSearch`).
+
+**Fix.** Two-tier folding (R10): L1 is a lossless per-file locator
+(`## <path> (N matches)  L12,L15,…`, one line number per hit, budget reserved first); L2 is
+the content quota, water-filled round-robin so no file vanishes. When L1 itself cannot fit
+the shortfall is announced (withheld file/match counts), never silently truncated.
+
+**Verification.** `packages/selector/tests/runtime/search-reducer.spec.ts`: a 592-hit file
+reports 592 locator numbers; water-filling serves every file before any file takes a second
+row; withheld locators are announced in the output.
+
+---
+
+## D9 — HTML fell into `pi-head`, which kept the `<head>` and dropped the body
+
+**Symptom.** Fetched/compressed HTML pages kept `<!DOCTYPE>`, `<meta>`, `<link>`,
+`<script>` and `<style>` — the metadata — while the entire body content disappeared.
+
+**Root cause.** `looksLikeSourceCode` matches no HTML tags (its patterns cover
+declarations/imports/decorators only), so pages fell through to the head/tail fallbacks, and
+`reduceHead` takes from the top — exactly the worst segment for HTML.
+
+**Evidence.** `CODE_STRUCTURE_PATTERN` / `CODE_IMPORT_PATTERN` / `CODE_DECORATOR_PATTERN`
+match none of `<html|<div|<script|…`; the repository carried zero HTML-input tests (31
+`<html|<div|<script` hits, all in TSX sources and tokenizer vocabularies).
+
+**Affected surface.** `packages/selector/src/runtime/reducers.ts` (candidate chain).
+
+**Fix.** Two-stage reduction (R13): `html-slim` strips comments, script/style/noscript/svg/
+head elements, data URIs, non-whitelisted attributes (`href/src/alt/title/id` survive) and
+inline-tag markup, line-aligned so original-event line numbers survive; `html-skeleton`
+keeps the heading hierarchy, section first lines and table header rows under tighter budgets.
+Classification is pure form (≥3 markup-tag lines in the first 400).
+
+**Verification.** `packages/selector/tests/runtime/html-reducer.spec.ts`: body paragraphs
+and headings survive; script/style/comment/data-URI content is gone; the skeleton fallback
+cites original line ranges; TS generics/comparisons are not misclassified as HTML.
+
+---
+
 ## U1 — The estimator card vanished off TokenPilot-inspired instead of explaining its gate
 
 **Symptom.** With any profile other than TokenPilot-inspired selected, the Settings page showed
@@ -601,3 +654,4 @@ caused.
 | 2026-09-15 | doc corruption — mechanism | **Diagnosed.** A damaged spot is the 2-byte prefix of a three-byte UTF-8 character followed by `0x3F`: the character lost its third byte and, in most spots, the byte that followed it was consumed too (a double-byte-code-page decode/write pair collapse; 0 or 1 bytes lost per spot). The damage is **inherited, not produced here**: the newest valid blob of every affected file is `e337bf5`, while the same files are already defective at the `compat/0.1.5` baseline `d7c592d` and at `04f86e4`. Ten files carry it, not five — `README.{zh,ja,ko}.md` and `scripts/packed-install-e2e.mjs` were missed by the earlier note |
 | 2026-09-15 | doc corruption — repaired | **Batch I / T-I2.** All ten files repaired by restoring each damaged spot from `e337bf5`, with three independent checks: the restored character must carry the surviving 2-byte prefix; re-corrupting the repair reproduces the previous bytes exactly (so the edit touches nothing but the damage, and no line, no EOL and no other character moves); and the repair must agree with the valid ancestor everywhere outside the restored spots. Every affected file is now valid UTF-8. The English `README.md` is the clean case: ten spots, all `—`/quote characters plus their following space, zero other differences from the ancestor |
 | 2026-09-15 | ledger encoding | The twelve `—` characters in this file had been mangled to `鈥?` by the PowerShell port of the ledger (the 0.1.2 source has none); restored. Same class as the doc corruption above, introduced by that one-time port rather than inherited |
+| 2026-09-19 | D8/D9 | Compression-quality defects ledgered on `feat/ctx-compression-v2-compat015`: search hits were dropped unlocatably (21.2%), HTML kept its `<head>` and lost its body; both fixed with two-tier search folding and two-stage HTML reduction, each with counter-proof tests |

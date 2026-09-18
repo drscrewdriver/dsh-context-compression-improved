@@ -181,7 +181,6 @@ function reviewSession(ctx: Context, id: string, oldText: string): {
   session: Session
   oldResultSeq: number
 } {
-  const pruner = ctx.toolResultPruner
   const session = Session.create(SessionId(id))
   const old = appendToolTurn(session, 1, oldText, true)
   appendToolTurn(session, 2, 'newest protected result', true)

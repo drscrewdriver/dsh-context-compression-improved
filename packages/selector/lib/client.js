@@ -1768,7 +1768,7 @@ window.__ModuleLoader__.load({
 					}
 				};
 				pull();
-				let unsubscribe = () => {};
+				let unsubscribe;
 				try {
 					unsubscribe = scope.subscribe(pull);
 				} catch {

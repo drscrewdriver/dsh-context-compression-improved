@@ -12,7 +12,7 @@ import { DEFAULT_CUSTOM_COMPRESSION_POLICY } from '../profiles.ts'
 import { decodeSettings } from './decode.ts'
 import { en, zh } from './locales.ts'
 import { planPresetOptionsOps, presetOptionsOpsAccepted } from './preset-options.ts'
-import { ReviewOverlay, renderReviewOverlay } from './ReviewOverlay.tsx'
+import { renderReviewOverlay } from './ReviewOverlay.tsx'
 
 /**
  * Harness 0.1.5 mounts the web core's `slots` service on the client context
