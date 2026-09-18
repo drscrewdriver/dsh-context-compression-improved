@@ -59,6 +59,26 @@ const MARKDOWN_HEADING_PATTERN = /^#{1,6}\s+\S/
 const LIST_ITEM_PATTERN = /^\s*(?:[-*+]|\d+[.)])\s+\S/
 const TABLE_ROW_PATTERN = /^\s*\|/
 const FENCE_PATTERN = /^\s*(?:```|~~~)/
+const UUID_PATTERN = /\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b/g
+const LONG_HEX_PATTERN = /\b[0-9a-fA-F]{64,}\b/g
+const LONG_BASE64_PATTERN = /[A-Za-z0-9+/]{200,}={0,2}/g
+const ADJACENT_REPEAT_MARKER = '[previous line repeated'
+/** Non-adjacent folding only pays off once a line recurs enough to beat the marker cost. */
+const NON_ADJACENT_FOLD_THRESHOLD = 3
+
+/**
+ * Replace long opaque literals with length summaries (R12). Data URIs, base64
+ * blobs, and long hex dumps are pure noise in a compressed view; the prefix is
+ * kept so the model can still recognize the value. Short strings are never
+ * touched, and replacements never span lines, so the line mapping survives.
+ */
+function placeholderizeLongStrings(line: string): string {
+  if (!/[0-9a-zA-Z+/]{32}/.test(line) && !/\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-/.test(line)) return line
+  let result = line.replace(UUID_PATTERN, '[uuid]')
+  result = result.replace(LONG_HEX_PATTERN, (match) => `[hex ${String(match.length)} chars: ${match.slice(0, 16)}…]`)
+  result = result.replace(LONG_BASE64_PATTERN, (match) => `[base64 ${String(match.length)} chars: ${match.slice(0, 16)}…]`)
+  return result
+}
 
 /**
  * Select a reducer from verified tool, command, and content evidence.
@@ -179,7 +199,7 @@ export function normalizeTerminalLines(text: string): NormalizedTerminal {
   const withoutAnsi = text.replace(ANSI_PATTERN, '')
   const logical = withoutAnsi.split('\n').map((line) => {
     const redraws = line.split('\r').filter(part => part !== '')
-    return redraws.at(-1) ?? ''
+    return placeholderizeLongStrings(redraws.at(-1) ?? '')
   })
   const folded: NormalizedLine[] = []
   let previous: string | undefined
@@ -208,7 +228,71 @@ export function normalizeTerminalLines(text: string): NormalizedTerminal {
     firstOriginal = originalLine
   })
   flush(logical.length + 1)
-  return { folded, text: folded.map(line => line.text).join('\n') }
+  const result = foldNonAdjacentRepeats(folded)
+  return { folded: result, text: result.map(line => line.text).join('\n') }
+}
+
+/**
+ * Fold non-adjacent exact repeats (R11). Adjacent folding runs FIRST and only
+ * handles consecutive runs (0.03–0.32% of real duplicate content); separated
+ * repeats reached 8.37% in large results. Each surviving occurrence — a kept
+ * line plus its optional adjacent-repeat marker — is one unit; once a text
+ * recurs ≥ threshold times, the first unit is kept and every later unit is
+ * replaced by ONE counted marker citing the original-event span it covers.
+ * A pure consecutive run forms a single unit, so this pass is a no-op on it
+ * and can never double-fold the adjacent marker.
+ */
+function foldNonAdjacentRepeats(folded: readonly NormalizedLine[]): NormalizedLine[] {
+  interface Unit { readonly lead: NormalizedLine, repeat?: NormalizedLine }
+  const units: Unit[] = []
+  for (const entry of folded) {
+    if (entry.text.startsWith(ADJACENT_REPEAT_MARKER) && units.length > 0) {
+      units[units.length - 1]!.repeat = entry
+    } else {
+      units.push({ lead: entry })
+    }
+  }
+  const totals = new Map<string, number>()
+  for (const unit of units) totals.set(unit.lead.text, (totals.get(unit.lead.text) ?? 0) + 1)
+  if (totals.size === units.length) return [...folded]
+  // Precompute, per repeated text, where the first kept occurrence and the
+  // last folded occurrence sit in the ORIGINAL event.
+  const firstOriginal = new Map<string, number>()
+  const lastOriginalEnd = new Map<string, number>()
+  for (const unit of units) {
+    const text = unit.lead.text
+    if (totals.get(text)! < NON_ADJACENT_FOLD_THRESHOLD) continue
+    if (!firstOriginal.has(text)) firstOriginal.set(text, unit.lead.originalLine)
+    const end = unit.repeat?.originalLineEnd ?? unit.lead.originalLineEnd ?? unit.lead.originalLine
+    lastOriginalEnd.set(text, end)
+  }
+  const seen = new Map<string, number>()
+  const result: NormalizedLine[] = []
+  for (const unit of units) {
+    const text = unit.lead.text
+    const total = totals.get(text)!
+    if (total < NON_ADJACENT_FOLD_THRESHOLD) {
+      result.push(unit.lead)
+      if (unit.repeat !== undefined) result.push(unit.repeat)
+      continue
+    }
+    if (!seen.has(text)) {
+      seen.set(text, 1)
+      result.push(unit.lead)
+      if (unit.repeat !== undefined) result.push(unit.repeat)
+      continue
+    }
+    const ordinal = (seen.get(text) ?? 1) + 1
+    seen.set(text, ordinal)
+    if (ordinal > 2) continue
+    const end = lastOriginalEnd.get(text)!
+    result.push({
+      text: `[× ${String(total)} total: same as line ${String(firstOriginal.get(text)!)}; original lines ${String(unit.lead.originalLine)}-${String(end)}]`,
+      originalLine: unit.lead.originalLine,
+      originalLineEnd: end,
+    })
+  }
+  return result
 }
 
 function reduceHead(input: PreparedInput, reducer: string): ReducerOutput | null {
@@ -589,7 +673,6 @@ function reduceProseKeep(input: PreparedInput): ReducerOutput | null {
   const first = lines[0]!
   const last = lines[lines.length - 1]!
   const tailLine = last.originalLineEnd ?? last.originalLine
-  const bodyChars = codePointLength(input.text)
   const markerTemplate = elidedRangeMarker(first.originalLine, tailLine)
   const sourceNote = `; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"})`
   const reserved = codePointLength(markerTemplate) + codePointLength(sourceNote) + 2
