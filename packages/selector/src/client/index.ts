@@ -99,14 +99,31 @@ export function apply(ctx: ClientContext): void {
       const revisionUnchanged = after.revision === before.revision
       const notAccepted = after.value === undefined ? undefined : !accepts(after.value)
       if (statusNotReady || valueMissing || revisionUnchanged || notAccepted === true) {
-        const probe = `[probe label=${label} status=${after.status}`
-          + ` value=${valueMissing ? 'undefined' : 'kept'}`
+        // One late re-read distinguishes "the shared describe mirror had not
+        // folded this write in yet" from "the write never ran at all" (the
+        // scope's `mode === 'memory'` short-circuits `enqueue` to a resolved
+        // promise, so nothing ever crosses the wire).
+        let late: string
+        try {
+          await new Promise(resolve => { setTimeout(resolve, 300) })
+          const settled = scope.getSnapshot()
+          late = ` late={status=${settled.status}`
+            + ` value=${settled.value === undefined ? 'undefined' : 'kept'}`
+            + ` revision=${String(settled.revision)}`
+            + ` accepts=${settled.value === undefined ? 'n/a' : String(!accepts(settled.value))}}`
+        } catch {
+          late = ' late=unreadable'
+        }
+        const probe = `[probe label=${label} mode=${before.mode} writable=${String(before.writable)}`
+          + ` status=${after.status} value=${valueMissing ? 'undefined' : 'kept'}`
           + ` revision=${String(before.revision)}->${String(after.revision)}`
           + ` accepts=${notAccepted === undefined ? 'n/a' : String(notAccepted)}`
           + ` beforeStatus=${before.status}`
-          + ` beforeValue=${before.value === undefined ? 'undefined' : 'kept'}]`
+          + ` beforeValue=${before.value === undefined ? 'undefined' : 'kept'}]${late}`
         console.error('[cc-probe] save-failed', {
           label,
+          persistenceMode: before.mode,
+          writable: before.writable,
           before: { status: before.status, hasValue: before.value !== undefined, revision: before.revision },
           after: { status: after.status, hasValue: !valueMissing, revision: after.revision, accepts: notAccepted },
           flags: { statusNotReady, valueMissing, revisionUnchanged, notAccepted },

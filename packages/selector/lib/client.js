@@ -1944,9 +1944,21 @@ window.__ModuleLoader__.load({
 					const revisionUnchanged = after.revision === before.revision;
 					const notAccepted = after.value === void 0 ? void 0 : !accepts(after.value);
 					if (statusNotReady || valueMissing || revisionUnchanged || notAccepted === true) {
-						const probe = `[probe label=${label} status=${after.status} value=${valueMissing ? "undefined" : "kept"} revision=${String(before.revision)}->${String(after.revision)} accepts=${notAccepted === void 0 ? "n/a" : String(notAccepted)} beforeStatus=${before.status} beforeValue=${before.value === void 0 ? "undefined" : "kept"}]`;
+						let late;
+						try {
+							await new Promise((resolve) => {
+								setTimeout(resolve, 300);
+							});
+							const settled = scope.getSnapshot();
+							late = ` late={status=${settled.status} value=${settled.value === void 0 ? "undefined" : "kept"} revision=${String(settled.revision)} accepts=${settled.value === void 0 ? "n/a" : String(!accepts(settled.value))}}`;
+						} catch {
+							late = " late=unreadable";
+						}
+						const probe = `[probe label=${label} mode=${before.mode} writable=${String(before.writable)} status=${after.status} value=${valueMissing ? "undefined" : "kept"} revision=${String(before.revision)}->${String(after.revision)} accepts=${notAccepted === void 0 ? "n/a" : String(notAccepted)} beforeStatus=${before.status} beforeValue=${before.value === void 0 ? "undefined" : "kept"}]${late}`;
 						console.error("[cc-probe] save-failed", {
 							label,
+							persistenceMode: before.mode,
+							writable: before.writable,
 							before: {
 								status: before.status,
 								hasValue: before.value !== void 0,
