@@ -1928,7 +1928,9 @@ window.__ModuleLoader__.load({
 					decode: decodeSettings
 				});
 				const writeAndConfirm = async (write, accepts) => {
-					const beforeRevision = scope.getSnapshot().revision;
+					const before = scope.getSnapshot();
+					if (before.status === "ready" && before.value !== void 0 && accepts(before.value)) return;
+					const beforeRevision = before.revision;
 					await write();
 					const after = scope.getSnapshot();
 					if (after.status !== "ready" || after.value === void 0 || after.revision === beforeRevision || !accepts(after.value)) throw new Error("Context compression settings were not saved.");

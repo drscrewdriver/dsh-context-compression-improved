@@ -77,7 +77,16 @@ export function apply(ctx: ClientContext): void {
       write: () => Promise<void>,
       accepts: (settings: ContextCompressionSettings) => boolean,
     ): Promise<void> => {
-      const beforeRevision = scope.getSnapshot().revision
+      const before = scope.getSnapshot()
+      // A patch that already holds is a legitimate no-op, not a failed save. The
+      // Host's `bumpRevision` is guarded by `deepEqualJson`, so the second save
+      // of the value that is already stored can never move the revision —
+      // fencing on the revision alone reported that success as "Context
+      // compression settings were not saved." (only `savePresetOptions` escaped
+      // it, by filtering no-ops in `planPresetOptionsOps`). Confirm on the value
+      // the user sees, before spending a write that cannot change anything.
+      if (before.status === 'ready' && before.value !== undefined && accepts(before.value)) return
+      const beforeRevision = before.revision
       await write()
       const after = scope.getSnapshot()
       if (

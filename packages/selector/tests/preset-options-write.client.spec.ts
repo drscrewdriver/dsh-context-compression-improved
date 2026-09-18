@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest'
 import { apply } from '../src/client/index.ts'
 import type { CompressionSelectorInjected } from '../src/client/CompressionProfileSelector.tsx'
-import type { ContextCompressionSettings } from '../src/profiles.ts'
+import { DEFAULT_CUSTOM_COMPRESSION_POLICY, type ContextCompressionSettings } from '../src/profiles.ts'
 
 /**
  * The settings transport applies a `set` op AT its path, so the write path is
@@ -26,6 +26,7 @@ function createScopeStub(initial: ContextCompressionSettings, commit = true): Sc
   const writes: PathOp[][] = []
   const listeners = new Set<() => void>()
   const applyOps = (ops: readonly PathOp[]): void => {
+    const before = JSON.stringify(value)
     for (const op of ops) {
       const [head, ...rest] = op.path
       if (head === undefined) continue
@@ -40,6 +41,12 @@ function createScopeStub(initial: ContextCompressionSettings, commit = true): Sc
       else delete child[leaf]
       value = { ...value, [head]: child }
     }
+    // The Host bumps its revision only when the RAW section actually changed
+    // (`deepEqualJson` guard in dsh-settings `bumpRevision`), so a write that
+    // merely restates the stored value leaves the revision where it was.
+    // Bumping unconditionally made this double MORE forgiving than the Host and
+    // hid the no-op false failure below.
+    if (JSON.stringify(value) === before) return
     revision += 1
     for (const listener of listeners) listener()
   }
@@ -64,13 +71,15 @@ function createScopeStub(initial: ContextCompressionSettings, commit = true): Sc
       set: (field: string, fieldValue: unknown) => {
         const ops: PathOp[] = [{ op: 'set', path: [field], value: fieldValue }]
         writes.push(ops)
-        applyOps(ops)
+        // A refused or lost write changes no document, whichever verb carried
+        // it — `set` must honour `commit` exactly as `mutate` does.
+        if (commit) applyOps(ops)
         return Promise.resolve()
       },
       unset: (field: string) => {
         const ops: PathOp[] = [{ op: 'unset', path: [field] }]
         writes.push(ops)
-        applyOps(ops)
+        if (commit) applyOps(ops)
         return Promise.resolve()
       },
       mutate: (ops: readonly PathOp[]) => {
@@ -102,6 +111,7 @@ const DEFAULT_CUSTOM = {
 function bindInjected(
   presetOptions: ContextCompressionSettings['presetOptions'],
   commit = true,
+  custom: ContextCompressionSettings['custom'] = structuredClone(DEFAULT_CUSTOM),
 ): {
   injected: CompressionSelectorInjected
   writes: PathOp[][]
@@ -109,7 +119,7 @@ function bindInjected(
 } {
   const settings: ContextCompressionSettings = {
     profile: 'tokenpilot-inspired',
-    custom: structuredClone(DEFAULT_CUSTOM),
+    custom,
     autoCompact: { thresholdPercent: 80 },
     codeSkeleton: { enabled: false },
     ...(presetOptions === undefined ? {} : { presetOptions }),
@@ -218,5 +228,53 @@ describe('presetOptions writes are path-addressed', () => {
     const { injected } = bindInjected({ estimatorMode: 'host' }, false)
     await expect(injected.savePresetOptions({ estimatorProvider: 'local-35b' }))
       .rejects.toThrow(/were not saved/)
+  })
+})
+
+/**
+ * F15 — a write that restates the stored value is a legitimate no-op, not a
+ * failure.
+ *
+ * The Host's `bumpRevision` is guarded by `deepEqualJson`: the revision moves
+ * only when the RAW section changes. So re-saving the value that is already
+ * stored can never move it, and confirming on the revision alone reported the
+ * SECOND save of the same value as "Context compression settings were not
+ * saved." Only `savePresetOptions` escaped it, because `planPresetOptionsOps`
+ * filters no-ops at its own layer — the other five writers did not.
+ *
+ * The same no-op value must still be a real success: the user's intent is
+ * already satisfied, and refusing it is indistinguishable from the genuine
+ * Host rejection that the existing test above fences.
+ */
+describe('re-saving the stored value is a success, not a failed save', () => {
+  const cases: [string, (injected: CompressionSelectorInjected) => Promise<void>][] = [
+    ['select', injected => injected.select('tokenpilot-inspired')],
+    ['saveCodeSkeleton', injected => injected.saveCodeSkeleton(false)],
+    ['saveAutoCompact', injected => injected.saveAutoCompact(80)],
+    ['savePresetOptions', injected => injected.savePresetOptions({ estimatorMode: 'host' })],
+  ]
+
+  it.each(cases)('%s', async (_name, save) => {
+    const { injected } = bindInjected({ estimatorMode: 'host' })
+    await expect(save(injected)).resolves.toBeUndefined()
+  })
+
+  it.each([
+    ['saveCustom', (injected: CompressionSelectorInjected) => injected.saveCustom(
+      structuredClone(DEFAULT_CUSTOM_COMPRESSION_POLICY),
+    )],
+    ['resetCustom', (injected: CompressionSelectorInjected) => injected.resetCustom()],
+  ] as typeof cases)('%s', async (_name, save) => {
+    const { injected } = bindInjected(
+      { estimatorMode: 'host' },
+      true,
+      structuredClone(DEFAULT_CUSTOM_COMPRESSION_POLICY),
+    )
+    await expect(save(injected)).resolves.toBeUndefined()
+  })
+
+  it('still reports a real write the Host refused', async () => {
+    const { injected } = bindInjected({ estimatorMode: 'host' }, false)
+    await expect(injected.saveCodeSkeleton(true)).rejects.toThrow(/were not saved/)
   })
 })
