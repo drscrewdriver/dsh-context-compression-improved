@@ -9,6 +9,7 @@ import {
   buildEstimatorUserPrompt,
   isCoolingDown,
   parseEstimatorAnswer,
+  parseEstimatorAnswerDetailed,
 } from '../../../src/runtime/tokenpilot/estimator.ts'
 
 describe('tokenpilot estimator helpers', () => {
@@ -28,6 +29,28 @@ describe('tokenpilot estimator helpers', () => {
     expect(parseEstimatorAnswer('[{"seq":"12","expired":true}]')).toEqual([])
     expect(parseEstimatorAnswer('[{"seq":12}]')).toEqual([])
     expect(parseEstimatorAnswer('not json [')).toEqual([])
+  })
+
+  it('reads the optional expectedRemainingTurns from the extended object form', () => {
+    const answer = parseEstimatorAnswerDetailed(
+      'Result: {"expectedRemainingTurns":7.9,"items":[{"seq":3,"expired":false}]} end',
+    )
+    expect(answer.verdicts).toEqual([{ seq: 3, expired: false }])
+    // Fractional estimates floor to whole turns.
+    expect(answer.expectedRemainingTurns).toBe(7)
+  })
+
+  it('stays Ŝ-less for legacy arrays and malformed turn fields', () => {
+    const legacy = parseEstimatorAnswerDetailed('Verdicts: [{"seq":7,"expired":true}] done')
+    expect(legacy.verdicts).toEqual([{ seq: 7, expired: true }])
+    expect(legacy.expectedRemainingTurns).toBeUndefined()
+    const malformed = parseEstimatorAnswerDetailed('{"expectedRemainingTurns":"soon","items":[{"seq":1,"expired":true}]}')
+    expect(malformed.verdicts).toEqual([{ seq: 1, expired: true }])
+    expect(malformed.expectedRemainingTurns).toBeUndefined()
+    // Negative estimates are rejected like any other non-numeric field.
+    const negative = parseEstimatorAnswerDetailed('{"expectedRemainingTurns":-2,"items":[{"seq":1,"expired":true}]}')
+    expect(negative.expectedRemainingTurns).toBeUndefined()
+    expect(negative.verdicts).toEqual([{ seq: 1, expired: true }])
   })
 
   it('builds a path-only user prompt without file content', () => {

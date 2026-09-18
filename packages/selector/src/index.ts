@@ -33,6 +33,302 @@ const ESTIMATOR_CATALOG_ROUTES = [
   '/api/dsh-context-compression-improved/estimator-catalog',
 ] as const
 
+// TokenPilot-inspired R4: the review pipeline's client↔runtime channel, dual
+// prefixed like the catalog route so 0.1.2 clients keep working.
+const REVIEW_QUEUE_ROUTES = [
+  '/endpoint/dsh-context-compression-improved/review-queue',
+  '/api/dsh-context-compression-improved/review-queue',
+] as const
+const REVIEW_DECIDE_ROUTES = [
+  '/endpoint/dsh-context-compression-improved/review-decide',
+  '/api/dsh-context-compression-improved/review-decide',
+] as const
+
+/** The review faces of the pruner service the routes consume. */
+interface ReviewPrunerLike {
+  listReviewProposals(session: unknown): readonly {
+    readonly id: string
+    readonly kind: string
+    readonly items: readonly {
+      readonly seq: number
+      readonly kind: string
+      readonly component: string
+      readonly tokensBefore: number
+      readonly tokensAfter: number
+    }[]
+    readonly benefit: {
+      readonly recoveredTokens: number
+      readonly penaltyTokens: number
+      readonly paybackTurns?: number
+      readonly expectedSaving?: number
+    }
+    readonly enqueuedTurn: number
+    readonly lastTurnIndex: number
+  }[]
+  decideReviewProposal(
+    session: unknown,
+    proposalId: string,
+    decision: 'approved' | 'rejected' | 'ignored',
+  ): { ok: true } | { ok: false, reason: string } | undefined
+  /** Aggregate pending read; absent on older builds (routes then degrade to 503). */
+  listAllReviewProposals?(): readonly {
+    readonly sessionId: string
+    readonly proposals: readonly {
+      readonly id: string
+      readonly kind: string
+      readonly items: readonly { readonly seq: number, readonly kind: string, readonly component: string, readonly tokensBefore: number, readonly tokensAfter: number }[]
+      readonly benefit: { readonly recoveredTokens: number, readonly penaltyTokens: number, readonly paybackTurns?: number, readonly expectedSaving?: number }
+      readonly enqueuedTurn: number
+      readonly lastTurnIndex: number
+    }[]
+  }[]
+  reviewSummary?(session: unknown): {
+    readonly autoApplied: number
+    readonly reviewApplied: number
+    readonly expired: number
+    readonly voided: number
+  }
+}
+
+/** Minimal face of the agents service: session id → agent (carrying the session). */
+interface AgentsServiceLike {
+  get?(id: unknown): { session?: unknown } | undefined
+}
+
+function reviewPrunerOf(readService: (name: string) => unknown): ReviewPrunerLike | undefined {
+  const candidate = readService('toolResultPruner') as {
+    listReviewProposals?: unknown
+    decideReviewProposal?: unknown
+  } | undefined
+  return typeof candidate?.listReviewProposals === 'function'
+    && typeof candidate?.decideReviewProposal === 'function'
+    ? candidate as unknown as ReviewPrunerLike
+    : undefined
+}
+
+function sessionFor(readService: (name: string) => unknown, sessionId: string): unknown {
+  const agents = readService('agents') as AgentsServiceLike | undefined
+  return typeof agents?.get === 'function' ? agents.get(sessionId)?.session : undefined
+}
+
+function reviewJson(res: unknown, status: number, body: unknown): void {
+  const resTyped = res as {
+    writeHead: (code: number, headers?: Record<string, string>) => void
+    end: (body?: string) => void
+  }
+  resTyped.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-cache' })
+  resTyped.end(JSON.stringify(body))
+}
+
+function readRequestBody(req: unknown): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const typed = req as {
+      on?: (event: string, listener: (chunk?: Buffer) => void) => void
+    }
+    let data = ''
+    try {
+      typed.on?.('data', chunk => {
+        data += String(chunk ?? '')
+        if (data.length > 64 * 1024) {
+          data = ''
+          resolve('')
+        }
+      })
+      typed.on?.('end', () => resolve(data))
+      typed.on?.('error', reject)
+    } catch (error) {
+      reject(error instanceof Error ? error : new Error(String(error)))
+    }
+  })
+}
+
+/**
+ * Serve the review pipeline's two HTTP routes (best effort, mirroring the
+ * estimator-catalog registration):
+ *
+ * - `GET .../review-queue?sessionId=…` → the session's pending proposals with
+ *   their benefit numbers. Sanitized by construction: the queue never holds
+ *   message content, and the response carries ids/seqs/counts only (digests
+ *   stay in the runtime — the client cannot need them).
+ * - `POST .../review-decide` `{sessionId, proposalId, decision}` → one human
+ *   decision. Invalid body → 400; unknown/not-pending proposal → 404; review
+ *   mode off for the session → 503.
+ */
+function registerReviewQueueRoutes(ctx: Context): void {
+  const readService = (name: string): unknown => {
+    try {
+      return (ctx as unknown as { get: (service: string) => unknown }).get(name)
+    } catch {
+      return undefined
+    }
+  }
+  const log = (level: 'info' | 'warn', message: string, ...args: unknown[]): void => {
+    console[level](message, ...args)
+  }
+  const registered = (): void => {
+    log('info', 'context-compression review queue routes registered: %s / %s', REVIEW_QUEUE_ROUTES.join(', '), REVIEW_DECIDE_ROUTES.join(', '))
+  }
+
+  type SanitizedProposal = {
+    sessionId: string
+    id: string
+    kind: string
+    items: readonly { seq: number, kind: string, component: string, tokensBefore: number, tokensAfter: number }[]
+    benefit: {
+      recoveredTokens: number
+      penaltyTokens: number
+      paybackTurns?: number
+      expectedSaving?: number
+    }
+    enqueuedTurn: number
+    lastTurnIndex: number
+  }
+
+  const getHandler = (req: unknown, res: unknown): void => {
+    const pruner = reviewPrunerOf(readService)
+    if (pruner === undefined || pruner.listAllReviewProposals === undefined) {
+      reviewJson(res, 503, { ok: false, error: 'review pipeline unavailable' })
+      return
+    }
+    let sessionId = ''
+    try {
+      const url = new URL(String((req as { url?: string }).url ?? ''), 'http://localhost')
+      sessionId = url.searchParams.get('sessionId') ?? ''
+    } catch {
+      sessionId = ''
+    }
+    const sanitize = (
+      sid: string,
+      proposal: {
+        id: string
+        kind: string
+        items: readonly { seq: number, kind: string, component: string, tokensBefore: number, tokensAfter: number }[]
+        benefit: { recoveredTokens: number, penaltyTokens: number, paybackTurns?: number, expectedSaving?: number }
+        enqueuedTurn: number
+        lastTurnIndex: number
+      },
+    ): SanitizedProposal => ({
+      sessionId: sid,
+      id: proposal.id,
+      kind: proposal.kind,
+      items: proposal.items.map(item => ({
+        seq: item.seq,
+        kind: item.kind,
+        component: item.component,
+        tokensBefore: item.tokensBefore,
+        tokensAfter: item.tokensAfter,
+      })),
+      benefit: {
+        recoveredTokens: proposal.benefit.recoveredTokens,
+        penaltyTokens: proposal.benefit.penaltyTokens,
+        ...(proposal.benefit.paybackTurns === undefined ? {} : { paybackTurns: proposal.benefit.paybackTurns }),
+        ...(proposal.benefit.expectedSaving === undefined ? {} : { expectedSaving: proposal.benefit.expectedSaving }),
+      },
+      enqueuedTurn: proposal.enqueuedTurn,
+      lastTurnIndex: proposal.lastTurnIndex,
+    })
+
+    // Without a sessionId the read aggregates every session with live
+    // proposals — the client carries no session id of its own.
+    if (sessionId === '') {
+      const pending = pruner.listAllReviewProposals()
+        .flatMap(entry => entry.proposals.map(proposal => sanitize(entry.sessionId, proposal)))
+      reviewJson(res, 200, { ok: true, total: pending.length, pending })
+      return
+    }
+
+    const session = sessionFor(readService, sessionId)
+    if (session === undefined) {
+      reviewJson(res, 404, { ok: false, error: 'unknown session' })
+      return
+    }
+    const pending = pruner.listReviewProposals(session).map(proposal => sanitize(sessionId, proposal))
+    const summary = pruner.reviewSummary?.(session)
+    reviewJson(res, 200, {
+      ok: true,
+      sessionId,
+      total: pending.length,
+      pending,
+      ...(summary === undefined ? {} : { summary }),
+    })
+  }
+
+  const decideHandler = async (req: unknown, res: unknown): Promise<void> => {
+    const pruner = reviewPrunerOf(readService)
+    if (pruner === undefined) {
+      reviewJson(res, 503, { ok: false, error: 'review pipeline unavailable' })
+      return
+    }
+    let body: unknown
+    try {
+      body = JSON.parse(await readRequestBody(req))
+    } catch {
+      body = undefined
+    }
+    if (typeof body !== 'object' || body === null) {
+      reviewJson(res, 400, { ok: false, error: 'invalid JSON body' })
+      return
+    }
+    const record = body as { sessionId?: unknown, proposalId?: unknown, decision?: unknown }
+    if (typeof record.sessionId !== 'string' || record.sessionId === ''
+      || typeof record.proposalId !== 'string' || record.proposalId === '') {
+      reviewJson(res, 400, { ok: false, error: 'sessionId and proposalId are required' })
+      return
+    }
+    if (record.decision !== 'approved' && record.decision !== 'rejected' && record.decision !== 'ignored') {
+      reviewJson(res, 400, { ok: false, error: 'decision must be approved, rejected, or ignored' })
+      return
+    }
+    const session = sessionFor(readService, record.sessionId)
+    if (session === undefined) {
+      reviewJson(res, 404, { ok: false, error: 'unknown session' })
+      return
+    }
+    const outcome = pruner.decideReviewProposal(session, record.proposalId, record.decision)
+    if (outcome === undefined) {
+      reviewJson(res, 503, { ok: false, error: 'review mode is off for this session' })
+      return
+    }
+    if (!outcome.ok) {
+      reviewJson(res, 404, { ok: false, error: outcome.reason })
+      return
+    }
+    reviewJson(res, 200, { ok: true, sessionId: record.sessionId, proposalId: record.proposalId, decision: record.decision })
+  }
+
+  const register = (webServer: WebServerLike): void => {
+    const table: ReadonlyArray<{ path: string, handler: (req: unknown, res: unknown) => unknown }> = [
+      ...[...REVIEW_QUEUE_ROUTES].map(path => ({ path, handler: getHandler })),
+      ...[...REVIEW_DECIDE_ROUTES].map(path => ({ path, handler: (req: unknown, res: unknown) => { void decideHandler(req, res) } })),
+    ]
+    const disposers = table
+      .map(entry => webServer.register({ kind: 'exact', path: entry.path, handler: entry.handler }))
+      .filter((off): off is () => void => typeof off === 'function')
+    ctx.effect(
+      () => () => { for (const off of disposers) off() },
+      'contextCompressionSelector.review routes',
+    )
+    registered()
+  }
+
+  const active = asWebServer(readService('webServer'))
+  if (active !== undefined) {
+    register(active)
+    return
+  }
+
+  ctx.inject(['webServer'], (injected) => {
+    const webServer = asWebServer((injected as { webServer?: unknown }).webServer)
+    if (webServer === undefined) {
+      log('warn', 'context-compression webServer exposes no register() — review routes not registered')
+      return
+    }
+    register(webServer)
+  })
+
+  log('warn', 'context-compression webServer not active yet — review routes pending: %s', REVIEW_QUEUE_ROUTES.join(', '))
+}
+
 /**
  * The one service the catalog route actually needs. `llm` and
  * `agentDefaultModel` are payload enrichment the handler resolves per request,
@@ -209,12 +505,20 @@ export interface Config {
    * covers both arrival orders.
    */
   estimatorCatalogRoute?: boolean
+  /**
+   * Register the review pipeline's HTTP routes (pending-queue read + decide
+   * write) on this row. Same Bundle opt-in semantics as
+   * `estimatorCatalogRoute`; without the routes the floating window has no
+   * transport and simply never appears.
+   */
+  reviewQueueRoute?: boolean
 }
 
 /** Loader validation for the standalone Bundle opt-in. */
 export const Config: z<Config> = z.object({
   presetOverlay: z.boolean().default(false),
   estimatorCatalogRoute: z.boolean().default(false),
+  reviewQueueRoute: z.boolean().default(false),
 })
 
 /** Register the persisted default read by the currently mounted root pruner. */
@@ -233,6 +537,10 @@ export function apply(ctx: Context, config: Config = {}): void {
     // top-level plugin fiber, not inside the isolated `toolResultPruner`
     // service, because the route is host-wide rather than per-pruner-instance.
     if (config.estimatorCatalogRoute === true) registerEstimatorCatalogRoute(ctx)
+
+    // TokenPilot-inspired R4: the review pipeline's client transport (see the
+    // config JSDoc for the opt-in semantics).
+    if (config.reviewQueueRoute === true) registerReviewQueueRoutes(ctx)
 
     if (config.presetOverlay !== true) return
 

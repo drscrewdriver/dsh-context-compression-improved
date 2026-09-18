@@ -61,6 +61,11 @@ describe('tokenpilot-inspired preset', () => {
       prefixStabilizer: true,
       readState: true,
       estimator: { mode: '' },
+      // Review pipeline (beta) ships off with its documented defaults.
+      reviewMode: false,
+      reviewTimeoutTurns: 6,
+      cacheHitDiscountAlpha: 0.1,
+      reviewHighImpactTokens: 4000,
     })
     // Other profiles never carry the capability matrix.
     expect(resolvePolicy(config, 'balanced').presetOptions).toBeUndefined()
