@@ -196,4 +196,132 @@ describe('classifyCandidates', () => {
     )
     expect(result.review[0]!.kind).toBe('estimator')
   })
+
+  it('degenerates to the per-candidate behavior for a single-candidate batch', () => {
+    // payback = 1000/400 = 2.5: Ŝ = 8 → 2.5 > 2 and ≤ 3 → review, one item.
+    const result = classifyCandidates(
+      [candidate({ tokensBefore: 1400, tokensAfter: 1000 })],
+      { ...TRIAGE, remainingTurns: 8 },
+    )
+    expect(result.auto).toEqual([])
+    expect(result.review).toHaveLength(1)
+    expect(result.review[0]!.items).toHaveLength(1)
+  })
+})
+
+/** R1 batch-level benefit: one merged mutation pays the tail refill ONCE.
+ *  Fixture: α=0.02, tail=64,000, Ŝ=60. Per candidate R = 50,000 − 500 = 49,500.
+ *  Batch: R = 247,500 → payback = 62,720 / 4,950 ≈ 12.67 ≤ 0.25·60 = 15 → auto.
+ *  Per candidate: payback = 62,720 / 990 ≈ 63.35 > 3 → every one drops. */
+describe('classifyCandidates (batch-level benefit, R1)', () => {
+  const BATCH = {
+    alpha: 0.02,
+    tailTokens: 64_000,
+    reviewHighImpactTokens: 200_000,
+    remainingTurns: 60,
+  }
+
+  function batchCandidate(seq: number, overrides: { tokensBefore?: number, tokensAfter?: number, reducer?: string } = {}) {
+    return candidate({
+      sourceSeq: seq,
+      tokensBefore: overrides.tokensBefore ?? 50_000,
+      tokensAfter: overrides.tokensAfter ?? 500,
+      ...overrides.reducer !== undefined ? { reducer: overrides.reducer } : {},
+    })
+  }
+
+  it('pays the refill penalty once per batch: 5×50k lands auto', () => {
+    const result = classifyCandidates(
+      [1, 2, 3, 4, 5].map(seq => batchCandidate(seq)),
+      BATCH,
+    )
+    expect(result.auto.map(entry => entry.sourceSeq)).toEqual([1, 2, 3, 4, 5])
+    expect(result.review).toEqual([])
+    expect(result.drop).toEqual([])
+  })
+
+  it('counter-proof: priced per candidate the same five would all drop', () => {
+    // Under per-candidate pricing each candidate pays the full refill alone:
+    // payback = 62,720 / (0.02·49,500) ≈ 63.35 > 3 → drop. The batch-level
+    // classifier above lands the identical five in auto.
+    const perCandidate = computeBenefit(
+      [{ sourceSeq: 1, tokensBefore: 50_000, tokensAfter: 500 }],
+      BATCH,
+    )
+    expect(perCandidate.paybackTurns).toBeGreaterThan(3)
+  })
+
+  it('a zero-recovery candidate is priced out before the batch verdict', () => {
+    // Batch of five real candidates + one growing one: the five land auto
+    // (payback ≈ 12.67) and the zero-recovery one never joins the pricing.
+    const result = classifyCandidates(
+      [
+        ...[1, 2, 3, 4, 5].map(seq => batchCandidate(seq)),
+        batchCandidate(6, { tokensBefore: 500, tokensAfter: 500 }),
+      ],
+      BATCH,
+    )
+    expect(result.auto.map(entry => entry.sourceSeq)).toEqual([1, 2, 3, 4, 5])
+    expect(result.drop.map(entry => entry.sourceSeq)).toEqual([6])
+  })
+
+  it('high impact covers the whole batch: one ≥H candidate sends everything to review', () => {
+    const result = classifyCandidates(
+      [batchCandidate(1), batchCandidate(2, { tokensBefore: 250_000 })],
+      BATCH,
+    )
+    expect(result.auto).toEqual([])
+    expect(result.drop).toEqual([])
+    expect(result.review).toHaveLength(1)
+    expect(result.review[0]!.items.map(item => item.seq)).toEqual([1, 2])
+  })
+
+  /** Edge-band review fixture: batch R = 3×430,000 = 1,290,000 →
+   *  perTurn = 0.02·R = 25,800 → payback = 62,720/25,800 ≈ 2.43.
+   *  Ŝ = 8 → 0.25·Ŝ = 2: payback ∈ (2, 3] → review. No candidate is
+   *  high-impact (600,000 < reviewHighImpactTokens 1,000,000). */
+  const EDGE_REVIEW = {
+    alpha: 0.02,
+    tailTokens: 64_000,
+    reviewHighImpactTokens: 1_000_000,
+    remainingTurns: 8,
+  }
+
+  function edgeCandidate(seq: number, overrides: { tokensBefore?: number, tokensAfter?: number, reducer?: string } = {}) {
+    return candidate({
+      sourceSeq: seq,
+      tokensBefore: overrides.tokensBefore ?? 600_000,
+      tokensAfter: overrides.tokensAfter ?? 170_000,
+      ...overrides.reducer !== undefined ? { reducer: overrides.reducer } : {},
+    })
+  }
+
+  it('groups one proposal per kind and the id covers every item digest', () => {
+    const result = classifyCandidates(
+      [1, 2, 3].map(seq => edgeCandidate(seq, { reducer: 'dedupe-pointer' })),
+      EDGE_REVIEW,
+    )
+    expect(result.review).toHaveLength(1)
+    const skeleton = result.review[0]!
+    expect(skeleton.kind).toBe('dedup')
+    expect(skeleton.items).toHaveLength(3)
+    expect(skeleton.id).toBe(proposalId(skeleton.items.map(item => item.digest)))
+  })
+
+  it('splits review proposals by kind when the batch mixes reducers', () => {
+    const result = classifyCandidates(
+      [
+        edgeCandidate(1, { reducer: 'dedupe-pointer' }),
+        edgeCandidate(2, { reducer: 'dedupe-pointer' }),
+        edgeCandidate(3, { reducer: 'native-whole-result' }),
+      ],
+      EDGE_REVIEW,
+    )
+    expect(result.review).toHaveLength(2)
+    const digests = result.review.flatMap(skeleton => skeleton.items.map(item => item.digest))
+    expect(digests).toHaveLength(3)
+    for (const skeleton of result.review) {
+      expect(skeleton.id).toBe(proposalId(skeleton.items.map(item => item.digest)))
+    }
+  })
 })

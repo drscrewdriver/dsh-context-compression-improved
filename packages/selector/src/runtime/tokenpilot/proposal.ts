@@ -166,12 +166,22 @@ function proposalKindFor(candidate: ClassifiableCandidate, estimatorSeqs: Readon
 }
 
 /**
- * Triage planned replacements into the three review-mode buckets.
+ * Triage planned replacements into the three review-mode buckets, pricing the
+ * pass as ONE merged mutation (R1): the tail KV-cache refill penalty is a
+ * property of the landing event, not of any single candidate, so it must be
+ * paid exactly once per batch. Pricing per candidate overstates the payback
+ * N-fold and starves every real batch out of the auto path.
  *
- * Per candidate (R is per candidate, never cross-credited):
- * - `tokensAfter ≥ tokensBefore` → drop (nothing to recover);
- * - `tokensBefore ≥ reviewHighImpactTokens` → review ("直接送审": high impact
- *   always waits for a human, even when the payback band would pass it);
+ * Pipeline: zero/negative-recovery candidates are priced out first (they never
+ * make a batch look better), the surviving batch is priced once through
+ * `computeBenefit`, the verdict is a batch decision, and any high-impact
+ * candidate (`tokensBefore ≥ reviewHighImpactTokens`) covers the whole batch
+ * into review — splitting the batch would pay a second cache break that the
+ * accounting does not model. Review skeletons are grouped one proposal per
+ * kind; a proposal id covers every item digest.
+ *
+ * Batch verdict bands (identical thresholds to the per-candidate model):
+ * - any high-impact candidate, or α too small to price a payback → review;
  * - `paybackTurns ≤ 1`, or Ŝ known and `paybackTurns ≤ 0.25·Ŝ` → auto;
  * - Ŝ known and `paybackTurns ∈ (1, 3]` → review;
  * - everything else (Ŝ unknown with a slow payback) → drop.
@@ -180,30 +190,38 @@ export function classifyCandidates(
   candidates: readonly ClassifiableCandidate[],
   input: TriageInput,
 ): ClassificationResult {
-  const auto: ClassifiableCandidate[] = []
-  const review: ProposalSkeleton[] = []
   const drop: ClassifiableCandidate[] = []
+  const usable: ClassifiableCandidate[] = []
   for (const candidate of candidates) {
-    const benefit = computeBenefit([candidate], input)
-    if (benefit.recoveredTokens <= 0) {
+    if (Math.max(0, candidate.tokensBefore - candidate.tokensAfter) <= 0) {
       drop.push(candidate)
       continue
     }
-    const highImpact = candidate.tokensBefore >= input.reviewHighImpactTokens
-    const payback = benefit.paybackTurns
-    if (!highImpact && payback !== undefined) {
-      const clearlyProfitable = payback <= 1
-        || (input.remainingTurns !== undefined && payback <= 0.25 * input.remainingTurns)
-      if (clearlyProfitable) {
-        auto.push(candidate)
-        continue
-      }
-      const edgeBand = input.remainingTurns !== undefined && payback <= 3
-      if (!edgeBand) {
-        drop.push(candidate)
-        continue
-      }
-    }
+    usable.push(candidate)
+  }
+  if (usable.length === 0) return { auto: [], review: [], drop }
+
+  const benefit = computeBenefit(usable, input)
+  const payback = benefit.paybackTurns
+  const highImpact = usable.some(candidate => candidate.tokensBefore >= input.reviewHighImpactTokens)
+  let verdict: 'auto' | 'review' | 'drop'
+  if (highImpact || payback === undefined) {
+    // High impact covers the whole batch; α too small to price a payback has
+    // no discounted recovery to argue from, so a human decides.
+    verdict = 'review'
+  } else if (payback <= 1
+    || (input.remainingTurns !== undefined && payback <= 0.25 * input.remainingTurns)) {
+    verdict = 'auto'
+  } else if (input.remainingTurns !== undefined && payback <= 3) {
+    verdict = 'review'
+  } else {
+    verdict = 'drop'
+  }
+  if (verdict === 'auto') return { auto: usable, review: [], drop }
+  if (verdict === 'drop') return { auto: [], review: [], drop: [...drop, ...usable] }
+
+  const itemsByKind = new Map<ProposalKind, ProposalItem[]>()
+  for (const candidate of usable) {
     const item: ProposalItem = {
       seq: candidate.sourceSeq,
       component: candidate.component,
@@ -212,12 +230,13 @@ export function classifyCandidates(
       tokensAfter: candidate.tokensAfter,
       digest: contentDigest(candidate.content),
     }
-    review.push({
-      id: proposalId([item.digest]),
-      kind: item.kind,
-      items: [item],
-      benefit,
-    })
+    const bucket = itemsByKind.get(item.kind) ?? []
+    bucket.push(item)
+    itemsByKind.set(item.kind, bucket)
   }
-  return { auto, review, drop }
+  const review: ProposalSkeleton[] = []
+  for (const [kind, items] of itemsByKind) {
+    review.push({ id: proposalId(items.map(item => item.digest)), kind, items, benefit })
+  }
+  return { auto: [], review, drop }
 }
