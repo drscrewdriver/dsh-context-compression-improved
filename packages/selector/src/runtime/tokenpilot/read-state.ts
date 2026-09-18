@@ -8,6 +8,7 @@
  * aggregate placeholder instead of the ordinary historical placeholder.
  */
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { looksLikeDocument } from '../reducers.ts'
 
 /** Write-style tool names whose success supersedes earlier reads. */
 const WRITE_TOOLS = /(?:^|[-_])?(?:write|edit|apply_patch|file_write|file_edit|str_replace|replace|multiedit)(?:$|[-_])/i
@@ -53,13 +54,18 @@ export function isSupersededRead(
 /** Error/warning/info line classifiers used by the omission summary. */
 const ERROR_LINE = /\b(error|failed|failure|fatal|exception|traceback|cannot|unable|denied)\b/i
 const WARN_LINE = /\b(warn|warning|deprecated)\b/i
+const SECTION_HEADING = /^#{1,3}\s+(.{1,80})/
 
 /**
- * Cluster one omitted line-count into an error/warn/info census appended to a
- * placeholder marker, giving the model meta-knowledge about what was dropped.
+ * Cluster one omitted line-count into a summary appended to a placeholder
+ * marker, giving the model meta-knowledge about what was dropped. Document
+ * content (R8) swaps the error/warn/info census for a section-heading list —
+ * `0 error, 0 warn, N info` carries no information about a dropped document,
+ * while its heading list does.
  */
 export function clusterOmittedLines(text: string, omittedLines: number): string | undefined {
   if (omittedLines <= 0) return undefined
+  if (looksLikeDocument(text)) return documentCensus(text, omittedLines)
   let errors = 0
   let warns = 0
   let infos = 0
@@ -74,4 +80,19 @@ export function clusterOmittedLines(text: string, omittedLines: number): string 
   if (infos > 0) parts.push(`${String(infos)} info`)
   if (parts.length === 0) return undefined
   return `${String(omittedLines)} lines omitted (${parts.join(', ')})`
+}
+
+/** Bounded section-heading list for an omitted document (R8 census). */
+function documentCensus(text: string, omittedLines: number): string {
+  const titles: string[] = []
+  for (const line of text.split('\n')) {
+    const match = SECTION_HEADING.exec(line)
+    if (match === null) continue
+    titles.push(match[1]!.trim())
+    if (titles.length >= 8) break
+  }
+  if (titles.length === 0) return `${String(omittedLines)} lines omitted (document content)`
+  let summary = titles.join(' · ')
+  if (summary.length > 240) summary = `${summary.slice(0, 240)}…`
+  return `${String(omittedLines)} lines omitted (sections: ${summary})`
 }
