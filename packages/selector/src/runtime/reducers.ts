@@ -24,6 +24,9 @@ export interface ReducerOutput {
   readonly lossy: boolean
 }
 
+/** Internal face every reducer sees: the normalized text plus its line mapping. */
+type PreparedInput = ReducerInput & { readonly lines: readonly NormalizedLine[] }
+
 const ANSI_PATTERN = /\u001B(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007]*(?:\u0007|\u001B\\))/gu
 const IMPORTANT_PATTERN = new RegExp([
   String.raw`\b(?:error|failed|failure|fatal|panic|exception|warning|warn|conflict|denied|forbidden|`,
@@ -59,18 +62,18 @@ const CODE_COMMENT_PATTERN = /^\s*(?:\/\/|#|\/\*|\*)/
  * @returns a verified candidate, or `null` when every reducer fails open.
  */
 export function reduceFreshToolResult(input: ReducerInput): ReducerOutput | null {
-  const normalized = normalizeTerminalText(input.text)
-  const prepared = { ...input, text: normalized }
+  const normalized = normalizeTerminalLines(input.text)
+  const prepared: PreparedInput = { ...input, text: normalized.text, lines: normalized.folded }
   const command = extractCommand(input.argumentsText)
   const name = input.toolName.toLowerCase()
   const candidates: Array<() => ReducerOutput | null> = []
 
-  if (looksLikeJson(normalized)) candidates.push(() => reduceJson(prepared))
+  if (looksLikeJson(normalized.text)) candidates.push(() => reduceJson(prepared))
   if (isSearchTool(name, command)) candidates.push(() => reduceSearch(prepared))
   if (isGitCommand(name, command)) candidates.push(() => reduceGit(prepared, command))
   if (isPackageCommand(command)) candidates.push(() => reducePatternLog(prepared, 'hypa-package', packagePattern()))
   if (isBuildOrTestCommand(command)) candidates.push(() => reducePatternLog(prepared, 'hypa-build-test', buildPattern()))
-  if (input.codeSkeleton === true && looksLikeSourceCode(normalized)) candidates.push(() => reduceCodeSkeleton(prepared))
+  if (input.codeSkeleton === true && looksLikeSourceCode(normalized.text)) candidates.push(() => reduceCodeSkeleton(prepared))
   if (isReadTool(name)) candidates.push(() => reduceHead(prepared, 'pi-head'))
   if (isShellTool(name) || command !== '') candidates.push(() => reduceShell(prepared))
   candidates.push(() => reduceSalient(prepared, 'generic-salience'))
@@ -134,33 +137,73 @@ export function verifyReduction(input: ReducerInput, output: ReducerOutput): boo
  * @returns normalized terminal text.
  */
 export function normalizeTerminalText(text: string): string {
+  return normalizeTerminalLines(text).text
+}
+
+/** One folded output line that remembers its place in the original event. */
+export interface NormalizedLine {
+  readonly text: string
+  /** 1-based line number in the ORIGINAL event text (before normalization). */
+  readonly originalLine: number
+  /**
+   * Last original line this entry covers. Only the synthetic repeat marker
+   * spans more than one original line (the occurrences it replaces).
+   */
+  readonly originalLineEnd?: number
+}
+
+export interface NormalizedTerminal {
+  /** Adjacent-duplicate-folded lines; `folded.map(l => l.text).join('\n')` is `text`. */
+  readonly folded: readonly NormalizedLine[]
+  /** The folded text, byte-identical with `normalizeTerminalText`. */
+  readonly text: string
+}
+
+/**
+ * Structured normalization (R9a): `retrieve` reads the original event, so any
+ * line number a reducer prints must resolve against the ORIGINAL text, not the
+ * normalized surface. ANSI stripping and `\r` redraw collapse never change the
+ * line count (logical lines are 1:1 with original lines); only the adjacent
+ * duplicate fold drops lines, so every folded entry carries the original line
+ * (range) it was kept from.
+ */
+export function normalizeTerminalLines(text: string): NormalizedTerminal {
   const withoutAnsi = text.replace(ANSI_PATTERN, '')
   const logical = withoutAnsi.split('\n').map((line) => {
     const redraws = line.split('\r').filter(part => part !== '')
     return redraws.at(-1) ?? ''
   })
-  const folded: string[] = []
+  const folded: NormalizedLine[] = []
   let previous: string | undefined
   let count = 0
-  const flush = (): void => {
+  let firstOriginal = 0
+  const flush = (nextOriginal: number): void => {
     if (previous === undefined) return
-    folded.push(previous)
-    if (count > 1) folded.push(`[previous line repeated ${String(count - 1)} more times]`)
+    folded.push({ text: previous, originalLine: firstOriginal })
+    if (count > 1) {
+      folded.push({
+        text: `[previous line repeated ${String(count - 1)} more times]`,
+        originalLine: firstOriginal + 1,
+        originalLineEnd: nextOriginal - 1,
+      })
+    }
   }
-  for (const line of logical) {
+  logical.forEach((line, index) => {
+    const originalLine = index + 1
     if (line === previous) {
       count++
-      continue
+      return
     }
-    flush()
+    flush(originalLine)
     previous = line
     count = 1
-  }
-  flush()
-  return folded.join('\n')
+    firstOriginal = originalLine
+  })
+  flush(logical.length + 1)
+  return { folded, text: folded.map(line => line.text).join('\n') }
 }
 
-function reduceHead(input: ReducerInput, reducer: string): ReducerOutput | null {
+function reduceHead(input: PreparedInput, reducer: string): ReducerOutput | null {
   const marker = omissionMarker(input, reducer)
   const available = input.budgetChars - codePointLength(marker) - 1
   if (available <= 0) return null
@@ -169,7 +212,7 @@ function reduceHead(input: ReducerInput, reducer: string): ReducerOutput | null 
   return { text: `${head}\n${marker}`, reducer, lossy: true }
 }
 
-function reduceTail(input: ReducerInput, reducer: string): ReducerOutput | null {
+function reduceTail(input: PreparedInput, reducer: string): ReducerOutput | null {
   const marker = omissionMarker(input, reducer)
   const available = input.budgetChars - codePointLength(marker) - 1
   if (available <= 0) return null
@@ -178,7 +221,7 @@ function reduceTail(input: ReducerInput, reducer: string): ReducerOutput | null 
   return { text: `${marker}\n${tail}`, reducer, lossy: true }
 }
 
-function reduceJson(input: ReducerInput): ReducerOutput | null {
+function reduceJson(input: PreparedInput): ReducerOutput | null {
   let value: unknown
   try {
     value = JSON.parse(input.text)
@@ -236,7 +279,7 @@ function shrinkJson(value: unknown, depth: number): unknown {
   return result
 }
 
-function reduceSearch(input: ReducerInput): ReducerOutput | null {
+function reduceSearch(input: PreparedInput): ReducerOutput | null {
   const lines = splitLines(input.text)
   const groups = new Map<string, Array<{ line: string; important: boolean }>>()
   const ungrouped: Array<{ line: string; important: boolean }> = []
@@ -273,7 +316,7 @@ function reduceSearch(input: ReducerInput): ReducerOutput | null {
   return text === null ? null : { text, reducer: 'search-by-file', lossy: true }
 }
 
-function reduceGit(input: ReducerInput, command: string): ReducerOutput | null {
+function reduceGit(input: PreparedInput, command: string): ReducerOutput | null {
   const lines = splitLines(input.text)
   const lower = command.toLowerCase()
   let keep: string[]
@@ -297,7 +340,7 @@ function reduceGit(input: ReducerInput, command: string): ReducerOutput | null {
   return text === null ? null : { text, reducer, lossy: true }
 }
 
-function reducePatternLog(input: ReducerInput, reducer: string, pattern: RegExp): ReducerOutput | null {
+function reducePatternLog(input: PreparedInput, reducer: string, pattern: RegExp): ReducerOutput | null {
   const lines = splitLines(input.text)
   const important = lines.filter(line => pattern.test(line) || IMPORTANT_PATTERN.test(line) || STATUS_PATTERN.test(line))
   const header = `[command output compressed by ${reducer}; source: ${input.sourceRef}]`
@@ -305,7 +348,7 @@ function reducePatternLog(input: ReducerInput, reducer: string, pattern: RegExp)
   return text === null ? null : { text, reducer, lossy: true }
 }
 
-function reduceShell(input: ReducerInput): ReducerOutput | null {
+function reduceShell(input: PreparedInput): ReducerOutput | null {
   const lines = splitLines(input.text)
   const important = lines.filter(line => IMPORTANT_PATTERN.test(line))
   if (important.length === 0) return reduceTail(input, 'pi-tail')
@@ -314,7 +357,7 @@ function reduceShell(input: ReducerInput): ReducerOutput | null {
   return text === null ? null : { text, reducer: 'shell-salience-tail', lossy: true }
 }
 
-function reduceSalient(input: ReducerInput, reducer: string): ReducerOutput | null {
+function reduceSalient(input: PreparedInput, reducer: string): ReducerOutput | null {
   const lines = splitLines(input.text)
   if (lines.length < 3) return reduceHead(input, reducer)
   const marker = omissionMarker(input, reducer)
@@ -336,7 +379,7 @@ function reduceSalient(input: ReducerInput, reducer: string): ReducerOutput | nu
  * @param input - original result text, recovery source, and output budget.
  * @returns a verified candidate, or `null` when the text is not code-like.
  */
-function reduceCodeSkeleton(input: ReducerInput): ReducerOutput | null {
+function reduceCodeSkeleton(input: PreparedInput): ReducerOutput | null {
   const lines = splitLines(input.text)
   const kept: string[] = []
   let elided = 0
@@ -469,7 +512,7 @@ function reduceCodeSkeleton(input: ReducerInput): ReducerOutput | null {
 function finishSkeleton(
   kept: readonly string[],
   lines: readonly string[],
-  input: ReducerInput,
+  input: PreparedInput,
 ): ReducerOutput | null {
   const header = `[code output compressed by hypa-code-skeleton; source: ${input.sourceRef}]`
   const text = fitLines([header, ...kept, ...lines.slice(-4)], input.budgetChars, input.sourceRef)
@@ -525,7 +568,7 @@ function looksLikeSourceCode(text: string): boolean {
   return false
 }
 
-function omissionMarker(input: ReducerInput, reducer: string): string {
+function omissionMarker(input: PreparedInput, reducer: string): string {
   return `[... ${reducer} omitted content; original_chars=${String(codePointLength(input.text))}; source=${input.sourceRef}; retrieve with context_compression_retrieve ...]`
 }
 
