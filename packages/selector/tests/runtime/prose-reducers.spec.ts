@@ -38,7 +38,29 @@ describe('document skeleton (R8)', () => {
     expect(output!.text).toContain('# User Guide')
   })
 
-  it('cites original-event line ranges in elision markers (R9 spec)', () => {
+    it('keeps the first two rows of every table block', () => {
+    const doc = [
+      '# Report',
+      'Intro.',
+      '## Usage',
+      'Usage intro.',
+      '## Tables',
+      'Tables intro.',
+      ...Array.from({ length: 30 }, (_, i) => `Intro filler sentence ${String(i)} to make the section elidable.`),
+      '| Name | Quota |',
+      '| --- | --- |',
+      '| Free | 5k |',
+      '| Pro | 50k |',
+      ...Array.from({ length: 30 }, (_, i) => `Closing filler sentence ${String(i)} to make the section elidable.`),
+      'Trailing prose line.',
+    ].join('\n')
+    const output = reduceFreshToolResult(input({ text: doc, toolName: 'mcp_fetch' }))
+    expect(output!.reducer).toBe('doc-skeleton')
+    expect(output!.text).toContain('| Name | Quota |')
+    expect(output!.text).toContain('| --- | --- |')
+  })
+
+it('cites original-event line ranges in elision markers (R9 spec)', () => {
     const output = reduceFreshToolResult(input({ text: markdownDoc(6) }))
     expect(output).not.toBeNull()
     // Every elision marker carries an original line range and a line count.
