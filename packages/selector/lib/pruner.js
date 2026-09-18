@@ -958,8 +958,8 @@ function unavailableCount(reason) {
 		reason
 	});
 }
-function recoveryMarker(sourceRef, label) {
-	return `\n\n[... ${label}; source=${sourceRef}; use context_compression_retrieve if needed ...]\n\n`;
+function recoveryMarker(sourceRef, label, startLine) {
+	return `\n\n[... ${label}; source=${sourceRef}; ${startLine === void 0 ? "use context_compression_retrieve if needed" : `retrieve with context_compression_retrieve({"ref":"${sourceRef}","start_line":${String(startLine)},"max_lines":80})`} ...]\n\n`;
 }
 /**
 * Measure text content in Unicode code points; non-text blocks cost zero.
@@ -994,7 +994,7 @@ function pressureCost(blocks) {
 function nativePruneContent(blocks, thresholdChars, headChars, tailChars, marker = PRUNE_MARKER) {
 	const totalChars = measureContent(blocks);
 	if (totalChars <= thresholdChars) return null;
-	const markerChars = codePointLength(marker);
+	const markerChars = codePointLength(typeof marker === "function" ? marker(1) : marker);
 	const safeHead = Math.max(0, Math.min(headChars, thresholdChars - markerChars));
 	const safeTail = Math.max(0, Math.min(tailChars, thresholdChars - markerChars - safeHead));
 	const removedStart = safeHead;
@@ -1002,9 +1002,11 @@ function nativePruneContent(blocks, thresholdChars, headChars, tailChars, marker
 	const pruned = [];
 	let consumed = 0;
 	let markerInserted = false;
+	let newlinesBefore = 0;
 	for (const block of blocks) {
 		if (block.type !== "text") {
 			pruned.push(block);
+			newlinesBefore += 1;
 			continue;
 		}
 		const points = Array.from(block.text);
@@ -1012,13 +1014,16 @@ function nativePruneContent(blocks, thresholdChars, headChars, tailChars, marker
 		const blockEnd = blockStart + points.length;
 		const headEnd = Math.min(points.length, Math.max(0, removedStart - blockStart));
 		const tailStart = Math.min(points.length, Math.max(0, removedEnd - blockStart));
-		const insertion = blockStart < removedEnd && blockEnd > removedStart && !markerInserted ? marker : "";
+		const intersectsRemoved = blockStart < removedEnd && blockEnd > removedStart;
+		const headText = points.slice(0, headEnd).join("");
+		const insertion = intersectsRemoved && !markerInserted && typeof marker === "function" ? marker(1 + newlinesBefore + headText.split("\n").length - 1) : intersectsRemoved && !markerInserted ? marker : "";
 		if (insertion !== "") markerInserted = true;
 		const text = points.slice(0, headEnd).join("") + insertion + points.slice(tailStart).join("");
 		if (text !== "") pruned.push({
 			...block,
 			text
 		});
+		newlinesBefore += block.text.split("\n").length - 1 + 1;
 		consumed = blockEnd;
 	}
 	if (!markerInserted) return null;
@@ -1181,11 +1186,1203 @@ function buildLocatorBlock(events, shadowedRange) {
 			`- seq range: ${String(shadowedRange.start)}-${String(shadowedRange.end)}`,
 			...[...spillFiles].map((path) => `- spill file: ${path}`),
 			...[...touchedFiles].map((path) => `- file touched: ${path}`),
-			"(Use `read <spill file>` or `context_compression_retrieve` with a `session://` source to restore exact text.)"
+			"(Use `read <spill file>` or `context_compression_retrieve` with a `session://` source — pass start_line/max_lines to window the text — to restore exact text.)"
 		].join("\n"),
 		spillFiles: spillFiles.size,
 		touchedFiles: touchedFiles.size
 	};
+}
+//#endregion
+//#region src/runtime/reducers.ts
+/** Deterministic, evidence-backed reducers for fresh tool results. */
+/** Ranked-first ordering: ranked ids keep their rank, the rest append in order. */
+function rankedFirst(items, ranking) {
+	if (ranking === void 0 || ranking.length === 0) return items;
+	const ranked = /* @__PURE__ */ new Map();
+	for (const id of ranking) {
+		const found = items.find((item) => item.id === id);
+		if (found !== void 0 && !ranked.has(id)) ranked.set(id, found);
+	}
+	return [...ranked.values(), ...items.filter((item) => !ranked.has(item.id))];
+}
+const ANSI_PATTERN = /\u001B(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007]*(?:\u0007|\u001B\\))/gu;
+const IMPORTANT_PATTERN = new RegExp([
+	String.raw`\b(?:error|failed|failure|fatal|panic|exception|warning|warn|conflict|denied|forbidden|`,
+	String.raw`timeout|timed out|not found|cannot|unable|invalid|exit(?:ed)?\s+(?:code|status)|traceback|`,
+	String.raw`assert(?:ion)?|segmentation fault|oom|out of memory)\b`
+].join(""), "i");
+const STATUS_PATTERN = new RegExp([String.raw`\b(?:success|succeeded|passed|installed|added|removed|updated|built|compiled|`, String.raw`tests?\s+(?:passed|failed)|exit(?:ed)?\s+(?:code|status))\b`].join(""), "i");
+const PATH_LINE_PATTERN = /^(.*?):(\d+)(?::\d+)?(?::|\s+-\s+)(.*)$/;
+const GIT_STATUS_PATTERN = new RegExp([String.raw`^(?:On branch|Your branch|HEAD detached|Changes |Untracked |Unmerged |\s*(?:modified|deleted|`, String.raw`new file|renamed|both modified):)`].join(""), "i");
+const CODE_IMPORT_PATTERN = new RegExp([String.raw`^\s*(?:import\b|from\s+[\w.]+\s+import\b|use\s+\w|package\s+|#include\b|`, String.raw`using\s+[\w.]+;|require\s*\(|extern\s+crate\b)`].join(""));
+const CODE_STRUCTURE_PATTERN = new RegExp([
+	String.raw`^\s*(?:@[\w.]+|export\s+|default\s+|declare\s+|abstract\s+|public\s+|private\s+|protected\s+|`,
+	String.raw`internal\s+|static\s+|final\s+|sealed\s+|override\s+|pub(?:\([^)]*\))?\s+|async\s+|unsafe\s+)*`,
+	String.raw`(?:function\b|class\b|interface\b|enum\b|struct\b|impl\b|trait\b|type\s+\w|fn\s|func\b|`,
+	String.raw`def\s|module\b|namespace\b|sub\s)`
+].join(""));
+const PYTHON_STRUCTURE_PATTERN = /^\s*(?:async\s+)?def\s|^\s*class\s/;
+const CODE_DECORATOR_PATTERN = /^\s*@[\w.]+/;
+const CODE_COMMENT_PATTERN = /^\s*(?:\/\/|#|\/\*|\*)/;
+const MARKDOWN_HEADING_PATTERN = /^#{1,6}\s+\S/;
+const LIST_ITEM_PATTERN = /^\s*(?:[-*+]|\d+[.)])\s+\S/;
+const TABLE_ROW_PATTERN = /^\s*\|/;
+const FENCE_PATTERN = /^\s*(?:```|~~~)/;
+const UUID_PATTERN = /\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b/g;
+const LONG_HEX_PATTERN = /\b[0-9a-fA-F]{64,}\b/g;
+const LONG_BASE64_PATTERN = /[A-Za-z0-9+/]{200,}={0,2}/g;
+const HTML_TAG_PATTERN = /<!DOCTYPE html|<html\b|<head\b|<div\b|<span\b|<script\b|<style\b|<body\b|<p>|<table\b|<a\s/i;
+const HTML_COMMENT_PATTERN = /<!--[\s\S]*?-->/g;
+const HTML_DROPPED_ELEMENTS = /<(script|style|noscript|svg|head)\b[^>]*>[\s\S]*?<\/\1\s*>/gi;
+const HTML_DATA_URI_PATTERN = /\s(?:src|href)="data:[^"]*"/gi;
+const HTML_TAG_PATTERN_FULL = /<([a-z][a-z0-9]*)((?:\s[^<>]*?)?)\/?>/gi;
+const HTML_INLINE_TAG_PATTERN = /<\/?(?:em|strong|b|i|u|s|code|small|sub|sup|span|br)\b[^<>]*>/gi;
+const HTML_WHITELISTED_ATTRIBUTES = /\s(?:href|src|alt|title|id)="[^"]*"/gi;
+const ADJACENT_REPEAT_MARKER = "[previous line repeated";
+/** Non-adjacent folding only pays off once a line recurs enough to beat the marker cost. */
+const NON_ADJACENT_FOLD_THRESHOLD = 3;
+/**
+* Replace long opaque literals with length summaries (R12). Data URIs, base64
+* blobs, and long hex dumps are pure noise in a compressed view; the prefix is
+* kept so the model can still recognize the value. Short strings are never
+* touched, and replacements never span lines, so the line mapping survives.
+*/
+function placeholderizeLongStrings(line) {
+	if (!/[0-9a-zA-Z+/]{32}/.test(line) && !/\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-/.test(line)) return line;
+	let result = line.replace(UUID_PATTERN, "[uuid]");
+	result = result.replace(LONG_HEX_PATTERN, (match) => `[hex ${String(match.length)} chars: ${match.slice(0, 16)}…]`);
+	result = result.replace(LONG_BASE64_PATTERN, (match) => `[base64 ${String(match.length)} chars: ${match.slice(0, 16)}…]`);
+	return result;
+}
+/**
+* Select a reducer from verified tool, command, and content evidence.
+* @param input - original result text, recovery source, and output budget.
+* @returns a verified candidate, or `null` when every reducer fails open.
+*/
+function reduceFreshToolResult(input, ranking) {
+	const normalized = normalizeTerminalLines(input.text);
+	const prepared = {
+		...input,
+		text: normalized.text,
+		lines: normalized.folded
+	};
+	const command = extractCommand(input.argumentsText);
+	const name = input.toolName.toLowerCase();
+	const candidates = [];
+	if (looksLikeJson(normalized.text)) candidates.push(() => reduceJson(prepared));
+	if (isSearchTool(name, command)) candidates.push(() => reduceSearch(prepared, ranking?.files));
+	if (isGitCommand(name, command)) candidates.push(() => reduceGit(prepared, command));
+	if (isPackageCommand(command)) candidates.push(() => reducePatternLog(prepared, "hypa-package", packagePattern()));
+	if (isBuildOrTestCommand(command)) candidates.push(() => reducePatternLog(prepared, "hypa-build-test", buildPattern()));
+	if (input.codeSkeleton === true && looksLikeSourceCode(normalized.text)) candidates.push(() => reduceCodeSkeleton(prepared));
+	if (looksLikeHtml(normalized.text)) candidates.push(() => reduceHtml(prepared));
+	if (looksLikeDocument(normalized.text)) candidates.push(() => reduceDocSkeleton(prepared, ranking?.sections));
+	if (isShellTool(name) || command !== "") candidates.push(() => reduceShell(prepared));
+	candidates.push(() => reduceProseKeep(prepared));
+	if (isReadTool(name)) candidates.push(() => reduceHead(prepared, "pi-head"));
+	candidates.push(() => reduceSalient(prepared, "generic-salience"));
+	for (const make of candidates) {
+		const candidate = make();
+		if (candidate !== null && verifyReduction(input, candidate)) return candidate;
+	}
+	return null;
+}
+/**
+* Build a recoverable placeholder for an old tool result.
+* @param input - tool identity, source reference, size, status, and retained evidence.
+* @returns a lossy placeholder that cites the immutable source event.
+*/
+function historicalPlaceholder(input) {
+	const anchor = input.compact ? "" : importantAnchor(input.text, 360);
+	const anchorLine = input.compact ? void 0 : (normalizeTerminalLines(input.text).folded.find((line) => IMPORTANT_PATTERN.test(line.text)) ?? void 0)?.originalLine;
+	const retrieveHint = anchorLine === void 0 ? `retrieve: context_compression_retrieve({"ref":"${input.sourceRef}"})` : `retrieve: context_compression_retrieve({"ref":"${input.sourceRef}","start_line":${String(anchorLine)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}})`;
+	const lines = [
+		"[Old tool result content cleared from active context]",
+		`tool: ${input.toolName || "unknown"}`,
+		`status: ${input.isError ? "error" : "completed"}`,
+		`original_chars: ${String(input.charsBefore)}`,
+		`source: ${input.sourceRef}`,
+		retrieveHint
+	];
+	if (anchor !== "") lines.push(`retained_anchor: ${anchor}`);
+	return {
+		text: lines.join("\n"),
+		reducer: input.compact ? "pair-preserving-tail-aging" : "historical-tool-result-aging",
+		lossy: true
+	};
+}
+/**
+* Validate shrinkage, budget, recovery, and error retention.
+* @param input - original reducer input and its safety requirements.
+* @param output - candidate reduced text and reducer metadata.
+* @returns whether the candidate is safe to land.
+*/
+function verifyReduction(input, output) {
+	const before = codePointLength(input.text);
+	const after = codePointLength(output.text);
+	if (after <= 0 || after >= before || after > input.budgetChars) return false;
+	if (output.lossy && !output.text.includes(input.sourceRef)) return false;
+	if ((input.isError || IMPORTANT_PATTERN.test(input.text)) && !IMPORTANT_PATTERN.test(output.text) && !output.text.includes("status: error")) return false;
+	return true;
+}
+/**
+* Strip ANSI, collapse carriage-return progress redraws, and fold exact repeats.
+* @param text - raw terminal output.
+* @returns normalized terminal text.
+*/
+function normalizeTerminalText(text) {
+	return normalizeTerminalLines(text).text;
+}
+/**
+* Structured normalization (R9a): `retrieve` reads the original event, so any
+* line number a reducer prints must resolve against the ORIGINAL text, not the
+* normalized surface. ANSI stripping and `\r` redraw collapse never change the
+* line count (logical lines are 1:1 with original lines); only the adjacent
+* duplicate fold drops lines, so every folded entry carries the original line
+* (range) it was kept from.
+*/
+function normalizeTerminalLines(text) {
+	const logical = text.replace(ANSI_PATTERN, "").split("\n").map((line) => {
+		return placeholderizeLongStrings(line.split("\r").filter((part) => part !== "").at(-1) ?? "");
+	});
+	const folded = [];
+	let previous;
+	let count = 0;
+	let firstOriginal = 0;
+	const flush = (nextOriginal) => {
+		if (previous === void 0) return;
+		folded.push({
+			text: previous,
+			originalLine: firstOriginal
+		});
+		if (count > 1) folded.push({
+			text: `[previous line repeated ${String(count - 1)} more times]`,
+			originalLine: firstOriginal + 1,
+			originalLineEnd: nextOriginal - 1
+		});
+	};
+	logical.forEach((line, index) => {
+		const originalLine = index + 1;
+		if (line === previous) {
+			count++;
+			return;
+		}
+		flush(originalLine);
+		previous = line;
+		count = 1;
+		firstOriginal = originalLine;
+	});
+	flush(logical.length + 1);
+	const result = foldNonAdjacentRepeats(folded);
+	return {
+		folded: result,
+		text: result.map((line) => line.text).join("\n")
+	};
+}
+/**
+* Fold non-adjacent exact repeats (R11). Adjacent folding runs FIRST and only
+* handles consecutive runs (0.03–0.32% of real duplicate content); separated
+* repeats reached 8.37% in large results. Each surviving occurrence — a kept
+* line plus its optional adjacent-repeat marker — is one unit; once a text
+* recurs ≥ threshold times, the first unit is kept and every later unit is
+* replaced by ONE counted marker citing the original-event span it covers.
+* A pure consecutive run forms a single unit, so this pass is a no-op on it
+* and can never double-fold the adjacent marker.
+*/
+function foldNonAdjacentRepeats(folded) {
+	const units = [];
+	for (const entry of folded) if (entry.text.startsWith(ADJACENT_REPEAT_MARKER) && units.length > 0) units[units.length - 1].repeat = entry;
+	else units.push({ lead: entry });
+	const totals = /* @__PURE__ */ new Map();
+	for (const unit of units) totals.set(unit.lead.text, (totals.get(unit.lead.text) ?? 0) + 1);
+	if (totals.size === units.length) return [...folded];
+	const firstOriginal = /* @__PURE__ */ new Map();
+	const lastOriginalEnd = /* @__PURE__ */ new Map();
+	for (const unit of units) {
+		const text = unit.lead.text;
+		if (totals.get(text) < NON_ADJACENT_FOLD_THRESHOLD) continue;
+		if (!firstOriginal.has(text)) firstOriginal.set(text, unit.lead.originalLine);
+		const end = unit.repeat?.originalLineEnd ?? unit.lead.originalLineEnd ?? unit.lead.originalLine;
+		lastOriginalEnd.set(text, end);
+	}
+	const seen = /* @__PURE__ */ new Map();
+	const result = [];
+	for (const unit of units) {
+		const text = unit.lead.text;
+		const total = totals.get(text);
+		if (total < NON_ADJACENT_FOLD_THRESHOLD) {
+			result.push(unit.lead);
+			if (unit.repeat !== void 0) result.push(unit.repeat);
+			continue;
+		}
+		if (!seen.has(text)) {
+			seen.set(text, 1);
+			result.push(unit.lead);
+			if (unit.repeat !== void 0) result.push(unit.repeat);
+			continue;
+		}
+		const ordinal = (seen.get(text) ?? 1) + 1;
+		seen.set(text, ordinal);
+		if (ordinal > 2) continue;
+		const end = lastOriginalEnd.get(text);
+		result.push({
+			text: `[× ${String(total)} total: same as line ${String(firstOriginal.get(text))}; original lines ${String(unit.lead.originalLine)}-${String(end)}]`,
+			originalLine: unit.lead.originalLine,
+			originalLineEnd: end
+		});
+	}
+	return result;
+}
+/** Default line window a retrieve hint suggests the model paste. */
+const RETRIEVE_HINT_MAX_LINES = 80;
+/**
+* Continuous-mask marker (R9b): cites the ORIGINAL-event line range it elides
+* and carries a pasteable retrieve hint starting at the first elided line.
+* Falls back to the compact plain marker when the hint would not fit.
+*/
+function reduceHead(input, reducer) {
+	const marker = omissionMarker(input, reducer);
+	const available = input.budgetChars - codePointLength(marker) - 1;
+	if (available <= 0) return null;
+	const head = takeWholeLinesFromHead(input.text, available);
+	if (head === input.text || head === "") return null;
+	const keptCount = head.split("\n").length;
+	const firstElided = input.lines[keptCount];
+	if (firstElided !== void 0) {
+		const elidedEnd = originalEnd(input.lines, input.lines.length - 1);
+		const ranged = rangeOmissionMarker(input, reducer, firstElided.originalLine, elidedEnd);
+		if (codePointLength(head) + codePointLength(ranged) + 1 <= input.budgetChars) return {
+			text: `${head}\n${ranged}`,
+			reducer,
+			lossy: true
+		};
+	}
+	return {
+		text: `${head}\n${marker}`,
+		reducer,
+		lossy: true
+	};
+}
+function reduceTail(input, reducer) {
+	const marker = omissionMarker(input, reducer);
+	const available = input.budgetChars - codePointLength(marker) - 1;
+	if (available <= 0) return null;
+	const tail = takeWholeLinesFromTail(input.text, available);
+	if (tail === input.text || tail === "") return null;
+	const firstKept = input.lines.length - tail.split("\n").length;
+	if (firstKept > 0) {
+		const elidedEnd = originalEnd(input.lines, firstKept - 1);
+		const ranged = rangeOmissionMarker(input, reducer, input.lines[0].originalLine, elidedEnd);
+		if (codePointLength(ranged) + codePointLength(tail) + 1 <= input.budgetChars) return {
+			text: `${ranged}\n${tail}`,
+			reducer,
+			lossy: true
+		};
+	}
+	return {
+		text: `${marker}\n${tail}`,
+		reducer,
+		lossy: true
+	};
+}
+function reduceJson(input) {
+	let value;
+	try {
+		value = JSON.parse(input.text);
+	} catch {
+		return null;
+	}
+	const minified = JSON.stringify(value);
+	if (codePointLength(minified) < codePointLength(input.text) && codePointLength(minified) <= input.budgetChars) return {
+		text: minified,
+		reducer: "json-minify",
+		lossy: false
+	};
+	const envelope = {
+		$dsh_compression: {
+			kind: "json-preview",
+			source: input.sourceRef,
+			original_chars: codePointLength(input.text)
+		},
+		value: shrinkJson(value, 0)
+	};
+	const text = JSON.stringify(envelope, null, 2);
+	if (codePointLength(text) <= input.budgetChars) return {
+		text,
+		reducer: "json-structure-preview",
+		lossy: true
+	};
+	return null;
+}
+function shrinkJson(value, depth) {
+	if (depth >= 5) {
+		if (Array.isArray(value)) return `[array length=${String(value.length)} omitted]`;
+		if (typeof value === "object" && value !== null) return "[object omitted]";
+		return value;
+	}
+	if (Array.isArray(value)) {
+		if (value.length <= 8) return value.map((entry) => shrinkJson(entry, depth + 1));
+		return [
+			...value.slice(0, 3).map((entry) => shrinkJson(entry, depth + 1)),
+			{ $dsh_omitted_items: value.length - 5 },
+			...value.slice(-2).map((entry) => shrinkJson(entry, depth + 1))
+		];
+	}
+	if (typeof value !== "object" || value === null) {
+		if (typeof value === "string" && codePointLength(value) > 800) return `${Array.from(value).slice(0, 500).join("")}…[${String(codePointLength(value) - 700)} chars omitted]…${Array.from(value).slice(-200).join("")}`;
+		return value;
+	}
+	const entries = Object.entries(value);
+	const important = entries.filter(([key]) => /error|warn|status|code|message|path|file|line|summary/i.test(key));
+	const selected = entries.length <= 18 ? entries : [
+		...entries.slice(0, 10),
+		...important.filter((entry) => !entries.slice(0, 10).includes(entry)).slice(0, 6),
+		...entries.slice(-2)
+	];
+	const result = {};
+	for (const [key, entry] of selected) result[key] = shrinkJson(entry, depth + 1);
+	if (selected.length < entries.length) result.$dsh_omitted_keys = entries.length - selected.length;
+	return result;
+}
+/**
+* Two-tier search folding (R10). L1 is a LOSSLESS per-file locator —
+* `## <path> (<N> matches)  L12,L15,…` — one line number per hit, taken from
+* the hit's own `path:line` prefix (falling back to the original-event line).
+* L2 is the content quota, water-filled round-robin so no file vanishes and
+* no file runs more than one row ahead of another; the budget is reserved for
+* L1 first. When L1 itself cannot fit, the shortfall is ANNOUNCED
+* (withheld file/match counts) — never silently truncated. Outputs without
+* any `path:line` form fail open to salience.
+*/
+function reduceSearch(input, fileRanking) {
+	const groups = /* @__PURE__ */ new Map();
+	const ungrouped = [];
+	input.lines.forEach((line) => {
+		const match = PATH_LINE_PATTERN.exec(line.text);
+		const row = {
+			text: line.text,
+			fileLine: match !== null ? Number(match[2]) : line.originalLine,
+			important: IMPORTANT_PATTERN.test(line.text)
+		};
+		if (match === null) {
+			ungrouped.push(row);
+			return;
+		}
+		const path = match[1] ?? "<unknown>";
+		const bucket = groups.get(path) ?? [];
+		bucket.push(row);
+		groups.set(path, bucket);
+	});
+	if (groups.size === 0) return reduceSalient(input, "search-salience");
+	const totalMatches = [...groups.values()].reduce((sum, rows) => sum + rows.length, 0);
+	const locatorFor = (path, rows) => `## ${path} (${String(rows.length)} matches)  ${rows.map((row) => `L${String(row.fileLine)}`).join(",")}`;
+	const perFile = /* @__PURE__ */ new Map();
+	for (const entry of rankedFirst([...groups.entries()].map(([id, rows]) => ({
+		id,
+		rows
+	})), fileRanking)) perFile.set(entry.id, [...entry.rows].sort((a, b) => a.important === b.important ? a.fileLine - b.fileLine : a.important ? -1 : 1));
+	const allLocators = [...perFile.keys()].map((path) => locatorFor(path, groups.get(path)));
+	const headerFor = (l2Rows, omitted) => `[search results compressed; ${String(groups.size)} files, ${String(totalMatches)} matches; ${String(l2Rows)} content rows shown, ${String(omitted)} matches omitted; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"})]`;
+	const fillL2 = (output, quotaChars) => {
+		let used = 0;
+		let shown = 0;
+		let round = 0;
+		let progress = true;
+		while (progress && round < 512) {
+			progress = false;
+			for (const rows of perFile.values()) {
+				if (round >= rows.length) continue;
+				const row = rows[round];
+				const cost = codePointLength(row.text) + 1;
+				if (used + cost > quotaChars) continue;
+				output.push(row.text);
+				used += cost;
+				shown += 1;
+				progress = true;
+			}
+			round += 1;
+		}
+		for (const row of ungrouped.filter((entry) => entry.important).slice(0, 12)) {
+			const cost = codePointLength(row.text) + 1;
+			if (used + cost > quotaChars) break;
+			output.push(row.text);
+			used += cost;
+			shown += 1;
+		}
+		return {
+			shown,
+			omitted: totalMatches - shown
+		};
+	};
+	const finish = (output) => {
+		const text = output.join("\n");
+		return text.includes(input.sourceRef) ? {
+			text,
+			reducer: "search-by-file",
+			lossy: true
+		} : null;
+	};
+	const headerProbe = headerFor(0, 0);
+	const budget = input.budgetChars - codePointLength(headerProbe) - 2;
+	if (budget <= 0) return null;
+	const locatorCost = allLocators.reduce((sum, line) => sum + codePointLength(line) + 1, 0);
+	if (locatorCost > budget) {
+		const announcementReserve = 160;
+		const output = [];
+		let used = 0;
+		let withheldFiles = 0;
+		let withheldMatches = 0;
+		for (let index = 0; index < allLocators.length; index++) {
+			const cost = codePointLength(allLocators[index]) + 1 + announcementReserve;
+			if (used + cost > budget) {
+				withheldFiles = allLocators.length - index;
+				withheldMatches = totalMatches - [...groups.values()].slice(0, index).reduce((sum, rows) => sum + rows.length, 0);
+				break;
+			}
+			output.push(allLocators[index]);
+			used += cost - announcementReserve;
+		}
+		if (withheldFiles > 0) output.push(`[L1 locator partially withheld: ${String(withheldFiles)} file(s) / ${String(withheldMatches)} matches' line lists did not fit the budget; retrieve for the full hit list]`);
+		const { shown, omitted } = fillL2(output, Math.max(0, budget - used - (withheldFiles > 0 ? announcementReserve : 0)));
+		output.unshift(headerFor(shown, omitted + withheldMatches));
+		return finish(output);
+	}
+	const output = [...allLocators];
+	const { shown, omitted } = fillL2(output, budget - locatorCost);
+	output.unshift(headerFor(shown, omitted));
+	return finish(output);
+}
+function reduceGit(input, command) {
+	const lines = input.lines;
+	const lower = command.toLowerCase();
+	let keep;
+	let reducer;
+	if (/\bgit\s+(?:diff|show)\b/.test(lower)) {
+		reducer = "hypa-git-diff";
+		keep = lines.map((line) => line.text).filter((line) => /^(?:diff --git|index |--- |\+\+\+ |@@ |[+-](?![+-]))/.test(line) || IMPORTANT_PATTERN.test(line));
+	} else if (/\bgit\s+(?:status|switch|checkout|merge|rebase|cherry-pick)\b/.test(lower)) {
+		reducer = "hypa-git-status";
+		keep = lines.map((line) => line.text).filter((line) => GIT_STATUS_PATTERN.test(line) || IMPORTANT_PATTERN.test(line));
+	} else {
+		reducer = "hypa-git-log";
+		keep = lines.map((line) => line.text).filter((line) => /^(?:commit\s+[0-9a-f]+|Author:|Date:|[0-9a-f]{7,}\s)/i.test(line) || IMPORTANT_PATTERN.test(line));
+	}
+	if (keep.length === 0) return reduceSalient(input, reducer);
+	const text = fitLines([
+		`[git output compressed; ${scannedTotals(input, keep.length)}; source: ${input.sourceRef}; scatter-masked: retrieve with context_compression_retrieve({"ref":"${input.sourceRef}","query":"<keyword>"}) for missed rows]`,
+		...keep,
+		...lines.slice(-8).map((line) => line.text)
+	], input.budgetChars, input.sourceRef);
+	return text === null ? null : {
+		text,
+		reducer,
+		lossy: true
+	};
+}
+function reducePatternLog(input, reducer, pattern) {
+	const lines = input.lines;
+	const kept = lines.filter((line) => pattern.test(line.text) || IMPORTANT_PATTERN.test(line.text) || STATUS_PATTERN.test(line.text));
+	const text = fitLines([
+		`[command output compressed by ${reducer}; ${scannedTotals(input, kept.length)}; source: ${input.sourceRef}; scatter-masked: retrieve with context_compression_retrieve({"ref":"${input.sourceRef}","query":"<keyword>"}) for missed rows]`,
+		...kept.map((line) => line.text),
+		...lines.slice(-20).map((line) => line.text)
+	], input.budgetChars, input.sourceRef);
+	return text === null ? null : {
+		text,
+		reducer,
+		lossy: true
+	};
+}
+function reduceShell(input) {
+	const lines = input.lines;
+	const important = lines.filter((line) => IMPORTANT_PATTERN.test(line.text));
+	if (important.length === 0) return reduceTail(input, "pi-tail");
+	const text = fitLines([
+		`[shell/log output compressed; ${scannedTotals(input, important.length)}; source: ${input.sourceRef}; scatter-masked: retrieve with context_compression_retrieve({"ref":"${input.sourceRef}","query":"<keyword>"}) for missed rows]`,
+		...important.map((line) => line.text),
+		"--- final output ---",
+		...lines.slice(-40).map((line) => line.text)
+	], input.budgetChars, input.sourceRef);
+	return text === null ? null : {
+		text,
+		reducer: "shell-salience-tail",
+		lossy: true
+	};
+}
+function reduceSalient(input, reducer) {
+	const lines = input.lines;
+	if (lines.length < 3) return reduceHead(input, reducer);
+	const marker = omissionMarker(input, reducer);
+	const headBudget = Math.max(1, Math.floor((input.budgetChars - codePointLength(marker)) * .34));
+	const tailBudget = headBudget;
+	const head = takeWholeLinesFromHead(input.text, headBudget);
+	const tail = takeWholeLinesFromTail(input.text, tailBudget);
+	const salient = lines.filter((line) => IMPORTANT_PATTERN.test(line.text) || STATUS_PATTERN.test(line.text)).slice(0, 24);
+	const keptCount = head.split("\n").length + salient.length + tail.split("\n").length;
+	const text = fitLines([
+		head,
+		...salient.map((line) => line.text),
+		`${marker} [${scannedTotals(input, keptCount)}]`,
+		tail
+	], input.budgetChars, input.sourceRef);
+	return text === null ? null : {
+		text,
+		reducer,
+		lossy: true
+	};
+}
+/**
+* Require content evidence of a structured document: enough Markdown heading
+* lines among a bounded prefix. Pure form evidence — tool names, path
+* extensions, and commands are never read (MCP output has no predictable
+* identity). Real logs and build output carry no `#`-heading lines, which is
+* the misjudgment guard.
+* @param text - normalized result text.
+* @returns whether the text qualifies as a structured document.
+*/
+function looksLikeDocument(text) {
+	const lines = splitLines(text);
+	let headings = 0;
+	for (const line of lines.slice(0, 400)) if (MARKDOWN_HEADING_PATTERN.test(line)) {
+		headings += 1;
+		if (headings >= 3) return true;
+	}
+	return false;
+}
+/** One R9-spec elision marker: an original-event line range plus its count. */
+function elidedRangeMarker(start, end) {
+	return `[... lines ${String(start)}-${String(end)} elided (${String(end - start + 1)} lines) ...]`;
+}
+/**
+* Require content evidence of HTML: enough lines carrying real markup tags
+* among a bounded prefix. Angle-bracket prose (TS generics, comparisons) does
+* not match the tag list, which is the misjudgment guard.
+*/
+function looksLikeHtml(text) {
+	const lines = splitLines(text);
+	let tags = 0;
+	for (const line of lines.slice(0, 400)) if (HTML_TAG_PATTERN.test(line)) {
+		tags += 1;
+		if (tags >= 3) return true;
+	}
+	return false;
+}
+const HTML_DROPPED_OPEN = /<(script|style|noscript|svg|head)\b[^>]*>/i;
+/**
+* Two-stage HTML reduction (R13). HTML previously fell into `pi-head`, which
+* keeps exactly the useless `<head>` metadata and drops the body.
+*
+* Stage 1 (`html-slim`) is a deterministic, line-aligned slimming pass:
+* comments, script/style/noscript/svg/head elements (single- or multi-line),
+* data URIs, non-whitelisted attributes, and inline-tag markup disappear;
+* every surviving line keeps its original-event position for the R9 ranges.
+* Stage 2 (`html-skeleton`) runs only when the slim output still exceeds the
+* budget: heading hierarchy, each section's first line, and table header rows
+* survive; the rest is elided with original-event line ranges.
+*/
+function reduceHtml(input) {
+	const slim = [];
+	let dropping = null;
+	input.lines.forEach((line, index) => {
+		let text = line.text;
+		if (dropping !== null) {
+			const close = new RegExp(`</${dropping}\\s*>`, "i").exec(text);
+			if (close === null) return;
+			text = text.slice(close.index + close[0].length);
+			dropping = null;
+		}
+		text = text.replace(HTML_COMMENT_PATTERN, "");
+		text = text.replace(HTML_DROPPED_ELEMENTS, "");
+		const open = HTML_DROPPED_OPEN.exec(text);
+		if (open !== null) {
+			const close = new RegExp(`</${open[1] ?? ""}\\s*>`, "i").exec(text.slice(open.index));
+			if (close !== null) {
+				const end = open.index + open[0].length + close.index + close[0].length;
+				text = text.slice(0, open.index) + text.slice(end);
+			} else {
+				dropping = open[1] ?? null;
+				text = text.slice(0, open.index);
+			}
+		}
+		text = text.replace(HTML_DATA_URI_PATTERN, "");
+		text = text.replace(HTML_TAG_PATTERN_FULL, (match, name, attrs) => `<${name}${attrs.match(HTML_WHITELISTED_ATTRIBUTES)?.join("") ?? ""}>`);
+		text = text.replace(HTML_INLINE_TAG_PATTERN, "");
+		text = text.trim();
+		if (text !== "") slim.push({
+			text,
+			index
+		});
+	});
+	if (slim.length === 0) return null;
+	const buildHeader = (reducer, firstElided) => {
+		const startLine = firstElided === void 0 ? "" : `,"start_line":${String(firstElided.start)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}`;
+		return `[html compressed by ${reducer}; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"${startLine}})]`;
+	};
+	if (slim.reduce((sum, line) => sum + codePointLength(line.text) + 1, 0) + 160 <= input.budgetChars) {
+		const text = fitLines([buildHeader("html-slim"), ...slim.map((line) => line.text)], input.budgetChars, input.sourceRef);
+		if (text !== null) return {
+			text,
+			reducer: "html-slim",
+			lossy: true
+		};
+	}
+	const keep = new Array(slim.length).fill(false);
+	let tableRows = 0;
+	let lastHeading = -2;
+	for (let position = 0; position < slim.length; position++) {
+		const text = slim[position].text;
+		if (/<h[1-6]\b/i.test(text)) {
+			keep[position] = true;
+			lastHeading = position;
+			continue;
+		}
+		if (lastHeading === position - 1) {
+			keep[position] = true;
+			continue;
+		}
+		if (/<table\b|<tr\b|<th\b/i.test(text)) {
+			if (tableRows < 1) keep[position] = true;
+			tableRows += 1;
+			continue;
+		}
+		if (!/<\/(tr|table)\b/i.test(text)) tableRows = 0;
+		if (IMPORTANT_PATTERN.test(text)) keep[position] = true;
+	}
+	const kept = [];
+	let position = 0;
+	let firstElided;
+	while (position < slim.length) {
+		if (keep[position]) {
+			kept.push(slim[position].text);
+			position += 1;
+			continue;
+		}
+		const runStart = position;
+		while (position < slim.length && !keep[position]) position += 1;
+		const start = input.lines[slim[runStart].index].originalLine;
+		const end = originalEnd(input.lines, slim[position - 1].index);
+		if (firstElided === void 0) firstElided = start;
+		kept.push(elidedRangeMarker(start, end));
+	}
+	const text = fitLines([buildHeader("html-skeleton", firstElided === void 0 ? void 0 : { start: firstElided }), ...kept], input.budgetChars, input.sourceRef);
+	return text === null ? null : {
+		text,
+		reducer: "html-skeleton",
+		lossy: true
+	};
+}
+/** Original-event end line of folded entry `lines[index]`. */
+function originalEnd(lines, index) {
+	const line = lines[index];
+	return line?.originalLineEnd ?? line?.originalLine ?? 0;
+}
+/**
+* Keep a document skeleton: the heading hierarchy, each section's first and
+* last content line, list-item starts, table headers, and fence markers,
+* eliding the remaining bodies with R9 line-range markers. Fails open (null)
+* when nothing is elidable or the budget cannot be met, so the next candidate
+* takes over.
+*/
+function reduceDocSkeleton(input, sectionRanking) {
+	const lines = input.lines;
+	const keep = new Array(lines.length).fill(false);
+	const headingIndex = [];
+	let inFence = false;
+	for (let index = 0; index < lines.length; index++) {
+		const line = lines[index].text;
+		if (FENCE_PATTERN.test(line)) {
+			inFence = !inFence;
+			keep[index] = true;
+			continue;
+		}
+		if (!inFence && MARKDOWN_HEADING_PATTERN.test(line)) {
+			headingIndex.push(index);
+			keep[index] = true;
+			continue;
+		}
+		if (IMPORTANT_PATTERN.test(line)) keep[index] = true;
+		else if (!inFence && LIST_ITEM_PATTERN.test(line)) keep[index] = true;
+	}
+	let tableRows = 0;
+	let fenceOpen = false;
+	for (let index = 0; index < lines.length; index++) {
+		const line = lines[index].text;
+		if (FENCE_PATTERN.test(line)) {
+			fenceOpen = !fenceOpen;
+			tableRows = 0;
+			continue;
+		}
+		if (fenceOpen || line.trim() === "") continue;
+		if (TABLE_ROW_PATTERN.test(line)) {
+			if (tableRows < 2) keep[index] = true;
+			tableRows += 1;
+			continue;
+		}
+		tableRows = 0;
+	}
+	const sectionStarts = [-1, ...headingIndex];
+	const sectionEnds = [...headingIndex, lines.length];
+	const sections = headingIndex.map((heading, position) => ({
+		id: lines[heading].text.replace(/^#+\s*/, "").trim(),
+		heading,
+		from: heading + 1,
+		to: position + 1 < headingIndex.length ? headingIndex[position + 1] : lines.length
+	}));
+	const floorKeep = new Array(lines.length).fill(false);
+	for (let section = 0; section < sectionStarts.length; section++) {
+		const from = sectionStarts[section] + 1;
+		const to = sectionEnds[section];
+		let first = -1;
+		let last = -1;
+		for (let index = from; index < to; index++) {
+			if (lines[index].text.trim() === "") continue;
+			if (first === -1) first = index;
+			last = index;
+		}
+		if (first !== -1) floorKeep[first] = true;
+		if (last !== -1) floorKeep[last] = true;
+	}
+	/** Emit the skeleton for one keep-set: header, kept lines, R9 range markers. */
+	const assemble = (flags, budget) => {
+		const kept = [];
+		let index = 0;
+		let firstElided;
+		while (index < lines.length) {
+			if (flags[index]) {
+				kept.push(lines[index].text);
+				index += 1;
+				continue;
+			}
+			const runStart = index;
+			while (index < lines.length && !flags[index]) index += 1;
+			const start = lines[runStart].originalLine;
+			const end = originalEnd(lines, index - 1);
+			if (firstElided === void 0) firstElided = start;
+			kept.push(elidedRangeMarker(start, end));
+		}
+		const hint = firstElided === void 0 ? "" : `,"start_line":${String(firstElided)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}`;
+		kept.unshift(`[document compressed by doc-skeleton; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"${hint}})]`);
+		return {
+			text: fitLines(kept, budget, input.sourceRef),
+			...firstElided === void 0 ? {} : { firstElided }
+		};
+	};
+	const combine = (base, overlay) => lines.map((_, index) => (base[index] ?? false) || (overlay[index] ?? false));
+	const mechanical = assemble(combine(keep, floorKeep), input.budgetChars);
+	if (mechanical.text === null) return null;
+	if (sectionRanking === void 0 || sectionRanking.length === 0) return {
+		text: mechanical.text,
+		reducer: "doc-skeleton",
+		lossy: true
+	};
+	const cap = Math.min(input.budgetChars, codePointLength(input.text) - 1);
+	const rankedFloor = new Array(lines.length).fill(false);
+	for (const section of sections) for (let index = section.from; index < section.to; index++) {
+		if (lines[index].text.trim() === "") continue;
+		rankedFloor[index] = true;
+		break;
+	}
+	/** Exact packed-output size of a keep-set: header + kept lines + markers. */
+	const packedSize = (flags) => {
+		let size = 180;
+		let index = 0;
+		while (index < lines.length) {
+			if (flags[index]) {
+				size += codePointLength(lines[index].text) + 1;
+				index += 1;
+				continue;
+			}
+			const runStart = index;
+			while (index < lines.length && !flags[index]) index += 1;
+			size += codePointLength(elidedRangeMarker(lines[runStart].originalLine, originalEnd(lines, index - 1))) + 1;
+		}
+		return size;
+	};
+	const fill = new Array(lines.length).fill(false);
+	for (const section of rankedFirst(sections, sectionRanking)) for (let index = section.from; index < section.to; index++) {
+		if (rankedFloor[index] || fill[index] || lines[index].text.trim() === "") continue;
+		fill[index] = true;
+		if (packedSize(combine(combine(keep, rankedFloor), fill)) > cap) {
+			fill[index] = false;
+			break;
+		}
+	}
+	const ranked = assemble(combine(combine(keep, rankedFloor), fill), cap);
+	return ranked.text === null ? null : {
+		text: ranked.text,
+		reducer: "doc-skeleton",
+		lossy: true
+	};
+}
+/**
+* Universal prose fallback (R8b, the main force): keep the head AND the tail
+* of any non-code text and one R9 line-range marker for everything elided in
+* between. Unstructured prose (85%+ of large results) previously landed on
+* head-only truncation; a tail keep preserves conclusions and closing state.
+* Fails open for code-like text and when the budget cannot hold both ends.
+*/
+function reduceProseKeep(input) {
+	const lines = input.lines;
+	if (lines.length < 8) return null;
+	if (looksLikeSourceCode(input.text)) return null;
+	const first = lines[0];
+	const last = lines[lines.length - 1];
+	const tailLine = last.originalLineEnd ?? last.originalLine;
+	const markerTemplate = elidedRangeMarker(first.originalLine, tailLine);
+	const sourceNoteTemplate = `; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"})`;
+	const reserved = codePointLength(markerTemplate) + codePointLength(sourceNoteTemplate) + 2;
+	const bodyBudget = input.budgetChars - reserved;
+	if (bodyBudget <= 0) return null;
+	const headBudget = Math.floor(bodyBudget / 2);
+	const tailBudget = bodyBudget - headBudget;
+	let headCount = 0;
+	let used = 0;
+	while (headCount < lines.length) {
+		const cost = codePointLength(lines[headCount].text) + (headCount === 0 ? 0 : 1);
+		if (used + cost > headBudget) break;
+		used += cost;
+		headCount += 1;
+	}
+	let tailCount = 0;
+	used = 0;
+	while (tailCount < lines.length - headCount) {
+		const index = lines.length - 1 - tailCount;
+		const cost = codePointLength(lines[index].text) + (tailCount === 0 ? 0 : 1);
+		if (used + cost > tailBudget) break;
+		used += cost;
+		tailCount += 1;
+	}
+	if (headCount === 0 || tailCount === 0 || headCount + tailCount >= lines.length) return null;
+	const elidedStart = lines[headCount].originalLine;
+	const elidedEnd = originalEnd(lines, lines.length - tailCount - 1);
+	if (elidedEnd < elidedStart) return null;
+	const sourceNote = `; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}","start_line":${String(elidedStart)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}})`;
+	return {
+		text: [
+			...lines.slice(0, headCount).map((line) => line.text),
+			elidedRangeMarker(elidedStart, elidedEnd) + sourceNote,
+			...lines.slice(lines.length - tailCount).map((line) => line.text)
+		].join("\n"),
+		reducer: "prose-keep",
+		lossy: true
+	};
+}
+/**
+* Keep a source-file skeleton: imports, decorators, declaration signatures,
+* comments at brace depth zero, and every error-signalling line, eliding the
+* remaining bodies with counted markers. Covers brace languages (TS/JS, Rust,
+* Go, Java, C family) and indent blocks (Python); unknown syntax fails open to
+* the next candidate. Output is compressed evidence, not required to parse.
+* @param input - original result text, recovery source, and output budget.
+* @returns a verified candidate, or `null` when the text is not code-like.
+*/
+function reduceCodeSkeleton(input) {
+	const lines = input.lines.map((line) => line.text);
+	const kept = [];
+	let elided = 0;
+	let firstElided;
+	const flushElided = () => {
+		if (elided > 0) {
+			const start = input.lines[index - elided]?.originalLine ?? 0;
+			const end = originalEnd(input.lines, index - 1);
+			if (firstElided === void 0) firstElided = {
+				start,
+				end
+			};
+			kept.push(elidedRangeMarker(start, end));
+		}
+		elided = 0;
+	};
+	let depth = 0;
+	let index = 0;
+	const elideBraceBody = () => {
+		const startDepth = depth;
+		index += 1;
+		while (index < lines.length && depth > startDepth) {
+			const body = lines[index];
+			if (body === void 0) break;
+			if (IMPORTANT_PATTERN.test(body)) {
+				flushElided();
+				kept.push(body);
+			} else elided += 1;
+			depth += braceDelta(body);
+			index += 1;
+		}
+		flushElided();
+	};
+	const keepPythonSignature = (signatureLine) => {
+		index += 1;
+		if (/:\s*$/.test(signatureLine)) {
+			elideIndentedBody(leadingIndent(signatureLine));
+			return;
+		}
+		for (let guard = 0; guard < 6 && index < lines.length; guard += 1) {
+			const next = lines[index];
+			if (next === void 0) break;
+			if (next.trim() !== "" && leadingIndent(next) <= leadingIndent(signatureLine)) break;
+			flushElided();
+			kept.push(next);
+			index += 1;
+			if (/:\s*$/.test(next)) {
+				elideIndentedBody(leadingIndent(next));
+				return;
+			}
+			if (next.trim() !== "" && !/[:,(]\s*$/.test(next)) break;
+		}
+	};
+	const elideIndentedBody = (indent) => {
+		while (index < lines.length) {
+			const body = lines[index];
+			if (body === void 0) break;
+			if (body.trim() !== "" && leadingIndent(body) <= indent) break;
+			if (IMPORTANT_PATTERN.test(body)) {
+				flushElided();
+				kept.push(body);
+				index += 1;
+				continue;
+			}
+			if (isCodeStructureLine(body) || CODE_DECORATOR_PATTERN.test(body)) {
+				flushElided();
+				kept.push(body);
+				keepPythonSignature(body);
+				continue;
+			}
+			elided += 1;
+			index += 1;
+		}
+		flushElided();
+	};
+	while (index < lines.length) {
+		const line = lines[index];
+		if (line === void 0) break;
+		const delta = braceDelta(line);
+		if (IMPORTANT_PATTERN.test(line)) {
+			flushElided();
+			kept.push(line);
+			depth += delta;
+			index += 1;
+			continue;
+		}
+		if (isCodeStructureLine(line) || CODE_IMPORT_PATTERN.test(line) || CODE_DECORATOR_PATTERN.test(line)) {
+			flushElided();
+			kept.push(line);
+			depth += delta;
+			if (delta > 0) {
+				elideBraceBody();
+				continue;
+			}
+			if (PYTHON_STRUCTURE_PATTERN.test(line)) {
+				keepPythonSignature(line);
+				continue;
+			}
+			let opened = false;
+			for (let guard = 0; guard < 6 && index + 1 < lines.length; guard += 1) {
+				const next = lines[index + 1];
+				if (next === void 0) break;
+				const nextDelta = braceDelta(next);
+				if (nextDelta === 0 && next.trim() !== "" && !/[:,(]\s*$/.test(next)) break;
+				flushElided();
+				kept.push(next);
+				depth += nextDelta;
+				index += 1;
+				if (nextDelta > 0) {
+					opened = true;
+					break;
+				}
+			}
+			if (opened) elideBraceBody();
+			else index += 1;
+			continue;
+		}
+		if (depth === 0 && CODE_COMMENT_PATTERN.test(line)) {
+			flushElided();
+			kept.push(line);
+		} else elided += 1;
+		depth += delta;
+		index += 1;
+	}
+	flushElided();
+	return finishSkeleton(kept, lines, input, firstElided);
+}
+function finishSkeleton(kept, lines, input, firstElided) {
+	const hint = firstElided === void 0 ? "" : `; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}","start_line":${String(firstElided.start)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}})`;
+	const text = fitLines([
+		`[code output compressed by hypa-code-skeleton; source: ${input.sourceRef}${hint}]`,
+		...kept,
+		...lines.slice(-4)
+	], input.budgetChars, input.sourceRef);
+	return text === null ? null : {
+		text,
+		reducer: "hypa-code-skeleton",
+		lossy: true
+	};
+}
+/** Net brace delta of one line, ignoring braces inside string literals. */
+function braceDelta(line) {
+	let delta = 0;
+	let quote = null;
+	for (let position = 0; position < line.length; position += 1) {
+		const char = line[position];
+		if (quote !== null) {
+			if (char === "\\") position += 1;
+			else if (char === quote) quote = null;
+			continue;
+		}
+		if (char === "\"" || char === "'" || char === "`") {
+			quote = char;
+			continue;
+		}
+		if (char === "{") delta += 1;
+		else if (char === "}") delta -= 1;
+	}
+	return delta;
+}
+function leadingIndent(line) {
+	return codePointLength(line) - codePointLength(line.trimStart());
+}
+function isCodeStructureLine(line) {
+	return CODE_STRUCTURE_PATTERN.test(line) || PYTHON_STRUCTURE_PATTERN.test(line);
+}
+/**
+* Require content evidence of source code: enough declaration, import, or
+* decorator lines among a bounded prefix. Failing this keeps prose, logs, and
+* data on their existing reducers.
+* @param text - normalized result text.
+* @returns whether the text qualifies as source code.
+*/
+function looksLikeSourceCode(text) {
+	const lines = splitLines(text);
+	if (lines.length < 12) return false;
+	let evidence = 0;
+	for (const line of lines.slice(0, 400)) if (isCodeStructureLine(line) || CODE_IMPORT_PATTERN.test(line) || CODE_DECORATOR_PATTERN.test(line)) {
+		evidence += 1;
+		if (evidence >= 3) return true;
+	}
+	return false;
+}
+function omissionMarker(input, reducer) {
+	return `[... ${reducer} omitted content; original_chars=${String(codePointLength(input.text))}; source=${input.sourceRef}; retrieve with context_compression_retrieve ...]`;
+}
+/**
+* Continuous-mask marker (R9b): an original-event line range plus a pasteable
+* retrieve hint whose start_line is the first elided line. Line numbers point
+* at the RAW event because retrieve reads raw events (D8).
+*/
+function rangeOmissionMarker(input, reducer, elidedStart, elidedEnd) {
+	return `[... lines ${String(elidedStart)}-${String(elidedEnd)} elided (${String(elidedEnd - elidedStart + 1)} lines); ${reducer}; original_chars=${String(codePointLength(input.text))}; source=${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}","start_line":${String(elidedStart)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}}) ...]`;
+}
+/** Scatter-mask note (R9b): totals instead of fragmented per-run ranges. */
+function scannedTotals(input, kept) {
+	const last = input.lines[input.lines.length - 1];
+	const lastLine = Math.max(last?.originalLineEnd ?? 0, last?.originalLine ?? 0, input.lines.length);
+	return `lines 1-${String(lastLine)} scanned, ${String(kept)} kept`;
+}
+function importantAnchor(text, maxChars) {
+	const lines = splitLines(normalizeTerminalText(text));
+	const chosen = lines.find((line) => IMPORTANT_PATTERN.test(line)) ?? lines.at(-1) ?? "";
+	return Array.from(chosen.trim()).slice(0, maxChars).join("");
+}
+function fitLines(lines, budgetChars, requiredRef) {
+	const unique = [];
+	const seen = /* @__PURE__ */ new Set();
+	for (const line of lines) {
+		if (line === "" || seen.has(line)) continue;
+		seen.add(line);
+		unique.push(line);
+	}
+	const output = [];
+	let used = 0;
+	for (const line of unique) {
+		const cost = codePointLength(line) + (output.length === 0 ? 0 : 1);
+		if (used + cost > budgetChars) continue;
+		output.push(line);
+		used += cost;
+	}
+	const text = output.join("\n");
+	return text.includes(requiredRef) ? text : null;
+}
+function takeWholeLinesFromHead(text, budgetChars) {
+	const output = [];
+	let used = 0;
+	for (const line of splitLines(text)) {
+		const cost = codePointLength(line) + (output.length === 0 ? 0 : 1);
+		if (used + cost > budgetChars) break;
+		output.push(line);
+		used += cost;
+	}
+	if (output.length === 0) return Array.from(text).slice(0, budgetChars).join("");
+	return output.join("\n");
+}
+function takeWholeLinesFromTail(text, budgetChars) {
+	const lines = splitLines(text);
+	const output = [];
+	let used = 0;
+	for (let index = lines.length - 1; index >= 0; index--) {
+		const line = lines[index];
+		if (line === void 0) continue;
+		const cost = codePointLength(line) + (output.length === 0 ? 0 : 1);
+		if (used + cost > budgetChars) break;
+		output.unshift(line);
+		used += cost;
+	}
+	if (output.length === 0) return Array.from(text).slice(-budgetChars).join("");
+	return output.join("\n");
+}
+function splitLines(text) {
+	const lines = text.split("\n");
+	if (text.endsWith("\n")) lines.pop();
+	return lines;
+}
+function extractCommand(argumentsText) {
+	try {
+		const parsed = JSON.parse(argumentsText);
+		if (typeof parsed !== "object" || parsed === null) return "";
+		const record = parsed;
+		for (const key of [
+			"command",
+			"cmd",
+			"script",
+			"input"
+		]) {
+			const value = record[key];
+			if (typeof value === "string") return value;
+		}
+	} catch {
+		return "";
+	}
+	return "";
+}
+function looksLikeJson(text) {
+	const trimmed = text.trim();
+	return trimmed.startsWith("{") && trimmed.endsWith("}") || trimmed.startsWith("[") && trimmed.endsWith("]");
+}
+function isReadTool(name) {
+	return /(?:^|[-_/])(?:read|cat|view|open_file)(?:$|[-_/])/.test(name);
+}
+function isSearchTool(name, command) {
+	return /(?:grep|search|glob|find|ripgrep|rg)/.test(name) || /(?:^|\s)(?:rg|grep|find|fd)\s/.test(command);
+}
+function isShellTool(name) {
+	return /(?:bash|shell|terminal|powershell|pwsh|exec|command)/.test(name);
+}
+function isGitCommand(name, command) {
+	return name.includes("git") || /(?:^|\s)git\s/.test(command);
+}
+function isPackageCommand(command) {
+	return /(?:^|\s)(?:npm|pnpm|yarn|bun|pip|pip3|uv|poetry)\s/.test(command);
+}
+function isBuildOrTestCommand(command) {
+	return new RegExp([String.raw`(?:^|\s)(?:tsc|dotnet\s+(?:build|test)|pytest|cargo\s+(?:build|test|check)|go\s+test|mvn\s+test|`, String.raw`gradle|npm\s+(?:test|run\s+build)|pnpm\s+(?:test|build|lint)|yarn\s+(?:test|build|lint))\b`].join("")).test(command);
+}
+function packagePattern() {
+	return new RegExp([String.raw`(?:ERR!|WARN|warning|error|failed|conflict|peer dep|added\s+\d+|removed\s+\d+|installed|success|`, String.raw`up to date|packages?\s+(?:added|removed|changed)|resolution|No matching distribution|Could not find a version)`].join(""), "i");
+}
+function buildPattern() {
+	return new RegExp([
+		String.raw`(?:error\s+TS\d+|warning\s+TS\d+|FAILED|FAIL\b|AssertionError|expected|actual|`,
+		String.raw`tests?\s+(?:run|passed|failed|skipped)|Build\s+(?:succeeded|FAILED)|\d+\s+Error\(s\)|`,
+		String.raw`\d+\s+Warning\(s\)|Finished\s+test|compilation failed)`
+	].join(""), "i");
 }
 //#endregion
 //#region src/runtime/tokenpilot/read-state.ts
@@ -1225,12 +2422,17 @@ function isSupersededRead(events, readSeq, readPath) {
 /** Error/warning/info line classifiers used by the omission summary. */
 const ERROR_LINE = /\b(error|failed|failure|fatal|exception|traceback|cannot|unable|denied)\b/i;
 const WARN_LINE = /\b(warn|warning|deprecated)\b/i;
+const SECTION_HEADING = /^#{1,3}\s+(.{1,80})/;
 /**
-* Cluster one omitted line-count into an error/warn/info census appended to a
-* placeholder marker, giving the model meta-knowledge about what was dropped.
+* Cluster one omitted line-count into a summary appended to a placeholder
+* marker, giving the model meta-knowledge about what was dropped. Document
+* content (R8) swaps the error/warn/info census for a section-heading list —
+* `0 error, 0 warn, N info` carries no information about a dropped document,
+* while its heading list does.
 */
 function clusterOmittedLines(text, omittedLines) {
 	if (omittedLines <= 0) return void 0;
+	if (looksLikeDocument(text)) return documentCensus(text, omittedLines);
 	let errors = 0;
 	let warns = 0;
 	let infos = 0;
@@ -1243,6 +2445,20 @@ function clusterOmittedLines(text, omittedLines) {
 	if (infos > 0) parts.push(`${String(infos)} info`);
 	if (parts.length === 0) return void 0;
 	return `${String(omittedLines)} lines omitted (${parts.join(", ")})`;
+}
+/** Bounded section-heading list for an omitted document (R8 census). */
+function documentCensus(text, omittedLines) {
+	const titles = [];
+	for (const line of text.split("\n")) {
+		const match = SECTION_HEADING.exec(line);
+		if (match === null) continue;
+		titles.push(match[1].trim());
+		if (titles.length >= 8) break;
+	}
+	if (titles.length === 0) return `${String(omittedLines)} lines omitted (document content)`;
+	let summary = titles.join(" · ");
+	if (summary.length > 240) summary = `${summary.slice(0, 240)}…`;
+	return `${String(omittedLines)} lines omitted (sections: ${summary})`;
 }
 //#endregion
 //#region src/runtime/tokenpilot/estimator.ts
@@ -1428,621 +2644,8 @@ function dedupePlaceholder(entry, originalChars) {
 	return [
 		`[... identical to the earlier ${entry.toolName} result; first seen at ${entry.sourceRef};`,
 		`original_chars=${String(originalChars)};`,
-		"use context_compression_retrieve with this source if the omitted evidence is necessary.]"
+		"retrieve with context_compression_retrieve({\"ref\":\"" + entry.sourceRef + "\",\"start_line\":1}) if the omitted evidence is necessary.]"
 	].join(" ");
-}
-//#endregion
-//#region src/runtime/reducers.ts
-/** Deterministic, evidence-backed reducers for fresh tool results. */
-const ANSI_PATTERN = /\u001B(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007]*(?:\u0007|\u001B\\))/gu;
-const IMPORTANT_PATTERN = new RegExp([
-	String.raw`\b(?:error|failed|failure|fatal|panic|exception|warning|warn|conflict|denied|forbidden|`,
-	String.raw`timeout|timed out|not found|cannot|unable|invalid|exit(?:ed)?\s+(?:code|status)|traceback|`,
-	String.raw`assert(?:ion)?|segmentation fault|oom|out of memory)\b`
-].join(""), "i");
-const STATUS_PATTERN = new RegExp([String.raw`\b(?:success|succeeded|passed|installed|added|removed|updated|built|compiled|`, String.raw`tests?\s+(?:passed|failed)|exit(?:ed)?\s+(?:code|status))\b`].join(""), "i");
-const PATH_LINE_PATTERN = /^(.*?):(\d+)(?::\d+)?(?::|\s+-\s+)(.*)$/;
-const GIT_STATUS_PATTERN = new RegExp([String.raw`^(?:On branch|Your branch|HEAD detached|Changes |Untracked |Unmerged |\s*(?:modified|deleted|`, String.raw`new file|renamed|both modified):)`].join(""), "i");
-const CODE_IMPORT_PATTERN = new RegExp([String.raw`^\s*(?:import\b|from\s+[\w.]+\s+import\b|use\s+\w|package\s+|#include\b|`, String.raw`using\s+[\w.]+;|require\s*\(|extern\s+crate\b)`].join(""));
-const CODE_STRUCTURE_PATTERN = new RegExp([
-	String.raw`^\s*(?:@[\w.]+|export\s+|default\s+|declare\s+|abstract\s+|public\s+|private\s+|protected\s+|`,
-	String.raw`internal\s+|static\s+|final\s+|sealed\s+|override\s+|pub(?:\([^)]*\))?\s+|async\s+|unsafe\s+)*`,
-	String.raw`(?:function\b|class\b|interface\b|enum\b|struct\b|impl\b|trait\b|type\s+\w|fn\s|func\b|`,
-	String.raw`def\s|module\b|namespace\b|sub\s)`
-].join(""));
-const PYTHON_STRUCTURE_PATTERN = /^\s*(?:async\s+)?def\s|^\s*class\s/;
-const CODE_DECORATOR_PATTERN = /^\s*@[\w.]+/;
-const CODE_COMMENT_PATTERN = /^\s*(?:\/\/|#|\/\*|\*)/;
-/**
-* Select a reducer from verified tool, command, and content evidence.
-* @param input - original result text, recovery source, and output budget.
-* @returns a verified candidate, or `null` when every reducer fails open.
-*/
-function reduceFreshToolResult(input) {
-	const normalized = normalizeTerminalText(input.text);
-	const prepared = {
-		...input,
-		text: normalized
-	};
-	const command = extractCommand(input.argumentsText);
-	const name = input.toolName.toLowerCase();
-	const candidates = [];
-	if (looksLikeJson(normalized)) candidates.push(() => reduceJson(prepared));
-	if (isSearchTool(name, command)) candidates.push(() => reduceSearch(prepared));
-	if (isGitCommand(name, command)) candidates.push(() => reduceGit(prepared, command));
-	if (isPackageCommand(command)) candidates.push(() => reducePatternLog(prepared, "hypa-package", packagePattern()));
-	if (isBuildOrTestCommand(command)) candidates.push(() => reducePatternLog(prepared, "hypa-build-test", buildPattern()));
-	if (input.codeSkeleton === true && looksLikeSourceCode(normalized)) candidates.push(() => reduceCodeSkeleton(prepared));
-	if (isReadTool(name)) candidates.push(() => reduceHead(prepared, "pi-head"));
-	if (isShellTool(name) || command !== "") candidates.push(() => reduceShell(prepared));
-	candidates.push(() => reduceSalient(prepared, "generic-salience"));
-	for (const make of candidates) {
-		const candidate = make();
-		if (candidate !== null && verifyReduction(input, candidate)) return candidate;
-	}
-	return null;
-}
-/**
-* Build a recoverable placeholder for an old tool result.
-* @param input - tool identity, source reference, size, status, and retained evidence.
-* @returns a lossy placeholder that cites the immutable source event.
-*/
-function historicalPlaceholder(input) {
-	const anchor = input.compact ? "" : importantAnchor(input.text, 360);
-	const lines = [
-		"[Old tool result content cleared from active context]",
-		`tool: ${input.toolName || "unknown"}`,
-		`status: ${input.isError ? "error" : "completed"}`,
-		`original_chars: ${String(input.charsBefore)}`,
-		`source: ${input.sourceRef}`,
-		"retrieve: context_compression_retrieve({\"ref\":\"" + input.sourceRef + "\"})"
-	];
-	if (anchor !== "") lines.push(`retained_anchor: ${anchor}`);
-	return {
-		text: lines.join("\n"),
-		reducer: input.compact ? "pair-preserving-tail-aging" : "historical-tool-result-aging",
-		lossy: true
-	};
-}
-/**
-* Validate shrinkage, budget, recovery, and error retention.
-* @param input - original reducer input and its safety requirements.
-* @param output - candidate reduced text and reducer metadata.
-* @returns whether the candidate is safe to land.
-*/
-function verifyReduction(input, output) {
-	const before = codePointLength(input.text);
-	const after = codePointLength(output.text);
-	if (after <= 0 || after >= before || after > input.budgetChars) return false;
-	if (output.lossy && !output.text.includes(input.sourceRef)) return false;
-	if ((input.isError || IMPORTANT_PATTERN.test(input.text)) && !IMPORTANT_PATTERN.test(output.text) && !output.text.includes("status: error")) return false;
-	return true;
-}
-/**
-* Strip ANSI, collapse carriage-return progress redraws, and fold exact repeats.
-* @param text - raw terminal output.
-* @returns normalized terminal text.
-*/
-function normalizeTerminalText(text) {
-	const logical = text.replace(ANSI_PATTERN, "").split("\n").map((line) => {
-		return line.split("\r").filter((part) => part !== "").at(-1) ?? "";
-	});
-	const folded = [];
-	let previous;
-	let count = 0;
-	const flush = () => {
-		if (previous === void 0) return;
-		folded.push(previous);
-		if (count > 1) folded.push(`[previous line repeated ${String(count - 1)} more times]`);
-	};
-	for (const line of logical) {
-		if (line === previous) {
-			count++;
-			continue;
-		}
-		flush();
-		previous = line;
-		count = 1;
-	}
-	flush();
-	return folded.join("\n");
-}
-function reduceHead(input, reducer) {
-	const marker = omissionMarker(input, reducer);
-	const available = input.budgetChars - codePointLength(marker) - 1;
-	if (available <= 0) return null;
-	const head = takeWholeLinesFromHead(input.text, available);
-	if (head === input.text || head === "") return null;
-	return {
-		text: `${head}\n${marker}`,
-		reducer,
-		lossy: true
-	};
-}
-function reduceTail(input, reducer) {
-	const marker = omissionMarker(input, reducer);
-	const available = input.budgetChars - codePointLength(marker) - 1;
-	if (available <= 0) return null;
-	const tail = takeWholeLinesFromTail(input.text, available);
-	if (tail === input.text || tail === "") return null;
-	return {
-		text: `${marker}\n${tail}`,
-		reducer,
-		lossy: true
-	};
-}
-function reduceJson(input) {
-	let value;
-	try {
-		value = JSON.parse(input.text);
-	} catch {
-		return null;
-	}
-	const minified = JSON.stringify(value);
-	if (codePointLength(minified) < codePointLength(input.text) && codePointLength(minified) <= input.budgetChars) return {
-		text: minified,
-		reducer: "json-minify",
-		lossy: false
-	};
-	const envelope = {
-		$dsh_compression: {
-			kind: "json-preview",
-			source: input.sourceRef,
-			original_chars: codePointLength(input.text)
-		},
-		value: shrinkJson(value, 0)
-	};
-	const text = JSON.stringify(envelope, null, 2);
-	if (codePointLength(text) <= input.budgetChars) return {
-		text,
-		reducer: "json-structure-preview",
-		lossy: true
-	};
-	return null;
-}
-function shrinkJson(value, depth) {
-	if (depth >= 5) {
-		if (Array.isArray(value)) return `[array length=${String(value.length)} omitted]`;
-		if (typeof value === "object" && value !== null) return "[object omitted]";
-		return value;
-	}
-	if (Array.isArray(value)) {
-		if (value.length <= 8) return value.map((entry) => shrinkJson(entry, depth + 1));
-		return [
-			...value.slice(0, 3).map((entry) => shrinkJson(entry, depth + 1)),
-			{ $dsh_omitted_items: value.length - 5 },
-			...value.slice(-2).map((entry) => shrinkJson(entry, depth + 1))
-		];
-	}
-	if (typeof value !== "object" || value === null) {
-		if (typeof value === "string" && codePointLength(value) > 800) return `${Array.from(value).slice(0, 500).join("")}…[${String(codePointLength(value) - 700)} chars omitted]…${Array.from(value).slice(-200).join("")}`;
-		return value;
-	}
-	const entries = Object.entries(value);
-	const important = entries.filter(([key]) => /error|warn|status|code|message|path|file|line|summary/i.test(key));
-	const selected = entries.length <= 18 ? entries : [
-		...entries.slice(0, 10),
-		...important.filter((entry) => !entries.slice(0, 10).includes(entry)).slice(0, 6),
-		...entries.slice(-2)
-	];
-	const result = {};
-	for (const [key, entry] of selected) result[key] = shrinkJson(entry, depth + 1);
-	if (selected.length < entries.length) result.$dsh_omitted_keys = entries.length - selected.length;
-	return result;
-}
-function reduceSearch(input) {
-	const lines = splitLines(input.text);
-	const groups = /* @__PURE__ */ new Map();
-	const ungrouped = [];
-	for (const line of lines) {
-		const match = PATH_LINE_PATTERN.exec(line);
-		const row = {
-			line,
-			important: IMPORTANT_PATTERN.test(line)
-		};
-		if (match === null) {
-			ungrouped.push(row);
-			continue;
-		}
-		const path = match[1] ?? "<unknown>";
-		const bucket = groups.get(path) ?? [];
-		bucket.push(row);
-		groups.set(path, bucket);
-	}
-	if (groups.size === 0) return reduceSalient(input, "search-salience");
-	const selected = [];
-	let omitted = 0;
-	for (const [path, rows] of groups) {
-		const keep = /* @__PURE__ */ new Set([0, rows.length - 1]);
-		rows.forEach((row, index) => {
-			if (row.important) keep.add(index);
-		});
-		for (let index = 0; index < rows.length && keep.size < 5; index++) keep.add(index);
-		const indexes = [...keep].filter((index) => index >= 0).sort((a, b) => a - b);
-		selected.push(`## ${path} (${String(rows.length)} matches)`);
-		for (const index of indexes) {
-			const row = rows[index];
-			if (row !== void 0) selected.push(row.line);
-		}
-		omitted += rows.length - indexes.length;
-	}
-	for (const row of ungrouped.filter((row) => row.important).slice(0, 12)) selected.push(row.line);
-	const text = fitLines([`[search results compressed; ${String(omitted)} matches omitted; source: ${input.sourceRef}]`, ...selected], input.budgetChars, input.sourceRef);
-	return text === null ? null : {
-		text,
-		reducer: "search-by-file",
-		lossy: true
-	};
-}
-function reduceGit(input, command) {
-	const lines = splitLines(input.text);
-	const lower = command.toLowerCase();
-	let keep;
-	let reducer;
-	if (/\bgit\s+(?:diff|show)\b/.test(lower)) {
-		reducer = "hypa-git-diff";
-		keep = lines.filter((line) => /^(?:diff --git|index |--- |\+\+\+ |@@ |[+-](?![+-]))/.test(line) || IMPORTANT_PATTERN.test(line));
-	} else if (/\bgit\s+(?:status|switch|checkout|merge|rebase|cherry-pick)\b/.test(lower)) {
-		reducer = "hypa-git-status";
-		keep = lines.filter((line) => GIT_STATUS_PATTERN.test(line) || IMPORTANT_PATTERN.test(line));
-	} else {
-		reducer = "hypa-git-log";
-		keep = lines.filter((line) => /^(?:commit\s+[0-9a-f]+|Author:|Date:|[0-9a-f]{7,}\s)/i.test(line) || IMPORTANT_PATTERN.test(line));
-	}
-	if (keep.length === 0) return reduceSalient(input, reducer);
-	const text = fitLines([
-		`[git output compressed; source: ${input.sourceRef}]`,
-		...keep,
-		...lines.slice(-8)
-	], input.budgetChars, input.sourceRef);
-	return text === null ? null : {
-		text,
-		reducer,
-		lossy: true
-	};
-}
-function reducePatternLog(input, reducer, pattern) {
-	const lines = splitLines(input.text);
-	const important = lines.filter((line) => pattern.test(line) || IMPORTANT_PATTERN.test(line) || STATUS_PATTERN.test(line));
-	const text = fitLines([
-		`[command output compressed by ${reducer}; source: ${input.sourceRef}]`,
-		...important,
-		...lines.slice(-20)
-	], input.budgetChars, input.sourceRef);
-	return text === null ? null : {
-		text,
-		reducer,
-		lossy: true
-	};
-}
-function reduceShell(input) {
-	const lines = splitLines(input.text);
-	const important = lines.filter((line) => IMPORTANT_PATTERN.test(line));
-	if (important.length === 0) return reduceTail(input, "pi-tail");
-	const text = fitLines([
-		`[shell/log output compressed; source: ${input.sourceRef}]`,
-		...important,
-		"--- final output ---",
-		...lines.slice(-40)
-	], input.budgetChars, input.sourceRef);
-	return text === null ? null : {
-		text,
-		reducer: "shell-salience-tail",
-		lossy: true
-	};
-}
-function reduceSalient(input, reducer) {
-	const lines = splitLines(input.text);
-	if (lines.length < 3) return reduceHead(input, reducer);
-	const marker = omissionMarker(input, reducer);
-	const headBudget = Math.max(1, Math.floor((input.budgetChars - codePointLength(marker)) * .34));
-	const tailBudget = headBudget;
-	const head = takeWholeLinesFromHead(input.text, headBudget);
-	const tail = takeWholeLinesFromTail(input.text, tailBudget);
-	const text = fitLines([
-		head,
-		...lines.filter((line) => IMPORTANT_PATTERN.test(line) || STATUS_PATTERN.test(line)).slice(0, 24),
-		marker,
-		tail
-	], input.budgetChars, input.sourceRef);
-	return text === null ? null : {
-		text,
-		reducer,
-		lossy: true
-	};
-}
-/**
-* Keep a source-file skeleton: imports, decorators, declaration signatures,
-* comments at brace depth zero, and every error-signalling line, eliding the
-* remaining bodies with counted markers. Covers brace languages (TS/JS, Rust,
-* Go, Java, C family) and indent blocks (Python); unknown syntax fails open to
-* the next candidate. Output is compressed evidence, not required to parse.
-* @param input - original result text, recovery source, and output budget.
-* @returns a verified candidate, or `null` when the text is not code-like.
-*/
-function reduceCodeSkeleton(input) {
-	const lines = splitLines(input.text);
-	const kept = [];
-	let elided = 0;
-	const flushElided = () => {
-		if (elided > 0) kept.push(`[... ${String(elided)} lines elided ...]`);
-		elided = 0;
-	};
-	let depth = 0;
-	let index = 0;
-	const elideBraceBody = () => {
-		const startDepth = depth;
-		index += 1;
-		while (index < lines.length && depth > startDepth) {
-			const body = lines[index];
-			if (body === void 0) break;
-			if (IMPORTANT_PATTERN.test(body)) {
-				flushElided();
-				kept.push(body);
-			} else elided += 1;
-			depth += braceDelta(body);
-			index += 1;
-		}
-		flushElided();
-	};
-	const keepPythonSignature = (signatureLine) => {
-		index += 1;
-		if (/:\s*$/.test(signatureLine)) {
-			elideIndentedBody(leadingIndent(signatureLine));
-			return;
-		}
-		for (let guard = 0; guard < 6 && index < lines.length; guard += 1) {
-			const next = lines[index];
-			if (next === void 0) break;
-			if (next.trim() !== "" && leadingIndent(next) <= leadingIndent(signatureLine)) break;
-			flushElided();
-			kept.push(next);
-			index += 1;
-			if (/:\s*$/.test(next)) {
-				elideIndentedBody(leadingIndent(next));
-				return;
-			}
-			if (next.trim() !== "" && !/[:,(]\s*$/.test(next)) break;
-		}
-	};
-	const elideIndentedBody = (indent) => {
-		while (index < lines.length) {
-			const body = lines[index];
-			if (body === void 0) break;
-			if (body.trim() !== "" && leadingIndent(body) <= indent) break;
-			if (IMPORTANT_PATTERN.test(body)) {
-				flushElided();
-				kept.push(body);
-				index += 1;
-				continue;
-			}
-			if (isCodeStructureLine(body) || CODE_DECORATOR_PATTERN.test(body)) {
-				flushElided();
-				kept.push(body);
-				keepPythonSignature(body);
-				continue;
-			}
-			elided += 1;
-			index += 1;
-		}
-		flushElided();
-	};
-	while (index < lines.length) {
-		const line = lines[index];
-		if (line === void 0) break;
-		const delta = braceDelta(line);
-		if (IMPORTANT_PATTERN.test(line)) {
-			flushElided();
-			kept.push(line);
-			depth += delta;
-			index += 1;
-			continue;
-		}
-		if (isCodeStructureLine(line) || CODE_IMPORT_PATTERN.test(line) || CODE_DECORATOR_PATTERN.test(line)) {
-			flushElided();
-			kept.push(line);
-			depth += delta;
-			if (delta > 0) {
-				elideBraceBody();
-				continue;
-			}
-			if (PYTHON_STRUCTURE_PATTERN.test(line)) {
-				keepPythonSignature(line);
-				continue;
-			}
-			let opened = false;
-			for (let guard = 0; guard < 6 && index + 1 < lines.length; guard += 1) {
-				const next = lines[index + 1];
-				if (next === void 0) break;
-				const nextDelta = braceDelta(next);
-				if (nextDelta === 0 && next.trim() !== "" && !/[:,(]\s*$/.test(next)) break;
-				flushElided();
-				kept.push(next);
-				depth += nextDelta;
-				index += 1;
-				if (nextDelta > 0) {
-					opened = true;
-					break;
-				}
-			}
-			if (opened) elideBraceBody();
-			else index += 1;
-			continue;
-		}
-		if (depth === 0 && CODE_COMMENT_PATTERN.test(line)) {
-			flushElided();
-			kept.push(line);
-		} else elided += 1;
-		depth += delta;
-		index += 1;
-	}
-	flushElided();
-	return finishSkeleton(kept, lines, input);
-}
-function finishSkeleton(kept, lines, input) {
-	const text = fitLines([
-		`[code output compressed by hypa-code-skeleton; source: ${input.sourceRef}]`,
-		...kept,
-		...lines.slice(-4)
-	], input.budgetChars, input.sourceRef);
-	return text === null ? null : {
-		text,
-		reducer: "hypa-code-skeleton",
-		lossy: true
-	};
-}
-/** Net brace delta of one line, ignoring braces inside string literals. */
-function braceDelta(line) {
-	let delta = 0;
-	let quote = null;
-	for (let position = 0; position < line.length; position += 1) {
-		const char = line[position];
-		if (quote !== null) {
-			if (char === "\\") position += 1;
-			else if (char === quote) quote = null;
-			continue;
-		}
-		if (char === "\"" || char === "'" || char === "`") {
-			quote = char;
-			continue;
-		}
-		if (char === "{") delta += 1;
-		else if (char === "}") delta -= 1;
-	}
-	return delta;
-}
-function leadingIndent(line) {
-	return codePointLength(line) - codePointLength(line.trimStart());
-}
-function isCodeStructureLine(line) {
-	return CODE_STRUCTURE_PATTERN.test(line) || PYTHON_STRUCTURE_PATTERN.test(line);
-}
-/**
-* Require content evidence of source code: enough declaration, import, or
-* decorator lines among a bounded prefix. Failing this keeps prose, logs, and
-* data on their existing reducers.
-* @param text - normalized result text.
-* @returns whether the text qualifies as source code.
-*/
-function looksLikeSourceCode(text) {
-	const lines = splitLines(text);
-	if (lines.length < 12) return false;
-	let evidence = 0;
-	for (const line of lines.slice(0, 400)) if (isCodeStructureLine(line) || CODE_IMPORT_PATTERN.test(line) || CODE_DECORATOR_PATTERN.test(line)) {
-		evidence += 1;
-		if (evidence >= 3) return true;
-	}
-	return false;
-}
-function omissionMarker(input, reducer) {
-	return `[... ${reducer} omitted content; original_chars=${String(codePointLength(input.text))}; source=${input.sourceRef}; retrieve with context_compression_retrieve ...]`;
-}
-function importantAnchor(text, maxChars) {
-	const lines = splitLines(normalizeTerminalText(text));
-	const chosen = lines.find((line) => IMPORTANT_PATTERN.test(line)) ?? lines.at(-1) ?? "";
-	return Array.from(chosen.trim()).slice(0, maxChars).join("");
-}
-function fitLines(lines, budgetChars, requiredRef) {
-	const unique = [];
-	const seen = /* @__PURE__ */ new Set();
-	for (const line of lines) {
-		if (line === "" || seen.has(line)) continue;
-		seen.add(line);
-		unique.push(line);
-	}
-	const output = [];
-	let used = 0;
-	for (const line of unique) {
-		const cost = codePointLength(line) + (output.length === 0 ? 0 : 1);
-		if (used + cost > budgetChars) continue;
-		output.push(line);
-		used += cost;
-	}
-	const text = output.join("\n");
-	return text.includes(requiredRef) ? text : null;
-}
-function takeWholeLinesFromHead(text, budgetChars) {
-	const output = [];
-	let used = 0;
-	for (const line of splitLines(text)) {
-		const cost = codePointLength(line) + (output.length === 0 ? 0 : 1);
-		if (used + cost > budgetChars) break;
-		output.push(line);
-		used += cost;
-	}
-	if (output.length === 0) return Array.from(text).slice(0, budgetChars).join("");
-	return output.join("\n");
-}
-function takeWholeLinesFromTail(text, budgetChars) {
-	const lines = splitLines(text);
-	const output = [];
-	let used = 0;
-	for (let index = lines.length - 1; index >= 0; index--) {
-		const line = lines[index];
-		if (line === void 0) continue;
-		const cost = codePointLength(line) + (output.length === 0 ? 0 : 1);
-		if (used + cost > budgetChars) break;
-		output.unshift(line);
-		used += cost;
-	}
-	if (output.length === 0) return Array.from(text).slice(-budgetChars).join("");
-	return output.join("\n");
-}
-function splitLines(text) {
-	const lines = text.split("\n");
-	if (text.endsWith("\n")) lines.pop();
-	return lines;
-}
-function extractCommand(argumentsText) {
-	try {
-		const parsed = JSON.parse(argumentsText);
-		if (typeof parsed !== "object" || parsed === null) return "";
-		const record = parsed;
-		for (const key of [
-			"command",
-			"cmd",
-			"script",
-			"input"
-		]) {
-			const value = record[key];
-			if (typeof value === "string") return value;
-		}
-	} catch {
-		return "";
-	}
-	return "";
-}
-function looksLikeJson(text) {
-	const trimmed = text.trim();
-	return trimmed.startsWith("{") && trimmed.endsWith("}") || trimmed.startsWith("[") && trimmed.endsWith("]");
-}
-function isReadTool(name) {
-	return /(?:^|[-_/])(?:read|cat|view|open_file)(?:$|[-_/])/.test(name);
-}
-function isSearchTool(name, command) {
-	return /(?:grep|search|glob|find|ripgrep|rg)/.test(name) || /(?:^|\s)(?:rg|grep|find|fd)\s/.test(command);
-}
-function isShellTool(name) {
-	return /(?:bash|shell|terminal|powershell|pwsh|exec|command)/.test(name);
-}
-function isGitCommand(name, command) {
-	return name.includes("git") || /(?:^|\s)git\s/.test(command);
-}
-function isPackageCommand(command) {
-	return /(?:^|\s)(?:npm|pnpm|yarn|bun|pip|pip3|uv|poetry)\s/.test(command);
-}
-function isBuildOrTestCommand(command) {
-	return new RegExp([String.raw`(?:^|\s)(?:tsc|dotnet\s+(?:build|test)|pytest|cargo\s+(?:build|test|check)|go\s+test|mvn\s+test|`, String.raw`gradle|npm\s+(?:test|run\s+build)|pnpm\s+(?:test|build|lint)|yarn\s+(?:test|build|lint))\b`].join("")).test(command);
-}
-function packagePattern() {
-	return new RegExp([String.raw`(?:ERR!|WARN|warning|error|failed|conflict|peer dep|added\s+\d+|removed\s+\d+|installed|success|`, String.raw`up to date|packages?\s+(?:added|removed|changed)|resolution|No matching distribution|Could not find a version)`].join(""), "i");
-}
-function buildPattern() {
-	return new RegExp([
-		String.raw`(?:error\s+TS\d+|warning\s+TS\d+|FAILED|FAIL\b|AssertionError|expected|actual|`,
-		String.raw`tests?\s+(?:run|passed|failed|skipped)|Build\s+(?:succeeded|FAILED)|\d+\s+Error\(s\)|`,
-		String.raw`\d+\s+Warning\(s\)|Finished\s+test|compilation failed)`
-	].join(""), "i");
 }
 //#endregion
 //#region src/runtime/deepseek-official-pricing.ts
@@ -3142,11 +3745,11 @@ var ToolResultPruner = class extends Service {
 		const result = candidate.event.data.message.content[0];
 		if (onlyTextBlocks(result.content) === null) return null;
 		const sourceSeq = rootToolResultSeq(session, candidate.seq);
-		const marker = recoveryMarker(sourceRef(session, sourceSeq), "tool result middle pruned");
+		const marker = (startLine) => recoveryMarker(sourceRef(session, sourceSeq), "tool result middle pruned", startLine);
 		let head = this.state.config.headChars;
 		let tail = this.state.config.tailChars;
 		for (let attempt = 0; attempt < 10; attempt += 1) {
-			const threshold = head + codePointLength(marker) + tail;
+			const threshold = head + codePointLength(marker(1)) + tail;
 			const content = nativePruneContent(result.content, threshold, head, tail, marker);
 			if (content !== null) {
 				const plan = this.plan(candidate, content, sourceSeq, "native-head-tail", stage, "native-tool-result", void 0, view);
