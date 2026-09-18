@@ -78,7 +78,6 @@ import {
 import {
   ReviewQueue,
   type ReviewProposalRecord,
-  type ReviewQueueStore,
   type ReviewReceipt,
 } from './runtime/tokenpilot/review-queue.ts'
 import { registerReviewPruner, sharedReviewStore } from './runtime/tokenpilot/review-registry.ts'
@@ -782,7 +781,7 @@ export class ToolResultPruner extends Service {
     try {
       const view = measureForCompaction(this.ctx, session)
       const candidatesBySeq = new Map(this.snapshot(session, view).map(candidate => [candidate.seq, candidate]))
-      const plans: PlannedReplacement[] = []
+      const _plans: PlannedReplacement[] = []
       const settled: {
         proposal: ReviewProposalRecord
         auditItems?: ReviewProposalRecord['items']

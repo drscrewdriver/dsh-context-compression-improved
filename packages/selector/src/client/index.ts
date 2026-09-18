@@ -12,7 +12,7 @@ import { DEFAULT_CUSTOM_COMPRESSION_POLICY } from '../profiles.ts'
 import { decodeSettings } from './decode.ts'
 import { en, zh } from './locales.ts'
 import { planPresetOptionsOps, presetOptionsOpsAccepted } from './preset-options.ts'
-import { ReviewOverlay, renderReviewOverlay } from './ReviewOverlay.tsx'
+import { renderReviewOverlay } from './ReviewOverlay.tsx'
 
 /**
  * Harness 0.1.5 mounts the web core's `slots` service on the client context
@@ -73,90 +73,43 @@ export function apply(ctx: ClientContext): void {
     // never block on the settings transport; the scope disposer belongs to
     // the calling registration's lifecycle).
     const scope = ctx.settingsScope.bind<ContextCompressionSettings>({ namespace: NS, decode: decodeSettings })
-    // [cc-probe] Temporary instrumentation for 0.4.0-beta.2-probe.1: reports
-    // WHICH of the four confirmation conditions failed, both to the browser
-    // console and inside the message the settings panel renders, so ONE user
-    // reproduction identifies the cause without DevTools.
-    // REMOVE BEFORE THE FINAL 0.4.0-beta.2 RELEASE.
     const writeAndConfirm = async (
-      label: string,
       write: () => Promise<void>,
       accepts: (settings: ContextCompressionSettings) => boolean,
     ): Promise<void> => {
-      const before = scope.getSnapshot()
-      try {
-        await write()
-      } catch (error) {
-        console.error('[cc-probe] write-rejected', {
-          label,
-          error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
-        })
-        throw error
-      }
+      const beforeRevision = scope.getSnapshot().revision
+      await write()
       const after = scope.getSnapshot()
-      const statusNotReady = after.status !== 'ready'
-      const valueMissing = after.value === undefined
-      const revisionUnchanged = after.revision === before.revision
-      const notAccepted = after.value === undefined ? undefined : !accepts(after.value)
-      if (statusNotReady || valueMissing || revisionUnchanged || notAccepted === true) {
-        // One late re-read distinguishes "the shared describe mirror had not
-        // folded this write in yet" from "the write never ran at all" (the
-        // scope's `mode === 'memory'` short-circuits `enqueue` to a resolved
-        // promise, so nothing ever crosses the wire).
-        let late: string
-        try {
-          await new Promise(resolve => { setTimeout(resolve, 300) })
-          const settled = scope.getSnapshot()
-          late = ` late={status=${settled.status}`
-            + ` value=${settled.value === undefined ? 'undefined' : 'kept'}`
-            + ` revision=${String(settled.revision)}`
-            + ` accepts=${settled.value === undefined ? 'n/a' : String(!accepts(settled.value))}}`
-        } catch {
-          late = ' late=unreadable'
-        }
-        const probe = `[probe label=${label} mode=${before.mode} writable=${String(before.writable)}`
-          + ` status=${after.status} value=${valueMissing ? 'undefined' : 'kept'}`
-          + ` revision=${String(before.revision)}->${String(after.revision)}`
-          + ` accepts=${notAccepted === undefined ? 'n/a' : String(notAccepted)}`
-          + ` beforeStatus=${before.status}`
-          + ` beforeValue=${before.value === undefined ? 'undefined' : 'kept'}]${late}`
-        console.error('[cc-probe] save-failed', {
-          label,
-          persistenceMode: before.mode,
-          writable: before.writable,
-          before: { status: before.status, hasValue: before.value !== undefined, revision: before.revision },
-          after: { status: after.status, hasValue: !valueMissing, revision: after.revision, accepts: notAccepted },
-          flags: { statusNotReady, valueMissing, revisionUnchanged, notAccepted },
-        })
-        throw new Error(`Context compression settings were not saved. ${probe}`)
+      if (
+        after.status !== 'ready'
+        || after.value === undefined
+        || after.revision === beforeRevision
+        || !accepts(after.value)
+      ) {
+        throw new Error('Context compression settings were not saved.')
       }
     }
     return {
       hooks: { compression: scope },
       select: profile => writeAndConfirm(
-        'select',
         () => scope.set('profile', profile),
         settings => settings.profile === profile,
       ),
       saveCustom: custom => writeAndConfirm(
-        'saveCustom',
         () => scope.set('custom', custom),
         settings => isCustomCompressionPolicy(settings.custom)
           && sameCustomPolicy(settings.custom, custom),
       ),
       resetCustom: () => writeAndConfirm(
-        'resetCustom',
         () => scope.set('custom', structuredClone(DEFAULT_CUSTOM_COMPRESSION_POLICY)),
         settings => isCustomCompressionPolicy(settings.custom)
           && sameCustomPolicy(settings.custom, DEFAULT_CUSTOM_COMPRESSION_POLICY),
       ),
       saveAutoCompact: thresholdPercent => writeAndConfirm(
-        'saveAutoCompact',
         () => scope.set('autoCompact', { thresholdPercent }),
         settings => settings.autoCompact.thresholdPercent === thresholdPercent,
       ),
       saveCodeSkeleton: enabled => writeAndConfirm(
-        'saveCodeSkeleton',
         () => scope.set('codeSkeleton', { enabled }),
         settings => settings.codeSkeleton.enabled === enabled,
       ),
@@ -167,7 +120,6 @@ export function apply(ctx: ClientContext): void {
         const ops = planPresetOptionsOps(scope.getSnapshot().value?.presetOptions, options)
         if (ops.length === 0) return Promise.resolve()
         return writeAndConfirm(
-          `savePresetOptions[${ops.map(op => `${op.op} ${op.path.join('.')}`).join('; ')}]`,
           () => scope.mutate(ops),
           settings => presetOptionsOpsAccepted(settings.presetOptions, ops),
         )

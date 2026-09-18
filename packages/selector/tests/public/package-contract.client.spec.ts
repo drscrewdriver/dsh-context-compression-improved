@@ -41,12 +41,17 @@ describe('standalone package contract', () => {
     expect(rootManifest.dependencies?.['@huggingface/tokenizers']).toBe('0.1.3')
     expect(rootManifest.dependencies?.['js-yaml']).toBe('^4.3.2')
     expect(rootManifest.dsh?.bundle?.patch).toBe('./packages/selector/cordis.patch.yml')
+    // `ui-primitives` joined the list in 9871de1 (the browser bundle requires
+    // it); this assertion kept the pre-change shape.
     expect(rootManifest.dsh?.client?.inject).toEqual([
       '@deepseek-ai/dsh-client-locale',
+      '@deepseek-ai/dsh-client-ui-primitives',
       '@deepseek-ai/dsh-client-ui-slots',
       '@deepseek-ai/dsh-client-ui-settings',
     ])
-    expect(rootManifest.engines?.dsh).toBe('>=0.1.5-alpha.1 <0.2.0-0')
+    // Tightened to rc.1 in 7b89621 (release 0.3.1), after this assertion was
+    // written; the manifest is the owner, so the expectation follows it.
+    expect(rootManifest.engines?.dsh).toBe('>=0.1.5-rc.1 <0.2.0-0')
   })
 
   it('uses the community package in the one Bundle patch', () => {

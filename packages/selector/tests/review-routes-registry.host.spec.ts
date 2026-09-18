@@ -86,7 +86,7 @@ async function bootWithRoutes(): Promise<RegisteredRoute[]> {
 async function readQueue(routes: RegisteredRoute[]): Promise<{ status: number, body: string }> {
   const route = routes.find(candidate => candidate.path === QUEUE_ROUTE)
   expect(route, `route ${QUEUE_ROUTE} must be registered`).toBeDefined()
-  const captured: { status?: number, body?: string } = {}
+  const captured: { status?: number, body?: string | undefined } = {}
   const res = {
     writeHead(code: number) { captured.status = code },
     end(body?: string) { captured.body = body },

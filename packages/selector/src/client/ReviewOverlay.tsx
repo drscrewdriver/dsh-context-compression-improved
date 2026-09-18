@@ -210,7 +210,8 @@ export function ReviewOverlay({ scope, t }: ReviewOverlayProps) {
       }
     }
     pull()
-    let unsubscribe = (): void => {}
+    // Both branches below assign, so the initializer would be dead.
+    let unsubscribe: () => void
     try {
       unsubscribe = scope.subscribe(pull)
     } catch {
