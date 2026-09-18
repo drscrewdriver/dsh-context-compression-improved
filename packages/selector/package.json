@@ -2,6 +2,7 @@
   "name": "dsh-context-compression-improved",
   "version": "0.1.0",
   "description": "One-install context-compression selector bundle for DeepSeek Harness",
+  "private": true,
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -40,6 +41,7 @@
     "client": {
       "inject": [
         "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-primitives",
         "@deepseek-ai/dsh-client-ui-slots",
         "@deepseek-ai/dsh-client-ui-settings"
       ],
