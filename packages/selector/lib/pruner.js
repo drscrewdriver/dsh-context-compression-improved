@@ -1558,38 +1558,61 @@ function proposalKindFor(candidate, estimatorSeqs) {
 	return "read-state";
 }
 /**
-* Triage planned replacements into the three review-mode buckets.
+* Triage planned replacements into the three review-mode buckets, pricing the
+* pass as ONE merged mutation (R1): the tail KV-cache refill penalty is a
+* property of the landing event, not of any single candidate, so it must be
+* paid exactly once per batch. Pricing per candidate overstates the payback
+* N-fold and starves every real batch out of the auto path.
 *
-* Per candidate (R is per candidate, never cross-credited):
-* - `tokensAfter ≥ tokensBefore` → drop (nothing to recover);
-* - `tokensBefore ≥ reviewHighImpactTokens` → review ("直接送审": high impact
-*   always waits for a human, even when the payback band would pass it);
+* Pipeline: zero/negative-recovery candidates are priced out first (they never
+* make a batch look better), the surviving batch is priced once through
+* `computeBenefit`, the verdict is a batch decision, and any high-impact
+* candidate (`tokensBefore ≥ reviewHighImpactTokens`) covers the whole batch
+* into review — splitting the batch would pay a second cache break that the
+* accounting does not model. Review skeletons are grouped one proposal per
+* kind; a proposal id covers every item digest.
+*
+* Batch verdict bands (identical thresholds to the per-candidate model):
+* - any high-impact candidate, or α too small to price a payback → review;
 * - `paybackTurns ≤ 1`, or Ŝ known and `paybackTurns ≤ 0.25·Ŝ` → auto;
 * - Ŝ known and `paybackTurns ∈ (1, 3]` → review;
 * - everything else (Ŝ unknown with a slow payback) → drop.
 */
 function classifyCandidates(candidates, input) {
-	const auto = [];
-	const review = [];
 	const drop = [];
+	const usable = [];
 	for (const candidate of candidates) {
-		const benefit = computeBenefit([candidate], input);
-		if (benefit.recoveredTokens <= 0) {
+		if (Math.max(0, candidate.tokensBefore - candidate.tokensAfter) <= 0) {
 			drop.push(candidate);
 			continue;
 		}
-		const highImpact = candidate.tokensBefore >= input.reviewHighImpactTokens;
-		const payback = benefit.paybackTurns;
-		if (!highImpact && payback !== void 0) {
-			if (payback <= 1 || input.remainingTurns !== void 0 && payback <= .25 * input.remainingTurns) {
-				auto.push(candidate);
-				continue;
-			}
-			if (!(input.remainingTurns !== void 0 && payback <= 3)) {
-				drop.push(candidate);
-				continue;
-			}
-		}
+		usable.push(candidate);
+	}
+	if (usable.length === 0) return {
+		auto: [],
+		review: [],
+		drop
+	};
+	const benefit = computeBenefit(usable, input);
+	const payback = benefit.paybackTurns;
+	const highImpact = usable.some((candidate) => candidate.tokensBefore >= input.reviewHighImpactTokens);
+	let verdict;
+	if (highImpact || payback === void 0) verdict = "review";
+	else if (payback <= 1 || input.remainingTurns !== void 0 && payback <= .25 * input.remainingTurns) verdict = "auto";
+	else if (input.remainingTurns !== void 0 && payback <= 3) verdict = "review";
+	else verdict = "drop";
+	if (verdict === "auto") return {
+		auto: usable,
+		review: [],
+		drop
+	};
+	if (verdict === "drop") return {
+		auto: [],
+		review: [],
+		drop: [...drop, ...usable]
+	};
+	const itemsByKind = /* @__PURE__ */ new Map();
+	for (const candidate of usable) {
 		const item = {
 			seq: candidate.sourceSeq,
 			component: candidate.component,
@@ -1598,15 +1621,19 @@ function classifyCandidates(candidates, input) {
 			tokensAfter: candidate.tokensAfter,
 			digest: contentDigest(candidate.content)
 		};
-		review.push({
-			id: proposalId([item.digest]),
-			kind: item.kind,
-			items: [item],
-			benefit
-		});
+		const bucket = itemsByKind.get(item.kind) ?? [];
+		bucket.push(item);
+		itemsByKind.set(item.kind, bucket);
 	}
+	const review = [];
+	for (const [kind, items] of itemsByKind) review.push({
+		id: proposalId(items.map((item) => item.digest)),
+		kind,
+		items,
+		benefit
+	});
 	return {
-		auto,
+		auto: [],
 		review,
 		drop
 	};
@@ -1861,20 +1888,21 @@ const CODE_COMMENT_PATTERN = /^\s*(?:\/\/|#|\/\*|\*)/;
 * @returns a verified candidate, or `null` when every reducer fails open.
 */
 function reduceFreshToolResult(input) {
-	const normalized = normalizeTerminalText(input.text);
+	const normalized = normalizeTerminalLines(input.text);
 	const prepared = {
 		...input,
-		text: normalized
+		text: normalized.text,
+		lines: normalized.folded
 	};
 	const command = extractCommand(input.argumentsText);
 	const name = input.toolName.toLowerCase();
 	const candidates = [];
-	if (looksLikeJson(normalized)) candidates.push(() => reduceJson(prepared));
+	if (looksLikeJson(normalized.text)) candidates.push(() => reduceJson(prepared));
 	if (isSearchTool(name, command)) candidates.push(() => reduceSearch(prepared));
 	if (isGitCommand(name, command)) candidates.push(() => reduceGit(prepared, command));
 	if (isPackageCommand(command)) candidates.push(() => reducePatternLog(prepared, "hypa-package", packagePattern()));
 	if (isBuildOrTestCommand(command)) candidates.push(() => reducePatternLog(prepared, "hypa-build-test", buildPattern()));
-	if (input.codeSkeleton === true && looksLikeSourceCode(normalized)) candidates.push(() => reduceCodeSkeleton(prepared));
+	if (input.codeSkeleton === true && looksLikeSourceCode(normalized.text)) candidates.push(() => reduceCodeSkeleton(prepared));
 	if (isReadTool(name)) candidates.push(() => reduceHead(prepared, "pi-head"));
 	if (isShellTool(name) || command !== "") candidates.push(() => reduceShell(prepared));
 	candidates.push(() => reduceSalient(prepared, "generic-salience"));
@@ -1926,28 +1954,52 @@ function verifyReduction(input, output) {
 * @returns normalized terminal text.
 */
 function normalizeTerminalText(text) {
+	return normalizeTerminalLines(text).text;
+}
+/**
+* Structured normalization (R9a): `retrieve` reads the original event, so any
+* line number a reducer prints must resolve against the ORIGINAL text, not the
+* normalized surface. ANSI stripping and `\r` redraw collapse never change the
+* line count (logical lines are 1:1 with original lines); only the adjacent
+* duplicate fold drops lines, so every folded entry carries the original line
+* (range) it was kept from.
+*/
+function normalizeTerminalLines(text) {
 	const logical = text.replace(ANSI_PATTERN, "").split("\n").map((line) => {
 		return line.split("\r").filter((part) => part !== "").at(-1) ?? "";
 	});
 	const folded = [];
 	let previous;
 	let count = 0;
-	const flush = () => {
+	let firstOriginal = 0;
+	const flush = (nextOriginal) => {
 		if (previous === void 0) return;
-		folded.push(previous);
-		if (count > 1) folded.push(`[previous line repeated ${String(count - 1)} more times]`);
+		folded.push({
+			text: previous,
+			originalLine: firstOriginal
+		});
+		if (count > 1) folded.push({
+			text: `[previous line repeated ${String(count - 1)} more times]`,
+			originalLine: firstOriginal + 1,
+			originalLineEnd: nextOriginal - 1
+		});
 	};
-	for (const line of logical) {
+	logical.forEach((line, index) => {
+		const originalLine = index + 1;
 		if (line === previous) {
 			count++;
-			continue;
+			return;
 		}
-		flush();
+		flush(originalLine);
 		previous = line;
 		count = 1;
-	}
-	flush();
-	return folded.join("\n");
+		firstOriginal = originalLine;
+	});
+	flush(logical.length + 1);
+	return {
+		folded,
+		text: folded.map((line) => line.text).join("\n")
+	};
 }
 function reduceHead(input, reducer) {
 	const marker = omissionMarker(input, reducer);
