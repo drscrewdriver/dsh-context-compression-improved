@@ -843,6 +843,25 @@ function reduceDocSkeleton(input: PreparedInput, sectionRanking?: readonly strin
     if (IMPORTANT_PATTERN.test(line)) keep[index] = true
     else if (!inFence && LIST_ITEM_PATTERN.test(line)) keep[index] = true
   }
+  // Table blocks keep their first two rows (header + separator) in every
+  // variant — table structure is part of the skeleton, not section content.
+  let tableRows = 0
+  let fenceOpen = false
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index]!.text
+    if (FENCE_PATTERN.test(line)) {
+      fenceOpen = !fenceOpen
+      tableRows = 0
+      continue
+    }
+    if (fenceOpen || line.trim() === '') continue
+    if (TABLE_ROW_PATTERN.test(line)) {
+      if (tableRows < 2) keep[index] = true
+      tableRows += 1
+      continue
+    }
+    tableRows = 0
+  }
   const sectionStarts = [-1, ...headingIndex]
   const sectionEnds = [...headingIndex, lines.length]
   const sections = headingIndex.map((heading, position) => ({

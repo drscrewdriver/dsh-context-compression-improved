@@ -1222,6 +1222,7 @@ const CODE_DECORATOR_PATTERN = /^\s*@[\w.]+/;
 const CODE_COMMENT_PATTERN = /^\s*(?:\/\/|#|\/\*|\*)/;
 const MARKDOWN_HEADING_PATTERN = /^#{1,6}\s+\S/;
 const LIST_ITEM_PATTERN = /^\s*(?:[-*+]|\d+[.)])\s+\S/;
+const TABLE_ROW_PATTERN = /^\s*\|/;
 const FENCE_PATTERN = /^\s*(?:```|~~~)/;
 const UUID_PATTERN = /\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b/g;
 const LONG_HEX_PATTERN = /\b[0-9a-fA-F]{64,}\b/g;
@@ -1897,6 +1898,23 @@ function reduceDocSkeleton(input, sectionRanking) {
 		}
 		if (IMPORTANT_PATTERN.test(line)) keep[index] = true;
 		else if (!inFence && LIST_ITEM_PATTERN.test(line)) keep[index] = true;
+	}
+	let tableRows = 0;
+	let fenceOpen = false;
+	for (let index = 0; index < lines.length; index++) {
+		const line = lines[index].text;
+		if (FENCE_PATTERN.test(line)) {
+			fenceOpen = !fenceOpen;
+			tableRows = 0;
+			continue;
+		}
+		if (fenceOpen || line.trim() === "") continue;
+		if (TABLE_ROW_PATTERN.test(line)) {
+			if (tableRows < 2) keep[index] = true;
+			tableRows += 1;
+			continue;
+		}
+		tableRows = 0;
 	}
 	const sectionStarts = [-1, ...headingIndex];
 	const sectionEnds = [...headingIndex, lines.length];
