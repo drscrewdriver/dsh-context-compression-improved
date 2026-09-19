@@ -213,4 +213,48 @@ describe('context-compression audit records', () => {
     ) as CompressionAuditRecord
     expect(parsed).toEqual(record)
   })
+
+  it('keeps advisor-outcome records free of prompts, keys, and content', () => {
+    const record: CompressionAuditRecord = {
+      schemaVersion: 1,
+      kind: 'advisor-outcome',
+      sessionId: 'advisor-session',
+      phase: 'decay',
+      ok: true,
+      sampledCount: 16,
+      decay: 0.42,
+      weightedChars: 57_688,
+      turnIndex: 12,
+      latencyMs: 0,
+    }
+
+    const line = formatCompressionAudit(record)
+    const parsed = JSON.parse(line.slice(COMPRESSION_AUDIT_PREFIX.length)) as CompressionAuditRecord
+    expect(parsed).toEqual(record)
+    // Only enums and numbers: never the todo snapshot, assistant text, prompts, or keys.
+    expect(line).not.toContain('prompt')
+    expect(line).not.toContain('"content"')
+    expect(line).not.toContain('"text"')
+    expect(line).not.toContain('apiKey')
+    expect(line).not.toContain('todo')
+  })
+
+  it('carries failure reason codes and the LLM channel on advisor-outcome records', () => {
+    const record: CompressionAuditRecord = {
+      schemaVersion: 1,
+      kind: 'advisor-outcome',
+      sessionId: 'advisor-session',
+      phase: 'scoring',
+      channel: 'direct',
+      ok: false,
+      sampledCount: 0,
+      turnIndex: 3,
+      reason: 'no-direct-endpoint',
+      latencyMs: 4,
+    }
+    const parsed = JSON.parse(
+      formatCompressionAudit(record).slice(COMPRESSION_AUDIT_PREFIX.length),
+    ) as CompressionAuditRecord
+    expect(parsed).toEqual(record)
+  })
 })

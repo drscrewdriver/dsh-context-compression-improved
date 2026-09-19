@@ -140,6 +140,13 @@ export interface PresetOptionsSettings {
   readonly reviewTimeoutTurns?: number
   readonly cacheHitDiscountAlpha?: number
   readonly reviewHighImpactTokens?: number
+  /** Advisory advisor channel; `''` (the default) keeps the advisor off. */
+  readonly advisorMode?: '' | 'host' | 'direct'
+  readonly advisorTimeoutMs?: number
+  readonly advisorRefreshTurns?: number
+  readonly advisorScoreThreshold?: number
+  readonly advisorSampleLimit?: number
+  readonly advisorMinTokens?: number
 }
 
 /**
@@ -154,6 +161,8 @@ export function decodePresetOptionsSettings(value: unknown): PresetOptionsSettin
     'dedupeToolResults', 'summaryLocator', 'prefixStabilizer', 'readState', 'estimatorMode',
     'estimatorProvider', 'estimatorModel', 'estimatorBaseUrl', 'estimatorApiKey', 'estimatorTimeoutMs',
     'reviewMode', 'reviewTimeoutTurns', 'cacheHitDiscountAlpha', 'reviewHighImpactTokens',
+    'advisorMode', 'advisorTimeoutMs', 'advisorRefreshTurns', 'advisorScoreThreshold', 'advisorSampleLimit',
+    'advisorMinTokens',
   ])
   if (Object.keys(value).some(key => !allowed.has(key))) return undefined
   for (const key of ['dedupeToolResults', 'summaryLocator', 'prefixStabilizer', 'readState', 'reviewMode'] as const) {
@@ -162,6 +171,10 @@ export function decodePresetOptionsSettings(value: unknown): PresetOptionsSettin
   }
   const estimatorMode = value.estimatorMode
   if (estimatorMode !== undefined && estimatorMode !== '' && estimatorMode !== 'host' && estimatorMode !== 'direct') {
+    return undefined
+  }
+  const advisorMode = value.advisorMode
+  if (advisorMode !== undefined && advisorMode !== '' && advisorMode !== 'host' && advisorMode !== 'direct') {
     return undefined
   }
   for (const key of ['estimatorProvider', 'estimatorModel', 'estimatorBaseUrl', 'estimatorApiKey'] as const) {
@@ -191,6 +204,35 @@ export function decodePresetOptionsSettings(value: unknown): PresetOptionsSettin
       || reviewHighImpactTokens < 0)) {
     return undefined
   }
+  const advisorTimeoutMs = value.advisorTimeoutMs
+  if (advisorTimeoutMs !== undefined
+    && (typeof advisorTimeoutMs !== 'number' || !Number.isSafeInteger(advisorTimeoutMs)
+      || advisorTimeoutMs < 100 || advisorTimeoutMs > 60_000)) {
+    return undefined
+  }
+  const advisorRefreshTurns = value.advisorRefreshTurns
+  if (advisorRefreshTurns !== undefined
+    && (typeof advisorRefreshTurns !== 'number' || !Number.isSafeInteger(advisorRefreshTurns)
+      || advisorRefreshTurns < 1)) {
+    return undefined
+  }
+  const advisorScoreThreshold = value.advisorScoreThreshold
+  if (advisorScoreThreshold !== undefined
+    && (typeof advisorScoreThreshold !== 'number' || !Number.isFinite(advisorScoreThreshold)
+      || advisorScoreThreshold <= 0 || advisorScoreThreshold >= 1)) {
+    return undefined
+  }
+  const advisorSampleLimit = value.advisorSampleLimit
+  if (advisorSampleLimit !== undefined
+    && (typeof advisorSampleLimit !== 'number' || !Number.isSafeInteger(advisorSampleLimit)
+      || advisorSampleLimit < 1 || advisorSampleLimit > 64)) {
+    return undefined
+  }
+  const advisorMinTokens = value.advisorMinTokens
+  if (advisorMinTokens !== undefined
+    && (typeof advisorMinTokens !== 'number' || !Number.isSafeInteger(advisorMinTokens) || advisorMinTokens < 1)) {
+    return undefined
+  }
   const decoded: {
     -readonly [K in keyof PresetOptionsSettings]: PresetOptionsSettings[K]
   } = {}
@@ -208,6 +250,12 @@ export function decodePresetOptionsSettings(value: unknown): PresetOptionsSettin
   if (reviewTimeoutTurns !== undefined) decoded.reviewTimeoutTurns = reviewTimeoutTurns as number
   if (cacheHitDiscountAlpha !== undefined) decoded.cacheHitDiscountAlpha = cacheHitDiscountAlpha as number
   if (reviewHighImpactTokens !== undefined) decoded.reviewHighImpactTokens = reviewHighImpactTokens as number
+  if (advisorMode !== undefined) decoded.advisorMode = advisorMode as '' | 'host' | 'direct'
+  if (advisorTimeoutMs !== undefined) decoded.advisorTimeoutMs = advisorTimeoutMs as number
+  if (advisorRefreshTurns !== undefined) decoded.advisorRefreshTurns = advisorRefreshTurns as number
+  if (advisorScoreThreshold !== undefined) decoded.advisorScoreThreshold = advisorScoreThreshold as number
+  if (advisorSampleLimit !== undefined) decoded.advisorSampleLimit = advisorSampleLimit as number
+  if (advisorMinTokens !== undefined) decoded.advisorMinTokens = advisorMinTokens as number
   return decoded
 }
 

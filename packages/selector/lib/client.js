@@ -82,7 +82,13 @@ window.__ModuleLoader__.load({
 				"reviewMode",
 				"reviewTimeoutTurns",
 				"cacheHitDiscountAlpha",
-				"reviewHighImpactTokens"
+				"reviewHighImpactTokens",
+				"advisorMode",
+				"advisorTimeoutMs",
+				"advisorRefreshTurns",
+				"advisorScoreThreshold",
+				"advisorSampleLimit",
+				"advisorMinTokens"
 			]);
 			if (Object.keys(value).some((key) => !allowed.has(key))) return void 0;
 			for (const key of [
@@ -97,6 +103,8 @@ window.__ModuleLoader__.load({
 			}
 			const estimatorMode = value.estimatorMode;
 			if (estimatorMode !== void 0 && estimatorMode !== "" && estimatorMode !== "host" && estimatorMode !== "direct") return;
+			const advisorMode = value.advisorMode;
+			if (advisorMode !== void 0 && advisorMode !== "" && advisorMode !== "host" && advisorMode !== "direct") return;
 			for (const key of [
 				"estimatorProvider",
 				"estimatorModel",
@@ -114,6 +122,16 @@ window.__ModuleLoader__.load({
 			if (cacheHitDiscountAlpha !== void 0 && (typeof cacheHitDiscountAlpha !== "number" || !Number.isFinite(cacheHitDiscountAlpha) || cacheHitDiscountAlpha <= 0 || cacheHitDiscountAlpha >= 1)) return;
 			const reviewHighImpactTokens = value.reviewHighImpactTokens;
 			if (reviewHighImpactTokens !== void 0 && (typeof reviewHighImpactTokens !== "number" || !Number.isSafeInteger(reviewHighImpactTokens) || reviewHighImpactTokens < 0)) return;
+			const advisorTimeoutMs = value.advisorTimeoutMs;
+			if (advisorTimeoutMs !== void 0 && (typeof advisorTimeoutMs !== "number" || !Number.isSafeInteger(advisorTimeoutMs) || advisorTimeoutMs < 100 || advisorTimeoutMs > 6e4)) return;
+			const advisorRefreshTurns = value.advisorRefreshTurns;
+			if (advisorRefreshTurns !== void 0 && (typeof advisorRefreshTurns !== "number" || !Number.isSafeInteger(advisorRefreshTurns) || advisorRefreshTurns < 1)) return;
+			const advisorScoreThreshold = value.advisorScoreThreshold;
+			if (advisorScoreThreshold !== void 0 && (typeof advisorScoreThreshold !== "number" || !Number.isFinite(advisorScoreThreshold) || advisorScoreThreshold <= 0 || advisorScoreThreshold >= 1)) return;
+			const advisorSampleLimit = value.advisorSampleLimit;
+			if (advisorSampleLimit !== void 0 && (typeof advisorSampleLimit !== "number" || !Number.isSafeInteger(advisorSampleLimit) || advisorSampleLimit < 1 || advisorSampleLimit > 64)) return;
+			const advisorMinTokens = value.advisorMinTokens;
+			if (advisorMinTokens !== void 0 && (typeof advisorMinTokens !== "number" || !Number.isSafeInteger(advisorMinTokens) || advisorMinTokens < 1)) return;
 			const decoded = {};
 			if (value.dedupeToolResults !== void 0) decoded.dedupeToolResults = value.dedupeToolResults;
 			if (value.summaryLocator !== void 0) decoded.summaryLocator = value.summaryLocator;
@@ -129,6 +147,12 @@ window.__ModuleLoader__.load({
 			if (reviewTimeoutTurns !== void 0) decoded.reviewTimeoutTurns = reviewTimeoutTurns;
 			if (cacheHitDiscountAlpha !== void 0) decoded.cacheHitDiscountAlpha = cacheHitDiscountAlpha;
 			if (reviewHighImpactTokens !== void 0) decoded.reviewHighImpactTokens = reviewHighImpactTokens;
+			if (advisorMode !== void 0) decoded.advisorMode = advisorMode;
+			if (advisorTimeoutMs !== void 0) decoded.advisorTimeoutMs = advisorTimeoutMs;
+			if (advisorRefreshTurns !== void 0) decoded.advisorRefreshTurns = advisorRefreshTurns;
+			if (advisorScoreThreshold !== void 0) decoded.advisorScoreThreshold = advisorScoreThreshold;
+			if (advisorSampleLimit !== void 0) decoded.advisorSampleLimit = advisorSampleLimit;
+			if (advisorMinTokens !== void 0) decoded.advisorMinTokens = advisorMinTokens;
 			return decoded;
 		}
 		/**
@@ -1544,7 +1568,13 @@ window.__ModuleLoader__.load({
 			"reviewMode",
 			"reviewTimeoutTurns",
 			"cacheHitDiscountAlpha",
-			"reviewHighImpactTokens"
+			"reviewHighImpactTokens",
+			"advisorMode",
+			"advisorTimeoutMs",
+			"advisorRefreshTurns",
+			"advisorScoreThreshold",
+			"advisorSampleLimit",
+			"advisorMinTokens"
 		];
 		/**
 		* Plan the path ops one patch needs against the section currently stored.

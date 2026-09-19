@@ -394,7 +394,13 @@ function parsePresetOptionsSettings(value) {
 		"reviewMode",
 		"reviewTimeoutTurns",
 		"cacheHitDiscountAlpha",
-		"reviewHighImpactTokens"
+		"reviewHighImpactTokens",
+		"advisorMode",
+		"advisorTimeoutMs",
+		"advisorRefreshTurns",
+		"advisorScoreThreshold",
+		"advisorSampleLimit",
+		"advisorMinTokens"
 	]);
 	const unknown = Object.keys(value).find((key) => !allowed.has(key));
 	if (unknown !== void 0) throw new TypeError(`Context-compression presetOptions: unknown key "${unknown}"`);
@@ -410,6 +416,18 @@ function parsePresetOptionsSettings(value) {
 	}
 	const estimatorMode = value.estimatorMode;
 	if (estimatorMode !== void 0 && estimatorMode !== "" && estimatorMode !== "host" && estimatorMode !== "direct") throw new TypeError("Context-compression presetOptions.estimatorMode must be \"\", \"host\", or \"direct\"");
+	const advisorMode = value.advisorMode;
+	if (advisorMode !== void 0 && advisorMode !== "" && advisorMode !== "host" && advisorMode !== "direct") throw new TypeError("Context-compression presetOptions.advisorMode must be \"\", \"host\", or \"direct\"");
+	const advisorTimeoutMs = value.advisorTimeoutMs;
+	if (advisorTimeoutMs !== void 0 && (typeof advisorTimeoutMs !== "number" || !Number.isSafeInteger(advisorTimeoutMs) || advisorTimeoutMs < 100 || advisorTimeoutMs > 6e4)) throw new TypeError("Context-compression presetOptions.advisorTimeoutMs must be an integer between 100 and 60000");
+	const advisorRefreshTurns = value.advisorRefreshTurns;
+	if (advisorRefreshTurns !== void 0 && (typeof advisorRefreshTurns !== "number" || !Number.isSafeInteger(advisorRefreshTurns) || advisorRefreshTurns < 1)) throw new TypeError("Context-compression presetOptions.advisorRefreshTurns must be an integer of at least 1");
+	const advisorScoreThreshold = value.advisorScoreThreshold;
+	if (advisorScoreThreshold !== void 0 && (typeof advisorScoreThreshold !== "number" || !Number.isFinite(advisorScoreThreshold) || advisorScoreThreshold <= 0 || advisorScoreThreshold >= 1)) throw new TypeError("Context-compression presetOptions.advisorScoreThreshold must be a number strictly between 0 and 1");
+	const advisorSampleLimit = value.advisorSampleLimit;
+	if (advisorSampleLimit !== void 0 && (typeof advisorSampleLimit !== "number" || !Number.isSafeInteger(advisorSampleLimit) || advisorSampleLimit < 1 || advisorSampleLimit > 64)) throw new TypeError("Context-compression presetOptions.advisorSampleLimit must be an integer between 1 and 64");
+	const advisorMinTokens = value.advisorMinTokens;
+	if (advisorMinTokens !== void 0 && (typeof advisorMinTokens !== "number" || !Number.isSafeInteger(advisorMinTokens) || advisorMinTokens < 1)) throw new TypeError("Context-compression presetOptions.advisorMinTokens must be a positive integer");
 	const estimatorTimeoutMs = value.estimatorTimeoutMs;
 	if (estimatorTimeoutMs !== void 0 && (typeof estimatorTimeoutMs !== "number" || !Number.isSafeInteger(estimatorTimeoutMs) || estimatorTimeoutMs < 100 || estimatorTimeoutMs > 6e4)) throw new TypeError("Context-compression presetOptions.estimatorTimeoutMs must be an integer between 100 and 60000");
 	const reviewTimeoutTurns = value.reviewTimeoutTurns;
@@ -442,6 +460,12 @@ function parsePresetOptionsSettings(value) {
 	if (reviewTimeoutTurns !== void 0) result.reviewTimeoutTurns = reviewTimeoutTurns;
 	if (cacheHitDiscountAlpha !== void 0) result.cacheHitDiscountAlpha = cacheHitDiscountAlpha;
 	if (reviewHighImpactTokens !== void 0) result.reviewHighImpactTokens = reviewHighImpactTokens;
+	if (advisorMode !== void 0) result.advisorMode = advisorMode;
+	if (advisorTimeoutMs !== void 0) result.advisorTimeoutMs = advisorTimeoutMs;
+	if (advisorRefreshTurns !== void 0) result.advisorRefreshTurns = advisorRefreshTurns;
+	if (advisorScoreThreshold !== void 0) result.advisorScoreThreshold = advisorScoreThreshold;
+	if (advisorSampleLimit !== void 0) result.advisorSampleLimit = advisorSampleLimit;
+	if (advisorMinTokens !== void 0) result.advisorMinTokens = advisorMinTokens;
 	return result;
 }
 /** Settings schema used by the user-facing profile selector. */
@@ -660,7 +684,15 @@ const PRESET_OPTION_DEFAULTS = deepFreeze({
 	reviewMode: false,
 	reviewTimeoutTurns: 6,
 	cacheHitDiscountAlpha: .1,
-	reviewHighImpactTokens: 4e3
+	reviewHighImpactTokens: 4e3,
+	advisor: {
+		mode: "",
+		timeoutMs: 8e3,
+		refreshTurns: 8,
+		scoreThreshold: .35,
+		sampleLimit: 16,
+		minTokens: 250
+	}
 });
 /**
 * Merge persisted presetOptions overrides over the tokenpilot-inspired
@@ -680,7 +712,15 @@ function mergePresetOptions(overrides) {
 		reviewMode: overrides.reviewMode ?? PRESET_OPTION_DEFAULTS.reviewMode,
 		reviewTimeoutTurns: overrides.reviewTimeoutTurns ?? PRESET_OPTION_DEFAULTS.reviewTimeoutTurns,
 		cacheHitDiscountAlpha: overrides.cacheHitDiscountAlpha ?? PRESET_OPTION_DEFAULTS.cacheHitDiscountAlpha,
-		reviewHighImpactTokens: overrides.reviewHighImpactTokens ?? PRESET_OPTION_DEFAULTS.reviewHighImpactTokens
+		reviewHighImpactTokens: overrides.reviewHighImpactTokens ?? PRESET_OPTION_DEFAULTS.reviewHighImpactTokens,
+		advisor: {
+			mode: overrides.advisorMode ?? PRESET_OPTION_DEFAULTS.advisor.mode,
+			timeoutMs: overrides.advisorTimeoutMs ?? PRESET_OPTION_DEFAULTS.advisor.timeoutMs,
+			refreshTurns: overrides.advisorRefreshTurns ?? PRESET_OPTION_DEFAULTS.advisor.refreshTurns,
+			scoreThreshold: overrides.advisorScoreThreshold ?? PRESET_OPTION_DEFAULTS.advisor.scoreThreshold,
+			sampleLimit: overrides.advisorSampleLimit ?? PRESET_OPTION_DEFAULTS.advisor.sampleLimit,
+			minTokens: overrides.advisorMinTokens ?? PRESET_OPTION_DEFAULTS.advisor.minTokens
+		}
 	});
 }
 /**
@@ -1084,5 +1124,66 @@ function registerReviewPruner(pruner) {
 function resolveReviewPruner() {
 	return live.values().next().value;
 }
+const advisorStates = /* @__PURE__ */ new WeakMap();
+/**
+* The per-session advisor state, created on first touch.
+* @param session - the session to key the state on (by object identity).
+*/
+function getAdvisorState(session) {
+	let state = advisorStates.get(session);
+	if (state === void 0) {
+		state = {
+			todoVersion: void 0,
+			summary: void 0,
+			lastSummaryTurn: -1,
+			watermarkSeq: 0,
+			scores: /* @__PURE__ */ new Map(),
+			recertified: /* @__PURE__ */ new Map(),
+			failures: void 0,
+			inFlight: false,
+			lastDecay: void 0
+		};
+		advisorStates.set(session, state);
+	}
+	return state;
+}
+/**
+* Insert or refresh one score with LRU semantics: a re-touched seq moves to
+* the newest position, and the oldest entry is evicted once the map exceeds
+* {@link ADVISOR_SCORES_LIMIT}.
+*/
+function recordScore(state, seq, entry) {
+	state.scores.delete(seq);
+	state.scores.set(seq, entry);
+	if (state.scores.size > 64) {
+		const oldest = state.scores.keys().next();
+		if (oldest.done !== true) state.scores.delete(oldest.value);
+	}
+}
+/**
+* Mark one seq as LLM-recertified low relevance (a suggestion for later
+* history-aggressiveness decisions, consumed by nothing in this round).
+* Bounded at {@link ADVISOR_RECERTIFIED_LIMIT} with the same LRU eviction.
+*/
+function recordRecertified(state, seq, turn) {
+	state.recertified.delete(seq);
+	state.recertified.set(seq, turn);
+	if (state.recertified.size > 64) {
+		const oldest = state.recertified.keys().next();
+		if (oldest.done !== true) state.recertified.delete(oldest.value);
+	}
+}
+/**
+* Drop every cached artifact that depends on the task semantics: a changed
+* todo version invalidates the summary and makes all eligible candidates
+* rescore-worthy (the watermark alone would otherwise hide them).
+*/
+function invalidateOnTaskChange(state, todoVersion) {
+	if (state.todoVersion === todoVersion) return false;
+	state.todoVersion = todoVersion;
+	state.summary = void 0;
+	state.lastSummaryTurn = -1;
+	return true;
+}
 //#endregion
-export { COMPRESSION_PROFILES as C, deepFreeze as S, resolvePolicy as _, AUTO_COMPACT_THRESHOLD_LIMITS as a, resolveCustomPolicy as b, DEFAULTS as c, charsToTokens as d, codePointLength as f, resolveConfig as g, parseContextCompressionSettings as h, ReviewQueue as i, PRUNE_MARKER as l, isValidAutoCompactThresholdPercent as m, resolveReviewPruner as n, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as o, isCompressionProfile as p, sharedReviewStore as r, ContextCompressionSettingsSchema as s, registerReviewPruner as t, charsForTokens as u, CustomCompressionPolicySchema as v, assertNever as x, DEFAULT_CUSTOM_COMPRESSION_POLICY as y };
+export { DEFAULT_CUSTOM_COMPRESSION_POLICY as C, COMPRESSION_PROFILES as D, deepFreeze as E, CustomCompressionPolicySchema as S, assertNever as T, isCompressionProfile as _, registerReviewPruner as a, resolveConfig as b, ReviewQueue as c, ContextCompressionSettingsSchema as d, DEFAULTS as f, codePointLength as g, charsToTokens as h, recordScore as i, AUTO_COMPACT_THRESHOLD_LIMITS as l, charsForTokens as m, invalidateOnTaskChange as n, resolveReviewPruner as o, PRUNE_MARKER as p, recordRecertified as r, sharedReviewStore as s, getAdvisorState as t, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as u, isValidAutoCompactThresholdPercent as v, resolveCustomPolicy as w, resolvePolicy as x, parseContextCompressionSettings as y };

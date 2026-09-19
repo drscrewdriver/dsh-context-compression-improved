@@ -183,6 +183,27 @@ export interface EstimatorOutcomeAuditRecord extends CompressionAuditBase {
   readonly ok: boolean
 }
 
+/** One background relevance-advisor pass. Only numeric metadata — never prompts, keys, or content. */
+export interface AdvisorOutcomeAuditRecord extends CompressionAuditBase {
+  readonly kind: 'advisor-outcome'
+  /** Which advisory stage produced this record. */
+  readonly phase: 'summary' | 'scoring' | 'decay'
+  /** LLM channel; omitted for the locally computed 'decay' phase. */
+  readonly channel?: 'host' | 'direct'
+  readonly ok: boolean
+  /** Whether the pass found candidates to sample (scoring phase). */
+  readonly sampledCount?: number
+  /** Prefix-decay figure in [0, 1] (decay phase; also emitted by summary/scoring on success). */
+  readonly decay?: number
+  /** Weighted surface the decay was computed over, in Unicode code points. */
+  readonly weightedChars?: number
+  /** Turn index the pass ran at. */
+  readonly turnIndex?: number
+  /** Aligned failure/skip reason code (e.g. 'no-direct-endpoint', 'parse-failed'). */
+  readonly reason?: string
+  readonly latencyMs: number
+}
+
 /** Lifecycle of one human-gated review proposal. Only numeric and enum fields — never content. */
 export interface ReviewOutcomeAuditRecord extends CompressionAuditBase {
   readonly kind: 'review-outcome'
@@ -219,6 +240,7 @@ export type CompressionAuditRecord =
   | NativeAutoCompactAuditRecord
   | SummaryLocatorAuditRecord
   | EstimatorOutcomeAuditRecord
+  | AdvisorOutcomeAuditRecord
   | ReviewOutcomeAuditRecord
 
 /** Minimal logger method consumed by the audit publisher. */

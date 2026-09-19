@@ -80,6 +80,14 @@ import {
 } from './runtime/tokenpilot/review-queue.ts'
 import { registerReviewPruner, sharedReviewStore } from './runtime/tokenpilot/review-registry.ts'
 import { openReviewStorage } from './runtime/tokenpilot/review-storage.ts'
+import { SideChannel } from './runtime/tokenpilot/sidechannel.ts'
+import {
+  advisorCandidatePreview,
+  collectTailText,
+  collectTaskSemantics,
+  runSessionAdvisorPass,
+} from './runtime/tokenpilot/advisor.ts'
+import { getAdvisorState } from './runtime/tokenpilot/advisor-state.ts'
 
 import {
   DedupeTable,
@@ -237,6 +245,7 @@ export class ToolResultPruner extends Service {
       reviewQueues: new WeakMap(),
       reviewClocks: new WeakMap(),
       estimatorRemainingTurns: new WeakMap(),
+      advisorChannels: new WeakMap(),
       reviewSummaries: new WeakMap(),
     }
 
@@ -333,6 +342,10 @@ export class ToolResultPruner extends Service {
       // TokenPilot-inspired E1: advisory estimator pass, strictly off the
       // synchronous chain. Verdicts only feed the next pressure pass.
       void this.postflightEstimatorPass(agent.session, signal).catch(() => undefined)
+      // Advisory relevance advisor: statistics and suggestions only — its
+      // summaries, scores, and decay figure never touch any decision path.
+      // Strictly fire-and-forget, with its own backoff state.
+      void this.postflightAdvisorPass(agent.session, turn, signal).catch(() => undefined)
     })
   }
 
@@ -642,6 +655,106 @@ export class ToolResultPruner extends Service {
       latencyMs,
       ok,
     })
+  }
+
+  // ─────────── Advisory relevance advisor (statistics & suggestions only) ───────────
+
+  /**
+   * Advisory advisor pass at the turn boundary, strictly fire-and-forget.
+   * Produces todolist-bound tail-task summaries, incremental relevance
+   * scores, and a prefix-decay figure — all observational. Every short
+   * circuit below (mode off, re-entry, cooldown, no task semantics, no
+   * direct endpoint) returns without touching any state the pruning chain
+   * reads, so the default configuration adds exactly zero behavior.
+   */
+  private async postflightAdvisorPass(session: Session, turn: number, signal: AbortSignal): Promise<void> {
+    const policy = this.activePolicy(session)
+    const presetOptions = policy?.presetOptions
+    const advisor = presetOptions?.advisor
+    if (policy === undefined || presetOptions === undefined || advisor === undefined || advisor.mode === '') return
+    const advisorState = getAdvisorState(session)
+    if (advisorState.inFlight) return
+    if (isCoolingDown(advisorState.failures, Date.now())) return
+
+    const events = sessionEvents(session)
+    const task = collectTaskSemantics(events)
+    if (task === undefined) return
+
+    const settings = this.activeSettings(session).presetOptions ?? {}
+    if (advisor.mode === 'direct'
+      && (settings.estimatorBaseUrl === undefined || settings.estimatorBaseUrl.length === 0
+        || settings.estimatorModel === undefined || settings.estimatorModel.length === 0)) {
+      // The advisor reuses the estimator's direct endpoint; when it is not
+      // configured there is nothing to ask, so record the aligned reason and
+      // back off instead of re-emitting the audit at every turn.
+      emitCompressionAudit(this.ctx.logger, {
+        schemaVersion: 1,
+        kind: 'advisor-outcome',
+        sessionId: String(session.id),
+        phase: 'summary',
+        channel: 'direct',
+        ok: false,
+        turnIndex: turn,
+        reason: 'no-direct-endpoint',
+        latencyMs: 0,
+      })
+      advisorState.failures = {
+        failures: (advisorState.failures?.failures ?? 0) + 1,
+        cooldownUntil: Date.now() + backoffCooldownMs((advisorState.failures?.failures ?? 0) + 1),
+      }
+      return
+    }
+
+    let channel = this.state.advisorChannels.get(session)
+    if (channel === undefined) {
+      channel = new SideChannel(this.ctx, settings, {
+        mode: advisor.mode,
+        timeoutMs: advisor.timeoutMs,
+        maxTokens: 512,
+      })
+      this.state.advisorChannels.set(session, channel)
+    }
+
+    const view = measureForCompaction(this.ctx, session)
+    const candidates = this.snapshot(session, view)
+      .filter(candidate => !this.isRecoveryExempt(session, candidate))
+      .map(candidate => ({
+        seq: candidate.seq,
+        characterPressure: candidate.characterPressure,
+        preview: advisorCandidatePreview(candidate.call.name, candidate.event.data.message.content),
+      }))
+
+    let sawFailure = false
+    const outcome = await runSessionAdvisorPass(session, channel, record => {
+      if (record.ok === false) sawFailure = true
+      emitCompressionAudit(this.ctx.logger, record)
+    }, {
+      profile: policy.profile,
+      sessionId: String(session.id),
+      turn,
+      candidates,
+      task: {
+        source: task.source,
+        todoVersion: task.todoVersion,
+        taskText: task.taskText,
+      },
+      advisor: {
+        refreshTurns: advisor.refreshTurns,
+        scoreThreshold: advisor.scoreThreshold,
+        sampleLimit: advisor.sampleLimit,
+        minTokens: advisor.minTokens,
+      },
+      tailText: collectTailText(events),
+      signal,
+    })
+    if (outcome === undefined && sawFailure && signal.aborted === false) {
+      advisorState.failures = {
+        failures: (advisorState.failures?.failures ?? 0) + 1,
+        cooldownUntil: Date.now() + backoffCooldownMs((advisorState.failures?.failures ?? 0) + 1),
+      }
+    } else if (outcome !== undefined) {
+      advisorState.failures = undefined
+    }
   }
 
   // ─────────── TokenPilot-inspired R4: human-gated review pipeline ───────────
