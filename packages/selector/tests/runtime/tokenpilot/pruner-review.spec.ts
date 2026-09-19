@@ -310,3 +310,73 @@ describe('tokenpilot review pipeline (host integration)', () => {
     expect(ctx.toolResultPruner.listReviewProposals(session)).toHaveLength(0)
   })
 })
+
+/** Fresh-stage triage must NOT charge the tail-refill penalty: the fresh
+ *  candidate has never been served, so shaping it causes no cache break.
+ *  Fixture keeps historyKeepRecentTokens at the production-like 64,000 so
+ *  history pricing (penalty 57,600) would drop the batch outright — the
+ *  fresh stage must still land it. */
+describe('tokenpilot review pipeline (fresh-stage exemption)', () => {
+  async function freshReviewSetup(ctx: Context): Promise<void> {
+    await ctx.plugin(TestSettings).await()
+    await ctx.plugin(SelectorHost).await()
+    await ctx.settings.update(nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE), {
+      profile: 'tokenpilot-inspired',
+      presetOptions: { reviewMode: true, reviewHighImpactTokens: 1_000_000 },
+    })
+    await ctx.plugin(ToolResultPruner, {
+      profile: 'tokenpilot-inspired',
+      freshTriggerTokens: 200,
+      freshTargetTokens: 100,
+      aggregateTriggerTokens: 1_000_000,
+      aggregateTargetTokens: 900_000,
+      historyTriggerTokens: 400,
+      historyKeepRecentToolCalls: 0,
+      historyKeepRecentTokens: 64_000,
+      historyMinReclaimTokens: 1,
+    }).await()
+  }
+
+  function freshSession(ctx: Context, id: string, text: string): Session {
+    const session = Session.create(SessionId(id))
+    appendToolTurn(session, 1, text, true)
+    const total = measureForCompaction(ctx, session).totalTokens
+    session.append('request/context', {
+      provider: 'deepseek',
+      model: MODEL,
+      contextWindow: Math.floor(total / 0.6),
+    })
+    // Fresh landing publishes a surface replacement, which requires an open turn.
+    session.append('turn/start', { turn: 2 })
+    return session
+  }
+
+  it('lands a fresh batch under review mode instead of dropping it', async () => {
+    const ctx = await runtimeContext()
+    await freshReviewSetup(ctx)
+    const audit = captureAudit(ctx)
+    const session = freshSession(ctx, 'fresh-review-exempt', 'fresh reviewable evidence '.repeat(400))
+
+    const result = ctx.toolResultPruner.pruneSession(session, { stage: 'fresh', freshTurn: 1, freshStep: 1 })
+
+    // Without the exemption the 57,600-token refill penalty prices this batch
+    // into the drop band (payback > 3 with Ŝ unknown) and nothing lands.
+    expect(result.pruned).toHaveLength(1)
+    expect(rewrites(audit.records()).some(entry => entry.component === 'fresh')).toBe(true)
+    expect(reviewEvents(audit.records()).filter(entry => entry.event === 'enqueue')).toHaveLength(0)
+  })
+
+  it('keeps the history batch priced with the refill penalty', async () => {
+    const ctx = await runtimeContext()
+    await freshReviewSetup(ctx)
+    const audit = captureAudit(ctx)
+    const { session } = reviewSession(ctx, 'history-review-priced', 'old reviewable evidence '.repeat(600))
+
+    const result = ctx.toolResultPruner.pruneSession(session, { stage: 'pressure' })
+
+    // History content was already served: the refill penalty is real, Ŝ is
+    // unknown, payback > 3 → drop band → nothing lands and nothing queues.
+    expect(result.pruned).toHaveLength(0)
+    expect(reviewEvents(audit.records()).filter(entry => entry.event === 'enqueue')).toHaveLength(0)
+  })
+})
