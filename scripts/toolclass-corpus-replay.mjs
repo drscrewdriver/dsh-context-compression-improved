@@ -17,6 +17,10 @@
  * 依赖:先 `pnpm build` 生成 packages/selector/lib/pruner.js。
  * 样本偏差声明(必读⑨/RK-5):--limit 取的是体积最大的会话(偏长会话),
  * 结论不得外推到全体会话;报告须标注会话数/样本数/时间范围。
+ * ⚠️ --min-chars 默认 14000 只是**本脚本的样本过滤下限**,与运行时
+ * `READ_TOC_MIN_CHARS`(reducers.ts)数值撞值但**毫无派生关系**:运行时的
+ * fresh 门槛是 freshTriggerTokens(8192 tok ≈ 29.5k 字符),恒高于 14k 字符,
+ * 本脚本过滤值从不参与运行时行为(findings §16)。
  */
 
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
@@ -160,6 +164,7 @@ async function main() {
     .sort((a, b) => b.size - a.size)
     .slice(0, args.limit)
   console.log(`[corpus] ${files.length} session file(s) (limit=${args.limit}, min-chars=${args.minChars}, dir=${args.dir})`)
+  console.log(`[note] --min-chars is a sample filter for this script only; it is NOT the runtime READ_TOC_MIN_CHARS and does not gate runtime behavior`)
 
   const dispatch = new Map() // toolName → toolClass → { reducer → count }
   const reducerHits = new Map()
