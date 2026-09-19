@@ -424,7 +424,7 @@ describe('standalone runtime on published Harness APIs', () => {
     const ctx = await runtimeContext()
     await ctx.plugin(TestSettings).await()
     await ctx.plugin(SelectorHost).await()
-    await ctx.settings.update(settingsNamespace(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE), {
+    await ctx.settings.update(nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE), {
       profile: 'balanced',
       codeSkeleton: { enabled: true },
     })
