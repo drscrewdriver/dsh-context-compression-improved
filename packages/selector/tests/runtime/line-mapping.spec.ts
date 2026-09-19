@@ -31,11 +31,16 @@ describe('normalizeTerminalLines', () => {
     const { folded, text } = normalizeTerminalLines(original)
 
     expect(folded).toEqual([
-      { text: 'staging files...', originalLine: 1 },
-      { text: 'progress 10%', originalLine: 2 },
-      { text: '[previous line repeated 2 more times]', originalLine: 3, originalLineEnd: 4 },
-      { text: 'Downloaded 100%', originalLine: 5 },
-      { text: 'done', originalLine: 6 },
+      { text: 'staging files...', content: 'staging files...', originalLine: 1 },
+      { text: 'progress 10%', content: 'progress 10%', originalLine: 2 },
+      {
+        text: '[previous line repeated 2 more times]',
+        content: '[previous line repeated 2 more times]',
+        originalLine: 3,
+        originalLineEnd: 4,
+      },
+      { text: 'Downloaded 100%', content: 'Downloaded 100%', originalLine: 5 },
+      { text: 'done', content: 'done', originalLine: 6 },
     ])
     // The folded text is byte-identical with the string API.
     expect(text).toBe(normalizeTerminalText(original))
@@ -72,11 +77,63 @@ describe('normalizeTerminalLines', () => {
     const original = ['head', 'same', 'same', 'same', 'same', 'tail'].join('\n')
     const { folded } = normalizeTerminalLines(original)
     expect(folded).toEqual([
-      { text: 'head', originalLine: 1 },
-      { text: 'same', originalLine: 2 },
-      { text: '[previous line repeated 3 more times]', originalLine: 3, originalLineEnd: 5 },
-      { text: 'tail', originalLine: 6 },
+      { text: 'head', content: 'head', originalLine: 1 },
+      { text: 'same', content: 'same', originalLine: 2 },
+      {
+        text: '[previous line repeated 3 more times]',
+        content: '[previous line repeated 3 more times]',
+        originalLine: 3,
+        originalLineEnd: 5,
+      },
+      { text: 'tail', content: 'tail', originalLine: 6 },
     ])
+  })
+
+  // GF-1 dual view (spec.md 「行号修复补丁 GF-1」): a block-detected read
+  // gutter is stripped on the CONTENT view only — the output view keeps the
+  // host's `N: ` prefixes byte-for-byte because they are the model's only
+  // inline locator into the original file, while form detection and the fold
+  // keys must not see them.
+  it('strips a detected read gutter on the content view and keeps it on the output view', () => {
+    const original = [
+      '1: export function alpha() {',
+      '2:   return 1',
+      '3: }',
+      '4: ',
+      '5: export function beta() {',
+      '6: }',
+    ].join('\n')
+    const { folded, text, contentText } = normalizeTerminalLines(original)
+    // Output view: the gutter is preserved verbatim.
+    expect(text).toBe(original)
+    // Content view: the gutter is gone.
+    expect(contentText).toBe([
+      'export function alpha() {',
+      '  return 1',
+      '}',
+      '',
+      'export function beta() {',
+      '}',
+    ].join('\n'))
+    // Every folded line still maps 1:1 into the original event.
+    expect(folded.map(line => line.originalLine)).toEqual([1, 2, 3, 4, 5, 6])
+    expect(folded.map(line => line.content)).toEqual([
+      'export function alpha() {',
+      '  return 1',
+      '}',
+      '',
+      'export function beta() {',
+      '}',
+    ])
+  })
+
+  it('does not strip a stray time-of-day colon as a read gutter (block-level guard)', () => {
+    // Only 1 of 5 non-empty lines is gutter-shaped, and the "numbers" are not
+    // strictly increasing — the block guard must keep both views intact.
+    const original = ['meeting at 12:30 pm', 'standup at 9:15 am', 'retro at 4:45 pm', 'done'].join('\n')
+    const { text, contentText } = normalizeTerminalLines(original)
+    expect(text).toBe(original)
+    expect(contentText).toBe(original)
   })
 })
 
