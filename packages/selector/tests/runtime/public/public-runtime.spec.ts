@@ -163,6 +163,7 @@ function appendToolTurn(
   userText?: string,
   provider = 'deepseek',
   model: string = MODEL,
+  toolName = 'bash',
 ): { readonly assistantSeq: number; readonly resultSeq: number } {
   const callId = CallId(`call-${String(turn)}`)
   session.append('turn/start', { turn })
@@ -184,11 +185,11 @@ function appendToolTurn(
     step: 1,
     message: createMessage({
       role: 'assistant',
-      content: [{ type: 'tool-call', id: callId, name: 'bash', arguments: '{}' }],
+      content: [{ type: 'tool-call', id: callId, name: toolName, arguments: '{}' }],
       source: { kind: 'model', provider, model },
     }),
   }, { surfaceOp: 'append' })
-  session.append('tool/call', { turn, step: 1, callId, name: 'bash', arguments: '{}' })
+  session.append('tool/call', { turn, step: 1, callId, name: toolName, arguments: '{}' })
   const result = session.append('tool/result', {
     turn,
     step: 1,
@@ -404,6 +405,58 @@ describe('standalone runtime on published Harness APIs', () => {
     expect(record?.tokensBefore).toBeGreaterThan(100)
     expect(record?.tokensAfter).toBeLessThanOrEqual(64)
     expect(record?.tokensRemoved).toBe((record?.tokensBefore ?? 0) - (record?.tokensAfter ?? 0))
+  })
+
+  it('threads the reducer elided-line count from a fresh plan into the rewrite audit', async () => {
+    // The skeleton reducer counts the lines it hid behind elision markers; that
+    // count must survive the whole planning middle (plan options → planned
+    // replacement → audit record) without ever touching the replacement text.
+    const ctx = await runtimeContext()
+    await ctx.plugin(TestSettings).await()
+    await ctx.plugin(SelectorHost).await()
+    await ctx.settings.update(settingsNamespace(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE), {
+      profile: 'balanced',
+      codeSkeleton: { enabled: true },
+    })
+    const audit = captureAudit(ctx)
+    await ctx.plugin(ToolResultPruner, {
+      profile: 'balanced',
+      freshTriggerTokens: 1_000,
+      freshTargetTokens: 800,
+      aggregateTriggerTokens: 500_000,
+      aggregateTargetTokens: 450_000,
+      historyTriggerTokens: 500_000,
+    }).await()
+    const session = Session.create(SessionId('public-fresh-elided-lines'))
+    const fixture = [
+      "import { readFile } from 'node:fs/promises'",
+      '',
+      ...Array.from({ length: 40 }, (_, index) => [
+        `export function handler${String(index)}(input: string): string {`,
+        `  const normalized = input.trim().toLowerCase()`,
+        `  if (normalized.length === 0) return 'empty-${String(index)}'`,
+        `  return normalized.split('-').join('+')`,
+        '}',
+        '',
+      ]).flat(),
+    ].join('\n')
+    appendToolTurn(session, 1, fixture, false, undefined, 'deepseek-official', MODEL, 'read')
+
+    const result = ctx.toolResultPruner.pruneSession(session, {
+      stage: 'fresh',
+      freshTurn: 1,
+      freshStep: 1,
+    })
+
+    expect(result.pruned).toHaveLength(1)
+    expect(result.pruned[0]?.reducer).toBe('hypa-code-skeleton')
+    const record = rewrites(audit.records()).find(entry => entry.component === 'fresh')
+    expect(record?.reducer).toBe('hypa-code-skeleton')
+    expect(record?.elidedLines).toEqual(expect.any(Number))
+    expect(record?.elidedLines).toBeGreaterThan(0)
+    expect(Number.isInteger(record?.elidedLines)).toBe(true)
+    expect(record?.tokensBefore).toBeGreaterThan(1_000)
+    expect(record?.tokensAfter).toBeLessThanOrEqual(800)
   })
 
   it('proves isolated Aggregate while Fresh and History remain below their gates', async () => {
