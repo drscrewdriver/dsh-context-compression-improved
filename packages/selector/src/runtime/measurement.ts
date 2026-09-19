@@ -16,6 +16,7 @@ import {
   estimateDeepSeekVisionImageTokens,
 } from './deepseek-v4-vision-tokens.ts'
 import { unavailableTokenCount } from './token-count.ts'
+import { pressureCost } from '../pruner/content.ts'
 import type {
   CanonicalTextTokenCounter,
   ExactTokenizerTokenCount,
@@ -24,6 +25,19 @@ import type {
 } from './token-count.ts'
 
 export type { TokenCount } from './token-count.ts'
+
+/**
+ * Character pressure of one model-visible content array, measured on the same
+ * level `SnapshotCandidate.characterPressure` uses: a tool/result message is
+ * measured by its inner tool-result content, never by the wrapper block, so the
+ * node-level and candidate-level figures stay directly comparable.
+ * @param content - the node's model-visible content blocks.
+ * @returns character pressure in Unicode code points, plus rich-block costs.
+ */
+function nodeCharacterPressure(content: readonly ContentBlock[]): number {
+  const only = content.length === 1 ? content[0] : undefined
+  return pressureCost(only?.type === 'tool-result' ? only.content : content)
+}
 
 /** Request identity retained only when every dimension is publicly known. */
 export interface ProviderMeasurementKey {
@@ -77,6 +91,11 @@ export interface IntrinsicImageBlockDiagnostic {
 export interface MeasuredTokenSurfaceNode {
   readonly seq: number
   readonly count: TokenCount
+  /**
+   * Authoritative decision metric for this node: character pressure in
+   * Unicode code points (same convention as SnapshotCandidate.characterPressure).
+   */
+  readonly characterPressure: number
   /** Intrinsic-grid diagnostic when usable image dimensions were available. */
   readonly intrinsicImageBlockEstimate?: IntrinsicImageBlockDiagnostic
 }
@@ -87,6 +106,11 @@ export interface CompactionTokenView extends TokenMeasurement {
   readonly modelId?: string
   readonly measuredNodes: readonly MeasuredTokenSurfaceNode[]
   readonly currentSurface: TokenCount
+  /**
+   * Exact character analogue of `currentSurface`: sum of per-node
+   * `characterPressure` over the same nodes `currentSurface` covers.
+   */
+  readonly currentSurfaceChars: number
   /** Sum of per-node intrinsic padding minima; a diagnostic, not a token bound. */
   readonly intrinsicImageBlockEstimateTokens: number
   readonly latestEnvelopeKey?: ProviderMeasurementKey
@@ -120,11 +144,13 @@ export function measureForCompaction(ctx: Context, session: Session): Compaction
   const measuredNodes = measurement.nodes.map((node): MeasuredTokenSurfaceNode => {
     const event = eventsBySeq.get(Number(node.seq))
     if (event === undefined) {
-      return { seq: node.seq, count: unavailableTokenCount(`surface node ${String(node.seq)} is missing`) }
+      // The node's content is not model-visible, so it carries no character
+      // pressure on the decision surface.
+      return { seq: node.seq, count: unavailableTokenCount(`surface node ${String(node.seq)} is missing`), characterPressure: 0 }
     }
     const message = deriveEventMessage(event)
     if (message === null) {
-      return { seq: node.seq, count: unavailableTokenCount(`surface node ${String(node.seq)} is not model-visible`) }
+      return { seq: node.seq, count: unavailableTokenCount(`surface node ${String(node.seq)} is not model-visible`), characterPressure: 0 }
     }
     const count = countCanonicalContent(message.content, counter, `surface node ${String(node.seq)}`)
     const intrinsicImageBlockEstimate = count.kind === 'tokenizer-estimate'
@@ -133,6 +159,7 @@ export function measureForCompaction(ctx: Context, session: Session): Compaction
     return {
       seq: node.seq,
       count,
+      characterPressure: nodeCharacterPressure(message.content),
       ...intrinsicImageBlockEstimate === undefined ? {} : { intrinsicImageBlockEstimate },
     }
   })
@@ -140,6 +167,7 @@ export function measureForCompaction(ctx: Context, session: Session): Compaction
     measuredNodes.map(node => node.count),
     'current surface',
   )
+  const currentSurfaceChars = measuredNodes.reduce((sum, node) => sum + node.characterPressure, 0)
   const intrinsicImageBlockEstimateTokens = measuredNodes.reduce(
     (sum, node) => sum + (node.intrinsicImageBlockEstimate?.paddingMinimumTokens ?? 0),
     0,
@@ -149,6 +177,7 @@ export function measureForCompaction(ctx: Context, session: Session): Compaction
     ...(target === undefined ? {} : { providerRoute: target.provider, modelId: target.model }),
     measuredNodes: Object.freeze(measuredNodes),
     currentSurface,
+    currentSurfaceChars,
     intrinsicImageBlockEstimateTokens,
     countCanonicalText: counter.countText,
   })

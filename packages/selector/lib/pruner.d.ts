@@ -764,6 +764,11 @@ interface IntrinsicImageBlockDiagnostic {
 interface MeasuredTokenSurfaceNode {
   readonly seq: number;
   readonly count: TokenCount;
+  /**
+   * Authoritative decision metric for this node: character pressure in
+   * Unicode code points (same convention as SnapshotCandidate.characterPressure).
+   */
+  readonly characterPressure: number;
   /** Intrinsic-grid diagnostic when usable image dimensions were available. */
   readonly intrinsicImageBlockEstimate?: IntrinsicImageBlockDiagnostic;
 }
@@ -773,6 +778,11 @@ interface CompactionTokenView extends TokenMeasurement {
   readonly modelId?: string;
   readonly measuredNodes: readonly MeasuredTokenSurfaceNode[];
   readonly currentSurface: TokenCount;
+  /**
+   * Exact character analogue of `currentSurface`: sum of per-node
+   * `characterPressure` over the same nodes `currentSurface` covers.
+   */
+  readonly currentSurfaceChars: number;
   /** Sum of per-node intrinsic padding minima; a diagnostic, not a token bound. */
   readonly intrinsicImageBlockEstimateTokens: number;
   readonly latestEnvelopeKey?: ProviderMeasurementKey;

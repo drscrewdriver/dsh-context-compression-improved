@@ -79,7 +79,7 @@ export interface CompressionPolicyResolvedAuditRecord extends CompressionAuditBa
   readonly tokenizer?: CompressionTokenizerAuditFact
 }
 
-/** One committed model-free surface rewrite and its exact token accounting. */
+/** One committed model-free surface rewrite and its accounting. */
 export interface CompressionRewriteAuditRecord extends CompressionAuditBase {
   readonly kind: 'rewrite'
   readonly profile: CompressionProfile
@@ -94,6 +94,14 @@ export interface CompressionRewriteAuditRecord extends CompressionAuditBase {
   readonly tokensBefore: number
   readonly tokensAfter: number
   readonly tokensRemoved: number
+  /**
+   * Which measurement backed this record's decision and token figures:
+   * 'exact-tokenizer' when both sides of the reduction carry one bundled
+   * tokenizer identity, 'characters' when the proof ran on Unicode code
+   * points and `tokensBefore/After` were derived at 4.0 chars per token
+   * (`tokenizerId: 'characters'`, `tokenizerRevision: 'chars-per-token-4.0'`).
+   */
+  readonly measurementBasis: 'exact-tokenizer' | 'characters'
   readonly tokenizerId: string
   readonly tokenizerRevision: string
   /**
@@ -115,7 +123,7 @@ export interface CompressionComponentEvaluationAuditRecord extends CompressionAu
   readonly status: CompressionAuditEvaluationStatus
   readonly reason: string
   readonly historyMode?: HistoryMode
-  readonly measurementKind?: 'exact-tokenizer' | 'tokenizer-estimate' | 'unavailable'
+  readonly measurementKind?: 'exact-tokenizer' | 'tokenizer-estimate' | 'characters' | 'unavailable'
   readonly currentTokens?: number
   readonly triggerTokens?: number
   readonly targetTokens?: number
