@@ -2,7 +2,7 @@
 
 > [English](installation.md) · [中文](installation.zh.md) · [日本語](installation.ja.md) · [한국어](installation.ko.md)
 
-本教程从源码安装 fork。fork 尚未发布到 npm；包名有意与上游保持一致：
+本教程从源码安装 fork。fork 亦已发布到 npm，dist-tag 为 `dsh-0.1.5`；包名有意与上游保持一致：
 `dsh-context-compression-improved`（单一包 —— 原先独立发布的 runtime 包已并入其中）。
 
 ## 前置条件

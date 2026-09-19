@@ -47,7 +47,7 @@ Choose a compression profile, set the Auto Compact trigger level, and toggle cod
 
 ## Install
 
-Build and install from source (this fork is not yet published to npm; the internal package names intentionally stay upstream's):
+Build and install from source — the fork is also published to npm as `dsh-context-compression-improved` (dist-tag `dsh-0.1.5`). The internal package names intentionally stay upstream's:
 
 ```sh
 git clone https://github.com/drscrewdriver/dsh-context-compression-improved.git

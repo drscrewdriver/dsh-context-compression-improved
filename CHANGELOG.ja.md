@@ -2,7 +2,7 @@
 
 > 完全な履歴（アップストリーム 0.1.0 以前を含む）は [CHANGELOG.md](CHANGELOG.md) を参照。このファイルはフォークの追加エントリーのみを翻訳したものです。 · [English](CHANGELOG.md) · [中文](CHANGELOG.zh.md) · [한국어](CHANGELOG.ko.md)
 
-## Unreleased（未リリース）
+## 0.4.0 - 2026-09-20
 
 ### Fixed（修正）
 

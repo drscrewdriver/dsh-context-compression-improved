@@ -47,7 +47,7 @@
 
 ## インストール
 
-ソースからビルドしてインストールします（本フォークはまだ npm に公開していません。内部パッケージ名は意図的にアップストリームのままです）：
+ソースからビルドしてインストールします —— 本フォークは npm にも `dsh-context-compression-improved` として公開済みです（dist-tag `dsh-0.1.5`）。内部パッケージ名は意図的にアップストリームのままです：
 
 ```sh
 git clone https://github.com/drscrewdriver/dsh-context-compression-improved.git

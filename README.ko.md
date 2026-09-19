@@ -47,7 +47,7 @@
 
 ## 설치
 
-소스에서 빌드하여 설치합니다이포크는 아직 npm에 게시되지 않았습니다. 내부 패키지 이름은 의도적으로 업스트림과 동일하게 유지됩니다):
+소스에서 빌드하여 설치합니다 —— 이 포크는 npm에도 `dsh-context-compression-improved`로 게시되어 있습니다(dist-tag `dsh-0.1.5`). 내부 패키지 이름은 의도적으로 업스트림과 동일하게 유지됩니다:
 
 ```sh
 git clone https://github.com/drscrewdriver/dsh-context-compression-improved.git
