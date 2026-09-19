@@ -503,6 +503,7 @@ const CONFIG_KEYS = /* @__PURE__ */ new Set([
 	"historyKeepRecentToolCalls",
 	"historyKeepRecentTokens",
 	"historyMinReclaimTokens",
+	"readInputCapChars",
 	"autoCompactThresholdPercent",
 	"presetOptions"
 ]);
@@ -560,6 +561,7 @@ function resolveConfig(config = {}) {
 		...config.historyKeepRecentToolCalls === void 0 ? {} : { historyKeepRecentToolCalls: config.historyKeepRecentToolCalls },
 		...config.historyKeepRecentTokens === void 0 ? {} : { historyKeepRecentTokens: config.historyKeepRecentTokens },
 		...config.historyMinReclaimTokens === void 0 ? {} : { historyMinReclaimTokens: config.historyMinReclaimTokens },
+		...config.readInputCapChars === void 0 ? {} : { readInputCapChars: config.readInputCapChars },
 		...config.autoCompactThresholdPercent === void 0 ? {} : { autoCompactThresholdPercent: config.autoCompactThresholdPercent },
 		...config.presetOptions === void 0 ? {} : { presetOptions: config.presetOptions }
 	};
@@ -574,7 +576,8 @@ function resolveConfig(config = {}) {
 		"aggregateTriggerTokens",
 		"aggregateTargetTokens",
 		"historyTriggerTokens",
-		"historyMinReclaimTokens"
+		"historyMinReclaimTokens",
+		"readInputCapChars"
 	]) {
 		const value = resolved[key];
 		if (value !== void 0) assertPositiveInteger(key, value);
@@ -817,6 +820,7 @@ function resolvePolicy(config, profile, custom = DEFAULT_CUSTOM_COMPRESSION_POLI
 		historyKeepRecentToolCalls: config.historyKeepRecentToolCalls ?? preset.historyKeepRecentToolCalls,
 		historyKeepRecentTokens: config.historyKeepRecentTokens ?? linkage?.historyKeepRecentTokens ?? preset.historyKeepRecentTokens,
 		historyMinReclaimTokens: config.historyMinReclaimTokens ?? linkage?.historyMinReclaimTokens ?? preset.historyMinReclaimTokens,
+		...config.readInputCapChars === void 0 ? {} : { readInputCapChars: config.readInputCapChars },
 		...linkage === void 0 ? {} : {
 			autoCompactTokens: linkage.autoCompactTokens,
 			microDeadlineTokens: linkage.microDeadlineTokens
@@ -826,6 +830,7 @@ function resolvePolicy(config, profile, custom = DEFAULT_CUSTOM_COMPRESSION_POLI
 	if (policy.nativeTargetTokens >= policy.nativeTriggerTokens && profile === "native") throw new Error("context compression policy: native target must be below trigger");
 	if (policy.freshTargetTokens >= policy.freshTriggerTokens && policy.freshEnabled) throw new Error("context compression policy: fresh target must be below trigger");
 	if (policy.aggregateTargetTokens >= policy.aggregateTriggerTokens && policy.freshEnabled) throw new Error("context compression policy: aggregate target must be below trigger");
+	if (policy.readInputCapChars !== void 0 && policy.readInputCapChars <= policy.freshTriggerTokens * 4) throw new Error("context compression policy: read input cap would silence the fresh path");
 	return deepFreeze(policy);
 }
 function assertTargetBelowTrigger(label, target, trigger) {

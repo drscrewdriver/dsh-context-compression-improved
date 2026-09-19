@@ -1193,6 +1193,104 @@ function buildLocatorBlock(events, shadowedRange) {
 	};
 }
 //#endregion
+//#region src/runtime/toolclass.ts
+/** task_11 (AD3): exact-token matching, no substring hits. */
+const TOKEN_SEPARATOR = /[-_/]+/;
+/** Multi-token names that must match as a whole word, not as a token. */
+const READ_NAMES = /* @__PURE__ */ new Set(["open_file"]);
+const READ_TOKENS = /* @__PURE__ */ new Set([
+	"read",
+	"cat",
+	"view"
+]);
+const SHELL_TOKENS = /* @__PURE__ */ new Set([
+	"shell",
+	"bash",
+	"pwsh",
+	"powershell",
+	"terminal",
+	"exec",
+	"command"
+]);
+const SEARCH_TOKENS = /* @__PURE__ */ new Set([
+	"grep",
+	"rg",
+	"ripgrep"
+]);
+const PATH_LISTING_TOKENS = /* @__PURE__ */ new Set([
+	"glob",
+	"tree",
+	"ls",
+	"fd",
+	"find"
+]);
+const SEARCH_COMMAND_PATTERN = /(?:^|\s)(?:rg|grep|ripgrep)\s/;
+const PATH_COMMAND_PATTERN = /(?:^|\s)(?:find|fd|ls|tree)\s/;
+/** grep-style hit line: `path:line[:column][: content]`. */
+const PATH_LINE_CONTENT_PATTERN = /^(.*?):(\d+)(?::\d+)?(?::|\s+-\s+)(.*)$/;
+/**
+* Classify a tool result's source.
+* @param name - raw tool name (case-insensitive).
+* @param command - extracted command argument, '' when absent.
+* @param text - result text; enables the C13/C14 content fallback for names
+*   that no whitelist (and no command hit) claims.
+* @returns the tool source class.
+*/
+function classifyToolSource(name, command, text) {
+	const lowered = name.toLowerCase();
+	const tokens = lowered.split(TOKEN_SEPARATOR).filter((token) => token !== "");
+	if (tokens.includes("mcp")) return "generic";
+	const byName = classifyByName(lowered, tokens);
+	if (byName !== "generic") return byName;
+	const byCommand = classifyByCommand(command);
+	if (byCommand !== "generic") return byCommand;
+	return text === void 0 ? "generic" : classifyByContent(text);
+}
+function classifyByName(lowered, tokens) {
+	if (READ_NAMES.has(lowered) || tokens.some((token) => READ_TOKENS.has(token))) return "read";
+	if (tokens.some((token) => SHELL_TOKENS.has(token))) return "shell";
+	if (tokens.some((token) => SEARCH_TOKENS.has(token))) return "search";
+	if (tokens.some((token) => PATH_LISTING_TOKENS.has(token))) return "path-listing";
+	return "generic";
+}
+function classifyByCommand(command) {
+	if (command === "") return "generic";
+	if (SEARCH_COMMAND_PATTERN.test(command)) return "search";
+	if (PATH_COMMAND_PATTERN.test(command)) return "path-listing";
+	return "generic";
+}
+/** A path-shaped hit locator needs a path-looking prefix, not just `:digits`. */
+function looksLikeFilePath(prefix) {
+	if (prefix.includes("://")) return false;
+	return prefix.includes("/") || prefix.includes("\\") || /\.[A-Za-z0-9]{1,8}$/.test(prefix);
+}
+/** A bare path: no whitespace, no URL scheme, with a separator or an extension. */
+function isPurePathLine(line) {
+	if (/\s/.test(line) || line.includes("://")) return false;
+	return line.includes("/") || line.includes("\\") || /\.[A-Za-z0-9]{1,8}$/.test(line);
+}
+/**
+* Content fallback (C13/C14) for unknown names: one path-plausible
+* `path:line:content` line reads as grep output; a body of ≥80% pure paths
+* reads as a directory listing. Both require file-path evidence so prose
+* (`Note: 2024 - ...`) and URLs (`https://host:8080 - ...`) stay generic.
+*/
+function classifyByContent(text) {
+	let nonEmpty = 0;
+	let purePaths = 0;
+	let pathLineHits = 0;
+	for (const line of text.split("\n")) {
+		if (line.trim() === "") continue;
+		nonEmpty += 1;
+		const match = PATH_LINE_CONTENT_PATTERN.exec(line);
+		if (match !== null && looksLikeFilePath(match[1] ?? "")) pathLineHits += 1;
+		if (isPurePathLine(line)) purePaths += 1;
+	}
+	if (pathLineHits >= 1) return "search";
+	if (nonEmpty >= 4 && purePaths / nonEmpty >= .8) return "path-listing";
+	return "generic";
+}
+//#endregion
 //#region src/runtime/reducers.ts
 /** Deterministic, evidence-backed reducers for fresh tool results. */
 /** Ranked-first ordering: ranked ids keep their rank, the rest append in order. */
@@ -1241,6 +1339,35 @@ const HTML_WHITELISTED_ATTRIBUTES = /\s(?:href|src|alt|title|id)="[^"]*"/gi;
 const ADJACENT_REPEAT_MARKER = "[previous line repeated";
 /** Non-adjacent folding only pays off once a line recurs enough to beat the marker cost. */
 const NON_ADJACENT_FOLD_THRESHOLD = 3;
+/** Read-output line-number gutter added unconditionally by the host's `formatReadOutput`. */
+const READ_GUTTER_PATTERN = /^(\d+): ?/;
+/**
+* Block-level read-gutter detection (GF-1). The host prefixes read output with
+* `N: ` line numbers unconditionally and cannot be configured off. The gutter
+* is only recognized when the block as a whole reads like a numbered listing —
+* enough non-empty lines, a large majority guttered, and the numbers strictly
+* increasing — so prose like `12:30 pm` (one stray gutter-looking line) is
+* never stripped. The stripping happens on the CONTENT view only; the output
+* view keeps the gutter because it is the model's only inline locator into the
+* original file (and its measured cost, 9.16% of read bodies, never gets
+* retrieved anyway).
+*/
+function hasReadGutter(lines) {
+	let nonEmpty = 0;
+	let guttered = 0;
+	let previousNumber = 0;
+	for (const line of lines) {
+		if (line.trim() === "") continue;
+		nonEmpty += 1;
+		const match = READ_GUTTER_PATTERN.exec(line);
+		if (match === null) continue;
+		const number = Number(match[1]);
+		if (number <= previousNumber) return false;
+		previousNumber = number;
+		guttered += 1;
+	}
+	return nonEmpty >= 4 && guttered / nonEmpty >= .75;
+}
 /**
 * Replace long opaque literals with length summaries (R12). Data URIs, base64
 * blobs, and long hex dumps are pure noise in a compressed view; the prefix is
@@ -1264,22 +1391,29 @@ function reduceFreshToolResult(input, ranking) {
 	const prepared = {
 		...input,
 		text: normalized.text,
-		lines: normalized.folded
+		lines: normalized.folded,
+		contentText: normalized.contentText
 	};
 	const command = extractCommand(input.argumentsText);
 	const name = input.toolName.toLowerCase();
+	const toolClass = classifyToolSource(input.toolName, command, normalized.contentText);
+	const readTocFirst = toolClass === "read" && codePointLength(normalized.contentText) >= READ_TOC_MIN_CHARS;
 	const candidates = [];
-	if (looksLikeJson(normalized.text)) candidates.push(() => reduceJson(prepared));
-	if (isSearchTool(name, command)) candidates.push(() => reduceSearch(prepared, ranking?.files));
+	if (looksLikeJson(normalized.contentText)) candidates.push(() => reduceJson(prepared));
+	if (looksLikeMinified(normalized.contentText)) candidates.push(() => reduceBundledJs(prepared));
+	if (toolClass === "search") candidates.push(() => reduceSearch(prepared, ranking?.files));
 	if (isGitCommand(name, command)) candidates.push(() => reduceGit(prepared, command));
 	if (isPackageCommand(command)) candidates.push(() => reducePatternLog(prepared, "hypa-package", packagePattern()));
 	if (isBuildOrTestCommand(command)) candidates.push(() => reducePatternLog(prepared, "hypa-build-test", buildPattern()));
-	if (input.codeSkeleton === true && looksLikeSourceCode(normalized.text)) candidates.push(() => reduceCodeSkeleton(prepared));
-	if (looksLikeHtml(normalized.text)) candidates.push(() => reduceHtml(prepared));
-	if (looksLikeDocument(normalized.text)) candidates.push(() => reduceDocSkeleton(prepared, ranking?.sections));
-	if (isShellTool(name) || command !== "") candidates.push(() => reduceShell(prepared));
+	if (looksLikeSourceCode(normalized.contentText)) {
+		if (input.codeSkeleton === true) candidates.push(() => reduceCodeSkeleton(prepared));
+		else if (readTocFirst) candidates.push(() => tocGuardedCodeSkeleton(prepared));
+	}
+	if (looksLikeHtml(normalized.contentText)) candidates.push(() => reduceHtml(prepared));
+	if (looksLikeDocument(normalized.contentText)) candidates.push(() => reduceDocSkeleton(prepared, ranking?.sections));
+	if (toolClass === "shell" || command !== "") candidates.push(() => reduceShell(prepared));
 	candidates.push(() => reduceProseKeep(prepared));
-	if (isReadTool(name)) candidates.push(() => reduceHead(prepared, "pi-head"));
+	if (toolClass === "read") candidates.push(() => reduceHead(prepared, "pi-head"));
 	candidates.push(() => reduceSalient(prepared, "generic-salience"));
 	for (const make of candidates) {
 		const candidate = make();
@@ -1345,30 +1479,39 @@ function normalizeTerminalLines(text) {
 	const logical = text.replace(ANSI_PATTERN, "").split("\n").map((line) => {
 		return placeholderizeLongStrings(line.split("\r").filter((part) => part !== "").at(-1) ?? "");
 	});
+	const stripGutter = hasReadGutter(logical);
 	const folded = [];
 	let previous;
+	let firstText = "";
 	let count = 0;
 	let firstOriginal = 0;
 	const flush = (nextOriginal) => {
 		if (previous === void 0) return;
 		folded.push({
-			text: previous,
+			text: firstText,
+			content: previous,
 			originalLine: firstOriginal
 		});
-		if (count > 1) folded.push({
-			text: `[previous line repeated ${String(count - 1)} more times]`,
-			originalLine: firstOriginal + 1,
-			originalLineEnd: nextOriginal - 1
-		});
+		if (count > 1) {
+			const marker = `[previous line repeated ${String(count - 1)} more times]`;
+			folded.push({
+				text: marker,
+				content: marker,
+				originalLine: firstOriginal + 1,
+				originalLineEnd: nextOriginal - 1
+			});
+		}
 	};
 	logical.forEach((line, index) => {
 		const originalLine = index + 1;
-		if (line === previous) {
+		const content = stripGutter ? line.replace(READ_GUTTER_PATTERN, "") : line;
+		if (content === previous) {
 			count++;
 			return;
 		}
 		flush(originalLine);
-		previous = line;
+		previous = content;
+		firstText = line;
 		count = 1;
 		firstOriginal = originalLine;
 	});
@@ -1376,7 +1519,8 @@ function normalizeTerminalLines(text) {
 	const result = foldNonAdjacentRepeats(folded);
 	return {
 		folded: result,
-		text: result.map((line) => line.text).join("\n")
+		text: result.map((line) => line.text).join("\n"),
+		contentText: result.map((line) => line.content).join("\n")
 	};
 }
 /**
@@ -1394,39 +1538,41 @@ function foldNonAdjacentRepeats(folded) {
 	for (const entry of folded) if (entry.text.startsWith(ADJACENT_REPEAT_MARKER) && units.length > 0) units[units.length - 1].repeat = entry;
 	else units.push({ lead: entry });
 	const totals = /* @__PURE__ */ new Map();
-	for (const unit of units) totals.set(unit.lead.text, (totals.get(unit.lead.text) ?? 0) + 1);
+	for (const unit of units) totals.set(unit.lead.content, (totals.get(unit.lead.content) ?? 0) + 1);
 	if (totals.size === units.length) return [...folded];
 	const firstOriginal = /* @__PURE__ */ new Map();
 	const lastOriginalEnd = /* @__PURE__ */ new Map();
 	for (const unit of units) {
-		const text = unit.lead.text;
-		if (totals.get(text) < NON_ADJACENT_FOLD_THRESHOLD) continue;
-		if (!firstOriginal.has(text)) firstOriginal.set(text, unit.lead.originalLine);
+		const content = unit.lead.content;
+		if (totals.get(content) < NON_ADJACENT_FOLD_THRESHOLD) continue;
+		if (!firstOriginal.has(content)) firstOriginal.set(content, unit.lead.originalLine);
 		const end = unit.repeat?.originalLineEnd ?? unit.lead.originalLineEnd ?? unit.lead.originalLine;
-		lastOriginalEnd.set(text, end);
+		lastOriginalEnd.set(content, end);
 	}
 	const seen = /* @__PURE__ */ new Map();
 	const result = [];
 	for (const unit of units) {
-		const text = unit.lead.text;
-		const total = totals.get(text);
+		const content = unit.lead.content;
+		const total = totals.get(content);
 		if (total < NON_ADJACENT_FOLD_THRESHOLD) {
 			result.push(unit.lead);
 			if (unit.repeat !== void 0) result.push(unit.repeat);
 			continue;
 		}
-		if (!seen.has(text)) {
-			seen.set(text, 1);
+		if (!seen.has(content)) {
+			seen.set(content, 1);
 			result.push(unit.lead);
 			if (unit.repeat !== void 0) result.push(unit.repeat);
 			continue;
 		}
-		const ordinal = (seen.get(text) ?? 1) + 1;
-		seen.set(text, ordinal);
+		const ordinal = (seen.get(content) ?? 1) + 1;
+		seen.set(content, ordinal);
 		if (ordinal > 2) continue;
-		const end = lastOriginalEnd.get(text);
+		const end = lastOriginalEnd.get(content);
+		const marker = `[× ${String(total)} total: same as line ${String(firstOriginal.get(content))}; original lines ${String(unit.lead.originalLine)}-${String(end)}]`;
 		result.push({
-			text: `[× ${String(total)} total: same as line ${String(firstOriginal.get(text))}; original lines ${String(unit.lead.originalLine)}-${String(end)}]`,
+			text: marker,
+			content: marker,
 			originalLine: unit.lead.originalLine,
 			originalLineEnd: end
 		});
@@ -1435,6 +1581,104 @@ function foldNonAdjacentRepeats(folded) {
 }
 /** Default line window a retrieve hint suggests the model paste. */
 const RETRIEVE_HINT_MAX_LINES = 80;
+/**
+* TOC-first (G6): read-class results at or above this size let the code
+* skeleton compete before head/tail truncation. The 14,000-char boundary is
+* the studied real-read cohort (findings §7), well above p90 of actual reads
+* so ordinary results keep their existing dispatch.
+*/
+const READ_TOC_MIN_CHARS = 14e3;
+/**
+* A skeleton whose output is dominated by elision markers is worse than
+* head/tail for the model (task_4b risk: structure-poor files degenerate into
+* "almost all markers") — above this marker-char share the TOC candidate fails
+* open to the prose reducers.
+*/
+const TOC_MARKER_RATIO_LIMIT = .5;
+/**
+* Fail-open wrapper for the TOC-first code-skeleton candidate: a skeleton that
+* degenerates into mostly-elision markers (minified bundles, generated files)
+* returns null so the prose head/tail pair takes over.
+*/
+function tocGuardedCodeSkeleton(input) {
+	const output = reduceCodeSkeleton(input);
+	if (output === null) return null;
+	const total = codePointLength(output.text);
+	return output.text.split("\n").filter((line) => line.startsWith("[...")).reduce((sum, line) => sum + codePointLength(line) + 1, 0) / total > TOC_MARKER_RATIO_LIMIT ? null : output;
+}
+/** R10a thresholds: one giant line, uniformly fat lines, or very few fat lines. */
+const MINIFIED_MAX_LINE_CHARS = 2e3;
+const MINIFIED_AVG_LINE_CHARS = 300;
+const MINIFIED_FEW_LINES = 40;
+const MINIFIED_FEW_LINES_TOTAL_CHARS = 2e4;
+/**
+* Require form evidence of a bundled/minified module (R10a): line-anchored
+* reducers cannot see inside a 135k-character line, and R9 line ranges on a
+* 53-line bundle cannot address anything smaller than the whole file.
+* @param text - normalized result text.
+* @returns whether the text reads as a bundled/minified module.
+*/
+function looksLikeMinified(text) {
+	const lines = splitLines(text);
+	if (lines.length === 0) return false;
+	let total = 0;
+	let max = 0;
+	for (const line of lines) {
+		const length = line.length;
+		total += length;
+		if (length > max) max = length;
+	}
+	if (max > MINIFIED_MAX_LINE_CHARS) return true;
+	if (total / lines.length > MINIFIED_AVG_LINE_CHARS) return true;
+	return lines.length < MINIFIED_FEW_LINES && total > MINIFIED_FEW_LINES_TOTAL_CHARS;
+}
+/**
+* Statement-level declaration patterns scanned GLOBALLY per line: a bundle's
+* statements are separated by `;` / `},{` / `);` inside one physical line, so
+* line-anchored matching is useless here. Reserved-name traces (`exports.*`,
+* `module.exports`) are extracted first and called out in the header because
+* minifiers rename local symbols.
+*/
+const BUNDLED_DECLARATION_PATTERNS = [
+	/\bexports\.([A-Za-z_$][\w$]*)\s*=/g,
+	/\bmodule\.exports\s*=\s*([A-Za-z_$][\w$]*)/g,
+	/\b(?:function|class)\s+([A-Za-z_$][\w$]*)/g,
+	/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=/g,
+	/\b([A-Za-z_$][\w$]*)\s*:\s*function\b/g
+];
+const SOURCEMAP_DIRECTIVE = "//# sourceMappingURL=";
+/**
+* Bundled/minified JS directory (R10-B). The useful first answer is the
+* declaration/export directory — WHAT the bundle exposes — plus one honest
+* whole-span marker: the host's continuation is line-addressed, so a
+* line-range retrieve on a 53-line bundle hands back the whole file (R10d:
+* character-range retrieval is a separate, undecided extension).
+*/
+function reduceBundledJs(input) {
+	const declarations = /* @__PURE__ */ new Map();
+	for (const line of input.lines) for (const pattern of BUNDLED_DECLARATION_PATTERNS) {
+		pattern.lastIndex = 0;
+		let match = pattern.exec(line.content);
+		while (match !== null) {
+			const symbol = match[1];
+			if (symbol !== void 0 && !declarations.has(symbol)) declarations.set(symbol, line.originalLine);
+			match = pattern.exec(line.content);
+		}
+	}
+	if (declarations.size === 0) return null;
+	const hasSourceMap = input.contentText.includes(SOURCEMAP_DIRECTIVE);
+	const entries = [...declarations.entries()].sort((a, b) => a[1] - b[1]);
+	const kept = [`[bundled/minified JS detected; ${String(entries.length)} declarations; minified symbols may be renamed — exports.*/module.exports traces are the reliable ones;${hasSourceMap ? " source map present, prefer reading the original source;" : ""} source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"}) (line-addressed: single-line bundles come back whole)]`, ...entries.slice(0, 400).map(([symbol, line]) => `${symbol}  (line ${String(line)})`)];
+	const start = input.lines[0]?.originalLine ?? 1;
+	const end = originalEnd(input.lines, input.lines.length - 1);
+	if (end > start) kept.push(elidedRangeMarker(start, end));
+	const text = fitLines(kept, input.budgetChars, input.sourceRef);
+	return text === null ? null : {
+		text,
+		reducer: "bundled-js-directory",
+		lossy: true
+	};
+}
 /**
 * Continuous-mask marker (R9b): cites the ORIGINAL-event line range it elides
 * and carries a pasteable retrieve hint starting at the first elided line.
@@ -1743,7 +1987,7 @@ function reduceSalient(input, reducer) {
 function looksLikeDocument(text) {
 	const lines = splitLines(text);
 	let headings = 0;
-	for (const line of lines.slice(0, 400)) if (MARKDOWN_HEADING_PATTERN.test(line)) {
+	for (const line of lines.slice(0, 600)) if (MARKDOWN_HEADING_PATTERN.test(line)) {
 		headings += 1;
 		if (headings >= 3) return true;
 	}
@@ -1768,6 +2012,77 @@ function looksLikeHtml(text) {
 	return false;
 }
 const HTML_DROPPED_OPEN = /<(script|style|noscript|svg|head)\b[^>]*>/i;
+const HTML_BLOCK_MIN_LINES = 2;
+const HTML_BLOCK_MAX_LINES = 8;
+const HTML_BLOCK_MIN_OCCURRENCES = 3;
+const HTML_TABLE_TAG_PATTERN = /<table\b|<tr\b|<th\b|<\/tr\b|<\/table\b/i;
+/**
+* Deterministic repeated-block folding for slimmed HTML (R4/RK-3): contiguous
+* runs of 2–8 non-table lines whose digit-normalized signature recurs ≥3 times
+* keep their first occurrence; every later occurrence becomes ONE counted
+* marker. Tables never fold, and different copy never shares a signature —
+* only counter/number drift does.
+*/
+function foldRepeatedHtmlBlocks(slim, originalLineFor) {
+	const signatureOf = (from, length) => {
+		let signature = `${String(length)}|`;
+		for (let position = from; position < from + length; position++) {
+			const text = slim[position].text;
+			if (HTML_TABLE_TAG_PATTERN.test(text)) return null;
+			signature += `${text.replace(/\d+/g, "#").replace(/\s+/g, " ").trim()}\n`;
+		}
+		return signature;
+	};
+	const counts = /* @__PURE__ */ new Map();
+	for (let length = HTML_BLOCK_MIN_LINES; length <= HTML_BLOCK_MAX_LINES; length++) for (let start = 0; start + length <= slim.length; start++) {
+		const signature = signatureOf(start, length);
+		if (signature === null) continue;
+		const bucket = counts.get(signature);
+		if (bucket === void 0) counts.set(signature, {
+			count: 1,
+			first: start
+		});
+		else bucket.count += 1;
+	}
+	const result = [];
+	let position = 0;
+	while (position < slim.length) {
+		let foldedLength = 0;
+		let matched;
+		for (let length = HTML_BLOCK_MAX_LINES; length >= HTML_BLOCK_MIN_LINES; length--) {
+			if (position + length > slim.length) continue;
+			const signature = signatureOf(position, length);
+			const bucket = signature === null ? void 0 : counts.get(signature);
+			if (bucket !== void 0 && bucket.count >= HTML_BLOCK_MIN_OCCURRENCES) {
+				foldedLength = length;
+				matched = bucket;
+				break;
+			}
+		}
+		if (matched === void 0) {
+			result.push({
+				text: slim[position].text,
+				index: slim[position].index
+			});
+			position += 1;
+			continue;
+		}
+		if (matched.first === position) for (let offset = 0; offset < foldedLength; offset++) result.push({
+			text: slim[position + offset].text,
+			index: slim[position + offset].index
+		});
+		else {
+			const firstLine = originalLineFor(slim[matched.first].index);
+			result.push({
+				text: `[×${String(matched.count)} repeated block, first at line ${String(firstLine)}]`,
+				index: slim[position].index,
+				marker: true
+			});
+		}
+		position += foldedLength;
+	}
+	return result;
+}
 /**
 * Two-stage HTML reduction (R13). HTML previously fell into `pi-head`, which
 * keeps exactly the useless `<head>` metadata and drops the body.
@@ -1784,7 +2099,7 @@ function reduceHtml(input) {
 	const slim = [];
 	let dropping = null;
 	input.lines.forEach((line, index) => {
-		let text = line.text;
+		let text = line.content;
 		if (dropping !== null) {
 			const close = new RegExp(`</${dropping}\\s*>`, "i").exec(text);
 			if (close === null) return;
@@ -1818,19 +2133,24 @@ function reduceHtml(input) {
 		const startLine = firstElided === void 0 ? "" : `,"start_line":${String(firstElided.start)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}`;
 		return `[html compressed by ${reducer}; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"${startLine}})]`;
 	};
-	if (slim.reduce((sum, line) => sum + codePointLength(line.text) + 1, 0) + 160 <= input.budgetChars) {
-		const text = fitLines([buildHeader("html-slim"), ...slim.map((line) => line.text)], input.budgetChars, input.sourceRef);
+	const foldedSlim = foldRepeatedHtmlBlocks(slim, (index) => input.lines[index]?.originalLine ?? 1);
+	if (foldedSlim.reduce((sum, line) => sum + codePointLength(line.text) + 1, 0) + 160 <= input.budgetChars) {
+		const text = fitLines([buildHeader("html-slim"), ...foldedSlim.map((line) => line.text)], input.budgetChars, input.sourceRef);
 		if (text !== null) return {
 			text,
 			reducer: "html-slim",
 			lossy: true
 		};
 	}
-	const keep = new Array(slim.length).fill(false);
+	const keep = new Array(foldedSlim.length).fill(false);
 	let tableRows = 0;
 	let lastHeading = -2;
-	for (let position = 0; position < slim.length; position++) {
-		const text = slim[position].text;
+	for (let position = 0; position < foldedSlim.length; position++) {
+		const text = foldedSlim[position].text;
+		if (foldedSlim[position].marker === true) {
+			keep[position] = true;
+			continue;
+		}
 		if (/<h[1-6]\b/i.test(text)) {
 			keep[position] = true;
 			lastHeading = position;
@@ -1841,7 +2161,7 @@ function reduceHtml(input) {
 			continue;
 		}
 		if (/<table\b|<tr\b|<th\b/i.test(text)) {
-			if (tableRows < 1) keep[position] = true;
+			if (tableRows < 2) keep[position] = true;
 			tableRows += 1;
 			continue;
 		}
@@ -1851,24 +2171,27 @@ function reduceHtml(input) {
 	const kept = [];
 	let position = 0;
 	let firstElided;
-	while (position < slim.length) {
+	let elidedLines = 0;
+	while (position < foldedSlim.length) {
 		if (keep[position]) {
-			kept.push(slim[position].text);
+			kept.push(foldedSlim[position].text);
 			position += 1;
 			continue;
 		}
 		const runStart = position;
-		while (position < slim.length && !keep[position]) position += 1;
-		const start = input.lines[slim[runStart].index].originalLine;
-		const end = originalEnd(input.lines, slim[position - 1].index);
+		while (position < foldedSlim.length && !keep[position]) position += 1;
+		const start = input.lines[foldedSlim[runStart].index].originalLine;
+		const end = originalEnd(input.lines, foldedSlim[position - 1].index);
 		if (firstElided === void 0) firstElided = start;
+		elidedLines += end - start + 1;
 		kept.push(elidedRangeMarker(start, end));
 	}
 	const text = fitLines([buildHeader("html-skeleton", firstElided === void 0 ? void 0 : { start: firstElided }), ...kept], input.budgetChars, input.sourceRef);
 	return text === null ? null : {
 		text,
 		reducer: "html-skeleton",
-		lossy: true
+		lossy: true,
+		elidedLines
 	};
 }
 /** Original-event end line of folded entry `lines[index]`. */
@@ -1889,7 +2212,7 @@ function reduceDocSkeleton(input, sectionRanking) {
 	const headingIndex = [];
 	let inFence = false;
 	for (let index = 0; index < lines.length; index++) {
-		const line = lines[index].text;
+		const line = lines[index].content;
 		if (FENCE_PATTERN.test(line)) {
 			inFence = !inFence;
 			keep[index] = true;
@@ -1906,7 +2229,7 @@ function reduceDocSkeleton(input, sectionRanking) {
 	let tableRows = 0;
 	let fenceOpen = false;
 	for (let index = 0; index < lines.length; index++) {
-		const line = lines[index].text;
+		const line = lines[index].content;
 		if (FENCE_PATTERN.test(line)) {
 			fenceOpen = !fenceOpen;
 			tableRows = 0;
@@ -1923,7 +2246,7 @@ function reduceDocSkeleton(input, sectionRanking) {
 	const sectionStarts = [-1, ...headingIndex];
 	const sectionEnds = [...headingIndex, lines.length];
 	const sections = headingIndex.map((heading, position) => ({
-		id: lines[heading].text.replace(/^#+\s*/, "").trim(),
+		id: lines[heading].content.replace(/^#+\s*/, "").trim(),
 		heading,
 		from: heading + 1,
 		to: position + 1 < headingIndex.length ? headingIndex[position + 1] : lines.length
@@ -1935,7 +2258,7 @@ function reduceDocSkeleton(input, sectionRanking) {
 		let first = -1;
 		let last = -1;
 		for (let index = from; index < to; index++) {
-			if (lines[index].text.trim() === "") continue;
+			if (lines[index].content.trim() === "") continue;
 			if (first === -1) first = index;
 			last = index;
 		}
@@ -1947,6 +2270,7 @@ function reduceDocSkeleton(input, sectionRanking) {
 		const kept = [];
 		let index = 0;
 		let firstElided;
+		let elidedLines = 0;
 		while (index < lines.length) {
 			if (flags[index]) {
 				kept.push(lines[index].text);
@@ -1958,13 +2282,15 @@ function reduceDocSkeleton(input, sectionRanking) {
 			const start = lines[runStart].originalLine;
 			const end = originalEnd(lines, index - 1);
 			if (firstElided === void 0) firstElided = start;
+			elidedLines += end - start + 1;
 			kept.push(elidedRangeMarker(start, end));
 		}
 		const hint = firstElided === void 0 ? "" : `,"start_line":${String(firstElided)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}`;
 		kept.unshift(`[document compressed by doc-skeleton; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"${hint}})]`);
 		return {
 			text: fitLines(kept, budget, input.sourceRef),
-			...firstElided === void 0 ? {} : { firstElided }
+			...firstElided === void 0 ? {} : { firstElided },
+			elidedLines
 		};
 	};
 	const combine = (base, overlay) => lines.map((_, index) => (base[index] ?? false) || (overlay[index] ?? false));
@@ -1973,12 +2299,13 @@ function reduceDocSkeleton(input, sectionRanking) {
 	if (sectionRanking === void 0 || sectionRanking.length === 0) return {
 		text: mechanical.text,
 		reducer: "doc-skeleton",
-		lossy: true
+		lossy: true,
+		elidedLines: mechanical.elidedLines
 	};
 	const cap = Math.min(input.budgetChars, codePointLength(input.text) - 1);
 	const rankedFloor = new Array(lines.length).fill(false);
 	for (const section of sections) for (let index = section.from; index < section.to; index++) {
-		if (lines[index].text.trim() === "") continue;
+		if (lines[index].content.trim() === "") continue;
 		rankedFloor[index] = true;
 		break;
 	}
@@ -2000,7 +2327,7 @@ function reduceDocSkeleton(input, sectionRanking) {
 	};
 	const fill = new Array(lines.length).fill(false);
 	for (const section of rankedFirst(sections, sectionRanking)) for (let index = section.from; index < section.to; index++) {
-		if (rankedFloor[index] || fill[index] || lines[index].text.trim() === "") continue;
+		if (rankedFloor[index] || fill[index] || lines[index].content.trim() === "") continue;
 		fill[index] = true;
 		if (packedSize(combine(combine(keep, rankedFloor), fill)) > cap) {
 			fill[index] = false;
@@ -2011,7 +2338,8 @@ function reduceDocSkeleton(input, sectionRanking) {
 	return ranked.text === null ? null : {
 		text: ranked.text,
 		reducer: "doc-skeleton",
-		lossy: true
+		lossy: true,
+		elidedLines: ranked.elidedLines
 	};
 }
 /**
@@ -2024,7 +2352,7 @@ function reduceDocSkeleton(input, sectionRanking) {
 function reduceProseKeep(input) {
 	const lines = input.lines;
 	if (lines.length < 8) return null;
-	if (looksLikeSourceCode(input.text)) return null;
+	if (looksLikeSourceCode(input.contentText)) return null;
 	const first = lines[0];
 	const last = lines[lines.length - 1];
 	const tailLine = last.originalLineEnd ?? last.originalLine;
@@ -2064,7 +2392,8 @@ function reduceProseKeep(input) {
 			...lines.slice(lines.length - tailCount).map((line) => line.text)
 		].join("\n"),
 		reducer: "prose-keep",
-		lossy: true
+		lossy: true,
+		elidedLines: elidedEnd - elidedStart + 1
 	};
 }
 /**
@@ -2077,9 +2406,10 @@ function reduceProseKeep(input) {
 * @returns a verified candidate, or `null` when the text is not code-like.
 */
 function reduceCodeSkeleton(input) {
-	const lines = input.lines.map((line) => line.text);
+	const lines = input.lines.map((line) => line.content);
 	const kept = [];
 	let elided = 0;
+	let elidedTotal = 0;
 	let firstElided;
 	const flushElided = () => {
 		if (elided > 0) {
@@ -2090,6 +2420,7 @@ function reduceCodeSkeleton(input) {
 				end
 			};
 			kept.push(elidedRangeMarker(start, end));
+			elidedTotal += elided;
 		}
 		elided = 0;
 	};
@@ -2202,9 +2533,9 @@ function reduceCodeSkeleton(input) {
 		index += 1;
 	}
 	flushElided();
-	return finishSkeleton(kept, lines, input, firstElided);
+	return finishSkeleton(kept, lines, input, firstElided, elidedTotal);
 }
-function finishSkeleton(kept, lines, input, firstElided) {
+function finishSkeleton(kept, lines, input, firstElided, elidedLines) {
 	const hint = firstElided === void 0 ? "" : `; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}","start_line":${String(firstElided.start)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}})`;
 	const text = fitLines([
 		`[code output compressed by hypa-code-skeleton; source: ${input.sourceRef}${hint}]`,
@@ -2214,7 +2545,8 @@ function finishSkeleton(kept, lines, input, firstElided) {
 	return text === null ? null : {
 		text,
 		reducer: "hypa-code-skeleton",
-		lossy: true
+		lossy: true,
+		elidedLines
 	};
 }
 /** Net brace delta of one line, ignoring braces inside string literals. */
@@ -2333,6 +2665,14 @@ function splitLines(text) {
 	if (text.endsWith("\n")) lines.pop();
 	return lines;
 }
+/**
+* Extract the command argument from a tool call's arguments (task_10/AD2):
+* ONLY `command` / `cmd` / `script` are command keys. `input` was removed —
+* any MCP tool with a non-empty `input` string parameter would otherwise be
+* misrouted into the shell reducer, the single largest misroute source.
+* @param argumentsText - raw JSON arguments of the tool call.
+* @returns the command string, or '' when absent.
+*/
 function extractCommand(argumentsText) {
 	try {
 		const parsed = JSON.parse(argumentsText);
@@ -2341,8 +2681,7 @@ function extractCommand(argumentsText) {
 		for (const key of [
 			"command",
 			"cmd",
-			"script",
-			"input"
+			"script"
 		]) {
 			const value = record[key];
 			if (typeof value === "string") return value;
@@ -2355,15 +2694,6 @@ function extractCommand(argumentsText) {
 function looksLikeJson(text) {
 	const trimmed = text.trim();
 	return trimmed.startsWith("{") && trimmed.endsWith("}") || trimmed.startsWith("[") && trimmed.endsWith("]");
-}
-function isReadTool(name) {
-	return /(?:^|[-_/])(?:read|cat|view|open_file)(?:$|[-_/])/.test(name);
-}
-function isSearchTool(name, command) {
-	return /(?:grep|search|glob|find|ripgrep|rg)/.test(name) || /(?:^|\s)(?:rg|grep|find|fd)\s/.test(command);
-}
-function isShellTool(name) {
-	return /(?:bash|shell|terminal|powershell|pwsh|exec|command)/.test(name);
 }
 function isGitCommand(name, command) {
 	return name.includes("git") || /(?:^|\s)git\s/.test(command);

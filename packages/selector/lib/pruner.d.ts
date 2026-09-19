@@ -184,6 +184,14 @@ interface ToolResultPruneConfig {
   /** Minimum reclaim required before historical aging is worth a cache break. Profile default when omitted. */
   historyMinReclaimTokens?: number;
   /**
+   * Read-class input cap in characters. Invariant (startup-asserted in
+   * `resolvePolicy`): when set it must exceed `freshTriggerTokens × 4.0` —
+   * the conservative chars/token upper bound — otherwise the cap sits below
+   * the fresh trigger and silently silences the fresh path for every read
+   * result. Unset profiles (host cap 50k–59.5k chars observed) stay untouched.
+   */
+  readInputCapChars?: number;
+  /**
    * Auto Compact threshold percent frozen into this deployment by the preset
    * overlay generation (50–90 integer). When present it supersedes the live
    * Host setting so one generation never splits Auto Compact and micro
@@ -211,6 +219,12 @@ interface CompressionPolicy {
   readonly historyKeepRecentToolCalls: number;
   readonly historyKeepRecentTokens: number;
   readonly historyMinReclaimTokens: number;
+  /**
+   * Read-class input cap in characters when configured; absent otherwise.
+   * Startup-asserted to exceed `freshTriggerTokens × 4.0` so it can never
+   * silently silence the fresh path (G2 invariant).
+   */
+  readonly readInputCapChars?: number;
   /**
    * Auto Compact token watermark `A = floor(C × a)` when the standard-profile
    * History linkage resolved for this Session; absent for Custom, Off, Native,
@@ -249,6 +263,8 @@ interface ResolvedConfig {
   readonly historyKeepRecentToolCalls?: number;
   readonly historyKeepRecentTokens?: number;
   readonly historyMinReclaimTokens?: number;
+  /** Read-class input cap in characters when configured; absent otherwise. */
+  readonly readInputCapChars?: number;
   /**
    * Auto Compact threshold percent frozen into this deployment by the preset
    * overlay generation (50-90 integer). Supersedes the live Host setting.
@@ -441,6 +457,12 @@ interface ReducerOutput {
   readonly text: string;
   readonly reducer: string;
   readonly lossy: boolean;
+  /**
+   * Structured telemetry (task_4c/G7): how many ORIGINAL-event lines the
+   * reducer elided, when the reducer knows it. Never printed into `text` —
+   * host-side logging is what turns this into the compress→retrieve M/N ratio.
+   */
+  readonly elidedLines?: number;
 }
 /**
  * Optional side-channel ranking (S1a/S1b) handed to the form-dispatched

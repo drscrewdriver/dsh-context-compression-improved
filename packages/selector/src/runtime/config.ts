@@ -286,6 +286,7 @@ const CONFIG_KEYS: ReadonlySet<string> = new Set([
   'historyKeepRecentToolCalls',
   'historyKeepRecentTokens',
   'historyMinReclaimTokens',
+  'readInputCapChars',
   'autoCompactThresholdPercent',
   'presetOptions',
 ])
@@ -354,6 +355,7 @@ export function resolveConfig(config: ToolResultPruneConfig = {}): ResolvedConfi
     ...config.historyKeepRecentToolCalls === undefined ? {} : { historyKeepRecentToolCalls: config.historyKeepRecentToolCalls },
     ...config.historyKeepRecentTokens === undefined ? {} : { historyKeepRecentTokens: config.historyKeepRecentTokens },
     ...config.historyMinReclaimTokens === undefined ? {} : { historyMinReclaimTokens: config.historyMinReclaimTokens },
+    ...config.readInputCapChars === undefined ? {} : { readInputCapChars: config.readInputCapChars },
     ...config.autoCompactThresholdPercent === undefined ? {} : { autoCompactThresholdPercent: config.autoCompactThresholdPercent },
     ...config.presetOptions === undefined ? {} : { presetOptions: config.presetOptions },
   }
@@ -365,7 +367,7 @@ export function resolveConfig(config: ToolResultPruneConfig = {}): ResolvedConfi
   for (const key of [
     'nativeTriggerTokens', 'nativeTargetTokens', 'freshTriggerTokens', 'freshTargetTokens',
     'aggregateTriggerTokens', 'aggregateTargetTokens', 'historyTriggerTokens',
-    'historyMinReclaimTokens',
+    'historyMinReclaimTokens', 'readInputCapChars',
   ] as const) {
     const value = resolved[key]
     if (value !== undefined) assertPositiveInteger(key, value)
@@ -567,6 +569,7 @@ export function resolvePolicy(
       ?? linkage?.historyKeepRecentTokens ?? preset.historyKeepRecentTokens,
     historyMinReclaimTokens: config.historyMinReclaimTokens
       ?? linkage?.historyMinReclaimTokens ?? preset.historyMinReclaimTokens,
+    ...config.readInputCapChars === undefined ? {} : { readInputCapChars: config.readInputCapChars },
     ...linkage === undefined ? {} : {
       autoCompactTokens: linkage.autoCompactTokens,
       microDeadlineTokens: linkage.microDeadlineTokens,
@@ -583,6 +586,14 @@ export function resolvePolicy(
   }
   if (policy.aggregateTargetTokens >= policy.aggregateTriggerTokens && policy.freshEnabled) {
     throw new Error('context compression policy: aggregate target must be below trigger')
+  }
+  // G2 invariant: the fresh trigger is in TOKENS while a read input cap is in
+  // CHARACTERS. English code runs ≈4.0 chars/token at the conservative upper
+  // bound, so a cap at or below `freshTriggerTokens × 4.0` would truncate every
+  // read result below the trigger and silently silence the fresh path.
+  if (policy.readInputCapChars !== undefined
+    && policy.readInputCapChars <= policy.freshTriggerTokens * 4.0) {
+    throw new Error('context compression policy: read input cap would silence the fresh path')
   }
   return deepFreeze(policy)
 }
