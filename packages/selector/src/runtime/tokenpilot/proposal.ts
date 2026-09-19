@@ -15,6 +15,11 @@
  * expectedSaving = α·R·max(0, Ŝ − paybackTurns)    // Ŝ = estimated remaining turns
  * ```
  *
+ * The refill penalty only models mutations of already-cached context. A
+ * fresh-stage batch (shaped before its first request) is exempt via
+ * `refillPenaltyExempt`: payback is 0 and every reclaimed token saves from
+ * the very first turn.
+ *
  * `expectedSaving` is only produced when Ŝ is known (the estimator answered
  * with `expectedRemainingTurns`); it is never fabricated from a guess.
  */
@@ -36,6 +41,10 @@ export interface BenefitInput {
   readonly tailTokens: number
   /** Estimated remaining turns Ŝ; `undefined` keeps expectedSaving out of the result. */
   readonly remainingTurns?: number | undefined
+  /** True for fresh-stage batches: their content was never served, so it is
+   *  not in the KV cache and shaping it causes no cache break — no refill
+   *  penalty applies and the whole discounted recovery is pure gain. */
+  readonly refillPenaltyExempt?: boolean | undefined
 }
 
 export interface BenefitEstimate {
@@ -61,7 +70,7 @@ export function computeBenefit(candidates: readonly BenefitCandidate[], input: B
   for (const candidate of candidates) {
     recoveredTokens += Math.max(0, candidate.tokensBefore - candidate.tokensAfter)
   }
-  const penaltyTokens = (1 - alpha) * tailTokens
+  const penaltyTokens = input.refillPenaltyExempt === true ? 0 : (1 - alpha) * tailTokens
   const perTurnSaving = alpha * recoveredTokens
   if (perTurnSaving <= 0) {
     return remainingTurns === undefined
@@ -119,6 +128,10 @@ export interface TriageInput {
   readonly remainingTurns?: number | undefined
   /** Seqs whose reduction came from the estimator channel; overrides the kind. */
   readonly estimatorSeqs?: ReadonlySet<number> | undefined
+  /** Landing stage of the batch: `'fresh'` batches are priced without the
+   *  tail-refill penalty (first-exposure shaping causes no cache break);
+   *  `'history'` batches — already-served content — pay it in full. */
+  readonly stage?: 'fresh' | 'history' | undefined
 }
 
 /** One frozen item inside a review proposal: metadata and digest, never content. */
@@ -185,6 +198,13 @@ function proposalKindFor(candidate: ClassifiableCandidate, estimatorSeqs: Readon
  * - `paybackTurns ≤ 1`, or Ŝ known and `paybackTurns ≤ 0.25·Ŝ` → auto;
  * - Ŝ known and `paybackTurns ∈ (1, 3]` → review;
  * - everything else (Ŝ unknown with a slow payback) → drop.
+ *
+ * Stage asymmetry: a `'fresh'` batch is exempt from the tail-refill penalty
+ * (`refillPenaltyExempt`) — its content was never served, so compressing it
+ * breaks no cache and payback is 0 — while a `'history'` batch mutates
+ * already-cached context and pays `(1−α)·tailTokens` in full. Without this
+ * exemption every realistic fresh batch prices into the drop band and the
+ * auto bucket stays structurally unreachable.
  */
 export function classifyCandidates(
   candidates: readonly ClassifiableCandidate[],
@@ -201,7 +221,12 @@ export function classifyCandidates(
   }
   if (usable.length === 0) return { auto: [], review: [], drop }
 
-  const benefit = computeBenefit(usable, input)
+  const benefit = computeBenefit(usable, {
+    alpha: input.alpha,
+    tailTokens: input.tailTokens,
+    ...input.remainingTurns !== undefined ? { remainingTurns: input.remainingTurns } : {},
+    refillPenaltyExempt: input.stage === 'fresh',
+  })
   const payback = benefit.paybackTurns
   const highImpact = usable.some(candidate => candidate.tokensBefore >= input.reviewHighImpactTokens)
   let verdict: 'auto' | 'review' | 'drop'

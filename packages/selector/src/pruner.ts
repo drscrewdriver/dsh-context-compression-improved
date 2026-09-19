@@ -388,7 +388,7 @@ export class ToolResultPruner extends Service {
       const planned = eligible
         .map(candidate => this.planNative(candidate, session, stage, policy, view))
         .filter((entry): entry is PlannedReplacement => entry !== null)
-      landed.push(...this.landAll(session, this.triageForReview(session, policy, planned)))
+      landed.push(...this.landAll(session, this.triageForReview(session, policy, planned, 'history')))
       if (landed.length === 0) {
         const exact = eligible.flatMap(candidate => candidate.count.kind === 'exact-tokenizer'
           ? [candidate.count.tokens] : [])
@@ -424,7 +424,7 @@ export class ToolResultPruner extends Service {
           capacityPressure,
         )
         if (historyAllowed) {
-          landed.push(...this.landAll(session, this.triageForReview(session, policy, historyOutcome.plans)))
+          landed.push(...this.landAll(session, this.triageForReview(session, policy, historyOutcome.plans, 'history')))
         }
       }
     } else {
@@ -432,7 +432,7 @@ export class ToolResultPruner extends Service {
       if (historyAllowed) {
         historyOutcome = this.planHistoricalAging(session, policy, view)
         if (historyOutcome.kind === 'planned') {
-          landed.push(...this.landAll(session, this.triageForReview(session, policy, historyOutcome.plans)))
+          landed.push(...this.landAll(session, this.triageForReview(session, policy, historyOutcome.plans, 'history')))
         }
       }
     }
@@ -718,6 +718,7 @@ export class ToolResultPruner extends Service {
     session: Session,
     policy: CompressionPolicy,
     plans: readonly PlannedReplacement[],
+    stage: 'fresh' | 'history' = 'history',
   ): readonly PlannedReplacement[] {
     const queue = this.reviewQueueFor(session, policy)
     if (queue === undefined || plans.length === 0) return plans
@@ -736,6 +737,10 @@ export class ToolResultPruner extends Service {
         ? {}
         : { remainingTurns: this.state.estimatorRemainingTurns.get(session) },
       estimatorSeqs,
+      // Fresh plans shape content before its first request — it is not in the
+      // KV cache yet, so no cache break occurs and the refill penalty would
+      // be a phantom cost pricing every realistic fresh batch into drop.
+      stage,
     }
     const classified = classifyCandidates(plans.map(plan => ({
       sourceSeq: plan.sourceSeq,
@@ -1476,7 +1481,7 @@ export class ToolResultPruner extends Service {
     const freshCandidates = candidates
       .map(candidate => plans.get(candidate.seq))
       .filter((plan): plan is PlannedReplacement => plan !== undefined)
-    const landed = this.landAll(session, this.triageForReview(session, policy, freshCandidates))
+    const landed = this.landAll(session, this.triageForReview(session, policy, freshCandidates, 'fresh'))
     const freshLanded = landed.some(entry => entry.stage === 'fresh'
       && plans.get(entry.originalSeq)?.component === 'fresh')
     const aggregateLanded = landed.some(entry => entry.stage === 'fresh'

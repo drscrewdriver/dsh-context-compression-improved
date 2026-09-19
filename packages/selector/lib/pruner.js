@@ -3084,6 +3084,11 @@ function dedupePlaceholder(entry, originalChars) {
 * expectedSaving = α·R·max(0, Ŝ − paybackTurns)    // Ŝ = estimated remaining turns
 * ```
 *
+* The refill penalty only models mutations of already-cached context. A
+* fresh-stage batch (shaped before its first request) is exempt via
+* `refillPenaltyExempt`: payback is 0 and every reclaimed token saves from
+* the very first turn.
+*
 * `expectedSaving` is only produced when Ŝ is known (the estimator answered
 * with `expectedRemainingTurns`); it is never fabricated from a guess.
 */
@@ -3097,7 +3102,7 @@ function computeBenefit(candidates, input) {
 	const { alpha, tailTokens, remainingTurns } = input;
 	let recoveredTokens = 0;
 	for (const candidate of candidates) recoveredTokens += Math.max(0, candidate.tokensBefore - candidate.tokensAfter);
-	const penaltyTokens = (1 - alpha) * tailTokens;
+	const penaltyTokens = input.refillPenaltyExempt === true ? 0 : (1 - alpha) * tailTokens;
 	const perTurnSaving = alpha * recoveredTokens;
 	if (perTurnSaving <= 0) return remainingTurns === void 0 ? {
 		recoveredTokens,
@@ -3164,6 +3169,13 @@ function proposalKindFor(candidate, estimatorSeqs) {
 * - `paybackTurns ≤ 1`, or Ŝ known and `paybackTurns ≤ 0.25·Ŝ` → auto;
 * - Ŝ known and `paybackTurns ∈ (1, 3]` → review;
 * - everything else (Ŝ unknown with a slow payback) → drop.
+*
+* Stage asymmetry: a `'fresh'` batch is exempt from the tail-refill penalty
+* (`refillPenaltyExempt`) — its content was never served, so compressing it
+* breaks no cache and payback is 0 — while a `'history'` batch mutates
+* already-cached context and pays `(1−α)·tailTokens` in full. Without this
+* exemption every realistic fresh batch prices into the drop band and the
+* auto bucket stays structurally unreachable.
 */
 function classifyCandidates(candidates, input) {
 	const drop = [];
@@ -3180,7 +3192,12 @@ function classifyCandidates(candidates, input) {
 		review: [],
 		drop
 	};
-	const benefit = computeBenefit(usable, input);
+	const benefit = computeBenefit(usable, {
+		alpha: input.alpha,
+		tailTokens: input.tailTokens,
+		...input.remainingTurns !== void 0 ? { remainingTurns: input.remainingTurns } : {},
+		refillPenaltyExempt: input.stage === "fresh"
+	});
 	const payback = benefit.paybackTurns;
 	const highImpact = usable.some((candidate) => candidate.tokensBefore >= input.reviewHighImpactTokens);
 	let verdict;
@@ -3822,7 +3839,7 @@ var ToolResultPruner = class extends Service {
 			const exactUnavailable = eligible.some((candidate) => candidate.count.kind !== "exact-tokenizer");
 			if (exactUnavailable) this.warnExactUnavailable(session, view, "native");
 			const planned = eligible.map((candidate) => this.planNative(candidate, session, stage, policy, view)).filter((entry) => entry !== null);
-			landed.push(...this.landAll(session, this.triageForReview(session, policy, planned)));
+			landed.push(...this.landAll(session, this.triageForReview(session, policy, planned, "history")));
 			if (landed.length === 0) {
 				const exact = eligible.flatMap((candidate) => candidate.count.kind === "exact-tokenizer" ? [candidate.count.tokens] : []);
 				this.auditComponent(session, policy, "native-tool-result", "pressure", "skipped", exactUnavailable ? "exact-tokenizer-unavailable" : exact.length === 0 ? "no-tool-result-candidates" : Math.max(...exact) <= policy.nativeTriggerTokens ? "at-or-below-trigger" : planned.length === 0 ? "no-valid-reduction" : "recovery-tool-unavailable", {
@@ -3844,13 +3861,13 @@ var ToolResultPruner = class extends Service {
 			if (historyOutcome.kind === "planned") {
 				const capacityPressure = this.capacityPressureActive(session, view, policy);
 				historyAllowed = this.adaptiveHistoryAllowed(session, view, historyOutcome.plans, capacityPressure);
-				if (historyAllowed) landed.push(...this.landAll(session, this.triageForReview(session, policy, historyOutcome.plans)));
+				if (historyAllowed) landed.push(...this.landAll(session, this.triageForReview(session, policy, historyOutcome.plans, "history")));
 			}
 		} else {
 			historyAllowed = this.historyAllowed(session, policy, view);
 			if (historyAllowed) {
 				historyOutcome = this.planHistoricalAging(session, policy, view);
-				if (historyOutcome.kind === "planned") landed.push(...this.landAll(session, this.triageForReview(session, policy, historyOutcome.plans)));
+				if (historyOutcome.kind === "planned") landed.push(...this.landAll(session, this.triageForReview(session, policy, historyOutcome.plans, "history")));
 			}
 		}
 		if (!landed.some((entry) => entry.stage === "pressure")) this.auditHistoryEvaluation(session, policy, view, historyAllowed, historyOutcome);
@@ -4083,7 +4100,7 @@ var ToolResultPruner = class extends Service {
 	* The digest freezes each candidate's ORIGINAL surface content, so the apply
 	* point can prove "what is removed now is what was approved then".
 	*/
-	triageForReview(session, policy, plans) {
+	triageForReview(session, policy, plans, stage = "history") {
 		const queue = this.reviewQueueFor(session, policy);
 		if (queue === void 0 || plans.length === 0) return plans;
 		const presetOptions = policy.presetOptions;
@@ -4094,7 +4111,8 @@ var ToolResultPruner = class extends Service {
 			tailTokens: Math.max(1, policy.historyKeepRecentTokens),
 			reviewHighImpactTokens: presetOptions.reviewHighImpactTokens,
 			...this.state.estimatorRemainingTurns.get(session) === void 0 ? {} : { remainingTurns: this.state.estimatorRemainingTurns.get(session) },
-			estimatorSeqs
+			estimatorSeqs,
+			stage
 		};
 		const classified = classifyCandidates(plans.map((plan) => ({
 			sourceSeq: plan.sourceSeq,
@@ -4643,7 +4661,7 @@ var ToolResultPruner = class extends Service {
 			}
 		}
 		const freshCandidates = candidates.map((candidate) => plans.get(candidate.seq)).filter((plan) => plan !== void 0);
-		const landed = this.landAll(session, this.triageForReview(session, policy, freshCandidates));
+		const landed = this.landAll(session, this.triageForReview(session, policy, freshCandidates, "fresh"));
 		const freshLanded = landed.some((entry) => entry.stage === "fresh" && plans.get(entry.originalSeq)?.component === "fresh");
 		const aggregateLanded = landed.some((entry) => entry.stage === "fresh" && plans.get(entry.originalSeq)?.component === "aggregate");
 		if (!freshLanded) this.auditComponent(session, policy, "fresh", "fresh", policy.freshEnabled ? "skipped" : "disabled", !policy.freshEnabled ? "profile-policy" : !exactAvailable ? "exact-tokenizer-unavailable" : (maxCandidateTokens ?? 0) <= policy.freshTriggerTokens ? "at-or-below-trigger" : freshPlanned > 0 && aggregatePlanned > 0 ? "superseded-by-aggregate" : freshPlanned === 0 ? "no-valid-reduction" : "recovery-tool-unavailable", {

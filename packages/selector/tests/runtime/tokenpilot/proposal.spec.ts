@@ -82,6 +82,28 @@ describe('computeBenefit', () => {
     )
     expect(result.expectedSaving).toBeCloseTo(0)
   })
+
+  it('waives the refill penalty for a refill-exempt batch: payback 0, saving α·R·Ŝ', () => {
+    // Fresh-stage shaping: the content never entered the KV cache, so no
+    // refill penalty applies — the whole discounted recovery is pure gain.
+    const result = computeBenefit(
+      [{ sourceSeq: 7, tokensBefore: 4000, tokensAfter: 400 }],
+      { alpha: 0.1, tailTokens: 4000, remainingTurns: 12, refillPenaltyExempt: true },
+    )
+    expect(result.recoveredTokens).toBe(3600)
+    expect(result.penaltyTokens).toBe(0)
+    expect(result.paybackTurns).toBe(0)
+    // α·R·max(0, Ŝ − 0) = 360·12
+    expect(result.expectedSaving).toBeCloseTo(4320)
+  })
+
+  it('keeps the refill penalty when the exemption flag is absent', () => {
+    const result = computeBenefit(
+      [{ sourceSeq: 7, tokensBefore: 4000, tokensAfter: 400 }],
+      { alpha: 0.1, tailTokens: 4000 },
+    )
+    expect(result.penaltyTokens).toBeCloseTo(3600)
+  })
 })
 
 describe('proposalId', () => {
@@ -206,6 +228,50 @@ describe('classifyCandidates', () => {
     expect(result.auto).toEqual([])
     expect(result.review).toHaveLength(1)
     expect(result.review[0]!.items).toHaveLength(1)
+  })
+})
+
+/** Fresh-stage batches are exempt from the tail-refill penalty: their content
+ *  never entered the KV cache, so shaping it before the first request causes
+ *  no cache break. The same batch that history pricing would drop must land
+ *  auto. Fixture: α=0.1, tail=64,000 → history penalty = 57,600; batch
+ *  R = 2×450 = 900 → history payback = 57,600/90 = 640 > 3, Ŝ unknown →
+ *  drop. Fresh pricing: penalty = 0 → payback = 0 → auto. */
+describe('classifyCandidates (fresh-stage refill exemption)', () => {
+  const FRESH = {
+    alpha: 0.1,
+    tailTokens: 64_000,
+    reviewHighImpactTokens: 4_000,
+  }
+
+  it('lands a fresh batch auto that history pricing would drop', () => {
+    const batch = [
+      candidate({ sourceSeq: 1, tokensBefore: 2000, tokensAfter: 1550 }),
+      candidate({ sourceSeq: 2, tokensBefore: 2000, tokensAfter: 1550 }),
+    ]
+    const history = classifyCandidates(batch, FRESH)
+    expect(history.drop.map(entry => entry.sourceSeq)).toEqual([1, 2])
+    const fresh = classifyCandidates(batch, { ...FRESH, stage: 'fresh' })
+    expect(fresh.auto.map(entry => entry.sourceSeq)).toEqual([1, 2])
+    expect(fresh.review).toEqual([])
+    expect(fresh.drop).toEqual([])
+  })
+
+  it('still routes a high-impact fresh candidate to review', () => {
+    const result = classifyCandidates(
+      [candidate({ tokensBefore: 5000, tokensAfter: 4000 })],
+      { ...FRESH, stage: 'fresh' },
+    )
+    expect(result.auto).toEqual([])
+    expect(result.review).toHaveLength(1)
+  })
+
+  it('defaults to history pricing when stage is omitted', () => {
+    const result = classifyCandidates(
+      [candidate({ sourceSeq: 1, tokensBefore: 2000, tokensAfter: 1550 })],
+      FRESH,
+    )
+    expect(result.drop.map(entry => entry.sourceSeq)).toEqual([1])
   })
 })
 
