@@ -96,6 +96,14 @@ export interface CompressionRewriteAuditRecord extends CompressionAuditBase {
   readonly tokensRemoved: number
   readonly tokenizerId: string
   readonly tokenizerRevision: string
+  /**
+   * Original-event lines the reducer elided (task_4c/G7, from
+   * `ReducerOutput.elidedLines` via the plan). Present when the landing
+   * reducer reports it; absent for placeholder/trim rewrites. Exists so the
+   * compress→retrieve M/N ratio is computable from session logs alone —
+   * never printed into replacement content.
+   */
+  readonly elidedLines?: number
 }
 
 /** Why an enabled component did not rewrite, or why it was disabled. */

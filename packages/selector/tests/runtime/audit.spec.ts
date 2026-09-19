@@ -4,7 +4,7 @@ import {
   emitCompressionAudit,
   formatCompressionAudit,
 } from '../../src/runtime/audit.ts'
-import type { CompressionAuditRecord } from '../../src/runtime/audit.ts'
+import type { CompressionAuditRecord, CompressionRewriteAuditRecord } from '../../src/runtime/audit.ts'
 
 const custom = {
   version: 3 as const,
@@ -80,6 +80,47 @@ describe('context-compression audit records', () => {
     expect(parsed).toEqual(record)
     expect(parsed.kind === 'rewrite' && parsed.tokensRemoved)
       .toBe(record.tokensBefore - record.tokensAfter)
+  })
+
+  // task_4c/G7: the elided-line count rides the rewrite audit record (optional,
+  // JSON round-trip) so the compress→retrieve M/N ratio is computable from
+  // session logs alone; records without reducer telemetry omit the field.
+  it('round-trips elidedLines on rewrite records and omits it when absent', () => {
+    const withTelemetry: CompressionAuditRecord = {
+      schemaVersion: 1,
+      kind: 'rewrite',
+      sessionId: 'telemetry-session',
+      profile: 'balanced',
+      component: 'fresh',
+      stage: 'fresh',
+      reducer: 'hypa-code-skeleton',
+      manifestEventType: 'compaction/prune',
+      manifestSeq: 7,
+      replacementSeq: 8,
+      sourceSeqs: [6],
+      tokensBefore: 20_000,
+      tokensAfter: 3_000,
+      tokensRemoved: 17_000,
+      tokenizerId: 'mock-tokenizer',
+      tokenizerRevision: 'r1',
+      elidedLines: 412,
+    }
+    const parsed = JSON.parse(
+      formatCompressionAudit(withTelemetry).slice(COMPRESSION_AUDIT_PREFIX.length),
+    ) as CompressionRewriteAuditRecord
+    expect(parsed.elidedLines).toBe(412)
+
+    const { elidedLines: _omitted, ...placeholderRecord } = withTelemetry
+    void _omitted
+    const withoutTelemetry: CompressionAuditRecord = {
+      ...placeholderRecord,
+      reducer: 'error-evidence-placeholder',
+    }
+    expect('elidedLines' in withoutTelemetry).toBe(false)
+    const parsedWithout = JSON.parse(
+      formatCompressionAudit(withoutTelemetry).slice(COMPRESSION_AUDIT_PREFIX.length),
+    ) as CompressionRewriteAuditRecord
+    expect(parsedWithout.elidedLines).toBeUndefined()
   })
 
   it('publishes exactly one single-line info message', () => {

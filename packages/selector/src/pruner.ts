@@ -1678,7 +1678,10 @@ export class ToolResultPruner extends Service {
             'fresh',
             undefined,
             view,
-            { noNetSavingsGuard: policy.presetOptions?.noNetSavingsGuard === true },
+            {
+              noNetSavingsGuard: policy.presetOptions?.noNetSavingsGuard === true,
+              ...(output.elidedLines === undefined ? {} : { elidedLines: output.elidedLines }),
+            },
           )
           if (plan !== null && plan.tokensAfter <= policy.freshTargetTokens) return plan
         }
@@ -1931,6 +1934,7 @@ export class ToolResultPruner extends Service {
         'history',
         policy.historyMode,
         view,
+        { ...(output.elidedLines === undefined ? {} : { elidedLines: output.elidedLines }) },
       )
       if (plan === null) continue
       planned.push(plan)
@@ -2211,7 +2215,7 @@ export class ToolResultPruner extends Service {
     component: CompressionAuditComponent,
     historyMode: HistoryMode | undefined,
     view: CompactionTokenView,
-    options: { readonly noNetSavingsGuard?: boolean } = {},
+    options: { readonly noNetSavingsGuard?: boolean, readonly elidedLines?: number } = {},
   ): PlannedReplacement | null {
     const countBefore = candidate.count
     if (countBefore.kind !== 'exact-tokenizer') return null
@@ -2251,6 +2255,7 @@ export class ToolResultPruner extends Service {
       tokensAfter,
       tokenizerId: countBefore.tokenizerId,
       tokenizerRevision: countBefore.tokenizerRevision,
+      ...options.elidedLines === undefined ? {} : { elidedLines: options.elidedLines },
     }
   }
 
@@ -2303,6 +2308,9 @@ export class ToolResultPruner extends Service {
       tokensRemoved: plan.tokensBefore - plan.tokensAfter,
       tokenizerId: plan.tokenizerId,
       tokenizerRevision: plan.tokenizerRevision,
+      // task_4c/G7 telemetry: original-event lines the reducer elided. Audit
+      // record ONLY — the replacement content is untouched by this field.
+      ...plan.elidedLines === undefined ? {} : { elidedLines: plan.elidedLines },
     })
     // R4: the four-state summary counts automatic-path rewrites at the single
     // landing chokepoint; the review-approved batch settles its own counters

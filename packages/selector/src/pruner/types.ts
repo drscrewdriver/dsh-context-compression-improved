@@ -42,6 +42,12 @@ export interface PlannedReplacement {
   readonly tokensAfter: number
   readonly tokenizerId: string
   readonly tokenizerRevision: string
+  /**
+   * Original-event lines the reducer elided (task_4c/G7 telemetry, from
+   * `ReducerOutput.elidedLines`). Rides the rewrite AUDIT record only — it is
+   * never printed into replacement content.
+   */
+  readonly elidedLines?: number
 }
 
 /**
