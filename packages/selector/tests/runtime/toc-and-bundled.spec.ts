@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  historicalPlaceholder,
   looksLikeMinified,
   looksLikeDocument,
   reduceFreshToolResult,
@@ -42,10 +43,14 @@ describe('TOC-first for large read results (task_4b)', () => {
     const output = reduceFreshToolResult(input({ text: guttered, budgetChars: 8_000 }))
     expect(output).not.toBeNull()
     expect(output!.reducer).toBe('hypa-code-skeleton')
+    // task_4c/G7: the elided-line count rides the structured telemetry for the
+    // audit record — never printed into the replacement text.
+    expect(output!.elidedLines).toBeGreaterThan(0)
+    expect(output!.text).not.toContain('elided_lines')
     // Structure lines survive (the directory)…
     expect(output!.text).toContain('export function handler0(')
     // …while the head-of-file boilerplate does NOT dominate the first step.
-    expect(output!.text).not.toContain('value += 0; // padded body line')
+    expect(output!.text).not.toContain('value += 0; // handler 0 padded body line')
   })
 
   it('keeps every elision marker line-addressable (start_line present)', () => {
@@ -54,6 +59,19 @@ describe('TOC-first for large read results (task_4b)', () => {
     expect(output!.text).toContain('start_line')
     // The host continuation footer is never dropped by the envelope.
     expect(output!.text).not.toBe('')
+  })
+
+  it('reports the whole original span as elided for aged placeholders (task_4c)', () => {
+    const text = ['line one', 'line two', 'line three', 'line four', 'line five'].join('\n')
+    const placeholder = historicalPlaceholder({
+      toolName: 'read',
+      sourceRef: 'session://probe/aged',
+      charsBefore: text.length,
+      isError: false,
+      text,
+    })
+    expect(placeholder.reducer).toBe('historical-tool-result-aging')
+    expect(placeholder.elidedLines).toBe(5)
   })
 
   it('degrades to head/tail when the skeleton is mostly elision markers', () => {

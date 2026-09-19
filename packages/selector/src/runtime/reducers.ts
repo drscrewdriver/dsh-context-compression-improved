@@ -262,11 +262,18 @@ export function historicalPlaceholder(input: {
   readonly compact?: boolean
 }): ReducerOutput {
   const anchor = input.compact ? '' : importantAnchor(input.text, 360)
+  const normalized = normalizeTerminalLines(input.text)
+  // The placeholder replaces the ENTIRE result, so the elided span is the
+  // whole original event (task_4c/G7 telemetry; audit record only).
+  const lastFolded = normalized.folded.at(-1)
+  const elidedLines = lastFolded === undefined
+    ? undefined
+    : (lastFolded.originalLineEnd ?? lastFolded.originalLine)
   // The retrieve hint starts at the anchor's ORIGINAL line: that is the one
   // row of context worth re-reading first (R9b site).
   const anchorLine = input.compact
     ? undefined
-    : (normalizeTerminalLines(input.text).folded
+    : (normalized.folded
       .find(line => IMPORTANT_PATTERN.test(line.text))
       ?? undefined)?.originalLine
   const retrieveHint = anchorLine === undefined
@@ -285,6 +292,7 @@ export function historicalPlaceholder(input: {
     text: lines.join('\n'),
     reducer: input.compact ? 'pair-preserving-tail-aging' : 'historical-tool-result-aging',
     lossy: true,
+    ...(elidedLines === undefined ? {} : { elidedLines }),
   }
 }
 
