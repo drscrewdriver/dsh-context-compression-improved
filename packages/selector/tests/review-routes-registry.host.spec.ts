@@ -86,7 +86,9 @@ async function bootWithRoutes(): Promise<RegisteredRoute[]> {
 async function readQueue(routes: RegisteredRoute[]): Promise<{ status: number, body: string }> {
   const route = routes.find(candidate => candidate.path === QUEUE_ROUTE)
   expect(route, `route ${QUEUE_ROUTE} must be registered`).toBeDefined()
-  const captured: { status?: number, body?: string } = {}
+  // `exactOptionalPropertyTypes` forbids assigning an explicit `undefined` to an
+  // optional property, so the widened type must spell it out.
+  const captured: { status?: number, body?: string | undefined } = {}
   const res = {
     writeHead(code: number) { captured.status = code },
     end(body?: string) { captured.body = body },

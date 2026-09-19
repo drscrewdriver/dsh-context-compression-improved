@@ -543,6 +543,15 @@ function codePointLength(text) {
 	for (const _point of text) length++;
 	return length;
 }
+/** Express one token-named policy gate on the character basis. */
+function charsForTokens(tokens) {
+	return tokens * 4;
+}
+/** Derive the telemetry-only token figure from a character measurement. */
+function charsToTokens(chars) {
+	if (!Number.isFinite(chars) || chars <= 0) return 0;
+	return Math.max(1, Math.round(chars / 4));
+}
 /**
 * Test whether a settings value names a supported compression profile.
 * @param value - untrusted settings value.
@@ -1076,4 +1085,4 @@ function resolveReviewPruner() {
 	return live.values().next().value;
 }
 //#endregion
-export { DEFAULT_CUSTOM_COMPRESSION_POLICY as _, AUTO_COMPACT_THRESHOLD_LIMITS as a, deepFreeze as b, DEFAULTS as c, isCompressionProfile as d, isValidAutoCompactThresholdPercent as f, CustomCompressionPolicySchema as g, resolvePolicy as h, ReviewQueue as i, PRUNE_MARKER as l, resolveConfig as m, resolveReviewPruner as n, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as o, parseContextCompressionSettings as p, sharedReviewStore as r, ContextCompressionSettingsSchema as s, registerReviewPruner as t, codePointLength as u, resolveCustomPolicy as v, COMPRESSION_PROFILES as x, assertNever as y };
+export { COMPRESSION_PROFILES as C, deepFreeze as S, resolvePolicy as _, AUTO_COMPACT_THRESHOLD_LIMITS as a, resolveCustomPolicy as b, DEFAULTS as c, charsToTokens as d, codePointLength as f, resolveConfig as g, parseContextCompressionSettings as h, ReviewQueue as i, PRUNE_MARKER as l, isValidAutoCompactThresholdPercent as m, resolveReviewPruner as n, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as o, isCompressionProfile as p, sharedReviewStore as r, ContextCompressionSettingsSchema as s, registerReviewPruner as t, charsForTokens as u, CustomCompressionPolicySchema as v, assertNever as x, DEFAULT_CUSTOM_COMPRESSION_POLICY as y };
