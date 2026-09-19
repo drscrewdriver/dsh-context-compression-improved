@@ -1428,7 +1428,10 @@ function reduceFreshToolResult(input, ranking) {
 */
 function historicalPlaceholder(input) {
 	const anchor = input.compact ? "" : importantAnchor(input.text, 360);
-	const anchorLine = input.compact ? void 0 : (normalizeTerminalLines(input.text).folded.find((line) => IMPORTANT_PATTERN.test(line.text)) ?? void 0)?.originalLine;
+	const normalized = normalizeTerminalLines(input.text);
+	const lastFolded = normalized.folded.at(-1);
+	const elidedLines = lastFolded === void 0 ? void 0 : lastFolded.originalLineEnd ?? lastFolded.originalLine;
+	const anchorLine = input.compact ? void 0 : (normalized.folded.find((line) => IMPORTANT_PATTERN.test(line.text)) ?? void 0)?.originalLine;
 	const retrieveHint = anchorLine === void 0 ? `retrieve: context_compression_retrieve({"ref":"${input.sourceRef}"})` : `retrieve: context_compression_retrieve({"ref":"${input.sourceRef}","start_line":${String(anchorLine)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}})`;
 	const lines = [
 		"[Old tool result content cleared from active context]",
@@ -1442,7 +1445,8 @@ function historicalPlaceholder(input) {
 	return {
 		text: lines.join("\n"),
 		reducer: input.compact ? "pair-preserving-tail-aging" : "historical-tool-result-aging",
-		lossy: true
+		lossy: true,
+		...elidedLines === void 0 ? {} : { elidedLines }
 	};
 }
 /**
@@ -4153,7 +4157,10 @@ var ToolResultPruner = class extends Service {
 					const plan = this.plan(candidate, [{
 						...textBlock,
 						text: output.text
-					}], sourceSeq, output.reducer, "fresh", "fresh", void 0, view, { noNetSavingsGuard: policy.presetOptions?.noNetSavingsGuard === true });
+					}], sourceSeq, output.reducer, "fresh", "fresh", void 0, view, {
+						noNetSavingsGuard: policy.presetOptions?.noNetSavingsGuard === true,
+						...output.elidedLines === void 0 ? {} : { elidedLines: output.elidedLines }
+					});
 					if (plan !== null && plan.tokensAfter <= policy.freshTargetTokens) return plan;
 				}
 				if (budgetChars === 1) break;
@@ -4290,7 +4297,7 @@ var ToolResultPruner = class extends Service {
 			const plan = this.plan(candidate, [{
 				...block,
 				text: replacementText
-			}], sourceSeq, output.reducer, "pressure", "history", policy.historyMode, view);
+			}], sourceSeq, output.reducer, "pressure", "history", policy.historyMode, view, { ...output.elidedLines === void 0 ? {} : { elidedLines: output.elidedLines } });
 			if (plan === null) continue;
 			planned.push(plan);
 			reclaim += plan.tokensBefore - plan.tokensAfter;
@@ -4537,7 +4544,8 @@ var ToolResultPruner = class extends Service {
 			tokensBefore,
 			tokensAfter,
 			tokenizerId: countBefore.tokenizerId,
-			tokenizerRevision: countBefore.tokenizerRevision
+			tokenizerRevision: countBefore.tokenizerRevision,
+			...options.elidedLines === void 0 ? {} : { elidedLines: options.elidedLines }
 		};
 	}
 	land(session, plan) {
@@ -4592,7 +4600,8 @@ var ToolResultPruner = class extends Service {
 			tokensAfter: plan.tokensAfter,
 			tokensRemoved: plan.tokensBefore - plan.tokensAfter,
 			tokenizerId: plan.tokenizerId,
-			tokenizerRevision: plan.tokenizerRevision
+			tokenizerRevision: plan.tokenizerRevision,
+			...plan.elidedLines === void 0 ? {} : { elidedLines: plan.elidedLines }
 		});
 		return {
 			originalSeq: candidate.seq,
