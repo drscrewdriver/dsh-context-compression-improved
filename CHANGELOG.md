@@ -2,6 +2,27 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
+## 0.5.0 - 2026-09-20
+
+### Added
+
+- Advisory relevance advisor (statistics and suggestions only, default off): at every turn
+  boundary a fire-and-forget pass summarizes the session's tail-task semantics from the
+  most recent `todo/write` event (falling back to recent user text), incrementally scores
+  historical tool-result candidates for content-and-comment relevance against the current
+  task, and computes a prefix-decay figure (character-pressure-weighted mean relevance).
+  Low-relevance old segments are marked `recertified` as suggestions for later
+  history-aggressiveness decisions — nothing this round consumes them, and advisor output
+  can never suppress, delay, or rewrite any reduction that would land (pinned by a
+  dedicated invariant test). Configure through the `presetOptions.advisor*` settings keys
+  (`advisorMode` `''|'host'|'direct'`, default `''`; the direct channel reuses the
+  estimator endpoint; `SideChannel` gained an optional overrides parameter so the
+  estimator's transport is shared without sharing its configuration). Observability: new
+  `advisor-outcome` audit records (content-free, one per phase: summary / scoring / decay)
+  and a read-only `GET .../advisor-report?sessionId=` HTTP route (opt-in deployment flag
+  `advisorReportRoute`, mirroring the review routes). Client UI is intentionally absent
+  this round.
+
 ## 0.4.0 - 2026-09-20
 
 ### Fixed

@@ -72,6 +72,20 @@ export interface PresetOptions {
   /** Optional estimator channel; `''` keeps every estimator consumer on rule-only fallbacks (E1/E2). */
   readonly estimator: { readonly mode: '' | 'host' | 'direct' }
   /**
+   * Advisory relevance advisor: statistics and suggestions only — every output
+   * (summaries, scores, decay, recertification) is observational and must never
+   * suppress, delay, or rewrite any reduction that would land. `''` (the
+   * default) keeps the advisor fully off.
+   */
+  readonly advisor: {
+    readonly mode: '' | 'host' | 'direct'
+    readonly timeoutMs: number
+    readonly refreshTurns: number
+    readonly scoreThreshold: number
+    readonly sampleLimit: number
+    readonly minTokens: number
+  }
+  /**
    * Human-gated review pipeline (beta): edge/high-impact candidates queue for
    * manual approval and execute in one merged batch at the next turn boundary
    * instead of the automatic path (R4).
@@ -155,6 +169,13 @@ export interface PresetOptionsSettings {
   readonly estimatorBaseUrl?: string
   readonly estimatorApiKey?: string
   readonly estimatorTimeoutMs?: number
+  /** Advisory advisor channel; `''` (the default) keeps the advisor off. */
+  readonly advisorMode?: '' | 'host' | 'direct'
+  readonly advisorTimeoutMs?: number
+  readonly advisorRefreshTurns?: number
+  readonly advisorScoreThreshold?: number
+  readonly advisorSampleLimit?: number
+  readonly advisorMinTokens?: number
 }
 
 /** Durable global preference exposed through `ctx.settings`. */

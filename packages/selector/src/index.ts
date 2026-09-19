@@ -12,6 +12,7 @@ import {
   ContextCompressionSettingsSchema,
 } from './runtime/config.ts'
 import { resolveReviewPruner, type ReviewPrunerFace } from './runtime/tokenpilot/review-registry.ts'
+import { getAdvisorState } from './runtime/tokenpilot/advisor-state.ts'
 
 // The settings namespace literal and the settings schema are owned by the
 // runtime config module. Both were once inlined/replaced here to dodge a
@@ -43,6 +44,12 @@ const REVIEW_QUEUE_ROUTES = [
 const REVIEW_DECIDE_ROUTES = [
   '/endpoint/dsh-context-compression-improved/review-decide',
   '/api/dsh-context-compression-improved/review-decide',
+] as const
+
+// Advisory advisor: one read-only report route, dual prefixed like the others.
+const ADVISOR_REPORT_ROUTES = [
+  '/endpoint/dsh-context-compression-improved/advisor-report',
+  '/api/dsh-context-compression-improved/advisor-report',
 ] as const
 
 /**
@@ -302,6 +309,96 @@ function registerReviewQueueRoutes(ctx: Context): void {
 }
 
 /**
+ * Serve the advisory advisor's read-only report route (same registration
+ * skeleton as the review routes):
+ *
+ * `GET .../advisor-report?sessionId=…` → the session's prefix-decay figure,
+ * the todolist-bound task summary, and the score distribution. Content-free
+ * by construction: task semantics are LLM-derived summaries, never message
+ * text, and no score reason or candidate preview is ever returned.
+ * Unknown session → 404; no agents service → 503. A session whose advisor
+ * never ran reports nulls and empty arrays, not an error.
+ */
+function registerAdvisorReportRoute(ctx: Context): void {
+  const readService = (name: string): unknown => {
+    try {
+      return (ctx as unknown as { get: (service: string) => unknown }).get(name)
+    } catch {
+      return undefined
+    }
+  }
+  const log = (level: 'info' | 'warn', message: string, ...args: unknown[]): void => {
+    console[level](message, ...args)
+  }
+
+  const getHandler = (req: unknown, res: unknown): void => {
+    const agents = readService('agents') as AgentsServiceLike | undefined
+    if (typeof agents?.get !== 'function') {
+      reviewJson(res, 503, { ok: false, error: 'advisor report unavailable' })
+      return
+    }
+    let sessionId = ''
+    try {
+      const url = new URL(String((req as { url?: string }).url ?? ''), 'http://localhost')
+      sessionId = url.searchParams.get('sessionId') ?? ''
+    } catch {
+      // Malformed URL: fall through with the empty sessionId already set.
+    }
+    if (sessionId === '') {
+      reviewJson(res, 400, { ok: false, error: 'sessionId is required' })
+      return
+    }
+    const session = sessionFor(readService, sessionId)
+    if (session === undefined) {
+      reviewJson(res, 404, { ok: false, error: 'unknown session' })
+      return
+    }
+    const state = getAdvisorState(session as Parameters<typeof getAdvisorState>[0])
+    reviewJson(res, 200, {
+      ok: true,
+      sessionId,
+      advisor: {
+        summary: state.summary ?? null,
+        decay: state.lastDecay?.decay ?? null,
+        weightedChars: state.lastDecay?.weightedChars ?? null,
+        decayTurn: state.lastDecay?.turn ?? null,
+        scores: [...state.scores].map(([seq, entry]) => ({ seq, score: entry.score, turn: entry.turn })),
+        lowRelevanceSeqs: [...state.recertified.keys()],
+      },
+    })
+  }
+
+  const register = (webServer: WebServerLike): void => {
+    const table = [...ADVISOR_REPORT_ROUTES].map(path => ({ path, handler: getHandler }))
+    const disposers = table
+      .map(entry => webServer.register({ kind: 'exact', path: entry.path, handler: entry.handler }))
+      .filter((off): off is () => void => typeof off === 'function')
+    ctx.effect(
+      () => () => { for (const off of disposers) off() },
+      'contextCompressionSelector.advisor report route',
+    )
+    log('info', 'context-compression advisor report route registered: %s', ADVISOR_REPORT_ROUTES.join(', '))
+  }
+
+  const active = asWebServer(readService('webServer'))
+  if (active !== undefined) {
+    register(active)
+    return
+  }
+
+  ctx.inject(['webServer'], (injected) => {
+    const webServer = asWebServer((injected as { webServer?: unknown }).webServer)
+    if (webServer === undefined) {
+      log('warn', 'context-compression webServer exposes no register() — advisor report route not registered')
+      return
+    }
+    register(webServer)
+  })
+
+  log('warn', 'context-compression webServer not active yet — advisor report route pending: %s', ADVISOR_REPORT_ROUTES.join(', '))
+}
+
+/**
  * The one service the catalog route actually needs. `llm` and
  * `agentDefaultModel` are payload enrichment the handler resolves per request,
  * never reasons to withhold the route.
@@ -484,6 +581,13 @@ export interface Config {
    * transport and simply never appears.
    */
   reviewQueueRoute?: boolean
+  /**
+   * Register the advisory advisor's read-only HTTP report route (decay
+   * figure, task summary, score distribution). Same Bundle opt-in semantics
+   * as `reviewQueueRoute`; the advisor itself stays off until the user turns
+   * it on through the `presetOptions.advisor*` settings keys.
+   */
+  advisorReportRoute?: boolean
 }
 
 /** Loader validation for the standalone Bundle opt-in. */
@@ -491,6 +595,7 @@ export const Config: z<Config> = z.object({
   presetOverlay: z.boolean().default(false),
   estimatorCatalogRoute: z.boolean().default(false),
   reviewQueueRoute: z.boolean().default(false),
+  advisorReportRoute: z.boolean().default(false),
 })
 
 /** Register the persisted default read by the currently mounted root pruner. */
@@ -513,6 +618,9 @@ export function apply(ctx: Context, config: Config = {}): void {
     // TokenPilot-inspired R4: the review pipeline's client transport (see the
     // config JSDoc for the opt-in semantics).
     if (config.reviewQueueRoute === true) registerReviewQueueRoutes(ctx)
+
+    // Advisory advisor: read-only decay/score report (opt-in, like review).
+    if (config.advisorReportRoute === true) registerAdvisorReportRoute(ctx)
 
     if (config.presetOverlay !== true) return
 

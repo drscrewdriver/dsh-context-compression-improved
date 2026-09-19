@@ -9,6 +9,7 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import type { DedupeTable } from '../runtime/tokenpilot/dedup.ts'
 import type { EstimatorFailures } from '../runtime/tokenpilot/estimator.ts'
 import type { ReviewQueue, ReviewQueueStore } from '../runtime/tokenpilot/review-queue.ts'
+import type { SideChannel } from '../runtime/tokenpilot/sidechannel.ts'
 import type {
   ContextCompressionSettings,
   ResolvedConfig,
@@ -65,6 +66,8 @@ export interface PrunerState {
   readonly reviewClocks: WeakMap<Session, number>
   /** Estimator-reported remaining turns Ŝ per Session; advisory only. */
   readonly estimatorRemainingTurns: WeakMap<Session, number>
+  /** Per-session advisor side channel, constructed once with the advisor overrides. */
+  readonly advisorChannels: WeakMap<Session, SideChannel>
   /** Four-state outcome counters per Session (floating-window summary row). */
   readonly reviewSummaries: WeakMap<Session, ReviewSessionSummary>
 }

@@ -2,6 +2,25 @@
 
 > 完全な履歴（アップストリーム 0.1.0 以前を含む）は [CHANGELOG.md](CHANGELOG.md) を参照。このファイルはフォークの追加エントリーのみを翻訳したものです。 · [English](CHANGELOG.md) · [中文](CHANGELOG.zh.md) · [한국어](CHANGELOG.ko.md)
 
+## 0.5.0 - 2026-09-20
+
+### Added（追加）
+
+- アドバイザリー関連度アドバイザー（統計と提案のみ、デフォルト無効）：各ターン境界で
+  fire-and-forget のパスを実行し、最新の `todo/write` イベントからセッションの末端タスク
+  意味を要約し（todolist が無い場合は直近のユーザーテキストへフォールバック）、履歴
+  tool-result 候選の「内容+コメント意味 ↔ 現在タスク」の関連度を増分スコアリングし、
+  prefix-decay（characterPressure 重み付けの関連度平均の逆数）を算出します。関連度の低い
+  古いセグメントは `recertified` として記録されますが、これは将来の history 積極度判断への
+  提案入力に過ぎず——今回それを消費する経路は存在せず、アドバイザーの出力が着地すべき
+  reduction を抑制・遅延・書き換えすることは決してありません（専用の不変テストで固定）。
+  `presetOptions.advisor*` 設定キーで設定（`advisorMode` `''|'host'|'direct'`、既定 `''`；
+  direct チャネルは estimator のエンドポイントを再利用；`SideChannel` に任意の overrides
+  引数を追加し、設定を共有せずトランスポートを共有）。可観測性：新しい `advisor-outcome`
+  監査レコード（content-free、summary / scoring / decay の各フェーズごとに 1 件）と、読み
+  取り専用 HTTP ルート `GET .../advisor-report?sessionId=`（デプロイ opt-in フラグ
+  `advisorReportRoute`、review ルートと同じ骨格）。クライアント UI は今回意図的に未提供。
+
 ## 0.4.0 - 2026-09-20
 
 ### Fixed（修正）

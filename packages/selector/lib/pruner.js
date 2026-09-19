@@ -1,4 +1,4 @@
-import { C as COMPRESSION_PROFILES, S as deepFreeze, _ as resolvePolicy, a as AUTO_COMPACT_THRESHOLD_LIMITS, b as resolveCustomPolicy, c as DEFAULTS, d as charsToTokens, f as codePointLength, g as resolveConfig, h as parseContextCompressionSettings, i as ReviewQueue, l as PRUNE_MARKER, m as isValidAutoCompactThresholdPercent, o as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, p as isCompressionProfile, r as sharedReviewStore, s as ContextCompressionSettingsSchema, t as registerReviewPruner, u as charsForTokens, v as CustomCompressionPolicySchema, x as assertNever, y as DEFAULT_CUSTOM_COMPRESSION_POLICY } from "./review-registry.js";
+import { C as DEFAULT_CUSTOM_COMPRESSION_POLICY, D as COMPRESSION_PROFILES, E as deepFreeze, S as CustomCompressionPolicySchema, T as assertNever, _ as isCompressionProfile, a as registerReviewPruner, b as resolveConfig, c as ReviewQueue, d as ContextCompressionSettingsSchema, f as DEFAULTS, g as codePointLength, h as charsToTokens, i as recordScore, l as AUTO_COMPACT_THRESHOLD_LIMITS, m as charsForTokens, n as invalidateOnTaskChange, p as PRUNE_MARKER, r as recordRecertified, s as sharedReviewStore, t as getAdvisorState, u as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, v as isValidAutoCompactThresholdPercent, w as resolveCustomPolicy, x as resolvePolicy, y as parseContextCompressionSettings } from "./advisor-state.js";
 import { a as validatePublishedTailTrim, i as tailTrimStub, n as tailTrimMessage, o as eventBySeq, r as tailTrimRef, s as sessionEvents, t as parseTailTrimRef } from "./tail-trim.js";
 import z from "@deepseek-ai/schemastery";
 import { createHash } from "node:crypto";
@@ -2810,20 +2810,31 @@ function documentCensus(text, omittedLines) {
 var SideChannel = class {
 	ctx;
 	options;
-	constructor(ctx, options) {
+	overrides;
+	/**
+	* @param overrides - per-consumer overrides of the estimator-named options.
+	* The estimator itself never passes them (byte-identical behavior); the
+	* advisory advisor passes its own mode/timeout/output budget so both
+	* consumers share one transport without sharing one configuration.
+	*/
+	constructor(ctx, options, overrides) {
 		this.ctx = ctx;
 		this.options = options;
+		this.overrides = overrides;
+	}
+	get mode() {
+		return this.overrides?.mode ?? this.options.estimatorMode ?? "";
 	}
 	get enabled() {
-		return this.options.estimatorMode === "host" || this.options.estimatorMode === "direct";
+		return this.mode === "host" || this.mode === "direct";
 	}
 	async ask(request) {
-		const timeoutMs = this.options.estimatorTimeoutMs ?? 3e3;
+		const timeoutMs = this.overrides?.timeoutMs ?? this.options.estimatorTimeoutMs ?? 3e3;
 		const timeout = AbortSignal.timeout(timeoutMs);
 		const signal = typeof AbortSignal.any === "function" ? AbortSignal.any([request.signal, timeout]) : timeout;
 		try {
-			if (this.options.estimatorMode === "host") return await this.askHost(request.system, request.user, signal);
-			if (this.options.estimatorMode === "direct") return await this.askDirect(request.system, request.user, signal);
+			if (this.mode === "host") return await this.askHost(request.system, request.user, signal);
+			if (this.mode === "direct") return await this.askDirect(request.system, request.user, signal);
 			return;
 		} catch {
 			return;
@@ -2837,7 +2848,7 @@ var SideChannel = class {
 			ok: text !== void 0,
 			latencyMs: Date.now() - now,
 			...this.identity() !== void 0 ? { channel: this.identity() } : {},
-			...text === void 0 ? { reason: "channel returned no content (timeout, non-2xx, parse failure, or reasoning ate the 256-token budget)" } : {}
+			...text === void 0 ? { reason: "channel returned no content (timeout, non-2xx, parse failure, or reasoning ate the output-token budget)" } : {}
 		};
 		return {
 			...text === void 0 ? {} : { text },
@@ -2845,8 +2856,8 @@ var SideChannel = class {
 		};
 	}
 	identity() {
-		if (this.options.estimatorMode === "direct") return `direct:${this.options.estimatorModel ?? ""}`;
-		if (this.options.estimatorMode === "host") {
+		if (this.mode === "direct") return `direct:${this.options.estimatorModel ?? ""}`;
+		if (this.mode === "host") {
 			const route = this.resolveHostRoute();
 			return route === void 0 ? "host" : `host:${route.provider}/${route.model}`;
 		}
@@ -2893,7 +2904,7 @@ var SideChannel = class {
 			system,
 			temperature: 0,
 			reasoningEffort: "off",
-			maxTokens: 256,
+			maxTokens: this.overrides?.maxTokens ?? 256,
 			signal
 		});
 		for await (const chunk of stream) if (chunk.type === "text-delta" && typeof chunk.text === "string") text += chunk.text;
@@ -2920,7 +2931,7 @@ var SideChannel = class {
 					content: user
 				}],
 				temperature: 0,
-				max_tokens: 256
+				max_tokens: this.overrides?.maxTokens ?? 256
 			}),
 			signal
 		});
@@ -3330,6 +3341,445 @@ async function openReviewStorage(getService) {
 	}
 	if (service === void 0 || service === null) return void 0;
 	return new StorageDomainReviewStore((await service.open(reviewStorageSpec())).table(REVIEW_STORAGE_TABLE));
+}
+//#endregion
+//#region src/runtime/tokenpilot/advisor-prompt.ts
+function buildAdvisorSummarySystemPrompt() {
+	return [
+		"You summarize what an agent session is working on, for relevance statistics only.",
+		"Input: the session todolist snapshot and a recent tail of assistant narration.",
+		"Answer with ONLY one JSON object:",
+		"{\"overallTask\":\"<one sentence>\",\"activeSubtasks\":[\"<subtask>\"],\"keywords\":[\"<task keyword>\"]}.",
+		"keywords must be 3-10 short distinctive words describing the CURRENT task.",
+		"Never add commentary; never invent tasks that the input does not support."
+	].join(" ");
+}
+function buildAdvisorSummaryUserPrompt(taskText, tailText) {
+	return [`todolist:\n${taskText}`, tailText.trim().length > 0 ? `recent tail:\n${tailText.trim()}` : "recent tail: (none)"].join("\n\n");
+}
+function buildAdvisorScoringSystemPrompt() {
+	return [
+		"You score how relevant each historical session artifact is to the current task,",
+		"for statistics only. Relevance covers both the artifact content and its comments",
+		"(comment semantics count too). 0 means unrelated, 1 means the live agent will",
+		"very likely need this exact content again.",
+		"Answer with ONLY one JSON object per input line:",
+		"{\"seq\":<number>,\"score\":<number between 0 and 1>,\"reason\":\"<short>\"}",
+		"one per line, same order as the input. Never invent seq values; never add commentary."
+	].join(" ");
+}
+function buildAdvisorScoringUserPrompt(taskText, activeSubtasks, candidates) {
+	return [
+		`task: ${taskText.replace(/\s+/gu, " ").slice(0, 600)}`,
+		activeSubtasks.length > 0 ? `active subtasks: ${activeSubtasks.join("; ").slice(0, 300)}` : "active subtasks: (none)",
+		"",
+		...candidates.map((candidate) => `seq=${String(candidate.seq)} | ${candidate.preview.replace(/\s+/gu, " ")}`)
+	].join("\n");
+}
+/** Pull the first balanced JSON object out of a possibly chatty answer. */
+function firstJsonObject(text) {
+	const start = text.indexOf("{");
+	if (start < 0) return void 0;
+	let depth = 0;
+	let inString = false;
+	let escaped = false;
+	for (let index = start; index < text.length; index += 1) {
+		const char = text[index];
+		if (inString) {
+			if (escaped) escaped = false;
+			else if (char === "\\") escaped = true;
+			else if (char === "\"") inString = false;
+			continue;
+		}
+		if (char === "\"") inString = true;
+		else if (char === "{") depth += 1;
+		else if (char === "}") {
+			depth -= 1;
+			if (depth === 0) try {
+				const parsed = JSON.parse(text.slice(start, index + 1));
+				return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : void 0;
+			} catch {
+				return;
+			}
+		}
+	}
+}
+function stringList(value, limit) {
+	if (!Array.isArray(value)) return [];
+	return value.filter((entry) => typeof entry === "string" && entry.trim().length > 0).slice(0, limit).map((entry) => entry.trim());
+}
+/**
+* Parse one summary answer. Fail-open: `undefined` on any malformed or
+* missing field, so a broken channel can never poison the cached summary.
+*/
+function parseAdvisorSummary(text) {
+	if (text === void 0 || text.trim().length === 0) return void 0;
+	const object = firstJsonObject(text);
+	if (object === void 0) return void 0;
+	const overallTask = object.overallTask;
+	if (typeof overallTask !== "string" || overallTask.trim().length === 0) return void 0;
+	const activeSubtasks = stringList(object.activeSubtasks, 12);
+	const keywords = stringList(object.keywords, 12);
+	if (keywords.length === 0 && activeSubtasks.length === 0) return void 0;
+	return {
+		overallTask: overallTask.trim(),
+		activeSubtasks,
+		keywords
+	};
+}
+/** Extract every balanced JSON object from a JSON-lines or chatty answer. */
+function jsonObjects(text) {
+	const objects = [];
+	let depth = 0;
+	let start = -1;
+	let inString = false;
+	let escaped = false;
+	for (let index = 0; index < text.length; index += 1) {
+		const char = text[index];
+		if (inString) {
+			if (escaped) escaped = false;
+			else if (char === "\\") escaped = true;
+			else if (char === "\"") inString = false;
+			continue;
+		}
+		if (char === "\"") inString = true;
+		else if (char === "{") {
+			if (depth === 0) start = index;
+			depth += 1;
+		} else if (char === "}") {
+			depth -= 1;
+			if (depth === 0 && start >= 0) {
+				try {
+					const parsed = JSON.parse(text.slice(start, index + 1));
+					if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) objects.push(parsed);
+				} catch {}
+				start = -1;
+			}
+		}
+	}
+	return objects;
+}
+/**
+* Parse one scoring answer. Fail-open: returns the valid rows it could read
+* (`undefined` when nothing valid remains) — a partially garbage answer still
+* contributes its good rows, mirroring the estimator's per-item tolerance.
+*/
+function parseAdvisorScores(text, validSeqs) {
+	if (text === void 0 || text.trim().length === 0) return void 0;
+	const scores = /* @__PURE__ */ new Map();
+	for (const object of jsonObjects(text)) {
+		const seq = object.seq;
+		const score = object.score;
+		if (typeof seq !== "number" || !Number.isSafeInteger(seq) || !validSeqs.has(seq)) continue;
+		if (typeof score !== "number" || !Number.isFinite(score) || score < 0 || score > 1) continue;
+		const reason = typeof object.reason === "string" && object.reason.trim().length > 0 ? object.reason.trim() : void 0;
+		scores.set(seq, {
+			seq,
+			score,
+			...reason !== void 0 ? { reason } : {}
+		});
+	}
+	return scores.size > 0 ? scores : void 0;
+}
+//#endregion
+//#region src/runtime/tokenpilot/advisor.ts
+/** Character cap for the recent-text fallback and the tail-text summary input. */
+const TAIL_TEXT_CHAR_BUDGET = 4e3;
+/** Score the advisor assigns to candidates it has no answer for. */
+const NEUTRAL_RELEVANCE = .5;
+/** Deterministic djb2-derived hex digest for task-semantics versioning. */
+function versionDigest(text) {
+	let hash = 5381;
+	for (let index = 0; index < text.length; index += 1) hash = (hash * 33 ^ text.charCodeAt(index)) >>> 0;
+	return hash.toString(16).padStart(8, "0");
+}
+/** Truncate on the character basis (Unicode code points), never UTF-16 units. */
+function truncateChars(text, budget) {
+	if (codePointLength(text) <= budget) return text;
+	return Array.from(text).slice(0, budget).join("");
+}
+/** Character cap of one candidate preview line offered to the scoring prompt. */
+const PREVIEW_CHAR_BUDGET = 200;
+/**
+* One candidate face for the scoring prompt: tool-call name plus the head of
+* the result text. Pure and shape-defensive.
+*/
+function advisorCandidatePreview(callName, blocks) {
+	return truncateChars(`${callName} ${textBlocks(blocks)}`.trim(), PREVIEW_CHAR_BUDGET);
+}
+/**
+* Collect the recent assistant narration tail (bounded, oldest-first join) as
+* summary-prompt context. Pure.
+*/
+function collectTailText(events, budget = TAIL_TEXT_CHAR_BUDGET) {
+	const parts = [];
+	let size = 0;
+	for (let index = events.length - 1; index >= 0; index -= 1) {
+		const event = events[index];
+		if (event?.type !== "assistant/message") continue;
+		const text = textBlocks(event.data).trim();
+		if (text.length === 0) continue;
+		parts.unshift(text);
+		size += codePointLength(text);
+		if (size >= budget) break;
+	}
+	return truncateChars(parts.join("\n"), budget);
+}
+function textBlocks(data) {
+	const content = data?.content;
+	if (!Array.isArray(content)) return "";
+	const parts = [];
+	for (const block of content) if (block?.type === "text" && typeof block.text === "string") parts.push(block.text);
+	return parts.join("\n");
+}
+/** Structured probe of one `todo/write` payload: the list of task strings, or undefined. */
+function extractTodoItems(data) {
+	const todos = data?.todos;
+	const list = Array.isArray(todos) ? todos : Array.isArray(data) ? data : void 0;
+	if (list === void 0 || list.length === 0) return void 0;
+	const items = [];
+	for (const entry of list) {
+		if (typeof entry === "string") {
+			if (entry.trim().length > 0) items.push(entry.trim());
+			continue;
+		}
+		if (entry !== null && typeof entry === "object") {
+			const record = entry;
+			const text = [
+				record.content,
+				record.text,
+				record.title,
+				record.name
+			].find((candidate) => typeof candidate === "string" && candidate.trim().length > 0);
+			if (typeof text === "string") {
+				items.push(text.trim());
+				continue;
+			}
+			items.push(JSON.stringify(record));
+		}
+	}
+	return items.length > 0 ? items : void 0;
+}
+/**
+* Harvest task semantics for the summary/scoring prompts: the most recent
+* `todo/write` event (structured probe first, then the raw JSON string),
+* falling back to recent user/message text. Pure — log in, semantics out.
+*/
+function collectTaskSemantics(events) {
+	for (let index = events.length - 1; index >= 0; index -= 1) {
+		const event = events[index];
+		if (event === void 0 || event.type !== "todo/write") continue;
+		const data = event.data;
+		const items = extractTodoItems(data);
+		if (items !== void 0) {
+			const taskText = truncateChars(items.join("\n"), TAIL_TEXT_CHAR_BUDGET);
+			return {
+				source: "todos",
+				todoVersion: versionDigest(taskText),
+				taskText
+			};
+		}
+		const raw = truncateChars(JSON.stringify(event.data) ?? "", TAIL_TEXT_CHAR_BUDGET);
+		if (raw.length > 2) return {
+			source: "raw-todo",
+			todoVersion: versionDigest(raw),
+			taskText: raw
+		};
+	}
+	for (let index = events.length - 1; index >= 0; index -= 1) {
+		const event = events[index];
+		if (event?.type !== "user/message") continue;
+		const text = truncateChars(textBlocks(event.data).trim(), TAIL_TEXT_CHAR_BUDGET);
+		if (text.length === 0) continue;
+		return {
+			source: "messages",
+			todoVersion: versionDigest(text),
+			taskText: text
+		};
+	}
+}
+/**
+* Prefix-decay figure: 1 minus the character-pressure-weighted mean relevance
+* of the prefix candidates. Unscored candidates count as neutral 0.5. Pure,
+* deterministic, no LLM and no I/O.
+*/
+function prefixDecay(candidates, scores) {
+	let totalWeight = 0;
+	let weightedRelevance = 0;
+	for (const candidate of candidates) {
+		const weight = candidate.characterPressure > 0 ? candidate.characterPressure : 0;
+		if (weight === 0) continue;
+		totalWeight += weight;
+		weightedRelevance += weight * (scores.get(candidate.seq)?.score ?? NEUTRAL_RELEVANCE);
+	}
+	if (totalWeight === 0) return {
+		decay: 0,
+		weightedChars: 0
+	};
+	return {
+		decay: 1 - weightedRelevance / totalWeight,
+		weightedChars: totalWeight
+	};
+}
+/** Lowercase word tokens used by the local keyword-overlap prescreen. */
+function keywordsOf(text) {
+	const matches = text.toLowerCase().match(/[\p{L}\p{N}_-]{3,}/gu) ?? [];
+	return new Set(matches);
+}
+function overlapCount(left, right) {
+	let count = 0;
+	for (const token of right) if (left.has(token)) count += 1;
+	return count;
+}
+/**
+* Incremental scoring selection: candidates newer than the watermark whose
+* character pressure reaches the token-named floor, ranked by local keyword
+* overlap with the task semantics and cut at the sample limit. When the task
+* semantics changed, the watermark is ignored so every eligible candidate can
+* rescore. Pure.
+*/
+function selectScoringCandidates(candidates, state, input) {
+	const eligible = [];
+	for (const candidate of candidates) {
+		if (!input.taskChanged && candidate.seq <= state.watermarkSeq) continue;
+		if (candidate.characterPressure < input.minChars) continue;
+		eligible.push({
+			...candidate,
+			overlap: overlapCount(input.taskKeywords, keywordsOf(candidate.preview))
+		});
+	}
+	eligible.sort((left, right) => right.overlap - left.overlap || right.characterPressure - left.characterPressure);
+	return eligible.slice(0, input.sampleLimit).map(({ overlap: _overlap, ...candidate }) => candidate);
+}
+function advisorAudit(input, phase, fields) {
+	return {
+		schemaVersion: 1,
+		kind: "advisor-outcome",
+		sessionId: input.sessionId,
+		phase,
+		turnIndex: input.turn,
+		...fields
+	};
+}
+/**
+* One full advisor pass: summary refresh (todo change or every refreshTurns),
+* incremental batch scoring with recertification marks, then the decay
+* figure. State is written only on success; any failure leaves state
+* untouched, emits ok:false audits with reason codes, and never throws.
+*/
+async function runAdvisorPass(state, channel, emit, input) {
+	if (input.task === void 0) return void 0;
+	const taskChanged = invalidateOnTaskChange(state, input.task.todoVersion);
+	const turn = input.turn;
+	if (state.summary === void 0 || turn - state.lastSummaryTurn >= input.advisor.refreshTurns) {
+		const summaryStarted = Date.now();
+		const summaryText = await channel.ask({
+			system: buildAdvisorSummarySystemPrompt(),
+			user: buildAdvisorSummaryUserPrompt(input.task.taskText, input.tailText),
+			signal: input.signal
+		});
+		const summaryLatencyMs = Date.now() - summaryStarted;
+		const summary = input.signal.aborted ? void 0 : parseAdvisorSummary(summaryText);
+		if (summary === void 0) {
+			emit(advisorAudit(input, "summary", {
+				ok: false,
+				latencyMs: summaryLatencyMs,
+				...input.signal.aborted ? { reason: "aborted" } : summaryText === void 0 ? { reason: "channel-empty" } : { reason: "parse-failed" }
+			}));
+			return;
+		}
+		state.summary = {
+			...summary,
+			todoVersion: input.task.todoVersion,
+			turn
+		};
+		state.lastSummaryTurn = turn;
+		emit(advisorAudit(input, "summary", {
+			ok: true,
+			latencyMs: summaryLatencyMs
+		}));
+	}
+	const summary = state.summary;
+	if (summary === void 0) return void 0;
+	const sampled = selectScoringCandidates(input.candidates, state, {
+		taskKeywords: keywordsOf(`${input.task.taskText}\n${summary.keywords.join(" ")}`),
+		minChars: charsForTokens(input.advisor.minTokens),
+		sampleLimit: input.advisor.sampleLimit,
+		taskChanged
+	});
+	let scored = 0;
+	let highestScored = 0;
+	if (sampled.length > 0) {
+		const scoringStarted = Date.now();
+		const scoresText = await channel.ask({
+			system: buildAdvisorScoringSystemPrompt(),
+			user: buildAdvisorScoringUserPrompt(input.task.taskText, summary.activeSubtasks, sampled),
+			signal: input.signal
+		});
+		const scoringLatencyMs = Date.now() - scoringStarted;
+		const scores = input.signal.aborted ? void 0 : parseAdvisorScores(scoresText, new Set(sampled.map((item) => item.seq)));
+		if (scores === void 0 || scores.size === 0) {
+			emit(advisorAudit(input, "scoring", {
+				ok: false,
+				sampledCount: sampled.length,
+				latencyMs: scoringLatencyMs,
+				...input.signal.aborted ? { reason: "aborted" } : scoresText === void 0 ? { reason: "channel-empty" } : { reason: "parse-failed" }
+			}));
+			return;
+		}
+		for (const candidate of sampled) {
+			const answer = scores.get(candidate.seq);
+			if (answer === void 0) continue;
+			recordScore(state, candidate.seq, {
+				score: answer.score,
+				turn
+			});
+			scored += 1;
+			if (candidate.seq > highestScored) highestScored = candidate.seq;
+			if (answer.score < input.advisor.scoreThreshold) recordRecertified(state, candidate.seq, turn);
+		}
+		emit(advisorAudit(input, "scoring", {
+			ok: true,
+			sampledCount: sampled.length,
+			latencyMs: scoringLatencyMs
+		}));
+		if (highestScored > state.watermarkSeq) state.watermarkSeq = highestScored;
+	}
+	const decay = prefixDecay(input.candidates, state.scores);
+	state.lastDecay = {
+		decay: decay.decay,
+		weightedChars: decay.weightedChars,
+		turn
+	};
+	emit(advisorAudit(input, "decay", {
+		ok: true,
+		sampledCount: scored,
+		decay: decay.decay,
+		weightedChars: decay.weightedChars,
+		latencyMs: 0
+	}));
+	return {
+		decay: decay.decay,
+		weightedChars: decay.weightedChars,
+		sampled: sampled.length
+	};
+}
+/**
+* Convenience entry used by the pruner: fetch-or-create the session state and
+* run one pass against it.
+*/
+async function runSessionAdvisorPass(session, channel, emit, input) {
+	const state = getAdvisorState(session);
+	if (state.inFlight) return void 0;
+	state.inFlight = true;
+	try {
+		return await runAdvisorPass(state, channel, emit, {
+			...input,
+			sessionId: input.sessionId ?? String(session.id)
+		});
+	} finally {
+		state.inFlight = false;
+	}
 }
 //#endregion
 //#region src/runtime/deepseek-official-pricing.ts
@@ -3766,6 +4216,7 @@ var ToolResultPruner = class extends Service {
 			reviewQueues: /* @__PURE__ */ new WeakMap(),
 			reviewClocks: /* @__PURE__ */ new WeakMap(),
 			estimatorRemainingTurns: /* @__PURE__ */ new WeakMap(),
+			advisorChannels: /* @__PURE__ */ new WeakMap(),
 			reviewSummaries: /* @__PURE__ */ new WeakMap()
 		};
 		ctx.effect(() => registerReviewPruner(this), "contextCompressionSelector.reviewRegistry()");
@@ -3821,6 +4272,7 @@ var ToolResultPruner = class extends Service {
 				ctx.logger.warn("context-compression review turn-boundary pass failed open: %o", error);
 			}
 			this.postflightEstimatorPass(agent.session, signal).catch(() => void 0);
+			this.postflightAdvisorPass(agent.session, turn, signal).catch(() => void 0);
 		});
 	}
 	/**
@@ -4066,6 +4518,88 @@ var ToolResultPruner = class extends Service {
 			latencyMs,
 			ok
 		});
+	}
+	/**
+	* Advisory advisor pass at the turn boundary, strictly fire-and-forget.
+	* Produces todolist-bound tail-task summaries, incremental relevance
+	* scores, and a prefix-decay figure — all observational. Every short
+	* circuit below (mode off, re-entry, cooldown, no task semantics, no
+	* direct endpoint) returns without touching any state the pruning chain
+	* reads, so the default configuration adds exactly zero behavior.
+	*/
+	async postflightAdvisorPass(session, turn, signal) {
+		const policy = this.activePolicy(session);
+		const presetOptions = policy?.presetOptions;
+		const advisor = presetOptions?.advisor;
+		if (policy === void 0 || presetOptions === void 0 || advisor === void 0 || advisor.mode === "") return;
+		const advisorState = getAdvisorState(session);
+		if (advisorState.inFlight) return;
+		if (isCoolingDown(advisorState.failures, Date.now())) return;
+		const events = sessionEvents(session);
+		const task = collectTaskSemantics(events);
+		if (task === void 0) return;
+		const settings = this.activeSettings(session).presetOptions ?? {};
+		if (advisor.mode === "direct" && (settings.estimatorBaseUrl === void 0 || settings.estimatorBaseUrl.length === 0 || settings.estimatorModel === void 0 || settings.estimatorModel.length === 0)) {
+			emitCompressionAudit(this.ctx.logger, {
+				schemaVersion: 1,
+				kind: "advisor-outcome",
+				sessionId: String(session.id),
+				phase: "summary",
+				channel: "direct",
+				ok: false,
+				turnIndex: turn,
+				reason: "no-direct-endpoint",
+				latencyMs: 0
+			});
+			advisorState.failures = {
+				failures: (advisorState.failures?.failures ?? 0) + 1,
+				cooldownUntil: Date.now() + backoffCooldownMs((advisorState.failures?.failures ?? 0) + 1)
+			};
+			return;
+		}
+		let channel = this.state.advisorChannels.get(session);
+		if (channel === void 0) {
+			channel = new SideChannel(this.ctx, settings, {
+				mode: advisor.mode,
+				timeoutMs: advisor.timeoutMs,
+				maxTokens: 512
+			});
+			this.state.advisorChannels.set(session, channel);
+		}
+		const view = measureForCompaction(this.ctx, session);
+		const candidates = this.snapshot(session, view).filter((candidate) => !this.isRecoveryExempt(session, candidate)).map((candidate) => ({
+			seq: candidate.seq,
+			characterPressure: candidate.characterPressure,
+			preview: advisorCandidatePreview(candidate.call.name, candidate.event.data.message.content)
+		}));
+		let sawFailure = false;
+		const outcome = await runSessionAdvisorPass(session, channel, (record) => {
+			if (record.ok === false) sawFailure = true;
+			emitCompressionAudit(this.ctx.logger, record);
+		}, {
+			profile: policy.profile,
+			sessionId: String(session.id),
+			turn,
+			candidates,
+			task: {
+				source: task.source,
+				todoVersion: task.todoVersion,
+				taskText: task.taskText
+			},
+			advisor: {
+				refreshTurns: advisor.refreshTurns,
+				scoreThreshold: advisor.scoreThreshold,
+				sampleLimit: advisor.sampleLimit,
+				minTokens: advisor.minTokens
+			},
+			tailText: collectTailText(events),
+			signal
+		});
+		if (outcome === void 0 && sawFailure && signal.aborted === false) advisorState.failures = {
+			failures: (advisorState.failures?.failures ?? 0) + 1,
+			cooldownUntil: Date.now() + backoffCooldownMs((advisorState.failures?.failures ?? 0) + 1)
+		};
+		else if (outcome !== void 0) advisorState.failures = void 0;
 	}
 	/**
 	* The per-session review queue, or `undefined` while review mode is off

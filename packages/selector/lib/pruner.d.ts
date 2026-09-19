@@ -83,6 +83,20 @@ interface PresetOptions {
     readonly mode: '' | 'host' | 'direct';
   };
   /**
+   * Advisory relevance advisor: statistics and suggestions only — every output
+   * (summaries, scores, decay, recertification) is observational and must never
+   * suppress, delay, or rewrite any reduction that would land. `''` (the
+   * default) keeps the advisor fully off.
+   */
+  readonly advisor: {
+    readonly mode: '' | 'host' | 'direct';
+    readonly timeoutMs: number;
+    readonly refreshTurns: number;
+    readonly scoreThreshold: number;
+    readonly sampleLimit: number;
+    readonly minTokens: number;
+  };
+  /**
    * Human-gated review pipeline (beta): edge/high-impact candidates queue for
    * manual approval and execute in one merged batch at the next turn boundary
    * instead of the automatic path (R4).
@@ -158,6 +172,13 @@ interface PresetOptionsSettings {
   readonly estimatorBaseUrl?: string;
   readonly estimatorApiKey?: string;
   readonly estimatorTimeoutMs?: number;
+  /** Advisory advisor channel; `''` (the default) keeps the advisor off. */
+  readonly advisorMode?: '' | 'host' | 'direct';
+  readonly advisorTimeoutMs?: number;
+  readonly advisorRefreshTurns?: number;
+  readonly advisorScoreThreshold?: number;
+  readonly advisorSampleLimit?: number;
+  readonly advisorMinTokens?: number;
 }
 /** Durable global preference exposed through `ctx.settings`. */
 interface ContextCompressionSettings {
@@ -334,6 +355,56 @@ interface PruneResult {
   readonly charsRemoved: number;
   /** Authoritative exact canonical content tokens removed. */
   readonly tokensRemoved: number;
+}
+//#endregion
+//#region src/runtime/tokenpilot/sidechannel.d.ts
+/** Audit record of one side-channel call (Phase 13). All fields optional-safe. */
+interface SideChannelAudit {
+  readonly ok: boolean;
+  readonly latencyMs: number;
+  /** host|direct plus the resolved provider/model identity. */
+  readonly channel?: string;
+  /** L2 coverage: content shown N of node content total M. */
+  readonly coverage?: {
+    readonly shown: number;
+    readonly total: number;
+  };
+  readonly reason?: string;
+}
+interface SideChannelRequest {
+  readonly system: string;
+  readonly user: string;
+  readonly signal: AbortSignal;
+}
+/** One bound side channel. `ask` resolves `undefined` on ANY failure. */
+declare class SideChannel {
+  private readonly ctx;
+  private readonly options;
+  private readonly overrides?;
+  /**
+   * @param overrides - per-consumer overrides of the estimator-named options.
+   * The estimator itself never passes them (byte-identical behavior); the
+   * advisory advisor passes its own mode/timeout/output budget so both
+   * consumers share one transport without sharing one configuration.
+   */
+  constructor(ctx: Context, options: PresetOptionsSettings, overrides?: {
+    readonly mode?: "" | "host" | "direct";
+    readonly timeoutMs?: number;
+    readonly maxTokens?: number;
+  } | undefined);
+  private get mode();
+  get enabled(): boolean;
+  ask(request: SideChannelRequest): Promise<string | undefined>;
+  /** Failure-open wrapper that also records one audit record per call. */
+  askAudited(request: SideChannelRequest): Promise<{
+    text?: string;
+    audit: SideChannelAudit;
+  }>;
+  identity(): string | undefined;
+  /** Same host-route resolution as the estimator: explicit, then host default. */
+  private resolveHostRoute;
+  private askHost;
+  private askDirect;
 }
 //#endregion
 //#region src/runtime/tokenpilot/estimator.d.ts
@@ -532,6 +603,8 @@ interface PrunerState {
   readonly reviewClocks: WeakMap<Session, number>;
   /** Estimator-reported remaining turns Ŝ per Session; advisory only. */
   readonly estimatorRemainingTurns: WeakMap<Session, number>;
+  /** Per-session advisor side channel, constructed once with the advisor overrides. */
+  readonly advisorChannels: WeakMap<Session, SideChannel>;
   /** Four-state outcome counters per Session (floating-window summary row). */
   readonly reviewSummaries: WeakMap<Session, ReviewSessionSummary>;
 }
@@ -847,6 +920,15 @@ declare class ToolResultPruner extends Service {
    * superseded classification.
    */
   private postflightEstimatorPass;
+  /**
+   * Advisory advisor pass at the turn boundary, strictly fire-and-forget.
+   * Produces todolist-bound tail-task summaries, incremental relevance
+   * scores, and a prefix-decay figure — all observational. Every short
+   * circuit below (mode off, re-entry, cooldown, no task semantics, no
+   * direct endpoint) returns without touching any state the pruning chain
+   * reads, so the default configuration adds exactly zero behavior.
+   */
+  private postflightAdvisorPass;
   /**
    * The per-session review queue, or `undefined` while review mode is off
    * (every review path must then behave exactly like before).

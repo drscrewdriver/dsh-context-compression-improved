@@ -1,4 +1,4 @@
-import { n as resolveReviewPruner, o as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, s as ContextCompressionSettingsSchema } from "./review-registry.js";
+import { d as ContextCompressionSettingsSchema, o as resolveReviewPruner, t as getAdvisorState, u as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE } from "./advisor-state.js";
 import z from "@deepseek-ai/schemastery";
 import "@deepseek-ai/dsh-settings";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -459,6 +459,7 @@ const CONTEXT_COMPRESSION_NAMESPACE = CONTEXT_COMPRESSION_SETTINGS_NAMESPACE;
 const ESTIMATOR_CATALOG_ROUTES = ["/endpoint/dsh-context-compression-improved/estimator-catalog", "/api/dsh-context-compression-improved/estimator-catalog"];
 const REVIEW_QUEUE_ROUTES = ["/endpoint/dsh-context-compression-improved/review-queue", "/api/dsh-context-compression-improved/review-queue"];
 const REVIEW_DECIDE_ROUTES = ["/endpoint/dsh-context-compression-improved/review-decide", "/api/dsh-context-compression-improved/review-decide"];
+const ADVISOR_REPORT_ROUTES = ["/endpoint/dsh-context-compression-improved/advisor-report", "/api/dsh-context-compression-improved/advisor-report"];
 /**
 * Resolve the review pipeline for the top-level routes.
 *
@@ -694,6 +695,102 @@ function registerReviewQueueRoutes(ctx) {
 	log("warn", "context-compression webServer not active yet — review routes pending: %s", REVIEW_QUEUE_ROUTES.join(", "));
 }
 /**
+* Serve the advisory advisor's read-only report route (same registration
+* skeleton as the review routes):
+*
+* `GET .../advisor-report?sessionId=…` → the session's prefix-decay figure,
+* the todolist-bound task summary, and the score distribution. Content-free
+* by construction: task semantics are LLM-derived summaries, never message
+* text, and no score reason or candidate preview is ever returned.
+* Unknown session → 404; no agents service → 503. A session whose advisor
+* never ran reports nulls and empty arrays, not an error.
+*/
+function registerAdvisorReportRoute(ctx) {
+	const readService = (name) => {
+		try {
+			return ctx.get(name);
+		} catch {
+			return;
+		}
+	};
+	const log = (level, message, ...args) => {
+		console[level](message, ...args);
+	};
+	const getHandler = (req, res) => {
+		if (typeof readService("agents")?.get !== "function") {
+			reviewJson(res, 503, {
+				ok: false,
+				error: "advisor report unavailable"
+			});
+			return;
+		}
+		let sessionId = "";
+		try {
+			sessionId = new URL(String(req.url ?? ""), "http://localhost").searchParams.get("sessionId") ?? "";
+		} catch {}
+		if (sessionId === "") {
+			reviewJson(res, 400, {
+				ok: false,
+				error: "sessionId is required"
+			});
+			return;
+		}
+		const session = sessionFor(readService, sessionId);
+		if (session === void 0) {
+			reviewJson(res, 404, {
+				ok: false,
+				error: "unknown session"
+			});
+			return;
+		}
+		const state = getAdvisorState(session);
+		reviewJson(res, 200, {
+			ok: true,
+			sessionId,
+			advisor: {
+				summary: state.summary ?? null,
+				decay: state.lastDecay?.decay ?? null,
+				weightedChars: state.lastDecay?.weightedChars ?? null,
+				decayTurn: state.lastDecay?.turn ?? null,
+				scores: [...state.scores].map(([seq, entry]) => ({
+					seq,
+					score: entry.score,
+					turn: entry.turn
+				})),
+				lowRelevanceSeqs: [...state.recertified.keys()]
+			}
+		});
+	};
+	const register = (webServer) => {
+		const disposers = [...ADVISOR_REPORT_ROUTES].map((path) => ({
+			path,
+			handler: getHandler
+		})).map((entry) => webServer.register({
+			kind: "exact",
+			path: entry.path,
+			handler: entry.handler
+		})).filter((off) => typeof off === "function");
+		ctx.effect(() => () => {
+			for (const off of disposers) off();
+		}, "contextCompressionSelector.advisor report route");
+		log("info", "context-compression advisor report route registered: %s", ADVISOR_REPORT_ROUTES.join(", "));
+	};
+	const active = asWebServer(readService("webServer"));
+	if (active !== void 0) {
+		register(active);
+		return;
+	}
+	ctx.inject(["webServer"], (injected) => {
+		const webServer = asWebServer(injected.webServer);
+		if (webServer === void 0) {
+			log("warn", "context-compression webServer exposes no register() — advisor report route not registered");
+			return;
+		}
+		register(webServer);
+	});
+	log("warn", "context-compression webServer not active yet — advisor report route pending: %s", ADVISOR_REPORT_ROUTES.join(", "));
+}
+/**
 * The one service the catalog route actually needs. `llm` and
 * `agentDefaultModel` are payload enrichment the handler resolves per request,
 * never reasons to withhold the route.
@@ -797,7 +894,8 @@ const SHARED_SETTINGS = Symbol.for("dsh-context-compression-improved/settings-re
 const Config = z.object({
 	presetOverlay: z.boolean().default(false),
 	estimatorCatalogRoute: z.boolean().default(false),
-	reviewQueueRoute: z.boolean().default(false)
+	reviewQueueRoute: z.boolean().default(false),
+	advisorReportRoute: z.boolean().default(false)
 });
 /** Register the persisted default read by the currently mounted root pruner. */
 function apply(ctx, config = {}) {
@@ -807,6 +905,7 @@ function apply(ctx, config = {}) {
 		});
 		if (config.estimatorCatalogRoute === true) registerEstimatorCatalogRoute(ctx);
 		if (config.reviewQueueRoute === true) registerReviewQueueRoutes(ctx);
+		if (config.advisorReportRoute === true) registerAdvisorReportRoute(ctx);
 		if (config.presetOverlay !== true) return;
 		ctx.inject(["agentPresets"], (presetsCtx) => {
 			const installation = decorateAgentPresets(presetsCtx.agentPresets, {

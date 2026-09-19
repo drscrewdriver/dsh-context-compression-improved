@@ -59,7 +59,31 @@ Open DeepSeek Harness settings → **Context compression selector**:
 
 Like all selector settings, the value is frozen when a session first observes it — the gate affects newly observed sessions, never a task that is already running.
 
-## 5. Update or remove
+## 5. Optional: the advisory relevance advisor
+
+The plugin can keep statistics about how relevant the session's history still is — advisory only, it never decides or blocks anything. It is off by default; turn it on by editing the `presetOptions` section of the context-compression settings (settings JSON, no UI card this round):
+
+```json
+"presetOptions": {
+  "advisorMode": "host",
+  "advisorRefreshTurns": 8,
+  "advisorScoreThreshold": 0.35,
+  "advisorSampleLimit": 16,
+  "advisorMinTokens": 250,
+  "advisorTimeoutMs": 8000
+}
+```
+
+`advisorMode: "host"` calls the harness `llm` service; `"direct"` reuses the estimator's
+`estimatorBaseUrl` / `estimatorApiKey` / `estimatorModel` endpoint. At every turn boundary
+the advisor (1) summarizes the current task from the most recent `todo/write` event,
+(2) incrementally scores historical tool results for content-and-comment relevance, and
+(3) records a prefix-decay figure. Results surface as `advisor-outcome` audit records and,
+with the deployment flag `advisorReportRoute: true`, a read-only
+`GET .../advisor-report?sessionId=` HTTP route. What the advisor reports can never
+suppress, delay, or rewrite any reduction that would land.
+
+## 6. Update or remove
 
 ```sh
 # update: pull, rebuild, repack, and add the new tarball again

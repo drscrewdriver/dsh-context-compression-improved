@@ -89,6 +89,13 @@ interface PresetOptionsSettings {
   readonly reviewTimeoutTurns?: number;
   readonly cacheHitDiscountAlpha?: number;
   readonly reviewHighImpactTokens?: number;
+  /** Advisory advisor channel; `''` (the default) keeps the advisor off. */
+  readonly advisorMode?: '' | 'host' | 'direct';
+  readonly advisorTimeoutMs?: number;
+  readonly advisorRefreshTurns?: number;
+  readonly advisorScoreThreshold?: number;
+  readonly advisorSampleLimit?: number;
+  readonly advisorMinTokens?: number;
 }
 /** Durable settings section owned by this package. */
 interface ContextCompressionSettings {

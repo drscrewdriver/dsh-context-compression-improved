@@ -2,6 +2,25 @@
 
 > 전체 히스토리(업스트림 0.1.0 이전 포함)는 [CHANGELOG.md](CHANGELOG.md)를 참고하세요. 이 파일은 포크의 추가 항목만 번역한 것입니다. · [English](CHANGELOG.md) · [中文](CHANGELOG.zh.md) · [日本語](CHANGELOG.ja.md)
 
+## 0.5.0 - 2026-09-20
+
+### Added(추가)
+
+- 어드바이저리 관련도 어드바이저(통계와 제안 전용, 기본 꺼짐): 모든 턴 경계에서
+  fire-and-forget 패스를 실행하여, 최신 `todo/write` 이벤트에서 세션의 후미 작업 의미를
+  요약하고(todolist 가 없으면 최근 사용자 텍스트로 폴백), 역사적 tool-result 후보의
+  "내용+주석 의미 ↔ 현재 작업" 관련도를 증분 스코어링하며, prefix-decay 수치(characterPressure
+  가중 관련도 평균의 역)를 계산합니다. 관련도가 낮은 오래된 세그먼트는 `recertified` 로
+  표시되지만 이는 향후 history 공격성 판단을 위한 제안 입력일 뿐——이번 라운드에서 이를
+  소비하는 경로는 없으며, 어드바이저 출력이 착지해야 할 reduction 을 억제·지연·재작성하는
+  일은 결코 없습니다(전용 불변 테스트로 고정). `presetOptions.advisor*` 설정 키로 구성
+  (`advisorMode` `''|'host'|'direct'`, 기본 `''`; direct 채널은 estimator 엔드포인트 재사용;
+  `SideChannel` 에 선택적 overrides 매개변수 추가로 설정 공유 없이 전송 계층 공유).
+  관측성: 새로운 `advisor-outcome` 감사 레코드(content-free, summary / scoring / decay 각
+  페이즈별 1개)와 읽기 전용 HTTP 라우트 `GET .../advisor-report?sessionId=`(배포 opt-in
+  플래그 `advisorReportRoute`, review 라우트와 동일한 뼈대). 클라이언트 UI 는 이번 라운드에서
+  의도적으로 제공하지 않습니다.
+
 ## 0.4.0 - 2026-09-20
 
 ### Fixed(수정)

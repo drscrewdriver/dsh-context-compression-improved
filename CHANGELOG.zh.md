@@ -2,6 +2,23 @@
 
 > 完整历史（含上游 0.1.0 及更早版本）见 [CHANGELOG.md](CHANGELOG.md)。本文件只翻译本 fork 的新增条目。 · [English](CHANGELOG.md) · [日本語](CHANGELOG.ja.md) · [한국어](CHANGELOG.ko.md)
 
+## 0.5.0 - 2026-09-20
+
+### Added
+
+- 建议型相关度 advisor（仅统计与建议，默认关闭）：每个 turn 边界以 fire-and-forget 方式
+  运行一次 pass——从最近的 `todo/write` 事件总结尾部任务语义（无 todolist 时回退到最近
+  用户文本）、对历史 tool-result 候选做"内容+注释语义 ↔ 当前任务"的增量相关度打分、并
+  计算前缀腐化度（prefix-decay，按 characterPressure 加权的相关度均值取反）。低相关的
+  旧段标记为 `recertified`，仅作为后续 history 激进化的建议输入——本轮没有任何决策路径
+  消费它，且 advisor 输出绝不抑制、延迟或改写任何本应落地的 reduction（有专项不变量测试
+  钉死）。经 `presetOptions.advisor*` settings 键配置（`advisorMode` `''|'host'|'direct'`，
+  默认 `''`；direct 通道复用 estimator 端点；`SideChannel` 新增可选 overrides 参数，
+  共享传输层而不共享配置）。可观测性：新增 `advisor-outcome` 审计记录（content-free，
+  每阶段一条：summary / scoring / decay）与只读 HTTP 路由
+  `GET .../advisor-report?sessionId=`（部署级 opt-in 开关 `advisorReportRoute`，与 review
+  路由同骨架）。本轮刻意不提供客户端 UI。
+
 ## 0.4.0 - 2026-09-20
 
 ### Fixed

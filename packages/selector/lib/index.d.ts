@@ -24,6 +24,13 @@ interface Config {
    * transport and simply never appears.
    */
   reviewQueueRoute?: boolean;
+  /**
+   * Register the advisory advisor's read-only HTTP report route (decay
+   * figure, task summary, score distribution). Same Bundle opt-in semantics
+   * as `reviewQueueRoute`; the advisor itself stays off until the user turns
+   * it on through the `presetOptions.advisor*` settings keys.
+   */
+  advisorReportRoute?: boolean;
 }
 /** Loader validation for the standalone Bundle opt-in. */
 declare const Config: z<Config>;

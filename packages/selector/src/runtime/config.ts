@@ -128,6 +128,8 @@ export function parsePresetOptionsSettings(value: unknown): PresetOptionsSetting
     'dedupeToolResults', 'summaryLocator', 'prefixStabilizer', 'readState', 'estimatorMode',
     'estimatorProvider', 'estimatorModel', 'estimatorBaseUrl', 'estimatorApiKey', 'estimatorTimeoutMs',
     'reviewMode', 'reviewTimeoutTurns', 'cacheHitDiscountAlpha', 'reviewHighImpactTokens',
+    'advisorMode', 'advisorTimeoutMs', 'advisorRefreshTurns', 'advisorScoreThreshold', 'advisorSampleLimit',
+    'advisorMinTokens',
   ])
   const unknown = Object.keys(value).find(key => !allowed.has(key))
   if (unknown !== undefined) {
@@ -143,6 +145,39 @@ export function parsePresetOptionsSettings(value: unknown): PresetOptionsSetting
   const estimatorMode = value.estimatorMode
   if (estimatorMode !== undefined && estimatorMode !== '' && estimatorMode !== 'host' && estimatorMode !== 'direct') {
     throw new TypeError('Context-compression presetOptions.estimatorMode must be "", "host", or "direct"')
+  }
+  const advisorMode = value.advisorMode
+  if (advisorMode !== undefined && advisorMode !== '' && advisorMode !== 'host' && advisorMode !== 'direct') {
+    throw new TypeError('Context-compression presetOptions.advisorMode must be "", "host", or "direct"')
+  }
+  const advisorTimeoutMs = value.advisorTimeoutMs
+  if (advisorTimeoutMs !== undefined
+    && (typeof advisorTimeoutMs !== 'number' || !Number.isSafeInteger(advisorTimeoutMs)
+      || advisorTimeoutMs < 100 || advisorTimeoutMs > 60_000)) {
+    throw new TypeError('Context-compression presetOptions.advisorTimeoutMs must be an integer between 100 and 60000')
+  }
+  const advisorRefreshTurns = value.advisorRefreshTurns
+  if (advisorRefreshTurns !== undefined
+    && (typeof advisorRefreshTurns !== 'number' || !Number.isSafeInteger(advisorRefreshTurns)
+      || advisorRefreshTurns < 1)) {
+    throw new TypeError('Context-compression presetOptions.advisorRefreshTurns must be an integer of at least 1')
+  }
+  const advisorScoreThreshold = value.advisorScoreThreshold
+  if (advisorScoreThreshold !== undefined
+    && (typeof advisorScoreThreshold !== 'number' || !Number.isFinite(advisorScoreThreshold)
+      || advisorScoreThreshold <= 0 || advisorScoreThreshold >= 1)) {
+    throw new TypeError('Context-compression presetOptions.advisorScoreThreshold must be a number strictly between 0 and 1')
+  }
+  const advisorSampleLimit = value.advisorSampleLimit
+  if (advisorSampleLimit !== undefined
+    && (typeof advisorSampleLimit !== 'number' || !Number.isSafeInteger(advisorSampleLimit)
+      || advisorSampleLimit < 1 || advisorSampleLimit > 64)) {
+    throw new TypeError('Context-compression presetOptions.advisorSampleLimit must be an integer between 1 and 64')
+  }
+  const advisorMinTokens = value.advisorMinTokens
+  if (advisorMinTokens !== undefined
+    && (typeof advisorMinTokens !== 'number' || !Number.isSafeInteger(advisorMinTokens) || advisorMinTokens < 1)) {
+    throw new TypeError('Context-compression presetOptions.advisorMinTokens must be a positive integer')
   }
   const estimatorTimeoutMs = value.estimatorTimeoutMs
   if (estimatorTimeoutMs !== undefined
@@ -190,6 +225,12 @@ export function parsePresetOptionsSettings(value: unknown): PresetOptionsSetting
   if (reviewTimeoutTurns !== undefined) result.reviewTimeoutTurns = reviewTimeoutTurns as number
   if (cacheHitDiscountAlpha !== undefined) result.cacheHitDiscountAlpha = cacheHitDiscountAlpha as number
   if (reviewHighImpactTokens !== undefined) result.reviewHighImpactTokens = reviewHighImpactTokens as number
+  if (advisorMode !== undefined) result.advisorMode = advisorMode as '' | 'host' | 'direct'
+  if (advisorTimeoutMs !== undefined) result.advisorTimeoutMs = advisorTimeoutMs as number
+  if (advisorRefreshTurns !== undefined) result.advisorRefreshTurns = advisorRefreshTurns as number
+  if (advisorScoreThreshold !== undefined) result.advisorScoreThreshold = advisorScoreThreshold as number
+  if (advisorSampleLimit !== undefined) result.advisorSampleLimit = advisorSampleLimit as number
+  if (advisorMinTokens !== undefined) result.advisorMinTokens = advisorMinTokens as number
   return result
 }
 
@@ -463,6 +504,15 @@ const PRESET_OPTION_DEFAULTS: PresetOptions = deepFreeze({
   reviewTimeoutTurns: 6,
   cacheHitDiscountAlpha: 0.1,
   reviewHighImpactTokens: 4000,
+  // Advisory advisor ships off: statistics and suggestions only, never a gate.
+  advisor: {
+    mode: '',
+    timeoutMs: 8_000,
+    refreshTurns: 8,
+    scoreThreshold: 0.35,
+    sampleLimit: 16,
+    minTokens: 250,
+  },
 })
 
 /**
@@ -484,6 +534,14 @@ function mergePresetOptions(overrides: PresetOptionsSettings | undefined): Prese
     reviewTimeoutTurns: overrides.reviewTimeoutTurns ?? PRESET_OPTION_DEFAULTS.reviewTimeoutTurns,
     cacheHitDiscountAlpha: overrides.cacheHitDiscountAlpha ?? PRESET_OPTION_DEFAULTS.cacheHitDiscountAlpha,
     reviewHighImpactTokens: overrides.reviewHighImpactTokens ?? PRESET_OPTION_DEFAULTS.reviewHighImpactTokens,
+    advisor: {
+      mode: overrides.advisorMode ?? PRESET_OPTION_DEFAULTS.advisor.mode,
+      timeoutMs: overrides.advisorTimeoutMs ?? PRESET_OPTION_DEFAULTS.advisor.timeoutMs,
+      refreshTurns: overrides.advisorRefreshTurns ?? PRESET_OPTION_DEFAULTS.advisor.refreshTurns,
+      scoreThreshold: overrides.advisorScoreThreshold ?? PRESET_OPTION_DEFAULTS.advisor.scoreThreshold,
+      sampleLimit: overrides.advisorSampleLimit ?? PRESET_OPTION_DEFAULTS.advisor.sampleLimit,
+      minTokens: overrides.advisorMinTokens ?? PRESET_OPTION_DEFAULTS.advisor.minTokens,
+    },
   })
 }
 

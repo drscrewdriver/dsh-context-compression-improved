@@ -57,7 +57,30 @@ dsh --profile web --dump-config
 
 与所有选择器设置一致，取值在会话首次观察时冻结——这道门只影响新观察的会话，不会改变正在运行的任务。
 
-## 5. 更新或卸载
+## 5. 可选：建议型相关度 advisor
+
+插件可以对"会话历史还有多相关"做统计——仅建议性质，不做任何决策、也不阻断任何流程。默认关闭；本轮没有设置卡片，请直接编辑上下文压缩设置中的 `presetOptions` 段（settings JSON）：
+
+```json
+"presetOptions": {
+  "advisorMode": "host",
+  "advisorRefreshTurns": 8,
+  "advisorScoreThreshold": 0.35,
+  "advisorSampleLimit": 16,
+  "advisorMinTokens": 250,
+  "advisorTimeoutMs": 8000
+}
+```
+
+`advisorMode: "host"` 走 harness `llm` 服务；`"direct"` 复用 estimator 的
+`estimatorBaseUrl` / `estimatorApiKey` / `estimatorModel` 端点。每个 turn 边界，advisor
+会：(1) 从最近的 `todo/write` 事件总结当前任务语义；(2) 对历史 tool result 做"内容+注释
+语义 ↔ 当前任务"的增量相关度打分；(3) 记录前缀腐化度（prefix-decay）。结果以
+`advisor-outcome` 审计记录呈现；部署配置打开 `advisorReportRoute: true` 后，还可经只读
+HTTP 路由 `GET .../advisor-report?sessionId=` 读取。advisor 报告的任何内容都不会抑制、
+延迟或改写任何本应落地的 reduction。
+
+## 6. 更新或卸载
 
 ```sh
 # 更新：拉取、重建、重新打包、再次添加新 tarball

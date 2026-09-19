@@ -66,6 +66,18 @@ describe('tokenpilot-inspired preset', () => {
       reviewTimeoutTurns: 6,
       cacheHitDiscountAlpha: 0.1,
       reviewHighImpactTokens: 4000,
+      // Advisory advisor ships off with its documented defaults. The
+      // resolved matrix intentionally gains this group so it follows the
+      // estimator's resolved-consumption pattern; see
+      // .agents/plans/ctx-relevance-advisor/spec.md decision record.
+      advisor: {
+        mode: '',
+        timeoutMs: 8000,
+        refreshTurns: 8,
+        scoreThreshold: 0.35,
+        sampleLimit: 16,
+        minTokens: 250,
+      },
     })
     // Other profiles never carry the capability matrix.
     expect(resolvePolicy(config, 'balanced').presetOptions).toBeUndefined()
