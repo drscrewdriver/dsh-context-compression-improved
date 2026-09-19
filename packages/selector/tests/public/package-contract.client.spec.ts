@@ -43,10 +43,11 @@ describe('standalone package contract', () => {
     expect(rootManifest.dsh?.bundle?.patch).toBe('./packages/selector/cordis.patch.yml')
     expect(rootManifest.dsh?.client?.inject).toEqual([
       '@deepseek-ai/dsh-client-locale',
+      '@deepseek-ai/dsh-client-ui-primitives',
       '@deepseek-ai/dsh-client-ui-slots',
       '@deepseek-ai/dsh-client-ui-settings',
     ])
-    expect(rootManifest.engines?.dsh).toBe('>=0.1.5-alpha.1 <0.2.0-0')
+    expect(rootManifest.engines?.dsh).toBe('>=0.1.5-rc.1 <0.2.0-0')
   })
 
   it('uses the community package in the one Bundle patch', () => {
