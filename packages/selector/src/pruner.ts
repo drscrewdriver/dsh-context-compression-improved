@@ -76,11 +76,11 @@ import {
   contentDigest,
 } from './runtime/tokenpilot/proposal.ts'
 import {
-  MemoryReviewStore,
   ReviewQueue,
   type ReviewProposalRecord,
   type ReviewReceipt,
 } from './runtime/tokenpilot/review-queue.ts'
+import { registerReviewPruner, sharedReviewStore } from './runtime/tokenpilot/review-registry.ts'
 import { openReviewStorage } from './runtime/tokenpilot/review-storage.ts'
 
 import {
@@ -233,12 +233,21 @@ export class ToolResultPruner extends Service {
       activeRequestBoundaries: new WeakMap(),
       tailTrimBoundaryAttempts: new WeakMap(),
       policyResolutionAudits: new WeakMap(),
-      reviewStore: new MemoryReviewStore(),
+      reviewStore: sharedReviewStore(),
       reviewQueues: new WeakMap(),
       reviewClocks: new WeakMap(),
       estimatorRemainingTurns: new WeakMap(),
       reviewSummaries: new WeakMap(),
     }
+
+    // Publish this instance for the top-level R4 routes. They are registered on
+    // the plugin's top-level fiber while every pruner lives inside an agent
+    // preset's isolated group, so a top-level `ctx.get` can never find one and
+    // the queue route could only answer 503.
+    ctx.effect(
+      () => registerReviewPruner(this),
+      'contextCompressionSelector.reviewRegistry()',
+    )
 
     // TokenPilot-inspired R4: upgrade the review queue to durable storage when
     // the optional storageDomain seam is available; the memory fallback above

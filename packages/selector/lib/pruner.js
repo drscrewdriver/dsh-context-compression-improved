@@ -1,4 +1,4 @@
-import { _ as COMPRESSION_PROFILES, a as PRUNE_MARKER, c as isValidAutoCompactThresholdPercent, d as resolvePolicy, f as CustomCompressionPolicySchema, g as deepFreeze, h as assertNever, i as DEFAULTS, l as parseContextCompressionSettings, m as resolveCustomPolicy, n as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, o as codePointLength, p as DEFAULT_CUSTOM_COMPRESSION_POLICY, r as ContextCompressionSettingsSchema, s as isCompressionProfile, t as AUTO_COMPACT_THRESHOLD_LIMITS, u as resolveConfig } from "./config.js";
+import { _ as DEFAULT_CUSTOM_COMPRESSION_POLICY, a as AUTO_COMPACT_THRESHOLD_LIMITS, b as deepFreeze, c as DEFAULTS, d as isCompressionProfile, f as isValidAutoCompactThresholdPercent, g as CustomCompressionPolicySchema, h as resolvePolicy, i as ReviewQueue, l as PRUNE_MARKER, m as resolveConfig, o as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, p as parseContextCompressionSettings, r as sharedReviewStore, s as ContextCompressionSettingsSchema, t as registerReviewPruner, u as codePointLength, v as resolveCustomPolicy, x as COMPRESSION_PROFILES, y as assertNever } from "./review-registry.js";
 import { a as validatePublishedTailTrim, i as tailTrimStub, n as tailTrimMessage, o as eventBySeq, r as tailTrimRef, s as sessionEvents, t as parseTailTrimRef } from "./tail-trim.js";
 import z from "@deepseek-ai/schemastery";
 import { createHash } from "node:crypto";
@@ -3226,153 +3226,6 @@ function classifyCandidates(candidates, input) {
 	};
 }
 //#endregion
-//#region src/runtime/tokenpilot/review-queue.ts
-/** In-memory store: the fail-open fallback when no durable seam is available. */
-var MemoryReviewStore = class {
-	sessions = /* @__PURE__ */ new Map();
-	load(sessionId) {
-		return this.sessions.get(sessionId);
-	}
-	save(sessionId, record) {
-		this.sessions.set(sessionId, record);
-	}
-	ids() {
-		return [...this.sessions.keys()];
-	}
-};
-var ReviewQueue = class {
-	store;
-	options;
-	constructor(store, options) {
-		this.store = store;
-		this.options = options;
-	}
-	/**
-	* Fail-open store access: a throwing seam must never break the compression
-	* pipeline. Reads degrade to "no stored record"; writes degrade to losing
-	* durability for that call (the store itself is expected to warn).
-	*/
-	safeLoad(sessionId) {
-		try {
-			return this.store.load(sessionId);
-		} catch {
-			return;
-		}
-	}
-	safeSave(sessionId, record) {
-		try {
-			this.store.save(sessionId, record);
-		} catch {}
-	}
-	sessionRecord(sessionId) {
-		return this.safeLoad(sessionId) ?? {
-			version: 1,
-			proposals: []
-		};
-	}
-	/**
-	* Queue one classified proposal. A repeated classification of the same
-	* content re-does nothing but refresh the patience clock, so re-enqueue
-	* cannot duplicate a live proposal.
-	* @returns `false` when an identical live proposal already exists.
-	*/
-	enqueue(sessionId, skeleton, turnIndex) {
-		const record = this.sessionRecord(sessionId);
-		const existing = record.proposals.find((entry) => entry.id === skeleton.id);
-		if (existing !== void 0 && existing.status !== "expired") {
-			existing.lastTurnIndex = turnIndex;
-			this.safeSave(sessionId, record);
-			return false;
-		}
-		const proposal = {
-			id: skeleton.id,
-			sessionId,
-			kind: skeleton.kind,
-			items: skeleton.items.map((item) => ({ ...item })),
-			benefit: { ...skeleton.benefit },
-			status: "pending",
-			enqueuedTurn: turnIndex,
-			lastTurnIndex: turnIndex
-		};
-		this.safeSave(sessionId, {
-			version: 1,
-			proposals: [...record.proposals.filter((entry) => entry.id !== skeleton.id), proposal]
-		});
-		return true;
-	}
-	/** Live pending proposals of one session, oldest enqueue first. */
-	listPending(sessionId) {
-		return this.sessionRecord(sessionId).proposals.filter((entry) => entry.status === "pending").sort((left, right) => left.enqueuedTurn - right.enqueuedTurn);
-	}
-	/** Approved proposals waiting for the next turn-boundary batch. */
-	listApproved(sessionId) {
-		return this.sessionRecord(sessionId).proposals.filter((entry) => entry.status === "approved").sort((left, right) => left.enqueuedTurn - right.enqueuedTurn);
-	}
-	/**
-	* Transition one pending proposal. Idempotent: deciding an unknown id or a
-	* non-pending proposal changes nothing and reports the miss.
-	*/
-	decide(sessionId, id, decision) {
-		const record = this.sessionRecord(sessionId);
-		const proposal = record.proposals.find((entry) => entry.id === id);
-		if (proposal === void 0) return {
-			ok: false,
-			reason: "unknown-proposal"
-		};
-		if (proposal.status !== "pending") return {
-			ok: false,
-			reason: "not-pending"
-		};
-		proposal.status = decision;
-		this.safeSave(sessionId, record);
-		return { ok: true };
-	}
-	/**
-	* Expire every pending proposal whose patience has run out at this turn
-	* boundary. Expired proposals are removed from the store (the summary view
-	* aggregates them from the audit log instead).
-	* @returns the expired proposals, for the caller's audit emission.
-	*/
-	expireTurn(sessionId, turnIndex) {
-		const record = this.sessionRecord(sessionId);
-		const keep = [];
-		const expired = [];
-		for (const proposal of record.proposals) {
-			if (proposal.status === "pending" && turnIndex - proposal.lastTurnIndex > this.options.timeoutTurns) {
-				expired.push({
-					...proposal,
-					status: "expired"
-				});
-				continue;
-			}
-			keep.push(proposal);
-		}
-		if (expired.length > 0) this.safeSave(sessionId, {
-			version: 1,
-			proposals: keep
-		});
-		return expired;
-	}
-	/**
-	* Settle an approved proposal with its execution receipt and retire it from
-	* the live store. The caller is responsible for auditing the receipt; the
-	* queue only records which proposal left and why.
-	*/
-	recordReceipt(sessionId, id, receipt) {
-		const record = this.sessionRecord(sessionId);
-		const proposal = record.proposals.find((entry) => entry.id === id);
-		if (proposal === void 0 || proposal.status !== "approved") return void 0;
-		this.safeSave(sessionId, {
-			version: 1,
-			proposals: record.proposals.filter((entry) => entry.id !== id)
-		});
-		return {
-			...proposal,
-			receipt
-		};
-	}
-};
-//#endregion
 //#region src/runtime/tokenpilot/review-storage.ts
 /** Domain name — `UNIT_NAME_RE` (`/^[a-z][a-z0-9_]*$/`) allows no hyphens. */
 const REVIEW_STORAGE_DOMAIN = "context_compression_review";
@@ -3871,12 +3724,13 @@ var ToolResultPruner = class extends Service {
 			activeRequestBoundaries: /* @__PURE__ */ new WeakMap(),
 			tailTrimBoundaryAttempts: /* @__PURE__ */ new WeakMap(),
 			policyResolutionAudits: /* @__PURE__ */ new WeakMap(),
-			reviewStore: new MemoryReviewStore(),
+			reviewStore: sharedReviewStore(),
 			reviewQueues: /* @__PURE__ */ new WeakMap(),
 			reviewClocks: /* @__PURE__ */ new WeakMap(),
 			estimatorRemainingTurns: /* @__PURE__ */ new WeakMap(),
 			reviewSummaries: /* @__PURE__ */ new WeakMap()
 		};
+		ctx.effect(() => registerReviewPruner(this), "contextCompressionSelector.reviewRegistry()");
 		openReviewStorage((name) => this.ctx.get(name)).then((store) => {
 			if (store !== void 0) this.state.reviewStore = store;
 		}).catch(() => {
