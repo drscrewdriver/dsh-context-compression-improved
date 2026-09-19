@@ -9,7 +9,7 @@
 
 - Node `^22.19.0 || >=24` 与 pnpm `11.7.0`（`corepack enable` 会按 `packageManager` 字段使用固定版本）。
 - 兼容 `0.1.1-rc.2` peer 范围的 DeepSeek Harness（已针对官方 `dsh-v0.1.2-alpha.5` 验证）。
-- DeepSeek V4 模型路由（`deepseek-v4-flash`、`deepseek-v4-pro` 或 `deepseek-v4-flash-vision-exp`）。有损压缩——包括代码骨架门——依赖内置的精确 tokenizer；其他路由 fail-open 并保留原始工具结果。
+- DeepSeek 模型路由。有损压缩——包括代码骨架门——按字符基准决策，不再要求内建精确 tokenizer；存在内建 tokenizer 时其 exact 计数仅作遥测记录，其他路由 fail-open 并保留原始工具结果。
 - Git。
 
 ## 1. 从源码构建
@@ -72,6 +72,6 @@ dsh plugin --profile web remove dsh-context-compression-improved
 ## 故障排除
 
 - **配置导出中 Bundle 未激活**：重启 Profile；确认添加的是 selector 入口包（而非 runtime），且 Harness 版本在兼容的 peer 范围内。
-- **工具结果从未被骨架化压缩**：该门默认关闭，请检查开关。压缩只作用于精确 tokenizer 路由上新鲜、超大、源码类的工具结果，且每次跳过都会在审计记录中留有原因。
+- **工具结果从未被骨架化压缩**：该门默认关闭，请检查开关。压缩只作用于新鲜、超大、源码类的工具结果（决策按字符基准执行，无精确 tokenizer 路由要求），且每次跳过都会在审计记录中留有原因。
 - **开关显示为不可读**：已存的 `codeSkeleton` 段未通过严格的浏览器解码（必须恰好是 `{ enabled: boolean }`）。删除畸形段即可恢复默认。
 - **升级步骤失败**：插件遵循 npm 包语义；如果你的 Harness 构建拒绝 tarball 到 tarball 的升级，请先移除旧版本再安装。

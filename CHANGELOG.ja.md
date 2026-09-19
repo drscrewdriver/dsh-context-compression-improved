@@ -3,6 +3,19 @@
 > 完全な履歴（アップストリーム 0.1.0 以前を含む）は [CHANGELOG.md](CHANGELOG.md) を参照。このファイルはフォークの追加エントリーのみを翻訳したものです。 · [English](CHANGELOG.md) · [中文](CHANGELOG.zh.md) · [한국어](CHANGELOG.ko.md)
 
 ## Unreleased（未リリース）
+
+### Fixed（修正）
+
+- プラグインはルーティング model id に依存しなくなりました。すべての計画ゲートは
+  exact tokenizer カウントの代わりに文字基数（Unicode コードポイント、
+  `characterPressure` / `pressureCost` 経由）で判定するため、バンドル tokenizer を
+  持たないルート（実運用の `deepseek-flash`）でもリライトが沈黙せず着地します。
+  token しきい値のキー名と値は保持され（既存の 4.0 文字/token 規約で変換、
+  凍結済み profile ベースラインは無変更）、token 数値はテレメトリに降格され、
+  rewrite 監査レコードの新フィールド `measurementBasis` が正直に区別します
+  （`exact-tokenizer` と `characters`、派生時は `tokenizerId: 'characters'` /
+  `tokenizerRevision: 'chars-per-token-4.0'`）。ロールバック: 後続の変更が本コミットに
+  依存していないことを確認した上で `git revert 7a1972a` を実行してください。
 ### Changed（0.1.5 互換 / compat/0.1.5 ブランチ）
 
 - runtime パッケージを selector パッケージへ統合しました。1 回のインストールでスタック全体が入り、

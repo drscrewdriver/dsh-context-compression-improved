@@ -10,7 +10,7 @@ that used to be a second package is now part of it, so one install brings the wh
 
 - Node `^22.19.0 || >=24` and pnpm `11.7.0` (`corepack enable` picks the pinned version from `packageManager`).
 - A DeepSeek Harness installation compatible with the `0.1.1-rc.2` peer range (verified against the official `dsh-v0.1.2-alpha.5` release).
-- A DeepSeek V4 model route (`deepseek-v4-flash`, `deepseek-v4-pro`, or `deepseek-v4-flash-vision-exp`). Lossy compression — including the code-skeleton gate — requires the exact bundled tokenizer; other routes fail open and keep original tool results.
+- A DeepSeek model route. Lossy compression — including the code-skeleton gate — decides on the character basis, so no bundled-tokenizer route requirement remains; when a bundled tokenizer exists its exact counts are recorded as telemetry, and other routes fail open and keep original tool results.
 - Git.
 
 ## 1. Build from source
@@ -73,6 +73,6 @@ dsh plugin --profile web remove dsh-context-compression-improved
 ## Troubleshooting
 
 - **Bundle not active in the dump**: restart the profile; confirm you added the selector entry package (not the runtime) and that the Harness version is in the compatible peer range.
-- **Tool results are never skeleton-compressed**: the gate is off by default; check the toggle. Compression only applies to fresh, oversized source-code tool results on exact-tokenizer model routes, and every skip is recorded with a reason in the audit trail.
+- **Tool results are never skeleton-compressed**: the gate is off by default; check the toggle. Compression only applies to fresh, oversized source-code tool results (decisions run on the character basis; no exact-tokenizer route requirement), and every skip is recorded with a reason in the audit trail.
 - **The toggle shows as unreadable**: the stored `codeSkeleton` section failed the strict browser decode (it must be exactly `{ enabled: boolean }`). Removing the malformed section restores defaults.
 - **Updating fails on the upgrade step**: the plugin follows npm package semantics; remove the old version first if a tarball-to-tarball upgrade is refused by your Harness build.

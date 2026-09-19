@@ -3,6 +3,19 @@
 > 전체 히스토리(업스트림 0.1.0 이전 포함)는 [CHANGELOG.md](CHANGELOG.md)를 참고하세요. 이 파일은 포크의 추가 항목만 번역한 것입니다. · [English](CHANGELOG.md) · [中文](CHANGELOG.zh.md) · [日本語](CHANGELOG.ja.md)
 
 ## Unreleased(미출시)
+
+### Fixed(수정)
+
+- 플러그인이 더 이상 라우팅 model id 에 의존하지 않습니다. 모든 계획 게이트는
+  exact tokenizer 카운트 대신 문자 기준(Unicode 코드 포인트, `characterPressure` /
+  `pressureCost` 경유)으로 판단하므로, 번들 tokenizer 이 없는 라우트(실운영
+  `deepseek-flash`)에서도 리라이트가 침묵 없이 착지합니다. token 임계값의 키 이름과
+  값은 유지되고(기존 4.0 문자/token 규약으로 변환, 고정된 profile 베이스라인 무변경),
+  token 수치는 텔레메트리로 강등되며 rewrite 감사 레코드의 새 필드 `measurementBasis`가
+  정직하게 구분합니다(`exact-tokenizer` 와 `characters`, 파생 시
+  `tokenizerId: 'characters'` / `tokenizerRevision: 'chars-per-token-4.0'`).
+  롤백: 이후 변경이 이 커밋에 의존하지 않는지 확인한 뒤 `git revert 7a1972a` 를
+  실행하세요.
 ### Changed(0.1.5 호환 / compat/0.1.5 브랜치)
 
 - runtime 패키지를 selector 패키지로 통합했습니다. 한 번의 설치로 전체 스택이 들어오고,
