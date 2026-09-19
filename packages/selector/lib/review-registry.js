@@ -867,4 +867,213 @@ function assertNonNegativeInteger(name, value) {
 	if (!Number.isSafeInteger(value) || value < 0) throw new Error(`ToolResultPruneConfig: ${name} (${String(value)}) must be a non-negative safe integer`);
 }
 //#endregion
-export { COMPRESSION_PROFILES as _, PRUNE_MARKER as a, isValidAutoCompactThresholdPercent as c, resolvePolicy as d, CustomCompressionPolicySchema as f, deepFreeze as g, assertNever as h, DEFAULTS as i, parseContextCompressionSettings as l, resolveCustomPolicy as m, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as n, codePointLength as o, DEFAULT_CUSTOM_COMPRESSION_POLICY as p, ContextCompressionSettingsSchema as r, isCompressionProfile as s, AUTO_COMPACT_THRESHOLD_LIMITS as t, resolveConfig as u };
+//#region src/runtime/tokenpilot/review-queue.ts
+/** In-memory store: the fail-open fallback when no durable seam is available. */
+var MemoryReviewStore = class {
+	sessions = /* @__PURE__ */ new Map();
+	load(sessionId) {
+		return this.sessions.get(sessionId);
+	}
+	save(sessionId, record) {
+		this.sessions.set(sessionId, record);
+	}
+	ids() {
+		return [...this.sessions.keys()];
+	}
+};
+var ReviewQueue = class {
+	store;
+	options;
+	constructor(store, options) {
+		this.store = store;
+		this.options = options;
+	}
+	/**
+	* Fail-open store access: a throwing seam must never break the compression
+	* pipeline. Reads degrade to "no stored record"; writes degrade to losing
+	* durability for that call (the store itself is expected to warn).
+	*/
+	safeLoad(sessionId) {
+		try {
+			return this.store.load(sessionId);
+		} catch {
+			return;
+		}
+	}
+	safeSave(sessionId, record) {
+		try {
+			this.store.save(sessionId, record);
+		} catch {}
+	}
+	sessionRecord(sessionId) {
+		return this.safeLoad(sessionId) ?? {
+			version: 1,
+			proposals: []
+		};
+	}
+	/**
+	* Queue one classified proposal. A repeated classification of the same
+	* content re-does nothing but refresh the patience clock, so re-enqueue
+	* cannot duplicate a live proposal.
+	* @returns `false` when an identical live proposal already exists.
+	*/
+	enqueue(sessionId, skeleton, turnIndex) {
+		const record = this.sessionRecord(sessionId);
+		const existing = record.proposals.find((entry) => entry.id === skeleton.id);
+		if (existing !== void 0 && existing.status !== "expired") {
+			existing.lastTurnIndex = turnIndex;
+			this.safeSave(sessionId, record);
+			return false;
+		}
+		const proposal = {
+			id: skeleton.id,
+			sessionId,
+			kind: skeleton.kind,
+			items: skeleton.items.map((item) => ({ ...item })),
+			benefit: { ...skeleton.benefit },
+			status: "pending",
+			enqueuedTurn: turnIndex,
+			lastTurnIndex: turnIndex
+		};
+		this.safeSave(sessionId, {
+			version: 1,
+			proposals: [...record.proposals.filter((entry) => entry.id !== skeleton.id), proposal]
+		});
+		return true;
+	}
+	/** Live pending proposals of one session, oldest enqueue first. */
+	listPending(sessionId) {
+		return this.sessionRecord(sessionId).proposals.filter((entry) => entry.status === "pending").sort((left, right) => left.enqueuedTurn - right.enqueuedTurn);
+	}
+	/** Approved proposals waiting for the next turn-boundary batch. */
+	listApproved(sessionId) {
+		return this.sessionRecord(sessionId).proposals.filter((entry) => entry.status === "approved").sort((left, right) => left.enqueuedTurn - right.enqueuedTurn);
+	}
+	/**
+	* Transition one pending proposal. Idempotent: deciding an unknown id or a
+	* non-pending proposal changes nothing and reports the miss.
+	*/
+	decide(sessionId, id, decision) {
+		const record = this.sessionRecord(sessionId);
+		const proposal = record.proposals.find((entry) => entry.id === id);
+		if (proposal === void 0) return {
+			ok: false,
+			reason: "unknown-proposal"
+		};
+		if (proposal.status !== "pending") return {
+			ok: false,
+			reason: "not-pending"
+		};
+		proposal.status = decision;
+		this.safeSave(sessionId, record);
+		return { ok: true };
+	}
+	/**
+	* Expire every pending proposal whose patience has run out at this turn
+	* boundary. Expired proposals are removed from the store (the summary view
+	* aggregates them from the audit log instead).
+	* @returns the expired proposals, for the caller's audit emission.
+	*/
+	expireTurn(sessionId, turnIndex) {
+		const record = this.sessionRecord(sessionId);
+		const keep = [];
+		const expired = [];
+		for (const proposal of record.proposals) {
+			if (proposal.status === "pending" && turnIndex - proposal.lastTurnIndex > this.options.timeoutTurns) {
+				expired.push({
+					...proposal,
+					status: "expired"
+				});
+				continue;
+			}
+			keep.push(proposal);
+		}
+		if (expired.length > 0) this.safeSave(sessionId, {
+			version: 1,
+			proposals: keep
+		});
+		return expired;
+	}
+	/**
+	* Settle an approved proposal with its execution receipt and retire it from
+	* the live store. The caller is responsible for auditing the receipt; the
+	* queue only records which proposal left and why.
+	*/
+	recordReceipt(sessionId, id, receipt) {
+		const record = this.sessionRecord(sessionId);
+		const proposal = record.proposals.find((entry) => entry.id === id);
+		if (proposal === void 0 || proposal.status !== "approved") return void 0;
+		this.safeSave(sessionId, {
+			version: 1,
+			proposals: record.proposals.filter((entry) => entry.id !== id)
+		});
+		return {
+			...proposal,
+			receipt
+		};
+	}
+};
+//#endregion
+//#region src/runtime/tokenpilot/review-registry.ts
+/**
+* Scope-independent handle on the live review pipeline.
+*
+* The R4 HTTP routes are registered on the plugin's TOP-LEVEL fiber
+* (`cordis.patch.yml` → `context-compression-improved-estimator-catalog`),
+* but every `ToolResultPruner` is mounted inside an agent preset's isolated
+* group — `canonicalCompressionRows()` declares
+* `isolate: { compaction: true, toolResultPruner: true }` — so
+* `ctx.get('toolResultPruner')` at the top level is always `undefined` and the
+* queue route could only ever answer 503 "review pipeline unavailable".
+*
+* Ownership, not transport, was in the wrong place: the queue records are
+* already keyed by session id, so the store belongs to the plugin rather than
+* to one pruner instance. Every instance shares one store and publishes itself
+* here, which lets a top-level reader reach whichever instance currently holds
+* a session's proposals.
+*
+* The durable seam already behaves this way — `REVIEW_STORAGE_DOMAIN` /
+* `REVIEW_STORAGE_TABLE` are constants, so every instance opens the same table.
+* Only the in-memory fallback was per-instance, and that is what this module
+* makes shared.
+*
+* @module dsh-context-compression-improved/review-registry
+*/
+/**
+* The one in-memory fallback every pruner instance starts from. Session ids are
+* globally unique and `ReviewSessionRecord` is keyed by them, so a single store
+* is semantically identical to one store per instance — except that a reader
+* reaching any instance now observes every session.
+*/
+const sharedStore = new MemoryReviewStore();
+const live = /* @__PURE__ */ new Set();
+/** The process-wide review queue store shared by every pruner instance. */
+function sharedReviewStore() {
+	return sharedStore;
+}
+/**
+* Publish one pruner instance for scope-independent readers.
+* @param pruner - the instance to publish.
+* @returns the disposer removing it, for `ctx.effect`.
+*/
+function registerReviewPruner(pruner) {
+	live.add(pruner);
+	return () => {
+		live.delete(pruner);
+	};
+}
+/**
+* Resolve a live pruner instance for the top-level routes.
+*
+* Any instance can serve an aggregate read because the store is shared, and a
+* session-scoped read is answered from that same store. Instances that have
+* upgraded to the durable seam read the same table, so the answer does not
+* depend on which instance this happens to return.
+*
+* @returns a live instance, or `undefined` when no preset has been composed yet.
+*/
+function resolveReviewPruner() {
+	return live.values().next().value;
+}
+//#endregion
+export { DEFAULT_CUSTOM_COMPRESSION_POLICY as _, AUTO_COMPACT_THRESHOLD_LIMITS as a, deepFreeze as b, DEFAULTS as c, isCompressionProfile as d, isValidAutoCompactThresholdPercent as f, CustomCompressionPolicySchema as g, resolvePolicy as h, ReviewQueue as i, PRUNE_MARKER as l, resolveConfig as m, resolveReviewPruner as n, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as o, parseContextCompressionSettings as p, sharedReviewStore as r, ContextCompressionSettingsSchema as s, registerReviewPruner as t, codePointLength as u, resolveCustomPolicy as v, COMPRESSION_PROFILES as x, assertNever as y };

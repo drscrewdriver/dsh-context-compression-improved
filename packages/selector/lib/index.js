@@ -1,4 +1,4 @@
-import { n as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, r as ContextCompressionSettingsSchema } from "./config.js";
+import { n as resolveReviewPruner, o as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, s as ContextCompressionSettingsSchema } from "./review-registry.js";
 import z from "@deepseek-ai/schemastery";
 import "@deepseek-ai/dsh-settings";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -459,9 +459,19 @@ const CONTEXT_COMPRESSION_NAMESPACE = CONTEXT_COMPRESSION_SETTINGS_NAMESPACE;
 const ESTIMATOR_CATALOG_ROUTES = ["/endpoint/dsh-context-compression-improved/estimator-catalog", "/api/dsh-context-compression-improved/estimator-catalog"];
 const REVIEW_QUEUE_ROUTES = ["/endpoint/dsh-context-compression-improved/review-queue", "/api/dsh-context-compression-improved/review-queue"];
 const REVIEW_DECIDE_ROUTES = ["/endpoint/dsh-context-compression-improved/review-decide", "/api/dsh-context-compression-improved/review-decide"];
+/**
+* Resolve the review pipeline for the top-level routes.
+*
+* A top-level `toolResultPruner` service wins when a deployment actually mounts
+* one, but in production every pruner lives inside an agent preset's isolated
+* group, so the registry is the path that resolves. Without the fallback the
+* queue route answered 503 "review pipeline unavailable" on every request while
+* the review pipeline itself was running normally.
+*/
 function reviewPrunerOf(readService) {
 	const candidate = readService("toolResultPruner");
-	return typeof candidate?.listReviewProposals === "function" && typeof candidate?.decideReviewProposal === "function" ? candidate : void 0;
+	if (typeof candidate?.listReviewProposals === "function" && typeof candidate?.decideReviewProposal === "function") return candidate;
+	return resolveReviewPruner();
 }
 function sessionFor(readService, sessionId) {
 	const agents = readService("agents");

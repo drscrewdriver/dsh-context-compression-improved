@@ -11,6 +11,7 @@ import {
   CONTEXT_COMPRESSION_SETTINGS_NAMESPACE,
   ContextCompressionSettingsSchema,
 } from './runtime/config.ts'
+import { resolveReviewPruner, type ReviewPrunerFace } from './runtime/tokenpilot/review-registry.ts'
 
 // The settings namespace literal and the settings schema are owned by the
 // runtime config module. Both were once inlined/replaced here to dodge a
@@ -44,66 +45,37 @@ const REVIEW_DECIDE_ROUTES = [
   '/api/dsh-context-compression-improved/review-decide',
 ] as const
 
-/** The review faces of the pruner service the routes consume. */
-interface ReviewPrunerLike {
-  listReviewProposals(session: unknown): readonly {
-    readonly id: string
-    readonly kind: string
-    readonly items: readonly {
-      readonly seq: number
-      readonly kind: string
-      readonly component: string
-      readonly tokensBefore: number
-      readonly tokensAfter: number
-    }[]
-    readonly benefit: {
-      readonly recoveredTokens: number
-      readonly penaltyTokens: number
-      readonly paybackTurns?: number
-      readonly expectedSaving?: number
-    }
-    readonly enqueuedTurn: number
-    readonly lastTurnIndex: number
-  }[]
-  decideReviewProposal(
-    session: unknown,
-    proposalId: string,
-    decision: 'approved' | 'rejected' | 'ignored',
-  ): { ok: true } | { ok: false, reason: string } | undefined
-  /** Aggregate pending read; absent on older builds (routes then degrade to 503). */
-  listAllReviewProposals?(): readonly {
-    readonly sessionId: string
-    readonly proposals: readonly {
-      readonly id: string
-      readonly kind: string
-      readonly items: readonly { readonly seq: number, readonly kind: string, readonly component: string, readonly tokensBefore: number, readonly tokensAfter: number }[]
-      readonly benefit: { readonly recoveredTokens: number, readonly penaltyTokens: number, readonly paybackTurns?: number, readonly expectedSaving?: number }
-      readonly enqueuedTurn: number
-      readonly lastTurnIndex: number
-    }[]
-  }[]
-  reviewSummary?(session: unknown): {
-    readonly autoApplied: number
-    readonly reviewApplied: number
-    readonly expired: number
-    readonly voided: number
-  }
-}
+/**
+ * The review faces of the pruner service the routes consume. Owned by the
+ * review registry, which the routes also fall back to when no top-level
+ * `toolResultPruner` service exists — the preset-scoped case in production.
+ */
+type ReviewPrunerLike = ReviewPrunerFace
 
 /** Minimal face of the agents service: session id → agent (carrying the session). */
 interface AgentsServiceLike {
   get?(id: unknown): { session?: unknown } | undefined
 }
 
+/**
+ * Resolve the review pipeline for the top-level routes.
+ *
+ * A top-level `toolResultPruner` service wins when a deployment actually mounts
+ * one, but in production every pruner lives inside an agent preset's isolated
+ * group, so the registry is the path that resolves. Without the fallback the
+ * queue route answered 503 "review pipeline unavailable" on every request while
+ * the review pipeline itself was running normally.
+ */
 function reviewPrunerOf(readService: (name: string) => unknown): ReviewPrunerLike | undefined {
   const candidate = readService('toolResultPruner') as {
     listReviewProposals?: unknown
     decideReviewProposal?: unknown
   } | undefined
-  return typeof candidate?.listReviewProposals === 'function'
-    && typeof candidate?.decideReviewProposal === 'function'
-    ? candidate as unknown as ReviewPrunerLike
-    : undefined
+  if (typeof candidate?.listReviewProposals === 'function'
+    && typeof candidate?.decideReviewProposal === 'function') {
+    return candidate as unknown as ReviewPrunerLike
+  }
+  return resolveReviewPruner()
 }
 
 function sessionFor(readService: (name: string) => unknown, sessionId: string): unknown {
