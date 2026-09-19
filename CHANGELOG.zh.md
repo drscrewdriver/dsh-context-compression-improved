@@ -4,6 +4,17 @@
 
 ## Unreleased（compat/0.1.5 分支）
 
+### Fixed
+
+- 插件不再依赖路由 model id：全部规划闸门改按字符基准决策（Unicode code points，
+  经 `characterPressure` / `pressureCost`），不再以 exact tokenizer 计数为前提，
+  因此未内建 tokenizer 的路由（线上 `deepseek-flash`）重新能落地改写而不是静默跳过。
+  token 阈值键名与数值全部保留（按既有 4.0 字符/token 约定换算，冻结 profile 基线零改动）；
+  token 数值降级为遥测，由 rewrite 审计记录新增的 `measurementBasis` 字段如实区分
+  （`exact-tokenizer` 与 `characters`，派生时写 `tokenizerId: 'characters'` /
+  `tokenizerRevision: 'chars-per-token-4.0'`）。回滚：确认无后续改动依赖本提交后再执行
+  `git revert 7a1972a` 整体恢复旧闸门。
+
 ### Changed
 
 - runtime 包并入 selector 包：一次安装即可获得完整栈，仓库根目录即为安装面

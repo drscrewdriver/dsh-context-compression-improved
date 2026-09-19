@@ -4,6 +4,19 @@ All notable changes use this file. The project follows semantic versioning after
 
 ## Unreleased (feat/ctx-compression-v2-compat015)
 
+### Fixed
+
+- The plugin no longer depends on the routed model id: every planning gate now decides on
+  the character basis (Unicode code points via `characterPressure` / `pressureCost`) instead
+  of exact tokenizer counts, so a route without a bundled tokenizer (the live
+  `deepseek-flash`) lands rewrites again instead of silently skipping. Token thresholds keep
+  their names and values (converted at the documented 4.0 chars/token convention, frozen
+  profile baseline untouched); token figures become telemetry, labelled honestly by the new
+  `measurementBasis` field on rewrite audit records (`exact-tokenizer` vs `characters`,
+  with `tokenizerId: 'characters'` / `tokenizerRevision: 'chars-per-token-4.0'` when derived).
+  Rollback: `git revert 7a1972a` restores the exact-tokenizer gates as a single unit; confirm
+  no later change re-introduced a model-id split that relies on this commit first.
+
 ### Added
 
 - Batch-level benefit pricing (R1): a review pass is priced as ONE merged mutation — the

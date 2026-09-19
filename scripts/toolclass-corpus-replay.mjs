@@ -17,6 +17,9 @@
  * 依赖:先 `pnpm build` 生成 packages/selector/lib/pruner.js。
  * 样本偏差声明(必读⑨/RK-5):--limit 取的是体积最大的会话(偏长会话),
  * 结论不得外推到全体会话;报告须标注会话数/样本数/时间范围。
+ * ⚠️ 口径标注:自 7a1972a(字符基准闸门)起,运行时决策按字符(characters)执行,
+ * 本脚本输出的压缩率/预算均为 reducer 层字符口径;tokens 字段仅为遥测派生(chars/4.0),
+ * 不得当作运行时决策依据。
  * ⚠️ --min-chars 默认 14000 只是**本脚本的样本过滤下限**,与运行时
  * `READ_TOC_MIN_CHARS`(reducers.ts)数值撞值但**毫无派生关系**:运行时的
  * fresh 门槛是 freshTriggerTokens(8192 tok ≈ 29.5k 字符),恒高于 14k 字符,
