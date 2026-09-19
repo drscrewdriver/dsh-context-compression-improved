@@ -47,7 +47,7 @@
 
 ## 安装
 
-从源码构建并安装（本 fork 尚未发布 npm 包；内部包名有意保持与上游一致）：
+从源码构建并安装 —— 本 fork 亦已发布到 npm，包名为 `dsh-context-compression-improved`（dist-tag `dsh-0.1.5`）；内部包名有意保持与上游一致：
 
 ```sh
 git clone https://github.com/drscrewdriver/dsh-context-compression-improved.git

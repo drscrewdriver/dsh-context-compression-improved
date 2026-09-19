@@ -2,7 +2,7 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
-## Unreleased (feat/ctx-compression-v2-compat015)
+## 0.4.0 - 2026-09-20
 
 ### Fixed
 
@@ -42,7 +42,7 @@ All notable changes use this file. The project follows semantic versioning after
 - Document census: omitted-document summaries list section headings instead of a constant
   `0 error, 0 warn, N info` histogram.
 
-## Unreleased (compat/0.1.5)
+## 0.3.1 - 2026-09-18
 
 ### Changed
 

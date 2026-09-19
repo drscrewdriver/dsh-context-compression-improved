@@ -2,9 +2,10 @@
 
 > [English](installation.md) · [中文](installation.zh.md) · [日本語](installation.ja.md) · [한국어](installation.ko.md)
 
-This guide installs the fork from source. The fork is not yet published to npm; the internal
-package name intentionally stays upstream's (`dsh-context-compression-improved`). The runtime
-that used to be a second package is now part of it, so one install brings the whole stack.
+This guide installs the fork from source. The fork is published to npm as
+`dsh-context-compression-improved` under the `dsh-0.1.5` dist-tag; the package name
+intentionally stays upstream's. The runtime that used to be a second package is now part of
+it, so one install brings the whole stack.
 
 ## Prerequisites
 

@@ -2,7 +2,7 @@
 
 > 完整历史（含上游 0.1.0 及更早版本）见 [CHANGELOG.md](CHANGELOG.md)。本文件只翻译本 fork 的新增条目。 · [English](CHANGELOG.md) · [日本語](CHANGELOG.ja.md) · [한국어](CHANGELOG.ko.md)
 
-## Unreleased（compat/0.1.5 分支）
+## 0.4.0 - 2026-09-20
 
 ### Fixed
 
