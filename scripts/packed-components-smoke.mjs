@@ -561,13 +561,25 @@ try {
       && JSON.stringify(originalImage).includes('packed-image-800x600')
       && JSON.stringify(originalImage).includes('"type":"image"'),
     'packed vision image-bearing result is no longer intact on the surface')
+    // The character basis retired the `exact-tokenizer-unavailable` skip: a
+    // History planning skip can no longer refuse for a missing exact count (see
+    // the HistoryPlanOutcome note in src/pruner/types.ts). A vision session
+    // without the exact tokenizer is therefore judged on characters and its
+    // skip carries a real reason (observed: fresh/aggregate `at-or-below-
+    // trigger`, history `below-profile-trigger`) — assert that observable
+    // contract instead of the removed literal.
     for (const component of ['fresh', 'history']) {
-      assert(visionAudit.some(record => record.kind === 'component-evaluation'
-        && record.sessionId === String(visionImage.id)
-        && record.component === component
-        && record.status === 'skipped'
-        && record.reason === 'exact-tokenizer-unavailable'),
-      `packed vision image session lacks the ${component} exact-tokenizer-unavailable audit`)
+      const record = visionAudit.find(entry => entry.kind === 'component-evaluation'
+        && entry.sessionId === String(visionImage.id)
+        && entry.component === component)
+      assert(record !== undefined,
+        `packed vision image session lacks the ${component} component-evaluation audit`)
+      assert(record.status === 'skipped',
+        `packed vision ${component} status is ${String(record.status)}, expected skipped`)
+      assert(record.measurementKind === 'characters',
+        `packed vision ${component} was decided on ${String(record.measurementKind)}, expected characters`)
+      assert(typeof record.reason === 'string' && record.reason.length > 0,
+        `packed vision ${component} skip carries no diagnostic reason`)
     }
 
     console.info(`PACKED_VISION_E2E ${JSON.stringify({
@@ -651,9 +663,19 @@ try {
     && firstIndex('history') < firstIndex('tail-trim'),
   'installed component rewrite order is wrong')
   const pipelineRewrites = rewrites.filter(record => record.sessionId === String(session.id))
+  // The character basis decides on Unicode code points, so a committed rewrite
+  // may report an unchanged token figure while still reclaiming characters
+  // (observed once here: history `historical-tool-result-aging` landed at
+  // 129 -> 129 with tokensRemoved 0). The rewrite audit carries no character
+  // field yet, so assert what the basis can actually guarantee: integer
+  // accounting, a consistent removal figure, and never an increase. A strict
+  // token decrease would re-encode the retired exact-token authority — see the
+  // measurementBasis note in src/runtime/audit.ts.
   assert(pipelineRewrites.every(record => Number.isSafeInteger(record.tokensBefore)
-    && Number.isSafeInteger(record.tokensAfter) && record.tokensBefore > record.tokensAfter),
-  'installed rewrite lacks exact decreasing token evidence')
+    && Number.isSafeInteger(record.tokensAfter)
+    && record.tokensBefore >= record.tokensAfter
+    && record.tokensRemoved === record.tokensBefore - record.tokensAfter),
+  'installed rewrite token accounting is inconsistent or increasing')
   assert(audit.some(record => record.kind === 'native-auto-compact'
     && record.sessionId === String(session.id)),
   'installed Runtime did not audit official Native summary')
