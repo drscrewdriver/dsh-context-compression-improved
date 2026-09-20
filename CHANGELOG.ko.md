@@ -2,6 +2,42 @@
 
 > 전체 히스토리(업스트림 0.1.0 이전 포함)는 [CHANGELOG.md](CHANGELOG.md)를 참고하세요. 이 파일은 포크의 추가 항목만 번역한 것입니다. · [English](CHANGELOG.md) · [中文](CHANGELOG.zh.md) · [日本語](CHANGELOG.ja.md)
 
+## 0.5.2 - 2026-09-20
+
+### Changed(변경)
+
+- 사람이 승인하는 리뷰 파이프라인(review gate, beta)을 **폐기**했습니다. 그 의미론은
+  "조언"으로 대체됩니다. 이익 모델은 여전히 한 패스를 하나의 병합 mutation으로 가격
+  책정하지만, 계산한 밴드(`profitable` / `high-impact` / `slow-payback` /
+  `unpriceable` / `not-worth-it`)는 이제 `reduction-advice` 감사 레코드로 게시되고 advisor
+  리포트 라우트에 스냅샷될 뿐입니다——reduction을 보류·지연·재작성하지 않습니다. 이 gate는
+  기능 자체의 요구(축소는 자동 처리를 막지 않는다)와 모순되었고, 출하 기본값(`reviewMode`
+  켬 + 4,000 토큰 고영향 임계값 대 8,192 토큰 fresh 트리거)에서는 fresh 배치를 100% 사람
+  리뷰로 우회시켜, 이를 켠 사용자에게서 자동 경로를 사실상 빼앗았습니다. 조언 임계값은 이제
+  모듈 상수(α `0.1`, 고영향 `4,000` 토큰)입니다. 아무 경로도 이에 따라 동작하지 않으므로
+  더 이상 설정 항목이 아닙니다.
+- gate와 함께 제거: 리뷰 큐와 그 `storageDomain` 어댑터, 프로세스 전역 레지스트리,
+  `review-queue` / `review-decide` HTTP 라우트와 `reviewQueueRoute` 배포 플래그,
+  `shell.overlay` 클라이언트 패널, `reviewMode` / `reviewTimeoutTurns` /
+  `cacheHitDiscountAlpha` / `reviewHighImpactTokens` 설정 키, `review-outcome` 감사 종류.
+  네 개의 설정 키는 **두 디코더 모두에서 계속 허용되고 무시됩니다**——기존 문서(운영 중인
+  문서에는 `reviewMode: false`가 있음)는 그대로 로드되고 설정 카드도 렌더링됩니다——그리고
+  해석된 policy에는 결코 도달하지 않습니다. 읽기 전용 `GET .../advisor-report`는
+  `lastAdvice`도 함께 제공합니다.
+
+### Added(추가)
+
+- 폐기에 대한 회귀 고정: 예전에 전량을 우회시키던 설정(`reviewMode: true`,
+  `reviewHighImpactTokens: 1`)으로 fresh 배치가 **그대로 착지**하고 `high-impact` 조언
+  레코드가 이를 설명함을 호스트 통합 테스트로 고정했습니다. 런타임 파서와 브라우저 디코더
+  양쪽에서 "허용 후 무시"를 고정하는 폐기 계약 테스트도 추가했습니다.
+
+### Rollback(롤백)
+
+- gate를 포함한 마지막 릴리스로 되돌리기: `npm dist-tag add
+  dsh-context-compression-improved@0.5.1 dsh-0.1.5 --registry https://registry.npmjs.org/`
+  후 `dsh plugin --profile web add dsh-context-compression-improved@0.5.1`.
+
 ## 0.5.1 - 2026-09-20
 
 ### Fixed(수정)

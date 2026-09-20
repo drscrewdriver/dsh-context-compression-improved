@@ -2,6 +2,38 @@
 
 > 完整历史（含上游 0.1.0 及更早版本）见 [CHANGELOG.md](CHANGELOG.md)。本文件只翻译本 fork 的新增条目。 · [English](CHANGELOG.md) · [日本語](CHANGELOG.ja.md) · [한국어](CHANGELOG.ko.md)
 
+## 0.5.2 - 2026-09-20
+
+### Changed
+
+- **退役**人工审查管线（review gate，beta）。其语义由"建议"取代：收益模型仍按"整批一次
+  mutation"定价，但它算出的分带（`profitable` / `high-impact` / `slow-payback` /
+  `unpriceable` / `not-worth-it`）现在只作为 `reduction-advice` 审计记录发布，并在 advisor
+  报告路由上留一份快照——绝不扣留、延迟或改写任何 reduction。该 gate 与本功能自身的要求
+  （缩减不阻断自动处理）相矛盾，且在出厂默认下（`reviewMode` 开 + 4000 token 高影响阈值
+  对 8192 token 的 fresh 门槛）会把整批 fresh 100% 改道进人审，等于让选择开启它的用户失去
+  自动路径。建议阈值改为模块常量（α `0.1`、高影响 `4000` token）：没有任何路径依据它们
+  行动，因此不再作为配置项。
+- 随 gate 一并移除：审查队列及其 `storageDomain` 适配器、进程级注册表、
+  `review-queue` / `review-decide` 两条 HTTP 路由与 `reviewQueueRoute` 部署开关、
+  `shell.overlay` 客户端浮窗、`reviewMode` / `reviewTimeoutTurns` /
+  `cacheHitDiscountAlpha` / `reviewHighImpactTokens` 四个 settings 键，以及
+  `review-outcome` 审计类型。这四个键在**两个解码器**中仍被接受但被忽略——既有配置文档
+  （线上即带 `reviewMode: false`）照常加载、设置卡照常渲染——且永不进入已解析的 policy。
+  只读路由 `GET .../advisor-report` 额外提供 `lastAdvice`。
+
+### Added
+
+- 退役的回归钉桩：一条宿主集成测试用**当年会全量改道的那套配置**（`reviewMode: true`、
+  `reviewHighImpactTokens: 1`）断言 fresh 批次**照常落地**并附带 `high-impact` 建议记录；
+  另一条弃用契约测试在运行时解析器与浏览器解码器两侧钉死"接受但忽略"。
+
+### Rollback
+
+- 回退到仍带 gate 的最后一个版本：`npm dist-tag add
+  dsh-context-compression-improved@0.5.1 dsh-0.1.5 --registry https://registry.npmjs.org/`，
+  然后 `dsh plugin --profile web add dsh-context-compression-improved@0.5.1`。
+
 ## 0.5.1 - 2026-09-20
 
 ### Fixed

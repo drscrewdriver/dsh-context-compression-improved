@@ -2,6 +2,42 @@
 
 > 完全な履歴（アップストリーム 0.1.0 以前を含む）は [CHANGELOG.md](CHANGELOG.md) を参照。このファイルはフォークの追加エントリーのみを翻訳したものです。 · [English](CHANGELOG.md) · [中文](CHANGELOG.zh.md) · [한국어](CHANGELOG.ko.md)
 
+## 0.5.2 - 2026-09-20
+
+### Changed（変更）
+
+- 人手ゲート付きレビューパイプライン（review gate、beta）を**廃止**しました。その意味論は
+  「助言」に置き換わります。便益モデルは従来どおり 1 パスを 1 回の統合 mutation として
+  価格付けしますが、算出したバンド（`profitable` / `high-impact` / `slow-payback` /
+  `unpriceable` / `not-worth-it`）は `reduction-advice` 監査レコードとして公開され、
+  advisor レポートルートにスナップショットされるだけになりました——reduction を保留・遅延・
+  書き換えることはありません。この gate は機能自身の要件（削減は自動処理を妨げない）と矛盾し、
+  出荷既定（`reviewMode` 有効 + 4,000 トークンの高影響しきい値に対し 8,192 トークンの
+  fresh トリガー）では fresh バッチを 100% 人手レビューへ迂回させ、有効化した利用者から
+  自動経路を事実上奪っていました。助言のしきい値はモジュール定数（α `0.1`、高影響
+  `4,000` トークン）になりました。何もこれに従って動作しないため、設定項目ではなくなります。
+- gate とともに削除：レビューキューとその `storageDomain` アダプタ、プロセス全体の
+  レジストリ、`review-queue` / `review-decide` の HTTP ルートと `reviewQueueRoute` 配置
+  フラグ、`shell.overlay` クライアントパネル、`reviewMode` / `reviewTimeoutTurns` /
+  `cacheHitDiscountAlpha` / `reviewHighImpactTokens` の設定キー、`review-outcome` 監査種別。
+  4 つの設定キーは**両方のデコーダで引き続き受理され無視されます**——既存の文書（稼働中は
+  `reviewMode: false` を含む）はそのまま読み込まれ、設定カードも表示されます——そして解決済み
+  policy には決して到達しません。読み取り専用の `GET .../advisor-report` は `lastAdvice` も
+  返します。
+
+### Added（追加）
+
+- 廃止に対する回帰ピン：かつて全量を迂回させていた設定（`reviewMode: true`、
+  `reviewHighImpactTokens: 1`）で fresh バッチが**そのまま着地**し、`high-impact` の助言
+  レコードがそれを記述することをホスト統合テストで固定。ランタイムパーサとブラウザデコーダの
+  両側で「受理して無視」を固定する非推奨契約テストも追加。
+
+### Rollback（ロールバック）
+
+- gate を含む最後のリリースへ戻す：`npm dist-tag add
+  dsh-context-compression-improved@0.5.1 dsh-0.1.5 --registry https://registry.npmjs.org/`
+  の後、`dsh plugin --profile web add dsh-context-compression-improved@0.5.1`。
+
 ## 0.5.1 - 2026-09-20
 
 ### Fixed（修正）
