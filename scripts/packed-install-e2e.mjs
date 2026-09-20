@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { createReadStream } from 'node:fs'
 import { copyFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
-import { readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -471,14 +471,18 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
    * Prove the plugin actually loads in the official profile: pnpm's peers
    * check cannot see the healed profiles/node_modules fallback by design, so
    * the release gate resolves and imports instead. Fail-closed parts: every
-   * RUNTIME peer (the engine surface the headless host must provide) and the
-   * selector's node entry with a callable apply(). The selector's remaining
+   * RUNTIME peer (the engine surface the headless host must provide), every
+   * declared runtime DEPENDENCY (the surface the install itself must provide —
+   * 0.5.3 imported `@deepseek-ai/schemastery` while declaring it nowhere, and
+   * only resolved it while another package hoisted it into the profile), and
+   * the selector's node entry with a callable apply(). The selector's remaining
    * unresolved peers must equal the REVIEWED web-only whitelist above —
    * anything else (a newly missing host dependency) fails immediately.
    */
   const provePluginLoads = async () => {
     const { profileRoot, selector } = profilePackages()
     const selectorPeers = Object.keys(selector.peerDependencies ?? {})
+    const selectorDependencies = Object.keys(selector.dependencies ?? {})
     const enginePeers = selectorPeers.filter(peer => !WEB_ONLY_HEADLESS_UNRESOLVED_PEERS.includes(peer))
     for (const allowed of WEB_ONLY_HEADLESS_UNRESOLVED_PEERS) {
       if (!selectorPeers.includes(allowed)) {
@@ -490,6 +494,9 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
       `const requireFromProfile = createRequire(String.raw\`${join(profileRoot, 'package.json')}\`)`,
       `for (const peer of ${JSON.stringify(enginePeers)}) {`,
       '  requireFromProfile.resolve(peer)',
+      '}',
+      `for (const dependency of ${JSON.stringify(selectorDependencies)}) {`,
+      '  requireFromProfile.resolve(dependency)',
       '}',
       "const selectorEntry = requireFromProfile.resolve('dsh-context-compression-improved')",
       'const plugin = require(selectorEntry)',
@@ -515,6 +522,7 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
     }
     return {
       enginePeers: enginePeers.length,
+      installedRuntimeDependencies: selectorDependencies,
       headlessUnresolvedSelectorPeers: unresolved,
       whitelist: WEB_ONLY_HEADLESS_UNRESOLVED_PEERS,
       builtClientPeersVerified: await proveBuiltClientPeersLoad(),
@@ -692,8 +700,30 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
     // dsh-base + dsh-web-app, the only bundle that mounts agent-presets and
     // therefore the selector's preset overlay — so build both library faces
     // AND the web frontend; the healed profiles/node_modules fallback also
-    // symlinks the CLI's own workspace packages.
+    // symlinks the CLI's own workspace packages, which is why the checkout's
+    // `vendor/schemastery/lib` has to exist too.
     await run('pnpm', ['run', 'build'], { cwd: worktree })
+    // Fail closed on the artifacts every later probe needs. Measured on the Node
+    // this workflow used to pin (24.0.0): `tsx` leaves `import.meta.main`
+    // undefined there, the clone's guarded `scripts/build.ts` exited 0 in about
+    // eight seconds having emitted nothing, and the boot probe then failed twice
+    // over — `client bundles not found; run \`pnpm run build\` before launch`
+    // from client composition, and `Cannot find module
+    // .../profiles/node_modules/@deepseek-ai/schemastery/lib/index.mjs` from the
+    // plugin, because the installation fallback resolves that name to the source
+    // checkout's `vendor/schemastery`, whose `lib` only this build produces.
+    for (const artifact of [
+      'packages/client/ui-settings/lib/client.js',
+      'vendor/schemastery/lib/index.mjs',
+    ]) {
+      if (!existsSync(join(worktree, artifact))) {
+        throw new Error([
+          `official clone build produced no ${artifact}`,
+          'the clone\'s build script is `tsx scripts/build.ts`, guarded by `if (import.meta.main)`;',
+          'tsx leaves that flag undefined on Node < 24.2, so the build exits 0 without building',
+        ].join(' '))
+      }
+    }
 
     // Positive controls (recorded, never asserted), captured HERE because the
     // clone checkout must exist: `cwd: worktree` is what makes spawn work at
