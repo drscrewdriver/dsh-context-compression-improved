@@ -18,7 +18,13 @@ jobs:
           version: 11.7.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 24.0.0
+          # The packed E2E builds a clone of the pinned Harness tag, so this must
+          # be a Node the Harness itself validates (its CI runs 22.19 / 24.9 / 26
+          # and defaults to the latest 24). Node 24.0.0 is not one of them: on it
+          # `tsx` 4.22.4 leaves `import.meta.main` undefined, so every guarded
+          # self-execution script in that clone — including its `build` script,
+          # which the E2E depends on — exits 0 without doing anything.
+          node-version: 24.9.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
