@@ -5,6 +5,7 @@ import type {
   TokenCount,
 } from './measurement.ts'
 import { decimalRateNanoUnits } from './deepseek-official-pricing.ts'
+import { charsToTokens } from './config.ts'
 
 /** Inputs that conservatively bound one already-planned Adaptive History batch. */
 export interface AdaptiveTokenBoundsInput {
@@ -25,7 +26,7 @@ export interface AdaptiveTokenBoundsInput {
 /** Available lower-benefit and upper-risk bounds for one History batch. */
 export interface AvailableAdaptiveTokenBounds {
   readonly kind: 'available'
-  readonly measurementKind: 'exact-tokenizer' | 'tokenizer-estimate'
+  readonly measurementKind: 'exact-tokenizer' | 'tokenizer-estimate' | 'characters'
   /** D: conservative lower bound of input tokens removed by the plan. */
   readonly reclaimedLowerBoundTokens: number
   /** A: conservative upper bound of retained suffix tokens that may lose a hit. */
@@ -89,24 +90,34 @@ export function deriveAdaptiveTokenBounds(input: AdaptiveTokenBoundsInput): Adap
 
   let identity: { readonly tokenizerId: string; readonly tokenizerRevision: string } | undefined
   let exactPrefixLowerBoundTokens = 0
+  let characterDerivedPrefix = false
   const seen = new Set<number>()
   for (const node of input.measuredNodes) {
     if (!isCount(node.seq) || seen.has(node.seq)) return unknown('invalid-measured-node-sequence')
     seen.add(node.seq)
-    if (node.seq >= input.earliestChangedSeq || node.count.kind !== 'exact-tokenizer') continue
-    if (!isCount(node.count.tokens)) return unknown('invalid-exact-prefix-count')
-    if (node.count.tokenizerRevision !== input.expectedTokenizerRevision) {
-      return unknown('exact-prefix-tokenizer-revision-mismatch')
+    if (node.seq >= input.earliestChangedSeq) continue
+    if (node.count.kind === 'exact-tokenizer') {
+      if (!isCount(node.count.tokens)) return unknown('invalid-exact-prefix-count')
+      if (node.count.tokenizerRevision !== input.expectedTokenizerRevision) {
+        return unknown('exact-prefix-tokenizer-revision-mismatch')
+      }
+      if (identity !== undefined
+        && (identity.tokenizerId !== node.count.tokenizerId
+          || identity.tokenizerRevision !== node.count.tokenizerRevision)) {
+        return unknown('exact-prefix-tokenizer-identity-mismatch')
+      }
+      identity ??= node.count
+      exactPrefixLowerBoundTokens += node.count.tokens
+    } else {
+      // Character-basis degrade: a prefix node without an exact count still
+      // occupies retained-request space, so charge its conservative
+      // character→token derivation instead of skipping it silently.
+      exactPrefixLowerBoundTokens += charsToTokens(node.characterPressure)
+      characterDerivedPrefix = true
     }
-    if (identity !== undefined
-      && (identity.tokenizerId !== node.count.tokenizerId
-        || identity.tokenizerRevision !== node.count.tokenizerRevision)) {
-      return unknown('exact-prefix-tokenizer-identity-mismatch')
-    }
-    identity ??= node.count
-    exactPrefixLowerBoundTokens += node.count.tokens
     if (!isCount(exactPrefixLowerBoundTokens)) return unknown('exact-prefix-overflow')
   }
+  if (characterDerivedPrefix) measurementKind = 'characters'
 
   const accounted = exactPrefixLowerBoundTokens + reclaimedLowerBoundTokens
   if (!isCount(accounted) || accounted > input.previousPromptTokens) {

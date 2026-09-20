@@ -20,7 +20,6 @@ import type {} from '@deepseek-ai/dsh-settings'
 import type {
   CompactionTokenView,
   ObservedPromptUsage,
-  TokenCount,
 } from './runtime/measurement.ts'
 import { measureForCompaction } from './runtime/measurement.ts'
 import { sessionEvents } from './runtime/session-events.ts'
@@ -39,7 +38,6 @@ import {
   onlyTextBlock,
   onlyTextBlocks,
   countToolContent,
-  exactTokens,
   sameProviderMeasurementKey,
   unavailableCount,
   recoveryMarker,
@@ -79,6 +77,8 @@ import {
   flattenPlainText,
 } from './runtime/tokenpilot/dedup.ts'
 import {
+  charsForTokens,
+  charsToTokens,
   codePointLength,
   CONTEXT_COMPRESSION_SETTINGS_NAMESPACE,
   ContextCompressionSettingsSchema,
@@ -351,16 +351,14 @@ export class ToolResultPruner extends Service {
         .filter((entry): entry is PlannedReplacement => entry !== null)
       landed.push(...this.landAll(session, planned))
       if (landed.length === 0) {
-        const exact = eligible.flatMap(candidate => candidate.count.kind === 'exact-tokenizer'
-          ? [candidate.count.tokens] : [])
+        const chars = eligible.map(candidate => candidate.characterPressure)
         this.auditComponent(session, policy, 'native-tool-result', 'pressure', 'skipped',
-          exactUnavailable ? 'exact-tokenizer-unavailable'
-            : exact.length === 0 ? 'no-tool-result-candidates'
-              : Math.max(...exact) <= policy.nativeTriggerTokens ? 'at-or-below-trigger'
-                : planned.length === 0 ? 'no-valid-reduction'
-                  : 'recovery-tool-unavailable', {
-            measurementKind: exactUnavailable ? 'unavailable' : 'exact-tokenizer',
-            ...(exact.length === 0 ? {} : { currentTokens: Math.max(...exact) }),
+          chars.length === 0 ? 'no-tool-result-candidates'
+            : Math.max(...chars) <= charsForTokens(policy.nativeTriggerTokens) ? 'at-or-below-trigger'
+              : planned.length === 0 ? 'no-valid-reduction'
+                : 'recovery-tool-unavailable', {
+            measurementKind: 'characters',
+            ...(chars.length === 0 ? {} : { currentTokens: charsToTokens(Math.max(...chars)) }),
             triggerTokens: policy.nativeTriggerTokens,
             targetTokens: policy.nativeTargetTokens,
           })
@@ -556,8 +554,7 @@ export class ToolResultPruner extends Service {
     for (const candidate of this.snapshot(session, measureForCompaction(this.ctx, session))) {
       if (samples.length >= 3) break
       if (candidate.event.data.turn === undefined) continue
-      const tokens = exactTokens(candidate.count)
-      if (tokens === undefined || tokens <= policy.freshTriggerTokens) continue
+      if (candidate.characterPressure <= charsForTokens(policy.freshTriggerTokens)) continue
       const path = toolCallPath(candidate.call.arguments)
       if (path === undefined) continue
       if (isSupersededRead(events, candidate.seq, path)) continue
@@ -1001,11 +998,8 @@ export class ToolResultPruner extends Service {
     const plans = new Map<number, PlannedReplacement>()
     let freshPlanned = 0
     const dedupeEnabled = policy.presetOptions?.dedupeToolResults === true
-    const exactCandidateTokens = candidates.map(candidate => exactTokens(candidate.count))
-    const exactAvailable = exactCandidateTokens.every(tokens => tokens !== undefined)
-    const maxCandidateTokens = exactAvailable
-      ? Math.max(...exactCandidateTokens as number[])
-      : undefined
+    const candidateChars = candidates.map(candidate => candidate.characterPressure)
+    const maxCandidateChars = candidateChars.length === 0 ? undefined : Math.max(...candidateChars)
     if (policy.freshEnabled) {
       if (candidates.some(candidate => candidate.call.name !== 'context_compression_retrieve'
         && candidate.count.kind !== 'exact-tokenizer')) {
@@ -1027,37 +1021,33 @@ export class ToolResultPruner extends Service {
         }
       }
     }
-    let aggregateInputTokens: number | undefined
+    let aggregateInputChars: number | undefined
     let aggregatePlanned = 0
     if (policy.aggregateEnabled) {
-      const aggregateAvailable = exactAvailable
-      if (!aggregateAvailable) this.warnExactUnavailable(session, view, 'aggregate')
-      let total = aggregateAvailable
-        ? candidates.reduce((sum, candidate) => sum + (plans.get(candidate.seq)?.tokensAfter
-          ?? exactTokens(candidate.count) ?? 0), 0)
-        : 0
-      if (aggregateAvailable) aggregateInputTokens = total
-      if (aggregateAvailable && total > policy.aggregateTriggerTokens) {
+      let total = candidates.reduce((sum, candidate) => sum
+        + (plans.get(candidate.seq)?.charsAfter ?? candidate.characterPressure), 0)
+      aggregateInputChars = total
+      if (total > charsForTokens(policy.aggregateTriggerTokens)) {
         const remaining = candidates
           .filter(candidate => !this.isRecoveryExempt(session, candidate))
           .sort((a, b) => Number(isError(a)) - Number(isError(b))
-            || (plans.get(b.seq)?.tokensAfter ?? exactTokens(b.count) ?? 0)
-              - (plans.get(a.seq)?.tokensAfter ?? exactTokens(a.count) ?? 0))
+            || (plans.get(b.seq)?.charsAfter ?? b.characterPressure)
+              - (plans.get(a.seq)?.charsAfter ?? a.characterPressure))
         for (const candidate of remaining) {
           const previous = plans.get(candidate.seq)
           const plan = this.planAggregate(candidate, session, view)
-          const previousTokens = previous?.tokensAfter ?? exactTokens(candidate.count) ?? 0
-          if (plan === null || plan.tokensAfter >= previousTokens) continue
+          const previousChars = previous?.charsAfter ?? candidate.characterPressure
+          if (plan === null || plan.charsAfter >= previousChars) continue
           plans.set(candidate.seq, plan)
           aggregatePlanned += 1
-          total -= previousTokens - plan.tokensAfter
-          if (total <= policy.aggregateTargetTokens) break
+          total -= previousChars - plan.charsAfter
+          if (total <= charsForTokens(policy.aggregateTargetTokens)) break
         }
-        if (total > policy.aggregateTargetTokens) {
+        if (total > charsForTokens(policy.aggregateTargetTokens)) {
           this.ctx.logger.warn(
-            'context-compression fresh aggregate residual: %d tokens exceed target %d',
+            'context-compression fresh aggregate residual: %d characters exceed target %d',
             total,
-            policy.aggregateTargetTokens,
+            charsForTokens(policy.aggregateTargetTokens),
           )
         }
       }
@@ -1074,13 +1064,12 @@ export class ToolResultPruner extends Service {
       this.auditComponent(session, policy, 'fresh', 'fresh',
         policy.freshEnabled ? 'skipped' : 'disabled',
         !policy.freshEnabled ? 'profile-policy'
-          : !exactAvailable ? 'exact-tokenizer-unavailable'
-            : (maxCandidateTokens ?? 0) <= policy.freshTriggerTokens ? 'at-or-below-trigger'
-              : freshPlanned > 0 && aggregatePlanned > 0 ? 'superseded-by-aggregate'
-                : freshPlanned === 0 ? 'no-valid-reduction'
-                  : 'recovery-tool-unavailable', {
-          measurementKind: exactAvailable ? 'exact-tokenizer' : 'unavailable',
-          ...(maxCandidateTokens === undefined ? {} : { currentTokens: maxCandidateTokens }),
+          : (maxCandidateChars ?? 0) <= charsForTokens(policy.freshTriggerTokens) ? 'at-or-below-trigger'
+            : freshPlanned > 0 && aggregatePlanned > 0 ? 'superseded-by-aggregate'
+              : freshPlanned === 0 ? 'no-valid-reduction'
+                : 'recovery-tool-unavailable', {
+          measurementKind: 'characters',
+          ...(maxCandidateChars === undefined ? {} : { currentTokens: charsToTokens(maxCandidateChars) }),
           triggerTokens: policy.freshTriggerTokens,
           targetTokens: policy.freshTargetTokens,
         })
@@ -1089,12 +1078,11 @@ export class ToolResultPruner extends Service {
       this.auditComponent(session, policy, 'aggregate', 'fresh',
         policy.aggregateEnabled ? 'skipped' : 'disabled',
         !policy.aggregateEnabled ? 'profile-policy'
-          : !exactAvailable ? 'exact-tokenizer-unavailable'
-            : (aggregateInputTokens ?? 0) <= policy.aggregateTriggerTokens ? 'at-or-below-trigger'
-              : aggregatePlanned === 0 ? 'no-valid-reduction'
-                : 'recovery-tool-unavailable', {
-          measurementKind: exactAvailable ? 'exact-tokenizer' : 'unavailable',
-          ...(aggregateInputTokens === undefined ? {} : { currentTokens: aggregateInputTokens }),
+          : (aggregateInputChars ?? 0) <= charsForTokens(policy.aggregateTriggerTokens) ? 'at-or-below-trigger'
+            : aggregatePlanned === 0 ? 'no-valid-reduction'
+              : 'recovery-tool-unavailable', {
+          measurementKind: 'characters',
+          ...(aggregateInputChars === undefined ? {} : { currentTokens: charsToTokens(aggregateInputChars) }),
           triggerTokens: policy.aggregateTriggerTokens,
           targetTokens: policy.aggregateTargetTokens,
         })
@@ -1144,8 +1132,7 @@ export class ToolResultPruner extends Service {
     view: CompactionTokenView,
   ): PlannedReplacement | null {
     if (this.isRecoveryExempt(session, candidate)) return null
-    const tokensBefore = exactTokens(candidate.count)
-    if (tokensBefore === undefined || tokensBefore <= policy.nativeTriggerTokens) return null
+    if (candidate.characterPressure <= charsForTokens(policy.nativeTriggerTokens)) return null
     const result = candidate.event.data.message.content[0]
     if (onlyTextBlocks(result.content) === null) return null
     const sourceSeq = rootToolResultSeq(session, candidate.seq)
@@ -1201,8 +1188,7 @@ export class ToolResultPruner extends Service {
     const result = candidate.event.data.message.content[0]
     const text = flattenPlainText(result.content)
     if (text === undefined) return null
-    const tokensBefore = exactTokens(candidate.count)
-    if (tokensBefore === undefined || tokensBefore <= policy.freshTriggerTokens) return null
+    if (candidate.characterPressure <= charsForTokens(policy.freshTriggerTokens)) return null
     let table = this.state.dedupeTables.get(session)
     if (table === undefined) {
       table = new DedupeTable()
@@ -1248,8 +1234,7 @@ export class ToolResultPruner extends Service {
     // being reconsidered after their first request.
     if (typeof candidate.event.surfaceOp === 'object') return null
     const result = candidate.event.data.message.content[0]
-    const tokensBefore = exactTokens(candidate.count)
-    if (tokensBefore === undefined || tokensBefore <= policy.freshTriggerTokens) return null
+    if (candidate.characterPressure <= charsForTokens(policy.freshTriggerTokens)) return null
     const sourceSeq = candidate.seq
     const sourceRef = sourceRefFn(session, sourceSeq)
     const textBlock = onlyTextBlock(result.content)
@@ -1281,7 +1266,7 @@ export class ToolResultPruner extends Service {
               ...(output.elidedLines === undefined ? {} : { elidedLines: output.elidedLines }),
             },
           )
-          if (plan !== null && plan.tokensAfter <= policy.freshTargetTokens) return plan
+          if (plan !== null && plan.charsAfter <= charsForTokens(policy.freshTargetTokens)) return plan
         }
         if (budgetChars === 1) break
         budgetChars = Math.max(1, Math.floor(budgetChars / 2))
@@ -1322,6 +1307,12 @@ export class ToolResultPruner extends Service {
     }
     const sourceSeq = rootToolResultSeq(session, candidate.seq)
     const sourceRef = sourceRefFn(session, sourceSeq)
+    // The placeholder below is a single text block, so a rich tool result (for
+    // example one carrying an image) must never reach it. The character basis
+    // no longer inherits the exact-tokenizer precondition that used to reject
+    // this path implicitly, so the guard has to be explicit.
+    const redacted = candidate.event.data.message.content[0]
+    if (onlyTextBlocks(redacted.content) === null) return null
     const text = [
       '[Tool result reduced to satisfy the completed-step aggregate budget]',
       `tool: ${candidate.call.name}`,
@@ -1399,17 +1390,9 @@ export class ToolResultPruner extends Service {
   ): HistoryPlanOutcome {
     const candidates = this.snapshot(session, view)
     const events = sessionEvents(session)
-    const exact: number[] = []
-    for (const candidate of candidates) {
-      const tokens = exactTokens(candidate.count)
-      if (tokens === undefined) {
-        this.warnExactUnavailable(session, view, 'history')
-        return { kind: 'exact-tokenizer-unavailable' }
-      }
-      exact.push(tokens)
-    }
-    const total = exact.reduce((sum, tokens) => sum + tokens, 0)
-    const trigger = policy.historyTriggerTokens
+    const chars = candidates.map(candidate => candidate.characterPressure)
+    const total = chars.reduce((sum, charsOfNode) => sum + charsOfNode, 0)
+    const trigger = charsForTokens(policy.historyTriggerTokens)
     // Full-request last chance: ordinary prose, images, prompts, or schemas can
     // push the complete request past the Auto Compact deadline before the tool
     // results alone cross the profile trigger.
@@ -1436,19 +1419,18 @@ export class ToolResultPruner extends Service {
     }
     const planned: PlannedReplacement[] = []
     let reclaim = 0
-    // With a frozen Auto Compact deadline, microTarget = max(0, D - M) and one
-    // batch must justify its cache break by pulling the complete request back
-    // below the deadline. Without linkage (Custom manual, or no resolved
-    // routed capacity) the loop keeps its traditional target and the batch
-    // still commits once it reaches the minimum reclaim.
-    const microTarget = deadline === undefined ? undefined : Math.max(0, deadline - policy.historyMinReclaimTokens)
+    // Linked batches must reach the deadline target; unlinked batches keep
+    // the traditional minimum-reclaim commit threshold. All arithmetic runs on
+    // the character basis: token-named thresholds enter via charsForTokens.
+    const minReclaimChars = charsForTokens(policy.historyMinReclaimTokens)
+    const microTarget = deadline === undefined ? undefined : Math.max(0, charsForTokens(deadline) - minReclaimChars)
     const required = Math.max(
-      policy.historyMinReclaimTokens,
+      minReclaimChars,
       total - trigger,
-      ...(microTarget === undefined ? [] : [view.totalTokens - microTarget]),
+      ...(microTarget === undefined ? [] : [charsForTokens(view.totalTokens) - microTarget]),
     )
     const batchTarget = microTarget === undefined
-      ? policy.historyMinReclaimTokens
+      ? minReclaimChars
       : required
     for (const candidate of eligible) {
       const result = candidate.event.data.message.content[0]
@@ -1473,7 +1455,7 @@ export class ToolResultPruner extends Service {
           )
           if (plan === null) continue
           planned.push(plan)
-          reclaim += plan.tokensBefore - plan.tokensAfter
+          reclaim += plan.charsBefore - plan.charsAfter
           if (reclaim >= required) break
           continue
         }
@@ -1492,7 +1474,7 @@ export class ToolResultPruner extends Service {
         )
         if (plan === null) continue
         planned.push(plan)
-        reclaim += plan.tokensBefore - plan.tokensAfter
+        reclaim += plan.charsBefore - plan.charsAfter
         if (reclaim >= required) break
         continue
       }
@@ -1536,7 +1518,7 @@ export class ToolResultPruner extends Service {
       )
       if (plan === null) continue
       planned.push(plan)
-      reclaim += plan.tokensBefore - plan.tokensAfter
+      reclaim += plan.charsBefore - plan.charsAfter
       if (reclaim >= required) break
     }
     // Linked batches must reach the deadline target; unlinked batches keep
@@ -1551,9 +1533,8 @@ export class ToolResultPruner extends Service {
     session: Session,
     policy: CompressionPolicy,
     view: CompactionTokenView,
-  ): Set<number> | null {
+  ): Set<number> {
     const candidates = this.snapshot(session, view)
-    if (candidates.some(candidate => exactTokens(candidate.count) === undefined)) return null
     return this.protectedHistoryCandidateSeqs(candidates, policy)
   }
 
@@ -1569,14 +1550,14 @@ export class ToolResultPruner extends Service {
       const candidate = candidates[index]
       if (candidate !== undefined) protectedSeqs.add(candidate.seq)
     }
-    let recentTokens = 0
+    let recentChars = 0
     for (let index = candidates.length - 1;
-      index >= 0 && recentTokens < policy.historyKeepRecentTokens;
+      index >= 0 && recentChars < charsForTokens(policy.historyKeepRecentTokens);
       index--) {
       const candidate = candidates[index]
       if (candidate === undefined) continue
       protectedSeqs.add(candidate.seq)
-      recentTokens += exactTokens(candidate.count) ?? 0
+      recentChars += candidate.characterPressure
     }
     return protectedSeqs
   }
@@ -1590,26 +1571,22 @@ export class ToolResultPruner extends Service {
     const tailTrim = policy.tailTrim
     if (tailTrim?.enabled !== true) return
     const events = sessionEvents(session)
-    if (view.currentSurface.kind !== 'exact-tokenizer'
-      || view.currentSurface.tokens <= tailTrim.triggerTokens) {
-      if (view.currentSurface.kind !== 'exact-tokenizer') this.warnExactUnavailable(session, view, 'tailtrim')
+    if (view.currentSurfaceChars <= charsForTokens(tailTrim.triggerTokens)) {
       this.auditComponent(session, policy, 'tail-trim', 'pressure', 'skipped',
-        view.currentSurface.kind !== 'exact-tokenizer'
-          ? 'exact-tokenizer-unavailable' : 'at-or-below-trigger', {
-          measurementKind: view.currentSurface.kind,
-          ...(view.currentSurface.kind === 'exact-tokenizer'
-            ? { currentTokens: view.currentSurface.tokens }
-            : {}),
+        'at-or-below-trigger', {
+          measurementKind: 'characters',
+          currentTokens: charsToTokens(view.currentSurfaceChars),
           triggerTokens: tailTrim.triggerTokens,
         })
       return
     }
     const surfaceCount = view.currentSurface
+    const exactSurface = surfaceCount.kind === 'exact-tokenizer' ? surfaceCount : undefined
     if (!this.hasRecoveryTool(session)) {
       this.auditComponent(session, policy, 'tail-trim', 'pressure', 'skipped',
         'recovery-tool-unavailable', {
-          measurementKind: 'exact-tokenizer',
-          currentTokens: surfaceCount.tokens,
+          measurementKind: 'characters',
+          currentTokens: charsToTokens(view.currentSurfaceChars),
           triggerTokens: tailTrim.triggerTokens,
         })
       return
@@ -1617,23 +1594,15 @@ export class ToolResultPruner extends Service {
     if (!hasOpenTurn(session)) {
       this.auditComponent(session, policy, 'tail-trim', 'pressure', 'skipped',
         'no-open-turn', {
-          measurementKind: 'exact-tokenizer',
-          currentTokens: surfaceCount.tokens,
+          measurementKind: 'characters',
+          currentTokens: charsToTokens(view.currentSurfaceChars),
           triggerTokens: tailTrim.triggerTokens,
         })
       return
     }
     const protectedResults = this.protectedHistoryResultSeqs(session, policy, view)
-    if (protectedResults === null) {
-      this.auditComponent(session, policy, 'tail-trim', 'pressure', 'skipped',
-        'exact-tokenizer-unavailable-in-protected-set', {
-          measurementKind: 'unavailable',
-          currentTokens: surfaceCount.tokens,
-          triggerTokens: tailTrim.triggerTokens,
-        })
-      return
-    }
     const measured = new Map(view.measuredNodes.map(node => [node.seq, node.count]))
+    const nodeChars = new Map(view.measuredNodes.map(node => [node.seq, node.characterPressure]))
     const heuristic = new Map(view.nodes.map(node => [node.seq, node.tokens]))
     const completedTurns = new Set<number>()
     const completedSteps = new Set<string>()
@@ -1692,33 +1661,57 @@ export class ToolResultPruner extends Service {
       if (roots.some(root => root === null)) continue
       const sourceEventSeqs = roots as number[]
       if (new Set(sourceEventSeqs).size !== sourceEventSeqs.length) continue
-      const counts = shadowedSeqs.map(seq => measured.get(seq))
-      if (counts.some(count => count?.kind !== 'exact-tokenizer')) continue
-      const exactCounts = counts as Extract<TokenCount, { kind: 'exact-tokenizer' }>[]
-      if (exactCounts.some(count => count.tokenizerId !== surfaceCount.tokenizerId
-        || count.tokenizerRevision !== surfaceCount.tokenizerRevision)) continue
-      const tokensBefore = exactCounts.reduce((sum, count) => sum + count.tokens, 0)
+      // Exact tokens stay telemetry-only: they are recorded when every
+      // shadowed node shares the surface tokenizer identity, and derived from
+      // characters otherwise. The skip decisions above and below are all
+      // character-based.
+      let exactTokensBefore: number | undefined
+      if (exactSurface !== undefined) {
+        let sum = 0
+        let allExact = true
+        for (const seq of shadowedSeqs) {
+          const count = measured.get(seq)
+          if (count?.kind !== 'exact-tokenizer'
+            || count.tokenizerId !== exactSurface.tokenizerId
+            || count.tokenizerRevision !== exactSurface.tokenizerRevision) {
+            allExact = false
+            break
+          }
+          sum += count.tokens
+        }
+        if (allExact) exactTokensBefore = sum
+      }
+      const charsBefore = shadowedSeqs.reduce((sum, seq) => sum + (nodeChars.get(seq) ?? 0), 0)
       const manifestSeq = events.length
       const ref = tailTrimRef(String(session.id), manifestSeq)
       const stub = tailTrimStub(ref, calls.map(call => call.name), sourceEventSeqs)
       if (stub === null) continue
-      const stubCount = countExactCanonicalTextFields(
-        [stub],
-        candidate => view.countCanonicalText(candidate),
-        'TailTrim group stub',
-      )
-      if (stubCount.kind !== 'exact-tokenizer'
-        || stubCount.tokenizerId !== surfaceCount.tokenizerId
-        || stubCount.tokenizerRevision !== surfaceCount.tokenizerRevision
-        || stubCount.tokens <= 0
-        || tokensBefore - stubCount.tokens < policy.historyMinReclaimTokens) continue
+      const stubChars = codePointLength(stub)
+      if (stubChars <= 0
+        || charsBefore - stubChars < charsForTokens(policy.historyMinReclaimTokens)) continue
+      let exactTokensAfter: number | undefined
+      if (exactTokensBefore !== undefined && exactSurface !== undefined) {
+        const stubCount = countExactCanonicalTextFields(
+          [stub],
+          candidate => view.countCanonicalText(candidate),
+          'TailTrim group stub',
+        )
+        if (stubCount.kind === 'exact-tokenizer'
+          && stubCount.tokenizerId === exactSurface.tokenizerId
+          && stubCount.tokenizerRevision === exactSurface.tokenizerRevision) {
+          exactTokensAfter = stubCount.tokens
+        }
+      }
+      const exact = exactTokensBefore !== undefined && exactTokensAfter !== undefined
+      const tokensBefore = exactTokensBefore ?? charsToTokens(charsBefore)
+      const tokensAfter = exactTokensAfter ?? charsToTokens(stubChars)
       const heuristicTokens = shadowedSeqs.reduce((sum, seq) => sum + (heuristic.get(seq) ?? 0), 0)
       const range = { start: assistantSeq, end: resultSeqs.at(-1) ?? assistantSeq }
       if (!this.reserveTailTrimBoundaryAttempt(session)) {
         this.auditComponent(session, policy, 'tail-trim', 'pressure', 'skipped',
           'already-attempted-at-request-boundary', {
-            measurementKind: 'exact-tokenizer',
-            currentTokens: surfaceCount.tokens,
+            measurementKind: 'characters',
+            currentTokens: charsToTokens(view.currentSurfaceChars),
             triggerTokens: tailTrim.triggerTokens,
           })
         return
@@ -1757,17 +1750,22 @@ export class ToolResultPruner extends Service {
         replacementSeq: replacement.seq,
         sourceSeqs: sourceEventSeqs,
         tokensBefore,
-        tokensAfter: stubCount.tokens,
-        tokensRemoved: tokensBefore - stubCount.tokens,
-        tokenizerId: stubCount.tokenizerId,
-        tokenizerRevision: stubCount.tokenizerRevision,
+        tokensAfter,
+        tokensRemoved: tokensBefore - tokensAfter,
+        measurementBasis: exact ? 'exact-tokenizer' : 'characters',
+        tokenizerId: exact === true && exactSurface !== undefined
+          ? exactSurface.tokenizerId
+          : 'characters',
+        tokenizerRevision: exact === true && exactSurface !== undefined
+          ? exactSurface.tokenizerRevision
+          : 'chars-per-token-4.0',
       })
       return
     }
     this.auditComponent(session, policy, 'tail-trim', 'pressure', 'skipped',
       'no-safe-eligible-tool-group', {
-        measurementKind: 'exact-tokenizer',
-        currentTokens: surfaceCount.tokens,
+        measurementKind: 'characters',
+        currentTokens: charsToTokens(view.currentSurfaceChars),
         triggerTokens: tailTrim.triggerTokens,
       })
   }
@@ -1814,15 +1812,21 @@ export class ToolResultPruner extends Service {
     view: CompactionTokenView,
     options: { readonly noNetSavingsGuard?: boolean, readonly elidedLines?: number } = {},
   ): PlannedReplacement | null {
+    const charsBefore = candidate.characterPressure
+    const charsAfter = pressureCost(content)
+    // Character proof replaces the exact-tokenizer precondition: a reduction
+    // must shrink the decision surface regardless of the routed model id.
+    if (charsAfter <= 0 || charsAfter >= charsBefore) return null
+    // Tokens are telemetry only: exact when both sides share one bundled
+    // tokenizer identity, otherwise derived from the character measurement.
     const countBefore = candidate.count
-    if (countBefore.kind !== 'exact-tokenizer') return null
     const countAfter = countToolContent(content, view)
-    if (countAfter.kind !== 'exact-tokenizer'
-      || countAfter.tokenizerId !== countBefore.tokenizerId
-      || countAfter.tokenizerRevision !== countBefore.tokenizerRevision) return null
-    const tokensBefore = countBefore.tokens
-    const tokensAfter = countAfter.tokens
-    if (tokensAfter <= 0 || tokensAfter >= tokensBefore) return null
+    const exact = countBefore.kind === 'exact-tokenizer'
+      && countAfter.kind === 'exact-tokenizer'
+      && countAfter.tokenizerId === countBefore.tokenizerId
+      && countAfter.tokenizerRevision === countBefore.tokenizerRevision
+    const tokensBefore = exact ? countBefore.tokens : charsToTokens(charsBefore)
+    const tokensAfter = exact ? countAfter.tokens : charsToTokens(charsAfter)
     // TokenPilot-style no-net-savings: even when the exact tokenizer reports a
     // saving, a replacement whose text is not smaller than its original adds
     // noise without reclaiming context. Text-level because the placeholder
@@ -1836,8 +1840,6 @@ export class ToolResultPruner extends Service {
         if (replacementChars >= originalChars) return null
       }
     }
-    const charsBefore = candidate.characterPressure
-    const charsAfter = pressureCost(content)
     return {
       candidate,
       content,
@@ -1850,8 +1852,9 @@ export class ToolResultPruner extends Service {
       charsAfter,
       tokensBefore,
       tokensAfter,
-      tokenizerId: countBefore.tokenizerId,
-      tokenizerRevision: countBefore.tokenizerRevision,
+      measurementBasis: exact ? 'exact-tokenizer' : 'characters',
+      tokenizerId: exact ? countBefore.tokenizerId : 'characters',
+      tokenizerRevision: exact ? countBefore.tokenizerRevision : 'chars-per-token-4.0',
       ...options.elidedLines === undefined ? {} : { elidedLines: options.elidedLines },
     }
   }
@@ -1903,6 +1906,7 @@ export class ToolResultPruner extends Service {
       tokensBefore: plan.tokensBefore,
       tokensAfter: plan.tokensAfter,
       tokensRemoved: plan.tokensBefore - plan.tokensAfter,
+      measurementBasis: plan.measurementBasis,
       tokenizerId: plan.tokenizerId,
       tokenizerRevision: plan.tokenizerRevision,
       // task_4c/G7 telemetry: original-event lines the reducer elided. Audit
@@ -1979,7 +1983,7 @@ export class ToolResultPruner extends Service {
         policy.historyMode === 'capacity-pressure'
           ? 'below-micro-deadline' : 'adaptive-cost-rejected', {
           historyMode: policy.historyMode,
-          measurementKind: view.currentSurface.kind,
+          measurementKind: 'characters',
           currentTokens: view.totalTokens,
           ...(capacityTrigger === undefined ? {} : { triggerTokens: capacityTrigger }),
         })
@@ -1989,14 +1993,14 @@ export class ToolResultPruner extends Service {
     const lastChance = deadline !== undefined && view.totalTokens >= deadline
     const detail = (extra: Readonly<Record<string, number>> = {}): Readonly<{
       historyMode?: HistoryMode
-      measurementKind?: 'exact-tokenizer' | 'tokenizer-estimate' | 'unavailable'
+      measurementKind?: 'exact-tokenizer' | 'tokenizer-estimate' | 'characters' | 'unavailable'
       currentTokens?: number
       triggerTokens?: number
       reclaimTokens?: number
       requiredTokens?: number
     }> => ({
       historyMode: policy.historyMode,
-      measurementKind: outcome.kind === 'exact-tokenizer-unavailable' ? 'unavailable' : 'exact-tokenizer',
+      measurementKind: 'characters',
       currentTokens: view.totalTokens,
       ...(outcome.kind === 'insufficient-reclaim' || outcome.kind === 'cannot-reach-deadline-target'
         ? { reclaimTokens: outcome.reclaim, requiredTokens: outcome.required }
@@ -2004,10 +2008,6 @@ export class ToolResultPruner extends Service {
       ...extra,
     })
     switch (outcome.kind) {
-      case 'exact-tokenizer-unavailable':
-        this.auditComponent(session, policy, 'history', 'pressure', 'skipped',
-          'exact-tokenizer-unavailable', detail({ triggerTokens: policy.historyTriggerTokens }))
-        return
       case 'below-profile-trigger':
         this.auditComponent(session, policy, 'history', 'pressure', 'skipped',
           'below-profile-trigger', detail({ triggerTokens: policy.historyTriggerTokens }))
@@ -2053,7 +2053,7 @@ export class ToolResultPruner extends Service {
     reason: string,
     detail: Readonly<{
       historyMode?: HistoryMode
-      measurementKind?: 'exact-tokenizer' | 'tokenizer-estimate' | 'unavailable'
+      measurementKind?: 'exact-tokenizer' | 'tokenizer-estimate' | 'characters' | 'unavailable'
       currentTokens?: number
       triggerTokens?: number
       targetTokens?: number
@@ -2126,7 +2126,7 @@ export class ToolResultPruner extends Service {
     this.warnOnce(
       session,
       `exact-tokenizer:${gate}:${provider}\0${model}`,
-      'context-compression %s kept original tool results because exact tokenizer counts are unavailable for %s/%s',
+      'context-compression %s is measuring on the character basis: exact tokenizer counts are unavailable for %s/%s',
       gate,
       provider,
       model,
