@@ -11,7 +11,8 @@ import {
   CONTEXT_COMPRESSION_SETTINGS_NAMESPACE,
   ContextCompressionSettingsSchema,
 } from './runtime/config.ts'
-import { resolveReviewPruner, type ReviewPrunerFace } from './runtime/tokenpilot/review-registry.ts'
+
+import { getAdvisorState } from './runtime/tokenpilot/advisor-state.ts'
 
 // The settings namespace literal and the settings schema are owned by the
 // runtime config module. Both were once inlined/replaced here to dodge a
@@ -34,48 +35,15 @@ const ESTIMATOR_CATALOG_ROUTES = [
   '/api/dsh-context-compression-improved/estimator-catalog',
 ] as const
 
-// TokenPilot-inspired R4: the review pipeline's client↔runtime channel, dual
-// prefixed like the catalog route so 0.1.2 clients keep working.
-const REVIEW_QUEUE_ROUTES = [
-  '/endpoint/dsh-context-compression-improved/review-queue',
-  '/api/dsh-context-compression-improved/review-queue',
+// Advisory advisor: one read-only report route, dual prefixed like the others.
+const ADVISOR_REPORT_ROUTES = [
+  '/endpoint/dsh-context-compression-improved/advisor-report',
+  '/api/dsh-context-compression-improved/advisor-report',
 ] as const
-const REVIEW_DECIDE_ROUTES = [
-  '/endpoint/dsh-context-compression-improved/review-decide',
-  '/api/dsh-context-compression-improved/review-decide',
-] as const
-
-/**
- * The review faces of the pruner service the routes consume. Owned by the
- * review registry, which the routes also fall back to when no top-level
- * `toolResultPruner` service exists — the preset-scoped case in production.
- */
-type ReviewPrunerLike = ReviewPrunerFace
 
 /** Minimal face of the agents service: session id → agent (carrying the session). */
 interface AgentsServiceLike {
   get?(id: unknown): { session?: unknown } | undefined
-}
-
-/**
- * Resolve the review pipeline for the top-level routes.
- *
- * A top-level `toolResultPruner` service wins when a deployment actually mounts
- * one, but in production every pruner lives inside an agent preset's isolated
- * group, so the registry is the path that resolves. Without the fallback the
- * queue route answered 503 "review pipeline unavailable" on every request while
- * the review pipeline itself was running normally.
- */
-function reviewPrunerOf(readService: (name: string) => unknown): ReviewPrunerLike | undefined {
-  const candidate = readService('toolResultPruner') as {
-    listReviewProposals?: unknown
-    decideReviewProposal?: unknown
-  } | undefined
-  if (typeof candidate?.listReviewProposals === 'function'
-    && typeof candidate?.decideReviewProposal === 'function') {
-    return candidate as unknown as ReviewPrunerLike
-  }
-  return resolveReviewPruner()
 }
 
 function sessionFor(readService: (name: string) => unknown, sessionId: string): unknown {
@@ -83,7 +51,7 @@ function sessionFor(readService: (name: string) => unknown, sessionId: string): 
   return typeof agents?.get === 'function' ? agents.get(sessionId)?.session : undefined
 }
 
-function reviewJson(res: unknown, status: number, body: unknown): void {
+function jsonResponse(res: unknown, status: number, body: unknown): void {
   const resTyped = res as {
     writeHead: (code: number, headers?: Record<string, string>) => void
     end: (body?: string) => void
@@ -92,41 +60,18 @@ function reviewJson(res: unknown, status: number, body: unknown): void {
   resTyped.end(JSON.stringify(body))
 }
 
-function readRequestBody(req: unknown): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const typed = req as {
-      on?: (event: string, listener: (chunk?: Buffer) => void) => void
-    }
-    let data = ''
-    try {
-      typed.on?.('data', chunk => {
-        data += String(chunk ?? '')
-        if (data.length > 64 * 1024) {
-          data = ''
-          resolve('')
-        }
-      })
-      typed.on?.('end', () => resolve(data))
-      typed.on?.('error', reject)
-    } catch (error) {
-      reject(error instanceof Error ? error : new Error(String(error)))
-    }
-  })
-}
-
 /**
- * Serve the review pipeline's two HTTP routes (best effort, mirroring the
- * estimator-catalog registration):
+ * Serve the advisory advisor's read-only report route (same registration
+ * skeleton as the estimator-catalog route):
  *
- * - `GET .../review-queue?sessionId=…` → the session's pending proposals with
- *   their benefit numbers. Sanitized by construction: the queue never holds
- *   message content, and the response carries ids/seqs/counts only (digests
- *   stay in the runtime — the client cannot need them).
- * - `POST .../review-decide` `{sessionId, proposalId, decision}` → one human
- *   decision. Invalid body → 400; unknown/not-pending proposal → 404; review
- *   mode off for the session → 503.
+ * `GET .../advisor-report?sessionId=…` → the session's prefix-decay figure,
+ * the todolist-bound task summary, and the score distribution. Content-free
+ * by construction: task semantics are LLM-derived summaries, never message
+ * text, and no score reason or candidate preview is ever returned.
+ * Unknown session → 404; no agents service → 503. A session whose advisor
+ * never ran reports nulls and empty arrays, not an error.
  */
-function registerReviewQueueRoutes(ctx: Context): void {
+function registerAdvisorReportRoute(ctx: Context): void {
   const readService = (name: string): unknown => {
     try {
       return (ctx as unknown as { get: (service: string) => unknown }).get(name)
@@ -137,29 +82,11 @@ function registerReviewQueueRoutes(ctx: Context): void {
   const log = (level: 'info' | 'warn', message: string, ...args: unknown[]): void => {
     console[level](message, ...args)
   }
-  const registered = (): void => {
-    log('info', 'context-compression review queue routes registered: %s / %s', REVIEW_QUEUE_ROUTES.join(', '), REVIEW_DECIDE_ROUTES.join(', '))
-  }
-
-  type SanitizedProposal = {
-    sessionId: string
-    id: string
-    kind: string
-    items: readonly { seq: number, kind: string, component: string, tokensBefore: number, tokensAfter: number }[]
-    benefit: {
-      recoveredTokens: number
-      penaltyTokens: number
-      paybackTurns?: number
-      expectedSaving?: number
-    }
-    enqueuedTurn: number
-    lastTurnIndex: number
-  }
 
   const getHandler = (req: unknown, res: unknown): void => {
-    const pruner = reviewPrunerOf(readService)
-    if (pruner === undefined || pruner.listAllReviewProposals === undefined) {
-      reviewJson(res, 503, { ok: false, error: 'review pipeline unavailable' })
+    const agents = readService('agents') as AgentsServiceLike | undefined
+    if (typeof agents?.get !== 'function') {
+      jsonResponse(res, 503, { ok: false, error: 'advisor report unavailable' })
       return
     }
     let sessionId = ''
@@ -167,120 +94,54 @@ function registerReviewQueueRoutes(ctx: Context): void {
       const url = new URL(String((req as { url?: string }).url ?? ''), 'http://localhost')
       sessionId = url.searchParams.get('sessionId') ?? ''
     } catch {
-      sessionId = ''
+      // Malformed URL: fall through with the empty sessionId already set.
     }
-    const sanitize = (
-      sid: string,
-      proposal: {
-        id: string
-        kind: string
-        items: readonly { seq: number, kind: string, component: string, tokensBefore: number, tokensAfter: number }[]
-        benefit: { recoveredTokens: number, penaltyTokens: number, paybackTurns?: number, expectedSaving?: number }
-        enqueuedTurn: number
-        lastTurnIndex: number
-      },
-    ): SanitizedProposal => ({
-      sessionId: sid,
-      id: proposal.id,
-      kind: proposal.kind,
-      items: proposal.items.map(item => ({
-        seq: item.seq,
-        kind: item.kind,
-        component: item.component,
-        tokensBefore: item.tokensBefore,
-        tokensAfter: item.tokensAfter,
-      })),
-      benefit: {
-        recoveredTokens: proposal.benefit.recoveredTokens,
-        penaltyTokens: proposal.benefit.penaltyTokens,
-        ...(proposal.benefit.paybackTurns === undefined ? {} : { paybackTurns: proposal.benefit.paybackTurns }),
-        ...(proposal.benefit.expectedSaving === undefined ? {} : { expectedSaving: proposal.benefit.expectedSaving }),
-      },
-      enqueuedTurn: proposal.enqueuedTurn,
-      lastTurnIndex: proposal.lastTurnIndex,
-    })
-
-    // Without a sessionId the read aggregates every session with live
-    // proposals — the client carries no session id of its own.
     if (sessionId === '') {
-      const pending = pruner.listAllReviewProposals()
-        .flatMap(entry => entry.proposals.map(proposal => sanitize(entry.sessionId, proposal)))
-      reviewJson(res, 200, { ok: true, total: pending.length, pending })
+      jsonResponse(res, 400, { ok: false, error: 'sessionId is required' })
       return
     }
-
     const session = sessionFor(readService, sessionId)
     if (session === undefined) {
-      reviewJson(res, 404, { ok: false, error: 'unknown session' })
+      jsonResponse(res, 404, { ok: false, error: 'unknown session' })
       return
     }
-    const pending = pruner.listReviewProposals(session).map(proposal => sanitize(sessionId, proposal))
-    const summary = pruner.reviewSummary?.(session)
-    reviewJson(res, 200, {
+    const state = getAdvisorState(session as Parameters<typeof getAdvisorState>[0])
+    jsonResponse(res, 200, {
       ok: true,
       sessionId,
-      total: pending.length,
-      pending,
-      ...(summary === undefined ? {} : { summary }),
+      advisor: {
+        summary: state.summary ?? null,
+        decay: state.lastDecay?.decay ?? null,
+        weightedChars: state.lastDecay?.weightedChars ?? null,
+        decayTurn: state.lastDecay?.turn ?? null,
+        scores: [...state.scores].map(([seq, entry]) => ({ seq, score: entry.score, turn: entry.turn })),
+        lowRelevanceSeqs: [...state.recertified.keys()],
+        // The benefit model's label of the last landed batch — advice, never a
+        // gate: the batch it describes landed regardless of the band.
+        lastAdvice: state.lastAdvice === undefined
+          ? null
+          : {
+              band: state.lastAdvice.band,
+              turn: state.lastAdvice.turn,
+              itemSeqs: state.lastAdvice.itemSeqs,
+              recoveredTokens: state.lastAdvice.recoveredTokens,
+              penaltyTokens: state.lastAdvice.penaltyTokens,
+              paybackTurns: state.lastAdvice.paybackTurns ?? null,
+            },
+      },
     })
-  }
-
-  const decideHandler = async (req: unknown, res: unknown): Promise<void> => {
-    const pruner = reviewPrunerOf(readService)
-    if (pruner === undefined) {
-      reviewJson(res, 503, { ok: false, error: 'review pipeline unavailable' })
-      return
-    }
-    let body: unknown
-    try {
-      body = JSON.parse(await readRequestBody(req))
-    } catch {
-      body = undefined
-    }
-    if (typeof body !== 'object' || body === null) {
-      reviewJson(res, 400, { ok: false, error: 'invalid JSON body' })
-      return
-    }
-    const record = body as { sessionId?: unknown, proposalId?: unknown, decision?: unknown }
-    if (typeof record.sessionId !== 'string' || record.sessionId === ''
-      || typeof record.proposalId !== 'string' || record.proposalId === '') {
-      reviewJson(res, 400, { ok: false, error: 'sessionId and proposalId are required' })
-      return
-    }
-    if (record.decision !== 'approved' && record.decision !== 'rejected' && record.decision !== 'ignored') {
-      reviewJson(res, 400, { ok: false, error: 'decision must be approved, rejected, or ignored' })
-      return
-    }
-    const session = sessionFor(readService, record.sessionId)
-    if (session === undefined) {
-      reviewJson(res, 404, { ok: false, error: 'unknown session' })
-      return
-    }
-    const outcome = pruner.decideReviewProposal(session, record.proposalId, record.decision)
-    if (outcome === undefined) {
-      reviewJson(res, 503, { ok: false, error: 'review mode is off for this session' })
-      return
-    }
-    if (!outcome.ok) {
-      reviewJson(res, 404, { ok: false, error: outcome.reason })
-      return
-    }
-    reviewJson(res, 200, { ok: true, sessionId: record.sessionId, proposalId: record.proposalId, decision: record.decision })
   }
 
   const register = (webServer: WebServerLike): void => {
-    const table: ReadonlyArray<{ path: string, handler: (req: unknown, res: unknown) => unknown }> = [
-      ...[...REVIEW_QUEUE_ROUTES].map(path => ({ path, handler: getHandler })),
-      ...[...REVIEW_DECIDE_ROUTES].map(path => ({ path, handler: (req: unknown, res: unknown) => { void decideHandler(req, res) } })),
-    ]
+    const table = [...ADVISOR_REPORT_ROUTES].map(path => ({ path, handler: getHandler }))
     const disposers = table
       .map(entry => webServer.register({ kind: 'exact', path: entry.path, handler: entry.handler }))
       .filter((off): off is () => void => typeof off === 'function')
     ctx.effect(
       () => () => { for (const off of disposers) off() },
-      'contextCompressionSelector.review routes',
+      'contextCompressionSelector.advisor report route',
     )
-    registered()
+    log('info', 'context-compression advisor report route registered: %s', ADVISOR_REPORT_ROUTES.join(', '))
   }
 
   const active = asWebServer(readService('webServer'))
@@ -292,13 +153,13 @@ function registerReviewQueueRoutes(ctx: Context): void {
   ctx.inject(['webServer'], (injected) => {
     const webServer = asWebServer((injected as { webServer?: unknown }).webServer)
     if (webServer === undefined) {
-      log('warn', 'context-compression webServer exposes no register() — review routes not registered')
+      log('warn', 'context-compression webServer exposes no register() — advisor report route not registered')
       return
     }
     register(webServer)
   })
 
-  log('warn', 'context-compression webServer not active yet — review routes pending: %s', REVIEW_QUEUE_ROUTES.join(', '))
+  log('warn', 'context-compression webServer not active yet — advisor report route pending: %s', ADVISOR_REPORT_ROUTES.join(', '))
 }
 
 /**
@@ -478,19 +339,20 @@ export interface Config {
    */
   estimatorCatalogRoute?: boolean
   /**
-   * Register the review pipeline's HTTP routes (pending-queue read + decide
-   * write) on this row. Same Bundle opt-in semantics as
-   * `estimatorCatalogRoute`; without the routes the floating window has no
-   * transport and simply never appears.
+   * Register the advisory advisor's read-only HTTP report route (decay
+   * figure, task summary, score distribution, last benefit-model advice).
+   * Same Bundle opt-in semantics as `estimatorCatalogRoute`; the advisor
+   * itself stays off until the user turns it on through the
+   * `presetOptions.advisor*` settings keys.
    */
-  reviewQueueRoute?: boolean
+  advisorReportRoute?: boolean
 }
 
 /** Loader validation for the standalone Bundle opt-in. */
 export const Config: z<Config> = z.object({
   presetOverlay: z.boolean().default(false),
   estimatorCatalogRoute: z.boolean().default(false),
-  reviewQueueRoute: z.boolean().default(false),
+  advisorReportRoute: z.boolean().default(false),
 })
 
 /** Register the persisted default read by the currently mounted root pruner. */
@@ -510,9 +372,8 @@ export function apply(ctx: Context, config: Config = {}): void {
     // service, because the route is host-wide rather than per-pruner-instance.
     if (config.estimatorCatalogRoute === true) registerEstimatorCatalogRoute(ctx)
 
-    // TokenPilot-inspired R4: the review pipeline's client transport (see the
-    // config JSDoc for the opt-in semantics).
-    if (config.reviewQueueRoute === true) registerReviewQueueRoutes(ctx)
+    // Advisory advisor: read-only decay/score/advice report (opt-in).
+    if (config.advisorReportRoute === true) registerAdvisorReportRoute(ctx)
 
     if (config.presetOverlay !== true) return
 

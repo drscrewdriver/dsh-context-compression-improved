@@ -1,4 +1,4 @@
-import { n as resolveReviewPruner, o as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, s as ContextCompressionSettingsSchema } from "./review-registry.js";
+import { o as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, s as ContextCompressionSettingsSchema, t as getAdvisorState } from "./advisor-state.js";
 import z from "@deepseek-ai/schemastery";
 import "@deepseek-ai/dsh-settings";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -118,6 +118,15 @@ function standingStampMsAtWindow(identity, windowIndex) {
 	const subSecond = parseInt(identity.slice(start + 8, start + STANDING_MTIME_WINDOW_HEX).padEnd(3, "0"), 16) % 1e3;
 	return seconds * 1e3 + subSecond;
 }
+/**
+* True for the filesystem errors a concurrent publish can raise on Windows:
+* `MoveFileEx` reports a lost race — or a reader holding the destination open —
+* as EPERM/EBUSY/EACCES, where POSIX `rename` simply replaces the destination.
+*/
+function isPublishRace(error) {
+	const code = error?.code;
+	return code === "EPERM" || code === "EBUSY" || code === "EACCES" || code === "EEXIST";
+}
 const COMPRESSION_IDS = /* @__PURE__ */ new Set([
 	"compaction",
 	"compaction-basic",
@@ -191,7 +200,7 @@ var PresetOverlayStore = class {
 			});
 			await chmod(staging, 384);
 			await this.disambiguateStamp(staging, identity);
-			await rename(staging, path);
+			await this.publish(staging, path);
 		} catch (error) {
 			try {
 				await rm(staging, { force: true });
@@ -202,6 +211,45 @@ var PresetOverlayStore = class {
 			...preset,
 			path
 		};
+	}
+	/** In-flight publish chains, one per destination path. */
+	publishChains = /* @__PURE__ */ new Map();
+	/**
+	* Publish one stamped staging file to its final path, serialized per path.
+	*
+	* POSIX `rename` replaces an existing destination atomically, so concurrent
+	* composers of one identity are naturally idempotent there. Windows
+	* `MoveFileEx` instead fails the loser of that race with EPERM/EBUSY, which
+	* surfaced as `standingKeyFor()` throwing during concurrent composition.
+	* Every composer of one identity writes identical bytes and re-derives the
+	* same deterministic identity stamp, so a destination that already observes
+	* this staging file's {mtimeMs, size} key IS the intended end state: confirm
+	* it and treat the lost race as success. Every other outcome still throws, so
+	* a silently reused generation stays forbidden, and the caller still removes
+	* the staging file when this rejects.
+	*/
+	publish(staging, path) {
+		const tracked = (this.publishChains.get(path) ?? Promise.resolve()).catch(() => void 0).then(async () => {
+			try {
+				await rename(staging, path);
+				return;
+			} catch (error) {
+				if (!isPublishRace(error)) throw error;
+				try {
+					const intended = await this.metadataIo.read(staging);
+					const published = await this.metadataIo.read(path);
+					if (published.size === intended.size && Math.abs(published.mtimeMs - intended.mtimeMs) < 2) {
+						await rm(staging, { force: true });
+						return;
+					}
+				} catch {}
+				throw error;
+			}
+		}).finally(() => {
+			if (this.publishChains.get(path) === tracked) this.publishChains.delete(path);
+		});
+		this.publishChains.set(path, tracked);
+		return tracked;
 	}
 	/** Observed {mtimeMs,size} keys published by this store, per identity. */
 	standingKeys = /* @__PURE__ */ new Map();
@@ -457,27 +505,12 @@ function restoreMethod(presets, snapshot) {
 //#region src/index.ts
 const CONTEXT_COMPRESSION_NAMESPACE = CONTEXT_COMPRESSION_SETTINGS_NAMESPACE;
 const ESTIMATOR_CATALOG_ROUTES = ["/endpoint/dsh-context-compression-improved/estimator-catalog", "/api/dsh-context-compression-improved/estimator-catalog"];
-const REVIEW_QUEUE_ROUTES = ["/endpoint/dsh-context-compression-improved/review-queue", "/api/dsh-context-compression-improved/review-queue"];
-const REVIEW_DECIDE_ROUTES = ["/endpoint/dsh-context-compression-improved/review-decide", "/api/dsh-context-compression-improved/review-decide"];
-/**
-* Resolve the review pipeline for the top-level routes.
-*
-* A top-level `toolResultPruner` service wins when a deployment actually mounts
-* one, but in production every pruner lives inside an agent preset's isolated
-* group, so the registry is the path that resolves. Without the fallback the
-* queue route answered 503 "review pipeline unavailable" on every request while
-* the review pipeline itself was running normally.
-*/
-function reviewPrunerOf(readService) {
-	const candidate = readService("toolResultPruner");
-	if (typeof candidate?.listReviewProposals === "function" && typeof candidate?.decideReviewProposal === "function") return candidate;
-	return resolveReviewPruner();
-}
+const ADVISOR_REPORT_ROUTES = ["/endpoint/dsh-context-compression-improved/advisor-report", "/api/dsh-context-compression-improved/advisor-report"];
 function sessionFor(readService, sessionId) {
 	const agents = readService("agents");
 	return typeof agents?.get === "function" ? agents.get(sessionId)?.session : void 0;
 }
-function reviewJson(res, status, body) {
+function jsonResponse(res, status, body) {
 	const resTyped = res;
 	resTyped.writeHead(status, {
 		"content-type": "application/json; charset=utf-8",
@@ -485,38 +518,18 @@ function reviewJson(res, status, body) {
 	});
 	resTyped.end(JSON.stringify(body));
 }
-function readRequestBody(req) {
-	return new Promise((resolve, reject) => {
-		const typed = req;
-		let data = "";
-		try {
-			typed.on?.("data", (chunk) => {
-				data += String(chunk ?? "");
-				if (data.length > 65536) {
-					data = "";
-					resolve("");
-				}
-			});
-			typed.on?.("end", () => resolve(data));
-			typed.on?.("error", reject);
-		} catch (error) {
-			reject(error instanceof Error ? error : new Error(String(error)));
-		}
-	});
-}
 /**
-* Serve the review pipeline's two HTTP routes (best effort, mirroring the
-* estimator-catalog registration):
+* Serve the advisory advisor's read-only report route (same registration
+* skeleton as the estimator-catalog route):
 *
-* - `GET .../review-queue?sessionId=…` → the session's pending proposals with
-*   their benefit numbers. Sanitized by construction: the queue never holds
-*   message content, and the response carries ids/seqs/counts only (digests
-*   stay in the runtime — the client cannot need them).
-* - `POST .../review-decide` `{sessionId, proposalId, decision}` → one human
-*   decision. Invalid body → 400; unknown/not-pending proposal → 404; review
-*   mode off for the session → 503.
+* `GET .../advisor-report?sessionId=…` → the session's prefix-decay figure,
+* the todolist-bound task summary, and the score distribution. Content-free
+* by construction: task semantics are LLM-derived summaries, never message
+* text, and no score reason or candidate preview is ever returned.
+* Unknown session → 404; no agents service → 503. A session whose advisor
+* never ran reports nulls and empty arrays, not an error.
 */
-function registerReviewQueueRoutes(ctx) {
+function registerAdvisorReportRoute(ctx) {
 	const readService = (name) => {
 		try {
 			return ctx.get(name);
@@ -527,156 +540,72 @@ function registerReviewQueueRoutes(ctx) {
 	const log = (level, message, ...args) => {
 		console[level](message, ...args);
 	};
-	const registered = () => {
-		log("info", "context-compression review queue routes registered: %s / %s", REVIEW_QUEUE_ROUTES.join(", "), REVIEW_DECIDE_ROUTES.join(", "));
-	};
 	const getHandler = (req, res) => {
-		const pruner = reviewPrunerOf(readService);
-		if (pruner === void 0 || pruner.listAllReviewProposals === void 0) {
-			reviewJson(res, 503, {
+		if (typeof readService("agents")?.get !== "function") {
+			jsonResponse(res, 503, {
 				ok: false,
-				error: "review pipeline unavailable"
+				error: "advisor report unavailable"
 			});
 			return;
 		}
 		let sessionId = "";
 		try {
 			sessionId = new URL(String(req.url ?? ""), "http://localhost").searchParams.get("sessionId") ?? "";
-		} catch {
-			sessionId = "";
-		}
-		const sanitize = (sid, proposal) => ({
-			sessionId: sid,
-			id: proposal.id,
-			kind: proposal.kind,
-			items: proposal.items.map((item) => ({
-				seq: item.seq,
-				kind: item.kind,
-				component: item.component,
-				tokensBefore: item.tokensBefore,
-				tokensAfter: item.tokensAfter
-			})),
-			benefit: {
-				recoveredTokens: proposal.benefit.recoveredTokens,
-				penaltyTokens: proposal.benefit.penaltyTokens,
-				...proposal.benefit.paybackTurns === void 0 ? {} : { paybackTurns: proposal.benefit.paybackTurns },
-				...proposal.benefit.expectedSaving === void 0 ? {} : { expectedSaving: proposal.benefit.expectedSaving }
-			},
-			enqueuedTurn: proposal.enqueuedTurn,
-			lastTurnIndex: proposal.lastTurnIndex
-		});
+		} catch {}
 		if (sessionId === "") {
-			const pending = pruner.listAllReviewProposals().flatMap((entry) => entry.proposals.map((proposal) => sanitize(entry.sessionId, proposal)));
-			reviewJson(res, 200, {
-				ok: true,
-				total: pending.length,
-				pending
+			jsonResponse(res, 400, {
+				ok: false,
+				error: "sessionId is required"
 			});
 			return;
 		}
 		const session = sessionFor(readService, sessionId);
 		if (session === void 0) {
-			reviewJson(res, 404, {
+			jsonResponse(res, 404, {
 				ok: false,
 				error: "unknown session"
 			});
 			return;
 		}
-		const pending = pruner.listReviewProposals(session).map((proposal) => sanitize(sessionId, proposal));
-		const summary = pruner.reviewSummary?.(session);
-		reviewJson(res, 200, {
+		const state = getAdvisorState(session);
+		jsonResponse(res, 200, {
 			ok: true,
 			sessionId,
-			total: pending.length,
-			pending,
-			...summary === void 0 ? {} : { summary }
-		});
-	};
-	const decideHandler = async (req, res) => {
-		const pruner = reviewPrunerOf(readService);
-		if (pruner === void 0) {
-			reviewJson(res, 503, {
-				ok: false,
-				error: "review pipeline unavailable"
-			});
-			return;
-		}
-		let body;
-		try {
-			body = JSON.parse(await readRequestBody(req));
-		} catch {
-			body = void 0;
-		}
-		if (typeof body !== "object" || body === null) {
-			reviewJson(res, 400, {
-				ok: false,
-				error: "invalid JSON body"
-			});
-			return;
-		}
-		const record = body;
-		if (typeof record.sessionId !== "string" || record.sessionId === "" || typeof record.proposalId !== "string" || record.proposalId === "") {
-			reviewJson(res, 400, {
-				ok: false,
-				error: "sessionId and proposalId are required"
-			});
-			return;
-		}
-		if (record.decision !== "approved" && record.decision !== "rejected" && record.decision !== "ignored") {
-			reviewJson(res, 400, {
-				ok: false,
-				error: "decision must be approved, rejected, or ignored"
-			});
-			return;
-		}
-		const session = sessionFor(readService, record.sessionId);
-		if (session === void 0) {
-			reviewJson(res, 404, {
-				ok: false,
-				error: "unknown session"
-			});
-			return;
-		}
-		const outcome = pruner.decideReviewProposal(session, record.proposalId, record.decision);
-		if (outcome === void 0) {
-			reviewJson(res, 503, {
-				ok: false,
-				error: "review mode is off for this session"
-			});
-			return;
-		}
-		if (!outcome.ok) {
-			reviewJson(res, 404, {
-				ok: false,
-				error: outcome.reason
-			});
-			return;
-		}
-		reviewJson(res, 200, {
-			ok: true,
-			sessionId: record.sessionId,
-			proposalId: record.proposalId,
-			decision: record.decision
+			advisor: {
+				summary: state.summary ?? null,
+				decay: state.lastDecay?.decay ?? null,
+				weightedChars: state.lastDecay?.weightedChars ?? null,
+				decayTurn: state.lastDecay?.turn ?? null,
+				scores: [...state.scores].map(([seq, entry]) => ({
+					seq,
+					score: entry.score,
+					turn: entry.turn
+				})),
+				lowRelevanceSeqs: [...state.recertified.keys()],
+				lastAdvice: state.lastAdvice === void 0 ? null : {
+					band: state.lastAdvice.band,
+					turn: state.lastAdvice.turn,
+					itemSeqs: state.lastAdvice.itemSeqs,
+					recoveredTokens: state.lastAdvice.recoveredTokens,
+					penaltyTokens: state.lastAdvice.penaltyTokens,
+					paybackTurns: state.lastAdvice.paybackTurns ?? null
+				}
+			}
 		});
 	};
 	const register = (webServer) => {
-		const disposers = [...[...REVIEW_QUEUE_ROUTES].map((path) => ({
+		const disposers = [...ADVISOR_REPORT_ROUTES].map((path) => ({
 			path,
 			handler: getHandler
-		})), ...[...REVIEW_DECIDE_ROUTES].map((path) => ({
-			path,
-			handler: (req, res) => {
-				decideHandler(req, res);
-			}
-		}))].map((entry) => webServer.register({
+		})).map((entry) => webServer.register({
 			kind: "exact",
 			path: entry.path,
 			handler: entry.handler
 		})).filter((off) => typeof off === "function");
 		ctx.effect(() => () => {
 			for (const off of disposers) off();
-		}, "contextCompressionSelector.review routes");
-		registered();
+		}, "contextCompressionSelector.advisor report route");
+		log("info", "context-compression advisor report route registered: %s", ADVISOR_REPORT_ROUTES.join(", "));
 	};
 	const active = asWebServer(readService("webServer"));
 	if (active !== void 0) {
@@ -686,12 +615,12 @@ function registerReviewQueueRoutes(ctx) {
 	ctx.inject(["webServer"], (injected) => {
 		const webServer = asWebServer(injected.webServer);
 		if (webServer === void 0) {
-			log("warn", "context-compression webServer exposes no register() — review routes not registered");
+			log("warn", "context-compression webServer exposes no register() — advisor report route not registered");
 			return;
 		}
 		register(webServer);
 	});
-	log("warn", "context-compression webServer not active yet — review routes pending: %s", REVIEW_QUEUE_ROUTES.join(", "));
+	log("warn", "context-compression webServer not active yet — advisor report route pending: %s", ADVISOR_REPORT_ROUTES.join(", "));
 }
 /**
 * The one service the catalog route actually needs. `llm` and
@@ -797,7 +726,7 @@ const SHARED_SETTINGS = Symbol.for("dsh-context-compression-improved/settings-re
 const Config = z.object({
 	presetOverlay: z.boolean().default(false),
 	estimatorCatalogRoute: z.boolean().default(false),
-	reviewQueueRoute: z.boolean().default(false)
+	advisorReportRoute: z.boolean().default(false)
 });
 /** Register the persisted default read by the currently mounted root pruner. */
 function apply(ctx, config = {}) {
@@ -806,7 +735,7 @@ function apply(ctx, config = {}) {
 			acquireSettingsRegistration(settingsCtx);
 		});
 		if (config.estimatorCatalogRoute === true) registerEstimatorCatalogRoute(ctx);
-		if (config.reviewQueueRoute === true) registerReviewQueueRoutes(ctx);
+		if (config.advisorReportRoute === true) registerAdvisorReportRoute(ctx);
 		if (config.presetOverlay !== true) return;
 		ctx.inject(["agentPresets"], (presetsCtx) => {
 			const installation = decorateAgentPresets(presetsCtx.agentPresets, {

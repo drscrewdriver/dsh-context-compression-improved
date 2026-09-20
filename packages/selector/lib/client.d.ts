@@ -84,11 +84,13 @@ interface PresetOptionsSettings {
   readonly estimatorBaseUrl?: string;
   readonly estimatorApiKey?: string;
   readonly estimatorTimeoutMs?: number;
-  /** Review-mode overrides (beta); mirrors the runtime PresetOptions.reviewMode. */
-  readonly reviewMode?: boolean;
-  readonly reviewTimeoutTurns?: number;
-  readonly cacheHitDiscountAlpha?: number;
-  readonly reviewHighImpactTokens?: number;
+  /** Advisory advisor channel; `''` (the default) keeps the advisor off. */
+  readonly advisorMode?: '' | 'host' | 'direct';
+  readonly advisorTimeoutMs?: number;
+  readonly advisorRefreshTurns?: number;
+  readonly advisorScoreThreshold?: number;
+  readonly advisorSampleLimit?: number;
+  readonly advisorMinTokens?: number;
 }
 /** Durable settings section owned by this package. */
 interface ContextCompressionSettings {
@@ -146,25 +148,6 @@ declare const zh: {
   'estimator.apiKey.set': string;
   'estimator.apiKey.clear': string;
   'estimator.apiKey.overwrite': string;
-  'review.title': string;
-  'review.description': string;
-  'review.enabled': string;
-  'review.enabled.on': string;
-  'review.enabled.off': string;
-  'review.timeoutTurns': string;
-  'review.alpha': string;
-  'review.highImpact': string;
-  'review.badge': string;
-  'review.summary.autoApplied': string;
-  'review.summary.reviewApplied': string;
-  'review.summary.expired': string;
-  'review.summary.voided': string;
-  'review.row.payback': string;
-  'review.row.expectedSaving': string;
-  'review.row.estimated': string;
-  'review.action.approve': string;
-  'review.action.reject': string;
-  'review.action.ignore': string;
   'detail.tokenpilot-inspired': string;
   'profile.custom': string;
   'profile.native': string;

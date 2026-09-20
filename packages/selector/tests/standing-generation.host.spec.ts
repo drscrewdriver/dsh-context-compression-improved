@@ -101,6 +101,37 @@ async function overlayFiles(sourceMarker: string): Promise<{ path: string, rende
   return files
 }
 
+/**
+ * The mtime this platform actually persists for one given stamp.
+ *
+ * `node:fs` `utimes` writes the seconds component through a 32-bit field on
+ * Windows: on node v22 win32, `utimes(file, 4677832452 s)` reads back as
+ * `382865156 s` — exactly `seconds >>> 0` — while sub-second precision
+ * survives. The standing stamp deliberately parks identities around year 2162
+ * (`STANDING_MTIME_EPOCH_SECONDS + 0xffffffff`, src/preset-overlay.ts), so its
+ * seconds component sits past that 2^32-second horizon (max year 2106) and the
+ * persisted literal differs on that platform. Deterministically so: the wrap is
+ * a pure function of the identity stamp, which is why identity → mtime stays
+ * stable and the collision escalation still absorbs any merge.
+ *
+ * Instead of hardcoding the platform or weakening the assertion, calibrate:
+ * ask the filesystem what it stores for exactly this stamp, then require the
+ * overlay to persist that same value. On a platform with a full-width seconds
+ * field this collapses to the stamp itself, so the assertion stays strict.
+ */
+async function platformPersistedMs(stampMs: number): Promise<number> {
+  const directory = await mkdtemp(join(tmpdir(), 'dsh-selector-mtime-probe-'))
+  const probe = join(directory, 'probe')
+  try {
+    await writeFile(probe, 'probe')
+    const stamp = new Date(stampMs)
+    await utimes(probe, stamp, stamp)
+    return (await stat(probe)).mtimeMs
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+}
+
 let sourceRoot: string | undefined
 
 /** Rewrite the source preset to an equal-length marker module. */
@@ -329,8 +360,17 @@ describe('real AgentPresets standing generations with the overlay threshold', ()
     expect(firstStat.size).toBe(secondStat.size)
     expect(firstStat.mtimeMs % 1000).toBe(0)
     expect(secondStat.mtimeMs % 1000).toBe(0)
-    expect(firstStat.mtimeMs).toBe(Math.floor(standingStampMsAtWindow(collision.firstIdentity, 0) / 1000) * 1000)
-    expect(secondStat.mtimeMs).toBe(Math.floor(standingStampMsAtWindow(collision.secondIdentity, 1) / 1000) * 1000)
+    // The coarse metadata surface floors both stamps to a whole second, and the
+    // platform may additionally wrap the seconds field (platformPersistedMs),
+    // so require exactly what the filesystem stores for those identity stamps.
+    const firstStamp = await platformPersistedMs(
+      Math.floor(standingStampMsAtWindow(collision.firstIdentity, 0) / 1000) * 1000,
+    )
+    const secondStamp = await platformPersistedMs(
+      Math.floor(standingStampMsAtWindow(collision.secondIdentity, 1) / 1000) * 1000,
+    )
+    expect(Math.floor(firstStat.mtimeMs / 1000)).toBe(Math.floor(firstStamp / 1000))
+    expect(Math.floor(secondStat.mtimeMs / 1000)).toBe(Math.floor(secondStamp / 1000))
 
     await installation.dispose()
   })
@@ -382,11 +422,19 @@ describe('real AgentPresets standing generations with the overlay threshold', ()
     expect(files.length).toBeGreaterThanOrEqual(3)
     const buckets = await Promise.all(files.map(async file => Math.floor((await stat(file.path)).mtimeMs / 1000)))
     expect(new Set(buckets).size).toBe(buckets.length)
-    // No staging leftovers survive a publish.
+    // No staging leftovers survive a publish. A spec file running in parallel
+    // disposes its own store while this scan runs, so a vanished directory means
+    // "no leftovers to find" rather than a failure (mirrors overlayFiles).
     const storeDirs = await Promise.all(
       (await readdir(tmpdir(), { withFileTypes: true }))
         .filter(entry => entry.isDirectory() && entry.name.startsWith('dsh-context-compression-presets-'))
-        .map(async entry => readdir(join(tmpdir(), entry.name))),
+        .map(async entry => {
+          try {
+            return await readdir(join(tmpdir(), entry.name))
+          } catch {
+            return []
+          }
+        }),
     )
     expect(storeDirs.flat().some(name => name.endsWith('.tmp'))).toBe(false)
 
@@ -451,8 +499,9 @@ describe('real AgentPresets standing generations with the overlay threshold', ()
       ? /standard-([0-9a-f]+)\.agent\.cordis\.yml$/u.exec(files[0]!.path)?.[1]
       : undefined
     expect(identity).toBeDefined()
+    const persistedStamp = await platformPersistedMs(standingStampMs(identity as string))
     expect(Math.floor(details.mtimeMs / 1000))
-      .toBe(Math.floor(standingStampMs(identity as string) / 1000))
+      .toBe(Math.floor(persistedStamp / 1000))
     const observedSubSecond = details.mtimeMs % 1000
     const expectedSubSecond = standingStampMs(identity as string) % 1000
     expect(observedSubSecond === 0 || Math.abs(observedSubSecond - expectedSubSecond) < 1).toBe(true)

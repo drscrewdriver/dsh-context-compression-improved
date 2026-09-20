@@ -72,17 +72,19 @@ export interface PresetOptions {
   /** Optional estimator channel; `''` keeps every estimator consumer on rule-only fallbacks (E1/E2). */
   readonly estimator: { readonly mode: '' | 'host' | 'direct' }
   /**
-   * Human-gated review pipeline (beta): edge/high-impact candidates queue for
-   * manual approval and execute in one merged batch at the next turn boundary
-   * instead of the automatic path (R4).
+   * Advisory relevance advisor: statistics and suggestions only — every output
+   * (summaries, scores, decay, recertification) is observational and must never
+   * suppress, delay, or rewrite any reduction that would land. `''` (the
+   * default) keeps the advisor fully off.
    */
-  readonly reviewMode: boolean
-  /** Turn-boundary patience: pending review proposals older than this many turns auto-expire (R4). */
-  readonly reviewTimeoutTurns: number
-  /** Cache-hit discount rate α in the benefit model; expectedSaving = α·R·Ŝ − (1−α)·tail. */
-  readonly cacheHitDiscountAlpha: number
-  /** Candidates whose tokenBefore reaches this threshold bypass payback triage and always enter review (R4). */
-  readonly reviewHighImpactTokens: number
+  readonly advisor: {
+    readonly mode: '' | 'host' | 'direct'
+    readonly timeoutMs: number
+    readonly refreshTurns: number
+    readonly scoreThreshold: number
+    readonly sampleLimit: number
+    readonly minTokens: number
+  }
 }
 
 /** Common user-authored Custom stages shared by persisted policy versions. */
@@ -140,11 +142,6 @@ export interface PresetOptionsSettings {
   readonly prefixStabilizer?: boolean
   readonly readState?: boolean
   readonly estimatorMode?: '' | 'host' | 'direct'
-  /** Review-mode overrides (beta); see PresetOptions.reviewMode. */
-  readonly reviewMode?: boolean
-  readonly reviewTimeoutTurns?: number
-  readonly cacheHitDiscountAlpha?: number
-  readonly reviewHighImpactTokens?: number
   /**
    * Estimator endpoint fields. Persisted-settings only: they never enter the
    * frozen CompressionPolicy, which is emitted verbatim by policy-resolved
@@ -155,6 +152,13 @@ export interface PresetOptionsSettings {
   readonly estimatorBaseUrl?: string
   readonly estimatorApiKey?: string
   readonly estimatorTimeoutMs?: number
+  /** Advisory advisor channel; `''` (the default) keeps the advisor off. */
+  readonly advisorMode?: '' | 'host' | 'direct'
+  readonly advisorTimeoutMs?: number
+  readonly advisorRefreshTurns?: number
+  readonly advisorScoreThreshold?: number
+  readonly advisorSampleLimit?: number
+  readonly advisorMinTokens?: number
 }
 
 /** Durable global preference exposed through `ctx.settings`. */

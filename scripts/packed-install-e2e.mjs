@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { createReadStream } from 'node:fs'
 import { copyFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -27,8 +27,17 @@ const officialHostPackages = Object.entries(rootManifest.devDependencies)
   .filter(([name]) => name.startsWith('@deepseek-ai/'))
   .map(([name, version]) => `${name}@${version}`)
 
+// Only the package-manager shims need a shell on Windows; every real executable
+// must be spawned directly, because cmd.exe re-parses arguments: `^` is its
+// escape character, so `HEAD^{tree}` reached git as `HEAD{tree}`, and a
+// multi-line `node -e` settings script was cut at its first newline into
+// `[eval]:1 const` / `SyntaxError: Unexpected end of input`. Both killed the
+// official-clone leg for reasons unrelated to what it asserts.
+const SHELL_COMMANDS = new Set(['npm', 'npm.cmd', 'pnpm', 'pnpm.cmd'])
+const usesShell = (command) => process.platform === 'win32' && SHELL_COMMANDS.has(command)
+
 const run = (command, args, options = {}) => new Promise((resolve, reject) => {
-  const child = spawn(command, args, { stdio: 'inherit', shell: process.platform === 'win32', ...options })
+  const child = spawn(command, args, { stdio: 'inherit', shell: usesShell(command), ...options })
   child.once('error', reject)
   child.once('exit', (code, signal) => {
     if (code === 0) resolve()
@@ -37,7 +46,7 @@ const run = (command, args, options = {}) => new Promise((resolve, reject) => {
 })
 
 const capture = (command, args, options = {}) => new Promise((resolve, reject) => {
-  const child = spawn(command, args, { shell: process.platform === 'win32', ...options, stdio: ['ignore', 'pipe', 'pipe'] })
+  const child = spawn(command, args, { shell: usesShell(command), ...options, stdio: ['ignore', 'pipe', 'pipe'] })
   let stdout = ''
   let stderr = ''
   child.stdout.setEncoding('utf8')
@@ -56,7 +65,7 @@ const capture = (command, args, options = {}) => new Promise((resolve, reject) =
 })
 
 const captureOutcome = (command, args, options = {}) => new Promise((resolve, reject) => {
-  const child = spawn(command, args, { shell: process.platform === 'win32', ...options, stdio: ['ignore', 'pipe', 'pipe'] })
+  const child = spawn(command, args, { shell: usesShell(command), ...options, stdio: ['ignore', 'pipe', 'pipe'] })
   let stdout = ''
   let stderr = ''
   child.stdout.setEncoding('utf8')
@@ -306,7 +315,23 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
   const dshHome = join(temporaryRoot, 'dsh-home')
   let added = false
   const environment = { ...process.env, DSH_HOME: dshHome }
-  const dsh = (...args) => run('pnpm', ['dsh', ...args], { cwd: worktree, env: environment })
+  let lastLifecycle = { command: '(none)', code: 0, stdout: '', stderr: '' }
+  const dsh = async (...args) => {
+    const outcome = await captureOutcome('pnpm', ['dsh', ...args], { cwd: worktree, env: environment })
+    lastLifecycle = {
+      command: `pnpm dsh ${args.join(' ')}`,
+      code: outcome.code ?? -1,
+      stdout: outcome.stdout,
+      stderr: outcome.stderr,
+    }
+    if (outcome.code !== 0) {
+      throw new Error([
+        `${lastLifecycle.command} exited ${String(lastLifecycle.code)}`,
+        outcome.stdout.trim(),
+        outcome.stderr.trim(),
+      ].filter(Boolean).join('\n'))
+    }
+  }
   const dumpConfig = () => capture('pnpm', ['dsh', '--profile', 'web', '--dump-config'], {
     cwd: worktree,
     env: environment,
@@ -316,7 +341,36 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
   const profilePackages = () => {
     const profileRoot = join(dshHome, 'profiles/web')
     const profileRequire = createRequire(join(profileRoot, 'package.json'))
-    const selectorPath = profileRequire.resolve('dsh-context-compression-improved/package.json')
+    let selectorPath
+    try {
+      selectorPath = profileRequire.resolve('dsh-context-compression-improved/package.json')
+    } catch (error) {
+      // A silent no-op lifecycle command is the difference between "the package
+      // manager refused" and "the CLI exited 0 without installing anything";
+      // carry that evidence instead of a bare MODULE_NOT_FOUND.
+      const declared = (() => {
+        try {
+          return JSON.stringify(JSON.parse(readFileSync(join(profileRoot, 'package.json'), 'utf8')).dependencies ?? {})
+        } catch {
+          return '(profile package.json unreadable)'
+        }
+      })()
+      const installed = (() => {
+        try {
+          return JSON.stringify(readdirSync(join(profileRoot, 'node_modules')).slice(0, 40))
+        } catch {
+          return '(profiles/web/node_modules unreadable)'
+        }
+      })()
+      throw new Error([
+        `official profile ${profileRoot} does not resolve dsh-context-compression-improved`,
+        `last lifecycle: ${lastLifecycle.command} (exit ${String(lastLifecycle.code)})`,
+        `lifecycle stdout: ${lastLifecycle.stdout.trim()}`,
+        `lifecycle stderr: ${lastLifecycle.stderr.trim()}`,
+        `profile dependencies: ${declared}`,
+        `profiles/web/node_modules: ${installed}`,
+      ].join('\n'), { cause: error })
+    }
     return {
       profileRoot,
       selectorPath,
@@ -623,8 +677,8 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
     // $DSH_HOME/profiles/node_modules — the shared-module fallback the
     // plugin's harness peers resolve through in every later raw-node proof.
     const addedDump = await dumpConfig()
-    assert(addedDump.includes('context-compression-selector-bundle'),
-      'official post-add dump lacks the selector Bundle layer')
+    assert(addedDump.includes('context-compression-improved-bundle'),
+      'official post-add dump lacks the context-compression Bundle layer')
 
     // Real profile start on the previous release, BEFORE seeding: the
     // previous-release schema predates the autoCompact section, so this probe
@@ -646,11 +700,11 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
     const loadProof = await provePluginLoads()
     const postUpBoot = await runProfileBootProbe('post-up', true)
     const upDump = await dumpConfig()
-    for (const marker of ['context-compression-selector-bundle', 'presetOverlay: true']) {
+    for (const marker of ['context-compression-improved-bundle', 'presetOverlay: true']) {
       assert(upDump.includes(marker), `official post-up dump lacks ${marker}`)
     }
-    assert(upDump.match(/context-compression-selector-bundle/gu)?.length === 1,
-      'official post-up dump contains more than one selector Bundle layer')
+    assert(upDump.match(/context-compression-improved-bundle/gu)?.length === 1,
+      'official post-up dump contains more than one context-compression Bundle layer')
 
     // pnpm's peers check is informational: plugin peers resolve through the
     // healed profiles/node_modules fallback, which pnpm cannot see by design.
@@ -661,14 +715,14 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
 
     await dsh('plugin', '--profile', 'web', 'remove', 'dsh-context-compression-improved')
     const removedDump = await dumpConfig()
-    assert(!removedDump.includes('context-compression-selector-bundle'),
-      'official CLI remove left the selector Bundle layer active')
+    assert(!removedDump.includes('context-compression-improved-bundle'),
+      'official CLI remove left the context-compression Bundle layer active')
 
     await dsh('plugin', '--profile', 'web', 'add',
       'dsh-context-compression-improved@latest', '--registry', registry)
     const secondDump = await dumpConfig()
-    assert(secondDump.includes('context-compression-selector-bundle'),
-      'official CLI reinstall did not restore the selector Bundle layer')
+    assert(secondDump.includes('context-compression-improved-bundle'),
+      'official CLI reinstall did not restore the context-compression Bundle layer')
 
     return {
       tag: before.tag,

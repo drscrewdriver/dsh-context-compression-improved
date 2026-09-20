@@ -1,5 +1,6 @@
 /** Structured, content-free runtime audit records for context compression. */
 
+import type { AdviceBand } from './tokenpilot/benefit.ts'
 import type {
   CompressionPolicy,
   CompressionProfile,
@@ -183,29 +184,55 @@ export interface EstimatorOutcomeAuditRecord extends CompressionAuditBase {
   readonly ok: boolean
 }
 
-/** Lifecycle of one human-gated review proposal. Only numeric and enum fields — never content. */
-export interface ReviewOutcomeAuditRecord extends CompressionAuditBase {
-  readonly kind: 'review-outcome'
-  /** Stable proposal id (sha-256 digest cut, 12 hex chars). */
-  readonly proposalId: string
-  /** Reduction kind the proposal came from. */
-  readonly proposalKind: 'estimator' | 'dedup' | 'read-state'
-  readonly event:
-    | 'enqueue'
-    | 'expire'
-    | 'decide'
-    | 'apply-void'
-    | 'apply-receipt'
-  /** Human decision (decide events only). */
-  readonly decision?: 'approved' | 'rejected' | 'ignored'
-  /** Execution receipt state (apply-receipt only). */
-  readonly receiptStatus?: 'applied' | 'deferred'
-  /** Aligned reason code (deferred receipts and void applications only). */
-  readonly reasonCode?: string
+/** One background relevance-advisor pass. Only numeric metadata — never prompts, keys, or content. */
+export interface AdvisorOutcomeAuditRecord extends CompressionAuditBase {
+  readonly kind: 'advisor-outcome'
+  /** Which advisory stage produced this record. */
+  readonly phase: 'summary' | 'scoring' | 'decay'
+  /** LLM channel; omitted for the locally computed 'decay' phase. */
+  readonly channel?: 'host' | 'direct'
+  readonly ok: boolean
+  /** Whether the pass found candidates to sample (scoring phase). */
+  readonly sampledCount?: number
+  /** Prefix-decay figure in [0, 1] (decay phase; also emitted by summary/scoring on success). */
+  readonly decay?: number
+  /** Weighted surface the decay was computed over, in Unicode code points. */
+  readonly weightedChars?: number
+  /** Turn index the pass ran at. */
+  readonly turnIndex?: number
+  /** Aligned failure/skip reason code (e.g. 'no-direct-endpoint', 'parse-failed'). */
+  readonly reason?: string
+  readonly latencyMs: number
+}
+
+/**
+ * One advisory benefit-model label for a batch that LANDED. The retired review
+ * gate used these bands to withhold a batch; a reduction must never block
+ * automatic processing, so the band is published as advice instead. Numeric and
+ * enum fields only — never content.
+ */
+export interface ReductionAdviceAuditRecord extends CompressionAuditBase {
+  readonly kind: 'reduction-advice'
+  /** Profile the advised pass ran under. */
+  readonly profile: CompressionProfile
+  /** Band the benefit model labelled the landed batch with. */
+  readonly band: AdviceBand
+  /** Landing stage the batch was priced at. */
+  readonly stage: 'fresh' | 'history'
   readonly itemSeqs: readonly number[]
+  /** Candidates that carried a positive recovery and were priced. */
+  readonly pricedCandidates: number
+  /** Largest single-candidate token mass in the batch. */
+  readonly maxTokensBefore: number
   readonly tokensBefore: number
   readonly tokensAfter: number
-  /** Turn index the event happened at. */
+  readonly recoveredTokens: number
+  readonly penaltyTokens: number
+  /** Turns of discounted recovery needed to recoup the refill penalty. */
+  readonly paybackTurns?: number
+  /** Discounted net benefit over the remaining session; omitted when Ŝ is unknown. */
+  readonly expectedSaving?: number
+  /** Turn index the batch landed at. */
   readonly turnIndex?: number
 }
 
@@ -219,7 +246,8 @@ export type CompressionAuditRecord =
   | NativeAutoCompactAuditRecord
   | SummaryLocatorAuditRecord
   | EstimatorOutcomeAuditRecord
-  | ReviewOutcomeAuditRecord
+  | AdvisorOutcomeAuditRecord
+  | ReductionAdviceAuditRecord
 
 /** Minimal logger method consumed by the audit publisher. */
 export interface CompressionAuditLogger {

@@ -2,6 +2,82 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
+## 0.5.2 - 2026-09-20
+
+### Changed
+
+- The human-gated review pipeline (beta) is **retired**. Its semantics are replaced by
+  advice: the benefit model still prices every pass as ONE merged mutation, but the band it
+  computes (`profitable` / `high-impact` / `slow-payback` / `unpriceable` / `not-worth-it`)
+  is now published as a `reduction-advice` audit record and snapshotted onto the advisor
+  report route — it never withholds, delays, or rewrites a reduction. The gate contradicted
+  the feature's own requirement (a reduction must never block automatic processing) and, with
+  the shipped defaults (`reviewMode` on plus a 4,000-token high-impact threshold against an
+  8,192-token fresh trigger), diverted 100% of a fresh batch into human review, leaving the
+  automatic path effectively off for anyone who opted in. The advice thresholds are now
+  module constants (α `0.1`, high-impact `4,000` tokens): nothing acts on them, so they are
+  no longer settings.
+- Removed with the gate: the review queue and its `storageDomain` adapter, the process-wide
+  registry, the `review-queue` / `review-decide` HTTP routes and the `reviewQueueRoute`
+  deployment flag, the `shell.overlay` client panel, the `reviewMode` /
+  `reviewTimeoutTurns` / `cacheHitDiscountAlpha` / `reviewHighImpactTokens` settings keys,
+  and the `review-outcome` audit kind. The four settings keys stay ACCEPTED and IGNORED by
+  both decoders — an existing document (the live one carries `reviewMode: false`) still loads
+  and still renders its settings card — and never reach the resolved policy. The read-only
+  `GET .../advisor-report` route additionally serves `lastAdvice`.
+
+### Added
+
+- Regression pins for the retirement: a host-integration spec drives the exact settings that
+  used to divert everything (`reviewMode: true`, `reviewHighImpactTokens: 1`) and asserts the
+  fresh batch LANDS, described by a `high-impact` advice record; a deprecation-contract spec
+  pins accept-and-ignore for the retired keys on both the runtime parser and the browser
+  decoder.
+
+### Rollback
+
+- Reinstall the last release that still ships the gate: `npm dist-tag add
+  dsh-context-compression-improved@0.5.1 dsh-0.1.5 --registry https://registry.npmjs.org/`
+  then `dsh plugin --profile web add dsh-context-compression-improved@0.5.1`.
+
+## 0.5.1 - 2026-09-20
+
+### Fixed
+
+- Concurrent preset-overlay composition of one identity no longer fails on Windows.
+  Publication is now serialized per destination path, and when the atomic rename still
+  loses the race the destination is confirmed to already carry this staging file's
+  `{mtimeMs, size}` standing key before the publish reports success. Windows `MoveFileEx`
+  reports that lost race as `EPERM`/`EBUSY` where POSIX `rename` simply replaces the
+  destination, which made `standingKeyFor()` throw during concurrent session start. A
+  destination that does not match still fails loudly, so a silently reused generation
+  stays forbidden.
+- Release-gate and test repairs that had been hiding this and other pre-existing red
+  gates: stale identifiers and a retired audit reason in the packed smokes, a stale
+  client-inject expectation, and Windows-only spawn traps (`git` and multi-line
+  `node -e` scripts were routed through `cmd.exe`, which rewrote their arguments).
+
+## 0.5.0 - 2026-09-20
+
+### Added
+
+- Advisory relevance advisor (statistics and suggestions only, default off): at every turn
+  boundary a fire-and-forget pass summarizes the session's tail-task semantics from the
+  most recent `todo/write` event (falling back to recent user text), incrementally scores
+  historical tool-result candidates for content-and-comment relevance against the current
+  task, and computes a prefix-decay figure (character-pressure-weighted mean relevance).
+  Low-relevance old segments are marked `recertified` as suggestions for later
+  history-aggressiveness decisions — nothing this round consumes them, and advisor output
+  can never suppress, delay, or rewrite any reduction that would land (pinned by a
+  dedicated invariant test). Configure through the `presetOptions.advisor*` settings keys
+  (`advisorMode` `''|'host'|'direct'`, default `''`; the direct channel reuses the
+  estimator endpoint; `SideChannel` gained an optional overrides parameter so the
+  estimator's transport is shared without sharing its configuration). Observability: new
+  `advisor-outcome` audit records (content-free, one per phase: summary / scoring / decay)
+  and a read-only `GET .../advisor-report?sessionId=` HTTP route (opt-in deployment flag
+  `advisorReportRoute`, mirroring the review routes). Client UI is intentionally absent
+  this round.
+
 ## 0.4.0 - 2026-09-20
 
 ### Fixed

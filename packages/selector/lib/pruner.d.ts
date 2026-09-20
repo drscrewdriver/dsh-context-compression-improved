@@ -83,17 +83,19 @@ interface PresetOptions {
     readonly mode: '' | 'host' | 'direct';
   };
   /**
-   * Human-gated review pipeline (beta): edge/high-impact candidates queue for
-   * manual approval and execute in one merged batch at the next turn boundary
-   * instead of the automatic path (R4).
+   * Advisory relevance advisor: statistics and suggestions only — every output
+   * (summaries, scores, decay, recertification) is observational and must never
+   * suppress, delay, or rewrite any reduction that would land. `''` (the
+   * default) keeps the advisor fully off.
    */
-  readonly reviewMode: boolean;
-  /** Turn-boundary patience: pending review proposals older than this many turns auto-expire (R4). */
-  readonly reviewTimeoutTurns: number;
-  /** Cache-hit discount rate α in the benefit model; expectedSaving = α·R·Ŝ − (1−α)·tail. */
-  readonly cacheHitDiscountAlpha: number;
-  /** Candidates whose tokenBefore reaches this threshold bypass payback triage and always enter review (R4). */
-  readonly reviewHighImpactTokens: number;
+  readonly advisor: {
+    readonly mode: '' | 'host' | 'direct';
+    readonly timeoutMs: number;
+    readonly refreshTurns: number;
+    readonly scoreThreshold: number;
+    readonly sampleLimit: number;
+    readonly minTokens: number;
+  };
 }
 /** Common user-authored Custom stages shared by persisted policy versions. */
 interface CustomCompressionPolicyFields<HistoryPolicy> {
@@ -143,11 +145,6 @@ interface PresetOptionsSettings {
   readonly prefixStabilizer?: boolean;
   readonly readState?: boolean;
   readonly estimatorMode?: '' | 'host' | 'direct';
-  /** Review-mode overrides (beta); see PresetOptions.reviewMode. */
-  readonly reviewMode?: boolean;
-  readonly reviewTimeoutTurns?: number;
-  readonly cacheHitDiscountAlpha?: number;
-  readonly reviewHighImpactTokens?: number;
   /**
    * Estimator endpoint fields. Persisted-settings only: they never enter the
    * frozen CompressionPolicy, which is emitted verbatim by policy-resolved
@@ -158,6 +155,13 @@ interface PresetOptionsSettings {
   readonly estimatorBaseUrl?: string;
   readonly estimatorApiKey?: string;
   readonly estimatorTimeoutMs?: number;
+  /** Advisory advisor channel; `''` (the default) keeps the advisor off. */
+  readonly advisorMode?: '' | 'host' | 'direct';
+  readonly advisorTimeoutMs?: number;
+  readonly advisorRefreshTurns?: number;
+  readonly advisorScoreThreshold?: number;
+  readonly advisorSampleLimit?: number;
+  readonly advisorMinTokens?: number;
 }
 /** Durable global preference exposed through `ctx.settings`. */
 interface ContextCompressionSettings {
@@ -336,6 +340,56 @@ interface PruneResult {
   readonly tokensRemoved: number;
 }
 //#endregion
+//#region src/runtime/tokenpilot/sidechannel.d.ts
+/** Audit record of one side-channel call (Phase 13). All fields optional-safe. */
+interface SideChannelAudit {
+  readonly ok: boolean;
+  readonly latencyMs: number;
+  /** host|direct plus the resolved provider/model identity. */
+  readonly channel?: string;
+  /** L2 coverage: content shown N of node content total M. */
+  readonly coverage?: {
+    readonly shown: number;
+    readonly total: number;
+  };
+  readonly reason?: string;
+}
+interface SideChannelRequest {
+  readonly system: string;
+  readonly user: string;
+  readonly signal: AbortSignal;
+}
+/** One bound side channel. `ask` resolves `undefined` on ANY failure. */
+declare class SideChannel {
+  private readonly ctx;
+  private readonly options;
+  private readonly overrides?;
+  /**
+   * @param overrides - per-consumer overrides of the estimator-named options.
+   * The estimator itself never passes them (byte-identical behavior); the
+   * advisory advisor passes its own mode/timeout/output budget so both
+   * consumers share one transport without sharing one configuration.
+   */
+  constructor(ctx: Context, options: PresetOptionsSettings, overrides?: {
+    readonly mode?: "" | "host" | "direct";
+    readonly timeoutMs?: number;
+    readonly maxTokens?: number;
+  } | undefined);
+  private get mode();
+  get enabled(): boolean;
+  ask(request: SideChannelRequest): Promise<string | undefined>;
+  /** Failure-open wrapper that also records one audit record per call. */
+  askAudited(request: SideChannelRequest): Promise<{
+    text?: string;
+    audit: SideChannelAudit;
+  }>;
+  identity(): string | undefined;
+  /** Same host-route resolution as the estimator: explicit, then host default. */
+  private resolveHostRoute;
+  private askHost;
+  private askDirect;
+}
+//#endregion
 //#region src/runtime/tokenpilot/estimator.d.ts
 /** Per-session estimator failure bookkeeping for exponential backoff. */
 interface EstimatorFailures {
@@ -343,157 +397,7 @@ interface EstimatorFailures {
   cooldownUntil: number;
 }
 //#endregion
-//#region src/runtime/tokenpilot/proposal.d.ts
-interface BenefitEstimate {
-  /** Net reclaimed tokens across the batch; may be ≤ 0 when a batch is not worth it. */
-  readonly recoveredTokens: number;
-  /** The one-time cache-refill penalty the merged mutation pays: (1−α)·tailTokens. */
-  readonly penaltyTokens: number;
-  /** Turns of discounted recovery needed to recoup the penalty; `undefined` when α·R ≤ 0. */
-  readonly paybackTurns?: number;
-  /** Discounted net benefit over the remaining session; omitted when Ŝ is unknown. */
-  readonly expectedSaving?: number;
-}
-/** Human-facing reduction kind carried by every review proposal. */
-type ProposalKind = 'estimator' | 'dedup' | 'read-state';
-/** One frozen item inside a review proposal: metadata and digest, never content. */
-interface ProposalItem {
-  readonly seq: number;
-  readonly component: string;
-  readonly kind: ProposalKind;
-  readonly tokensBefore: number;
-  readonly tokensAfter: number;
-  /** Content sha-256 frozen at enqueue time and re-checked at the apply point. */
-  readonly digest: string;
-}
-/** Proposal fields derivable at classification time; queue fields attach at enqueue. */
-interface ProposalSkeleton {
-  readonly id: string;
-  readonly kind: ProposalKind;
-  readonly items: readonly ProposalItem[];
-  readonly benefit: BenefitEstimate;
-}
-//#endregion
-//#region src/runtime/tokenpilot/review-queue.d.ts
-/** Human-side proposal status. */
-type ReviewProposalStatus = 'pending' | 'approved' | 'rejected' | 'ignored' | 'expired';
-/** Execution-side receipt built only from real mutation evidence (never estimated). */
-interface ReviewReceipt {
-  readonly status: 'applied' | 'deferred';
-  /** Reason code for deferred receipts, aligned with the upstream naming. */
-  readonly reasonCode?: string;
-  /** Predicted recovery from the benefit model at enqueue time. */
-  readonly estimatedTokens: number;
-  /** Measured recovery of the landed mutation; present only on applied. */
-  readonly appliedTokens?: number;
-  /** Canonical ISO timestamp of the execution evidence. */
-  readonly updatedAt: string;
-}
-/** One queued proposal: persisted metadata, never content. */
-interface ReviewProposalRecord {
-  readonly id: string;
-  readonly sessionId: string;
-  readonly kind: ProposalKind;
-  readonly items: readonly {
-    readonly seq: number;
-    readonly component: string;
-    readonly kind: ProposalKind;
-    readonly tokensBefore: number;
-    readonly tokensAfter: number;
-    readonly digest: string;
-  }[];
-  readonly benefit: {
-    readonly recoveredTokens: number;
-    readonly penaltyTokens: number;
-    readonly paybackTurns?: number;
-    readonly expectedSaving?: number;
-  };
-  status: ReviewProposalStatus;
-  readonly enqueuedTurn: number;
-  lastTurnIndex: number;
-}
-/** Whole-session record: one durable KV value per session. */
-interface ReviewSessionRecord {
-  readonly version: 1;
-  readonly proposals: readonly ReviewProposalRecord[];
-}
-/** A settled proposal: the live record plus its execution receipt. */
-interface ReviewReceiptRecord extends ReviewProposalRecord {
-  readonly receipt: ReviewReceipt;
-}
-/** Minimal KV face the queue persists through. */
-interface ReviewQueueStore {
-  load(sessionId: string): ReviewSessionRecord | undefined;
-  save(sessionId: string, record: ReviewSessionRecord): void;
-  /** Session ids with live records; optional (aggregate reads degrade to none). */
-  ids?(): readonly string[];
-}
-interface ReviewQueueOptions {
-  /** Pending proposals older than this many turns (since lastTurnIndex) expire. */
-  readonly timeoutTurns: number;
-}
-/** Decision outcomes for one decide call. */
-type DecideOutcome = {
-  readonly ok: true;
-} | {
-  readonly ok: false;
-  readonly reason: 'unknown-proposal' | 'not-pending';
-};
-declare class ReviewQueue {
-  private readonly store;
-  private readonly options;
-  constructor(store: ReviewQueueStore, options: ReviewQueueOptions);
-  /**
-   * Fail-open store access: a throwing seam must never break the compression
-   * pipeline. Reads degrade to "no stored record"; writes degrade to losing
-   * durability for that call (the store itself is expected to warn).
-   */
-  private safeLoad;
-  private safeSave;
-  private sessionRecord;
-  /**
-   * Queue one classified proposal. A repeated classification of the same
-   * content re-does nothing but refresh the patience clock, so re-enqueue
-   * cannot duplicate a live proposal.
-   * @returns `false` when an identical live proposal already exists.
-   */
-  enqueue(sessionId: string, skeleton: ProposalSkeleton, turnIndex: number): boolean;
-  /** Live pending proposals of one session, oldest enqueue first. */
-  listPending(sessionId: string): readonly ReviewProposalRecord[];
-  /** Approved proposals waiting for the next turn-boundary batch. */
-  listApproved(sessionId: string): readonly ReviewProposalRecord[];
-  /**
-   * Transition one pending proposal. Idempotent: deciding an unknown id or a
-   * non-pending proposal changes nothing and reports the miss.
-   */
-  decide(sessionId: string, id: string, decision: 'approved' | 'rejected' | 'ignored'): DecideOutcome;
-  /**
-   * Expire every pending proposal whose patience has run out at this turn
-   * boundary. Expired proposals are removed from the store (the summary view
-   * aggregates them from the audit log instead).
-   * @returns the expired proposals, for the caller's audit emission.
-   */
-  expireTurn(sessionId: string, turnIndex: number): readonly ReviewProposalRecord[];
-  /**
-   * Settle an approved proposal with its execution receipt and retire it from
-   * the live store. The caller is responsible for auditing the receipt; the
-   * queue only records which proposal left and why.
-   */
-  recordReceipt(sessionId: string, id: string, receipt: ReviewReceipt): ReviewReceiptRecord | undefined;
-}
-//#endregion
 //#region src/pruner/state.d.ts
-/** Four-state per-session outcome counters behind the floating-window summary row. */
-interface ReviewSessionSummary {
-  /** Rewrites that landed through the automatic path while review mode served this session. */
-  autoApplied: number;
-  /** Approved proposals whose merged batch executed with an applied receipt. */
-  reviewApplied: number;
-  /** Pending proposals that expired unhandled at a turn boundary. */
-  expired: number;
-  /** Approved proposals voided at the apply point (digest mismatch et al). */
-  voided: number;
-}
 /** Mutable per-session state bag used inside {@link ToolResultPruner}. */
 interface PrunerState {
   /** Resolved immutable deployment configuration. */
@@ -520,20 +424,12 @@ interface PrunerState {
   readonly tailTrimBoundaryAttempts: WeakMap<Session, object>;
   /** Last effective policy audit key emitted for each Session. */
   readonly policyResolutionAudits: WeakMap<Session, string>;
-  /**
-   * TokenPilot-inspired R4: shared review-queue store. Starts as the in-memory
-   * fail-open fallback; swapped to the storageDomain-backed adapter when (and
-   * if) that seam opens successfully.
-   */
-  reviewStore: ReviewQueueStore;
-  /** Per-session review queue carrying the frozen timeout policy. */
-  readonly reviewQueues: WeakMap<Session, ReviewQueue>;
-  /** Last observed turn index per Session: the monotonic clock for review expiries. */
-  readonly reviewClocks: WeakMap<Session, number>;
+  /** Last observed turn index per Session: the monotonic clock for advisory records. */
+  readonly turnClocks: WeakMap<Session, number>;
   /** Estimator-reported remaining turns Ŝ per Session; advisory only. */
   readonly estimatorRemainingTurns: WeakMap<Session, number>;
-  /** Four-state outcome counters per Session (floating-window summary row). */
-  readonly reviewSummaries: WeakMap<Session, ReviewSessionSummary>;
+  /** Per-session advisor side channel, constructed once with the advisor overrides. */
+  readonly advisorChannels: WeakMap<Session, SideChannel>;
 }
 //#endregion
 //#region src/runtime/custom-policy.d.ts
@@ -848,78 +744,29 @@ declare class ToolResultPruner extends Service {
    */
   private postflightEstimatorPass;
   /**
-   * The per-session review queue, or `undefined` while review mode is off
-   * (every review path must then behave exactly like before).
+   * Advisory advisor pass at the turn boundary, strictly fire-and-forget.
+   * Produces todolist-bound tail-task summaries, incremental relevance
+   * scores, and a prefix-decay figure — all observational. Every short
+   * circuit below (mode off, re-entry, cooldown, no task semantics, no
+   * direct endpoint) returns without touching any state the pruning chain
+   * reads, so the default configuration adds exactly zero behavior.
    */
-  private reviewQueueFor;
+  private postflightAdvisorPass;
   /**
-   * Monotonic per-session turn clock for review patience and expiry. Bumped by
-   * the agent loop payloads (`pre-step` / `turn-stopping`); passes without a
-   * turn coordinate reuse the last observed value.
+   * Monotonic per-session turn clock for advisory records. Bumped by the agent
+   * loop payloads (`pre-step`); passes without a turn coordinate reuse the last
+   * observed value.
    */
-  private reviewClock;
-  private auditReviewOutcome;
+  private turnClock;
   /**
-   * Review-mode triage hook: classify one pass's planned replacements and
-   * withhold the review bucket from landing, enqueuing it for human approval
-   * instead. With review mode off (or nothing planned) this is the identity.
-   *
-   * The digest freezes each candidate's ORIGINAL surface content, so the apply
-   * point can prove "what is removed now is what was approved then".
+   * Advisory benefit-model hook — what the retired human-gated review pipeline
+   * left behind. It is the IDENTITY on the landing path: every plan it is given
+   * comes back unchanged, because a reduction must never block automatic
+   * processing. The model's band is published as a `reduction-advice` audit and
+   * snapshotted onto the advisor state for the read-only report route, so the
+   * cache-accounting insight survives without a gate.
    */
-  private triageForReview;
-  /**
-   * Execute every approved proposal of one session as ONE merged replacement
-   * batch at the current turn boundary, following the upstream applied-receipt
-   * discipline: applied receipts are built only from real mutation evidence —
-   * estimates never cross into applied savings.
-   *
-   * Per proposal: every item's frozen digest is re-checked against the current
-   * surface content; any mismatch voids the whole proposal (deferred with a
-   * reason code) instead of deleting something the user never approved.
-   * Fail-open: any unexpected error only logs and leaves the queue intact.
-   */
-  applyApprovedProposals(session: Session): void;
-  /**
-   * Current surface content at one seq: the newest covering replacement's
-   * blocks when the seq was rewritten, otherwise the original event's blocks.
-   */
-  private surfaceContentAt;
-  /**
-   * The execution-point digest check: `undefined` when every item's frozen
-   * digest still matches the current surface content, otherwise the aligned
-   * reason code explaining the void.
-   */
-  private reviewProposalVoided;
-  private reviewSummaryFor;
-  /** Live pending review proposals of one session; empty when review mode is off. */
-  listReviewProposals(session: Session): readonly ReviewProposalRecord[];
-  /**
-   * Every session's live pending proposals, for the floating window's
-   * aggregate badge (the client carries no session id of its own).
-   */
-  listAllReviewProposals(): readonly {
-    readonly sessionId: string;
-    readonly proposals: readonly ReviewProposalRecord[];
-  }[];
-  /** Four-state outcome counters of one session (floating-window summary row). */
-  reviewSummary(session: Session): ReviewSessionSummary;
-  /**
-   * Record one human decision. Returns the outcome, or `undefined` when
-   * review mode is off for this session (the route maps that to 503).
-   */
-  decideReviewProposal(session: Session, proposalId: string, decision: 'approved' | 'rejected' | 'ignored'): {
-    ok: true;
-  } | {
-    ok: false;
-    reason: 'unknown-proposal' | 'not-pending';
-  } | undefined;
-  /**
-   * Expire stale pending proposals at one turn boundary and audit each.
-   * Public because tests drive it directly; the turn-stopping handler calls
-   * it with the loop's own turn index.
-   */
-  expireReviewProposals(session: Session, turnIndex?: number): readonly ReviewProposalRecord[];
+  private adviseReplacements;
   private activePolicy;
   private contextWindowForRequest;
   private runRequestBoundary;

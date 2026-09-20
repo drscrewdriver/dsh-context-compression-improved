@@ -18,12 +18,13 @@ interface Config {
    */
   estimatorCatalogRoute?: boolean;
   /**
-   * Register the review pipeline's HTTP routes (pending-queue read + decide
-   * write) on this row. Same Bundle opt-in semantics as
-   * `estimatorCatalogRoute`; without the routes the floating window has no
-   * transport and simply never appears.
+   * Register the advisory advisor's read-only HTTP report route (decay
+   * figure, task summary, score distribution, last benefit-model advice).
+   * Same Bundle opt-in semantics as `estimatorCatalogRoute`; the advisor
+   * itself stays off until the user turns it on through the
+   * `presetOptions.advisor*` settings keys.
    */
-  reviewQueueRoute?: boolean;
+  advisorReportRoute?: boolean;
 }
 /** Loader validation for the standalone Bundle opt-in. */
 declare const Config: z<Config>;
