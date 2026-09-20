@@ -27,12 +27,14 @@ const officialHostPackages = Object.entries(rootManifest.devDependencies)
   .filter(([name]) => name.startsWith('@deepseek-ai/'))
   .map(([name, version]) => `${name}@${version}`)
 
-// `npm` and `pnpm` are `.cmd` shims on Windows and need a shell there, but `git`
-// is a real executable: routing it through cmd.exe mangles its arguments, since
-// `^` is cmd's escape character — `HEAD^{tree}` reaches git as `HEAD{tree}` and
-// the official-clone leg dies on `rev-parse` for reasons that have nothing to do
-// with the clone. Keep git on a direct spawn.
-const usesShell = (command) => process.platform === 'win32' && command !== 'git'
+// Only the package-manager shims need a shell on Windows; every real executable
+// must be spawned directly, because cmd.exe re-parses arguments: `^` is its
+// escape character, so `HEAD^{tree}` reached git as `HEAD{tree}`, and a
+// multi-line `node -e` settings script was cut at its first newline into
+// `[eval]:1 const` / `SyntaxError: Unexpected end of input`. Both killed the
+// official-clone leg for reasons unrelated to what it asserts.
+const SHELL_COMMANDS = new Set(['npm', 'npm.cmd', 'pnpm', 'pnpm.cmd'])
+const usesShell = (command) => process.platform === 'win32' && SHELL_COMMANDS.has(command)
 
 const run = (command, args, options = {}) => new Promise((resolve, reject) => {
   const child = spawn(command, args, { stdio: 'inherit', shell: usesShell(command), ...options })
