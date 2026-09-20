@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { createReadStream } from 'node:fs'
 import { copyFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -315,7 +315,23 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
   const dshHome = join(temporaryRoot, 'dsh-home')
   let added = false
   const environment = { ...process.env, DSH_HOME: dshHome }
-  const dsh = (...args) => run('pnpm', ['dsh', ...args], { cwd: worktree, env: environment })
+  let lastLifecycle = { command: '(none)', code: 0, stdout: '', stderr: '' }
+  const dsh = async (...args) => {
+    const outcome = await captureOutcome('pnpm', ['dsh', ...args], { cwd: worktree, env: environment })
+    lastLifecycle = {
+      command: `pnpm dsh ${args.join(' ')}`,
+      code: outcome.code ?? -1,
+      stdout: outcome.stdout,
+      stderr: outcome.stderr,
+    }
+    if (outcome.code !== 0) {
+      throw new Error([
+        `${lastLifecycle.command} exited ${String(lastLifecycle.code)}`,
+        outcome.stdout.trim(),
+        outcome.stderr.trim(),
+      ].filter(Boolean).join('\n'))
+    }
+  }
   const dumpConfig = () => capture('pnpm', ['dsh', '--profile', 'web', '--dump-config'], {
     cwd: worktree,
     env: environment,
@@ -325,7 +341,36 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
   const profilePackages = () => {
     const profileRoot = join(dshHome, 'profiles/web')
     const profileRequire = createRequire(join(profileRoot, 'package.json'))
-    const selectorPath = profileRequire.resolve('dsh-context-compression-improved/package.json')
+    let selectorPath
+    try {
+      selectorPath = profileRequire.resolve('dsh-context-compression-improved/package.json')
+    } catch (error) {
+      // A silent no-op lifecycle command is the difference between "the package
+      // manager refused" and "the CLI exited 0 without installing anything";
+      // carry that evidence instead of a bare MODULE_NOT_FOUND.
+      const declared = (() => {
+        try {
+          return JSON.stringify(JSON.parse(readFileSync(join(profileRoot, 'package.json'), 'utf8')).dependencies ?? {})
+        } catch {
+          return '(profile package.json unreadable)'
+        }
+      })()
+      const installed = (() => {
+        try {
+          return JSON.stringify(readdirSync(join(profileRoot, 'node_modules')).slice(0, 40))
+        } catch {
+          return '(profiles/web/node_modules unreadable)'
+        }
+      })()
+      throw new Error([
+        `official profile ${profileRoot} does not resolve dsh-context-compression-improved`,
+        `last lifecycle: ${lastLifecycle.command} (exit ${String(lastLifecycle.code)})`,
+        `lifecycle stdout: ${lastLifecycle.stdout.trim()}`,
+        `lifecycle stderr: ${lastLifecycle.stderr.trim()}`,
+        `profile dependencies: ${declared}`,
+        `profiles/web/node_modules: ${installed}`,
+      ].join('\n'), { cause: error })
+    }
     return {
       profileRoot,
       selectorPath,
