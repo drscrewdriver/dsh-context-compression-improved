@@ -14,15 +14,14 @@
     # announcing a pending route on a webServer-less profile. The two-channel
     # registration inside the plugin covers both arrival orders on its own.
     #
-    # `reviewQueueRoute` belongs here and not on the bundle row: it gates the
-    # R4 human-review endpoints (`/review-queue`, `/review-decide`) and was
-    # never turned on, so the review overlay polled two 404s and the panel
-    # could not open. Both flags are set on exactly one row, so each route is
-    # registered exactly once.
+    # `estimatorCatalogRoute` is the only flag this row sets. The retired
+    # review gate's `reviewQueueRoute` used to live here; that key no longer
+    # exists in the plugin's Config schema (a reduction must never block
+    # automatic processing), so setting it would advertise a route that can
+    # never register.
     - id: context-compression-improved-estimator-catalog
       name: 'dsh-context-compression-improved'
       inject:
         - webServer
       config:
         estimatorCatalogRoute: true
-        reviewQueueRoute: true
