@@ -116,6 +116,16 @@ export function standingStampMs(identity: string): number {
   return standingStampMsAtWindow(identity, 0)
 }
 
+/**
+ * True for the filesystem errors a concurrent publish can raise on Windows:
+ * `MoveFileEx` reports a lost race — or a reader holding the destination open —
+ * as EPERM/EBUSY/EACCES, where POSIX `rename` simply replaces the destination.
+ */
+function isPublishRace(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code
+  return code === 'EPERM' || code === 'EBUSY' || code === 'EACCES' || code === 'EEXIST'
+}
+
 const COMPRESSION_IDS = new Set([
   'compaction',
   'compaction-basic',
@@ -224,7 +234,7 @@ class PresetOverlayStore {
       // still private. No reader can observe a colliding {mtimeMs,size}
       // between rename and a later corrective utimes call.
       await this.disambiguateStamp(staging, identity)
-      await rename(staging, path)
+      await this.publish(staging, path)
     } catch (error) {
       // A failed publish must not leak its staging file into the store; the
       // cleanup must never mask the original failure either.
@@ -236,6 +246,55 @@ class PresetOverlayStore {
       throw error
     }
     return { ...preset, path }
+  }
+
+  /** In-flight publish chains, one per destination path. */
+  private readonly publishChains = new Map<string, Promise<void>>()
+
+  /**
+   * Publish one stamped staging file to its final path, serialized per path.
+   *
+   * POSIX `rename` replaces an existing destination atomically, so concurrent
+   * composers of one identity are naturally idempotent there. Windows
+   * `MoveFileEx` instead fails the loser of that race with EPERM/EBUSY, which
+   * surfaced as `standingKeyFor()` throwing during concurrent composition.
+   * Every composer of one identity writes identical bytes and re-derives the
+   * same deterministic identity stamp, so a destination that already observes
+   * this staging file's {mtimeMs, size} key IS the intended end state: confirm
+   * it and treat the lost race as success. Every other outcome still throws, so
+   * a silently reused generation stays forbidden, and the caller still removes
+   * the staging file when this rejects.
+   */
+  private publish(staging: string, path: string): Promise<void> {
+    const previous = this.publishChains.get(path) ?? Promise.resolve()
+    const queued = previous.catch(() => undefined).then(async () => {
+      try {
+        await rename(staging, path)
+        return
+      } catch (error) {
+        if (!isPublishRace(error)) throw error
+        try {
+          const intended = await this.metadataIo.read(staging)
+          const published = await this.metadataIo.read(path)
+          // Sub-second precision survives a wrapped seconds field, but NTFS
+          // rounds it to 100ns, so compare the standing key within that
+          // rounding rather than by exact float equality.
+          if (published.size === intended.size
+            && Math.abs(published.mtimeMs - intended.mtimeMs) < 2) {
+            await rm(staging, { force: true })
+            return
+          }
+        } catch {
+          // The destination is unreadable: report the original publish failure.
+        }
+        throw error
+      }
+    })
+    const tracked = queued.finally(() => {
+      if (this.publishChains.get(path) === tracked) this.publishChains.delete(path)
+    })
+    this.publishChains.set(path, tracked)
+    return tracked
   }
 
   /** Observed {mtimeMs,size} keys published by this store, per identity. */
