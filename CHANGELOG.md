@@ -2,6 +2,32 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
+## 0.5.4 - 2026-09-20
+
+### Fixed
+
+- The install surface declares `@deepseek-ai/schemastery` as a runtime dependency. The packaged
+  runtime imports it unconditionally (`import z from '@deepseek-ai/schemastery'` in
+  `packages/selector/lib/index.js`, `lib/pruner.js` and `lib/advisor-state.js`), but 0.5.3
+  declared it nowhere a consumer install reads: the shipped root manifest listed only
+  `@huggingface/tokenizers` and `js-yaml`, and `packages/selector/package.json` listed it as a
+  peer, which no package manager consults for a nested package it installs. Resolution therefore
+  depended on an unrelated installed package hoisting `@deepseek-ai/schemastery` into the
+  profile. In a clean install the import fell through to the Harness installation's
+  shared-module fallback at `$DSH_HOME/profiles/node_modules`; where that fallback held no built
+  package, every plugin entry failed to load and the host booted without the Bundle layer. Both
+  manifests now pin `3.18.2`, the version this release is built and tested against, and the
+  selector package no longer claims a peer obligation it does not have.
+
+### Added
+
+- `verify:release` derives the install-surface dependencies from the bare specifiers the
+  packaged runtime files import, instead of naming `@huggingface/tokenizers` and `js-yaml` by
+  hand. Which packages ship with the plugin and which the Harness installation provides is a
+  reviewed list, and an import whose provider is in neither manifest fails the gate with the
+  missing name. The gate was added as a negative control against the unfixed manifests, where it
+  failed on `@deepseek-ai/schemastery`.
+
 ## 0.5.3 - 2026-09-20
 
 ### Fixed

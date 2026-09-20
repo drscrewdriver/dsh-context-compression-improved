@@ -2,6 +2,31 @@
 
 > 完全な履歴（アップストリーム 0.1.0 以前を含む）は [CHANGELOG.md](CHANGELOG.md) を参照。このファイルはフォークの追加エントリーのみを翻訳したものです。 · [English](CHANGELOG.md) · [中文](CHANGELOG.zh.md) · [한국어](CHANGELOG.ko.md)
 
+## 0.5.4 - 2026-09-20
+
+### Fixed（修正）
+
+- インストール面が `@deepseek-ai/schemastery` を**ランタイム依存**として宣言するようになりました。
+  パッケージ済みランタイムはこれを無条件にインポートします（`packages/selector/lib/index.js`、
+  `lib/pruner.js`、`lib/advisor-state.js` の `import z from '@deepseek-ai/schemastery'`）。しかし
+  0.5.3 はコンシューマーのインストールが読む場所のどこにも宣言していませんでした。公開用ルートマニフェストは
+  `@huggingface/tokenizers` と `js-yaml` のみを列挙し、`packages/selector/package.json` は peer として
+  列挙していましたが、自身がインストールするネストしたパッケージについてパッケージマネージャーがその宣言を
+  参照することはありません。そのため解決は、無関係なインストール済みパッケージが
+  `@deepseek-ai/schemastery` をプロファイルへ持ち上げているかどうかに依存していました。クリーン
+  インストールでは Harness インストールの共有モジュールフォールバック
+  `$DSH_HOME/profiles/node_modules` に落ち、そこにビルド済みパッケージが無いホストでは全プラグイン
+  エントリのロードが失敗し、Bundle 層なしで起動していました。両マニフェストが `3.18.2`（本リリースの
+  ビルドとテストに使用した版）に固定し、selector は負っていない peer 義務を主張しなくなりました。
+
+### Added（追加）
+
+- `verify:release` は、インストール面の依存をパッケージ済みランタイムファイルが実際にインポートする裸の
+  指定子から導出するようになりました（`@huggingface/tokenizers` と `js-yaml` を手で列挙する方式を廃止）。
+  同梱するものと Harness インストールが提供するものの分界は**レビュー済みリスト**で、どちらのマニフェスト
+  にも提供者が無いインポートは欠落名と共にゲートが失敗します。このゲートは未修正のマニフェストに対して
+  **陰性対照**として先に実行し、`@deepseek-ai/schemastery` で失敗することを確認しました。
+
 ## 0.5.3 - 2026-09-20
 
 ### Fixed（修正）
