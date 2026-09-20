@@ -2,6 +2,23 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
+## 0.5.1 - 2026-09-20
+
+### Fixed
+
+- Concurrent preset-overlay composition of one identity no longer fails on Windows.
+  Publication is now serialized per destination path, and when the atomic rename still
+  loses the race the destination is confirmed to already carry this staging file's
+  `{mtimeMs, size}` standing key before the publish reports success. Windows `MoveFileEx`
+  reports that lost race as `EPERM`/`EBUSY` where POSIX `rename` simply replaces the
+  destination, which made `standingKeyFor()` throw during concurrent session start. A
+  destination that does not match still fails loudly, so a silently reused generation
+  stays forbidden.
+- Release-gate and test repairs that had been hiding this and other pre-existing red
+  gates: stale identifiers and a retired audit reason in the packed smokes, a stale
+  client-inject expectation, and Windows-only spawn traps (`git` and multi-line
+  `node -e` scripts were routed through `cmd.exe`, which rewrote their arguments).
+
 ## 0.5.0 - 2026-09-20
 
 ### Added

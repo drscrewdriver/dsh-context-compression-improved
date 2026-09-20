@@ -2,6 +2,19 @@
 
 > 完整历史（含上游 0.1.0 及更早版本）见 [CHANGELOG.md](CHANGELOG.md)。本文件只翻译本 fork 的新增条目。 · [English](CHANGELOG.md) · [日本語](CHANGELOG.ja.md) · [한국어](CHANGELOG.ko.md)
 
+## 0.5.1 - 2026-09-20
+
+### Fixed
+
+- 同一 identity 的并发 preset-overlay 组装在 Windows 上不再失败：发布改为按目标路径串行，
+  且当原子 rename 仍然竞争失败时，会先确认目标文件已带有本 staging 文件的
+  `{mtimeMs, size}` standing key 才判定发布成功。Windows 的 `MoveFileEx` 会把这种竞争
+  失败报成 `EPERM`/`EBUSY`，而 POSIX `rename` 只是覆盖目标——这曾导致并发启动会话时
+  `standingKeyFor()` 抛错。目标不匹配时仍会明确失败，静默复用世代依旧被禁止。
+- 一并修复了长期掩盖该问题及其它预存红灯的发布门禁与测试：packed smoke 中陈旧的标识符与
+  已退役的审计 reason、过期的客户端 inject 断言，以及仅 Windows 触发的 spawn 陷阱
+  （`git` 与多行 `node -e` 脚本经 `cmd.exe` 转发会被改写参数）。
+
 ## 0.5.0 - 2026-09-20
 
 ### Added
