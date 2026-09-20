@@ -2,6 +2,21 @@
 
 > 전체 히스토리(업스트림 0.1.0 이전 포함)는 [CHANGELOG.md](CHANGELOG.md)를 참고하세요. 이 파일은 포크의 추가 항목만 번역한 것입니다. · [English](CHANGELOG.md) · [中文](CHANGELOG.zh.md) · [日本語](CHANGELOG.ja.md)
 
+## 0.5.1 - 2026-09-20
+
+### Fixed(수정)
+
+- 동일 identity를 동시에 compose하는 preset-overlay가 Windows에서 더 이상 실패하지
+  않습니다. 게시는 대상 경로별로 직렬화되며, 그래도 원자적 rename이 경쟁에서 지면 대상이
+  이미 이 스테이징 파일과 같은 `{mtimeMs, size}` standing key를 가지고 있는지 확인한 뒤에만
+  성공으로 간주합니다. Windows의 `MoveFileEx`는 이 경쟁을 `EPERM`/`EBUSY`로 보고하지만
+  POSIX `rename`은 대상을 그대로 교체합니다——이 때문에 동시 세션 시작 시
+  `standingKeyFor()`가 예외를 던졌습니다. 일치하지 않는 대상은 여전히 명확히 실패하며,
+  조용한 세대 재사용은 계속 금지됩니다.
+- 이 문제와 다른 기존 레드 게이트를 가리던 릴리스 게이트/테스트 수정
+  (packed smoke의 오래된 식별자와 폐기된 audit reason, 낡은 client inject 기대값,
+  Windows 전용 spawn 함정).
+
 ## 0.5.0 - 2026-09-20
 
 ### Added(추가)

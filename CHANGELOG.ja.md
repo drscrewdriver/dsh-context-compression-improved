@@ -2,6 +2,21 @@
 
 > 完全な履歴（アップストリーム 0.1.0 以前を含む）は [CHANGELOG.md](CHANGELOG.md) を参照。このファイルはフォークの追加エントリーのみを翻訳したものです。 · [English](CHANGELOG.md) · [中文](CHANGELOG.zh.md) · [한국어](CHANGELOG.ko.md)
 
+## 0.5.1 - 2026-09-20
+
+### Fixed（修正）
+
+- 同一 identity を並行して compose する preset-overlay が Windows で失敗しなくなりました。
+  公開は宛先パスごとに直列化し、それでも原子的 rename が競合に敗れた場合は、宛先が
+  このステージングファイルと同じ `{mtimeMs, size}` standing key を既に持っていることを
+  確認してから成功と見なします。Windows の `MoveFileEx` はこの競合を `EPERM`/`EBUSY` と
+  して報告しますが、POSIX の `rename` は単に置き換えます——これが並行セッション開始時に
+  `standingKeyFor()` を投げさせていました。一致しない宛先はこれまで通り明確に失敗し、
+  静かな世代の再利用は禁止されたままです。
+- この問題と他の既存レッドゲートを覆い隠していたリリースゲート／テストの修正
+  （packed smoke の陳旧な識別子と廃止済み audit reason、古い client inject 期待値、
+  Windows 限定の spawn トラップ）。
+
 ## 0.5.0 - 2026-09-20
 
 ### Added（追加）
