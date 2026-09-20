@@ -34,11 +34,15 @@ describe('built Harness client artifact', () => {
     }) as { apply?: unknown, inject?: unknown }
 
     expect(exported.apply).toBeTypeOf('function')
-    // 0.1.5 declares only the always-present `slots` service: `locale` and
-    // `settingsScope` are resolved lazily inside apply, because a declarative
-    // inject of an absent or late service suspends apply forever and the whole
-    // UI disappears without a trace.
-    expect(exported.inject).toEqual(['slots'])
+    // Declare every consumed service: cordis holds apply until each one is
+    // provided, which is the official client-plugin pattern on this 0.1.5 host
+    // line (dsh-thinking-levels does the same). The earlier lazy alternative —
+    // resolving `locale` / `settingsScope` through ctx.get() inside apply —
+    // raced the settings client's activation; on a loss the apply
+    // early-returned and EVERY settings entry (the standalone section, the
+    // plugins-tab card, the item card) silently vanished. See the rationale
+    // recorded in src/client/index.ts.
+    expect(exported.inject).toEqual(['slots', 'locale', 'settingsScope'])
     const style = document.querySelector<HTMLStyleElement>(
       'style[data-plugin-css="dsh-context-compression-improved/CompressionProfileSelector.module.css"]',
     )
