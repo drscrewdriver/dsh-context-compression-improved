@@ -411,16 +411,31 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
   }
 
   /**
-   * Peers a headless official profile can never provide: pure web-host UI
-   * packages supplied by the web app, not the CLI installation. The list is
-   * REVIEWED and exact — any OTHER unresolved selector peer fails the gate,
-   * and every web/client peer is still import-verified from the built
-   * client libraries below.
+   * Host-plane runtime entries of the installed package. `client.js` is
+   * excluded: it is a lazy-CJS web artifact whose requires (`react`, the
+   * ui-slot packages) the web bundler supplies, and that stack is verified
+   * from the built client libraries below.
    */
-  const WEB_ONLY_HEADLESS_UNRESOLVED_PEERS = [
-    '@deepseek-ai/dsh-client-ui-primitives',
-    '@deepseek-ai/dsh-client-ui-slots',
-  ]
+  const HOST_PLANE_ENTRIES = ['index.js', 'pruner.js', 'advisor-state.js', 'tail-trim.js', 'invariant.js']
+
+  /**
+   * Bare package names the installed package's host-plane runtime files import.
+   * @param selectorDir - Installed directory of the plugin package.
+   * @returns The package roots the host must be able to resolve.
+   */
+  const hostPlaneRuntimeImports = async (selectorDir) => {
+    const names = new Set()
+    for (const entry of HOST_PLANE_ENTRIES) {
+      const source = await readFile(join(selectorDir, 'packages/selector/lib', entry), 'utf8')
+      for (const match of source.matchAll(/(?:^|[^.\w])(?:import|export)\s[^;]*?from\s*['"]([^'"]+)['"]|(?:^|[^.\w])(?:import|require)\s*\(\s*['"]([^'"]+)['"]\s*\)/gmu)) {
+        const specifier = match[1] ?? match[2]
+        if (specifier.startsWith('.') || specifier.startsWith('node:')) continue
+        names.add(specifier.split('/').slice(0, specifier.startsWith('@') ? 2 : 1).join('/'))
+      }
+    }
+    if (names.size === 0) throw new Error('installed package exposes no host-plane runtime import to verify')
+    return names
+  }
 
   /**
    * Verify every web/client peer exists as a BUILT artifact resolvable from
@@ -468,44 +483,41 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
   }
 
   /**
-   * Prove the plugin actually loads in the official profile: pnpm's peers
-   * check cannot see the healed profiles/node_modules fallback by design, so
-   * the release gate resolves and imports instead. Fail-closed parts: every
-   * RUNTIME peer (the engine surface the headless host must provide), every
-   * declared runtime DEPENDENCY (the surface the install itself must provide —
-   * 0.5.3 imported `@deepseek-ai/schemastery` while declaring it nowhere, and
-   * only resolved it while another package hoisted it into the profile), and
-   * the selector's node entry with a callable apply(). The selector's remaining
-   * unresolved peers must equal the REVIEWED web-only whitelist above —
-   * anything else (a newly missing host dependency) fails immediately.
+   * Prove the plugin actually loads in the official profile: pnpm's peers check
+   * cannot see the healed profiles/node_modules fallback by design, so the
+   * release gate resolves and imports instead. Fail-closed parts:
+   *
+   * - every bare specifier the HOST-plane runtime files import must resolve from
+   *   the profile. That set is DERIVED from the installed artifact rather than
+   *   listed by hand: 0.5.3 imported `@deepseek-ai/schemastery` while declaring
+   *   it in no manifest a consumer reads, and a hand-maintained whitelist plus a
+   *   hand-maintained dependency list could not see it;
+   * - every declared runtime dependency must resolve (the install surface);
+   * - the node entry must import and export a callable `apply()`;
+   * - a declared peer may stay unresolved only when no host-plane file imports
+   *   it — the web-host client packages are supplied by the web app, and their
+   *   built libraries are verified separately below.
    */
   const provePluginLoads = async () => {
-    const { profileRoot, selector } = profilePackages()
+    const { profileRoot, selectorPath, selector } = profilePackages()
     const selectorPeers = Object.keys(selector.peerDependencies ?? {})
     const selectorDependencies = Object.keys(selector.dependencies ?? {})
-    const enginePeers = selectorPeers.filter(peer => !WEB_ONLY_HEADLESS_UNRESOLVED_PEERS.includes(peer))
-    for (const allowed of WEB_ONLY_HEADLESS_UNRESOLVED_PEERS) {
-      if (!selectorPeers.includes(allowed)) {
-        throw new Error(`web-only whitelist names a peer the selector no longer declares: ${allowed}`)
-      }
-    }
+    const runtimeImports = [...await hostPlaneRuntimeImports(dirname(selectorPath))].sort()
+    const required = [...new Set([...runtimeImports, ...selectorDependencies])].sort()
     const script = [
       "const { createRequire } = require('node:module')",
       `const requireFromProfile = createRequire(String.raw\`${join(profileRoot, 'package.json')}\`)`,
-      `for (const peer of ${JSON.stringify(enginePeers)}) {`,
-      '  requireFromProfile.resolve(peer)',
-      '}',
-      `for (const dependency of ${JSON.stringify(selectorDependencies)}) {`,
-      '  requireFromProfile.resolve(dependency)',
+      `for (const name of ${JSON.stringify(required)}) {`,
+      '  requireFromProfile.resolve(name)',
       '}',
       "const selectorEntry = requireFromProfile.resolve('dsh-context-compression-improved')",
       'const plugin = require(selectorEntry)',
       "if (typeof plugin.apply !== 'function') throw new Error('selector entry exports no apply()')",
-      `const unresolved = []`,
+      'const unresolvedPeers = []',
       `for (const peer of ${JSON.stringify(selectorPeers)}) {`,
-      '  try { requireFromProfile.resolve(peer) } catch { unresolved.push(peer) }',
+      '  try { requireFromProfile.resolve(peer) } catch { unresolvedPeers.push(peer) }',
       '}',
-      "console.log('LOAD_OK ' + JSON.stringify(unresolved))",
+      "console.log('LOAD_OK ' + JSON.stringify(unresolvedPeers))",
     ].join('\n')
     const outcome = await captureOutcome(process.execPath, ['--input-type=commonjs', '-e', script], {
       cwd: worktree,
@@ -513,18 +525,17 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
     })
     const marker = outcome.stdout.split('\n').find(line => line.startsWith('LOAD_OK'))
     if (outcome.code !== 0 || marker === undefined) {
-      throw new Error(`official profile failed to load the plugin and its engine peers:\n${outcome.stdout}\n${outcome.stderr}`)
+      throw new Error(`official profile failed to load the plugin, its host-plane imports and its engine peers:\n${outcome.stdout}\n${outcome.stderr}`)
     }
-    const unresolved = JSON.parse(marker.slice('LOAD_OK '.length))
-    const unexpected = unresolved.filter(peer => !WEB_ONLY_HEADLESS_UNRESOLVED_PEERS.includes(peer))
-    if (unexpected.length > 0) {
-      throw new Error(`selector peers failed to resolve headless outside the reviewed web-only whitelist: ${unexpected.join(', ')}`)
+    const unresolvedPeers = JSON.parse(marker.slice('LOAD_OK '.length))
+    const importedWithoutProvider = unresolvedPeers.filter(peer => runtimeImports.includes(peer))
+    if (importedWithoutProvider.length > 0) {
+      throw new Error(`selector peers the host-plane runtime imports did not resolve from the profile: ${importedWithoutProvider.join(', ')}`)
     }
     return {
-      enginePeers: enginePeers.length,
+      hostPlaneRuntimeImports: runtimeImports,
       installedRuntimeDependencies: selectorDependencies,
-      headlessUnresolvedSelectorPeers: unresolved,
-      whitelist: WEB_ONLY_HEADLESS_UNRESOLVED_PEERS,
+      unresolvedSelectorPeers: unresolvedPeers,
       builtClientPeersVerified: await proveBuiltClientPeersLoad(),
     }
   }
