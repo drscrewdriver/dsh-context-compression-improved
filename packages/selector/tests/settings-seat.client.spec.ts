@@ -28,8 +28,15 @@ interface CapturedRegistration {
   readonly component: unknown
 }
 
-/** Drive apply against a stub host and capture every slot registration. */
-function collectRegistrations(): { declared: string[]; registrations: CapturedRegistration[] } {
+/**
+ * Drive apply against a stub host and capture every slot registration.
+ * @param options - `registerThrows` models an older host that does not declare
+ * the seat: the slot boundary rejects the registration, exactly the shape the
+ * 0.1.2-era hosts had.
+ */
+function collectRegistrations(
+  options: { readonly registerThrows?: boolean } = {},
+): { declared: string[]; registrations: CapturedRegistration[] } {
   const declared: string[] = []
   const registrations: CapturedRegistration[] = []
   const ctx = {
@@ -45,8 +52,9 @@ function collectRegistrations(): { declared: string[]; registrations: CapturedRe
         for (const step of steps) { void step }
         return () => {}
       },
-      register: (options: Record<string, unknown>, component: unknown) => {
-        registrations.push({ slot: String(options['name']), options, component })
+      register: (record: Record<string, unknown>, component: unknown) => {
+        if (options.registerThrows === true) throw new Error(`unknown slot ${String(record['name'])}`)
+        registrations.push({ slot: String(record['name']), options: record, component })
         return () => {}
       },
     },
@@ -89,5 +97,22 @@ describe('settings-seat contract (standalone settings.section only)', () => {
     const { declared } = collectRegistrations()
     expect(declared).not.toContain('settings.plugins.tab')
     expect(declared).not.toContain('settings.plugin.item')
+  })
+
+  it('survives an older host that does not declare the seat, warning instead of crashing', () => {
+    // Cross-version tolerance: a host without this seat rejects the
+    // registration at the slot boundary. apply() must swallow that and warn —
+    // the historical failure mode was apply() bailing out, which silently took
+    // EVERY settings entry down with it.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const { declared } = collectRegistrations({ registerThrows: true })
+      // It tried the seat (so the degradation is "loud", not a silent no-op)…
+      expect(declared).toEqual(['settings.section'])
+      // …and the rejection never escaped apply().
+      expect(warn).toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+    }
   })
 })
