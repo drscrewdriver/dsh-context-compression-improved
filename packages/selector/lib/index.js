@@ -1,4 +1,4 @@
-import { d as ContextCompressionSettingsSchema, o as resolveReviewPruner, t as getAdvisorState, u as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE } from "./advisor-state.js";
+import { o as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, s as ContextCompressionSettingsSchema, t as getAdvisorState } from "./advisor-state.js";
 import z from "@deepseek-ai/schemastery";
 import "@deepseek-ai/dsh-settings";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -505,28 +505,12 @@ function restoreMethod(presets, snapshot) {
 //#region src/index.ts
 const CONTEXT_COMPRESSION_NAMESPACE = CONTEXT_COMPRESSION_SETTINGS_NAMESPACE;
 const ESTIMATOR_CATALOG_ROUTES = ["/endpoint/dsh-context-compression-improved/estimator-catalog", "/api/dsh-context-compression-improved/estimator-catalog"];
-const REVIEW_QUEUE_ROUTES = ["/endpoint/dsh-context-compression-improved/review-queue", "/api/dsh-context-compression-improved/review-queue"];
-const REVIEW_DECIDE_ROUTES = ["/endpoint/dsh-context-compression-improved/review-decide", "/api/dsh-context-compression-improved/review-decide"];
 const ADVISOR_REPORT_ROUTES = ["/endpoint/dsh-context-compression-improved/advisor-report", "/api/dsh-context-compression-improved/advisor-report"];
-/**
-* Resolve the review pipeline for the top-level routes.
-*
-* A top-level `toolResultPruner` service wins when a deployment actually mounts
-* one, but in production every pruner lives inside an agent preset's isolated
-* group, so the registry is the path that resolves. Without the fallback the
-* queue route answered 503 "review pipeline unavailable" on every request while
-* the review pipeline itself was running normally.
-*/
-function reviewPrunerOf(readService) {
-	const candidate = readService("toolResultPruner");
-	if (typeof candidate?.listReviewProposals === "function" && typeof candidate?.decideReviewProposal === "function") return candidate;
-	return resolveReviewPruner();
-}
 function sessionFor(readService, sessionId) {
 	const agents = readService("agents");
 	return typeof agents?.get === "function" ? agents.get(sessionId)?.session : void 0;
 }
-function reviewJson(res, status, body) {
+function jsonResponse(res, status, body) {
 	const resTyped = res;
 	resTyped.writeHead(status, {
 		"content-type": "application/json; charset=utf-8",
@@ -534,217 +518,9 @@ function reviewJson(res, status, body) {
 	});
 	resTyped.end(JSON.stringify(body));
 }
-function readRequestBody(req) {
-	return new Promise((resolve, reject) => {
-		const typed = req;
-		let data = "";
-		try {
-			typed.on?.("data", (chunk) => {
-				data += String(chunk ?? "");
-				if (data.length > 65536) {
-					data = "";
-					resolve("");
-				}
-			});
-			typed.on?.("end", () => resolve(data));
-			typed.on?.("error", reject);
-		} catch (error) {
-			reject(error instanceof Error ? error : new Error(String(error)));
-		}
-	});
-}
-/**
-* Serve the review pipeline's two HTTP routes (best effort, mirroring the
-* estimator-catalog registration):
-*
-* - `GET .../review-queue?sessionId=…` → the session's pending proposals with
-*   their benefit numbers. Sanitized by construction: the queue never holds
-*   message content, and the response carries ids/seqs/counts only (digests
-*   stay in the runtime — the client cannot need them).
-* - `POST .../review-decide` `{sessionId, proposalId, decision}` → one human
-*   decision. Invalid body → 400; unknown/not-pending proposal → 404; review
-*   mode off for the session → 503.
-*/
-function registerReviewQueueRoutes(ctx) {
-	const readService = (name) => {
-		try {
-			return ctx.get(name);
-		} catch {
-			return;
-		}
-	};
-	const log = (level, message, ...args) => {
-		console[level](message, ...args);
-	};
-	const registered = () => {
-		log("info", "context-compression review queue routes registered: %s / %s", REVIEW_QUEUE_ROUTES.join(", "), REVIEW_DECIDE_ROUTES.join(", "));
-	};
-	const getHandler = (req, res) => {
-		const pruner = reviewPrunerOf(readService);
-		if (pruner === void 0 || pruner.listAllReviewProposals === void 0) {
-			reviewJson(res, 503, {
-				ok: false,
-				error: "review pipeline unavailable"
-			});
-			return;
-		}
-		let sessionId = "";
-		try {
-			sessionId = new URL(String(req.url ?? ""), "http://localhost").searchParams.get("sessionId") ?? "";
-		} catch {
-			sessionId = "";
-		}
-		const sanitize = (sid, proposal) => ({
-			sessionId: sid,
-			id: proposal.id,
-			kind: proposal.kind,
-			items: proposal.items.map((item) => ({
-				seq: item.seq,
-				kind: item.kind,
-				component: item.component,
-				tokensBefore: item.tokensBefore,
-				tokensAfter: item.tokensAfter
-			})),
-			benefit: {
-				recoveredTokens: proposal.benefit.recoveredTokens,
-				penaltyTokens: proposal.benefit.penaltyTokens,
-				...proposal.benefit.paybackTurns === void 0 ? {} : { paybackTurns: proposal.benefit.paybackTurns },
-				...proposal.benefit.expectedSaving === void 0 ? {} : { expectedSaving: proposal.benefit.expectedSaving }
-			},
-			enqueuedTurn: proposal.enqueuedTurn,
-			lastTurnIndex: proposal.lastTurnIndex
-		});
-		if (sessionId === "") {
-			const pending = pruner.listAllReviewProposals().flatMap((entry) => entry.proposals.map((proposal) => sanitize(entry.sessionId, proposal)));
-			reviewJson(res, 200, {
-				ok: true,
-				total: pending.length,
-				pending
-			});
-			return;
-		}
-		const session = sessionFor(readService, sessionId);
-		if (session === void 0) {
-			reviewJson(res, 404, {
-				ok: false,
-				error: "unknown session"
-			});
-			return;
-		}
-		const pending = pruner.listReviewProposals(session).map((proposal) => sanitize(sessionId, proposal));
-		const summary = pruner.reviewSummary?.(session);
-		reviewJson(res, 200, {
-			ok: true,
-			sessionId,
-			total: pending.length,
-			pending,
-			...summary === void 0 ? {} : { summary }
-		});
-	};
-	const decideHandler = async (req, res) => {
-		const pruner = reviewPrunerOf(readService);
-		if (pruner === void 0) {
-			reviewJson(res, 503, {
-				ok: false,
-				error: "review pipeline unavailable"
-			});
-			return;
-		}
-		let body;
-		try {
-			body = JSON.parse(await readRequestBody(req));
-		} catch {
-			body = void 0;
-		}
-		if (typeof body !== "object" || body === null) {
-			reviewJson(res, 400, {
-				ok: false,
-				error: "invalid JSON body"
-			});
-			return;
-		}
-		const record = body;
-		if (typeof record.sessionId !== "string" || record.sessionId === "" || typeof record.proposalId !== "string" || record.proposalId === "") {
-			reviewJson(res, 400, {
-				ok: false,
-				error: "sessionId and proposalId are required"
-			});
-			return;
-		}
-		if (record.decision !== "approved" && record.decision !== "rejected" && record.decision !== "ignored") {
-			reviewJson(res, 400, {
-				ok: false,
-				error: "decision must be approved, rejected, or ignored"
-			});
-			return;
-		}
-		const session = sessionFor(readService, record.sessionId);
-		if (session === void 0) {
-			reviewJson(res, 404, {
-				ok: false,
-				error: "unknown session"
-			});
-			return;
-		}
-		const outcome = pruner.decideReviewProposal(session, record.proposalId, record.decision);
-		if (outcome === void 0) {
-			reviewJson(res, 503, {
-				ok: false,
-				error: "review mode is off for this session"
-			});
-			return;
-		}
-		if (!outcome.ok) {
-			reviewJson(res, 404, {
-				ok: false,
-				error: outcome.reason
-			});
-			return;
-		}
-		reviewJson(res, 200, {
-			ok: true,
-			sessionId: record.sessionId,
-			proposalId: record.proposalId,
-			decision: record.decision
-		});
-	};
-	const register = (webServer) => {
-		const disposers = [...[...REVIEW_QUEUE_ROUTES].map((path) => ({
-			path,
-			handler: getHandler
-		})), ...[...REVIEW_DECIDE_ROUTES].map((path) => ({
-			path,
-			handler: (req, res) => {
-				decideHandler(req, res);
-			}
-		}))].map((entry) => webServer.register({
-			kind: "exact",
-			path: entry.path,
-			handler: entry.handler
-		})).filter((off) => typeof off === "function");
-		ctx.effect(() => () => {
-			for (const off of disposers) off();
-		}, "contextCompressionSelector.review routes");
-		registered();
-	};
-	const active = asWebServer(readService("webServer"));
-	if (active !== void 0) {
-		register(active);
-		return;
-	}
-	ctx.inject(["webServer"], (injected) => {
-		const webServer = asWebServer(injected.webServer);
-		if (webServer === void 0) {
-			log("warn", "context-compression webServer exposes no register() — review routes not registered");
-			return;
-		}
-		register(webServer);
-	});
-	log("warn", "context-compression webServer not active yet — review routes pending: %s", REVIEW_QUEUE_ROUTES.join(", "));
-}
 /**
 * Serve the advisory advisor's read-only report route (same registration
-* skeleton as the review routes):
+* skeleton as the estimator-catalog route):
 *
 * `GET .../advisor-report?sessionId=…` → the session's prefix-decay figure,
 * the todolist-bound task summary, and the score distribution. Content-free
@@ -766,7 +542,7 @@ function registerAdvisorReportRoute(ctx) {
 	};
 	const getHandler = (req, res) => {
 		if (typeof readService("agents")?.get !== "function") {
-			reviewJson(res, 503, {
+			jsonResponse(res, 503, {
 				ok: false,
 				error: "advisor report unavailable"
 			});
@@ -777,7 +553,7 @@ function registerAdvisorReportRoute(ctx) {
 			sessionId = new URL(String(req.url ?? ""), "http://localhost").searchParams.get("sessionId") ?? "";
 		} catch {}
 		if (sessionId === "") {
-			reviewJson(res, 400, {
+			jsonResponse(res, 400, {
 				ok: false,
 				error: "sessionId is required"
 			});
@@ -785,14 +561,14 @@ function registerAdvisorReportRoute(ctx) {
 		}
 		const session = sessionFor(readService, sessionId);
 		if (session === void 0) {
-			reviewJson(res, 404, {
+			jsonResponse(res, 404, {
 				ok: false,
 				error: "unknown session"
 			});
 			return;
 		}
 		const state = getAdvisorState(session);
-		reviewJson(res, 200, {
+		jsonResponse(res, 200, {
 			ok: true,
 			sessionId,
 			advisor: {
@@ -805,7 +581,15 @@ function registerAdvisorReportRoute(ctx) {
 					score: entry.score,
 					turn: entry.turn
 				})),
-				lowRelevanceSeqs: [...state.recertified.keys()]
+				lowRelevanceSeqs: [...state.recertified.keys()],
+				lastAdvice: state.lastAdvice === void 0 ? null : {
+					band: state.lastAdvice.band,
+					turn: state.lastAdvice.turn,
+					itemSeqs: state.lastAdvice.itemSeqs,
+					recoveredTokens: state.lastAdvice.recoveredTokens,
+					penaltyTokens: state.lastAdvice.penaltyTokens,
+					paybackTurns: state.lastAdvice.paybackTurns ?? null
+				}
 			}
 		});
 	};
@@ -942,7 +726,6 @@ const SHARED_SETTINGS = Symbol.for("dsh-context-compression-improved/settings-re
 const Config = z.object({
 	presetOverlay: z.boolean().default(false),
 	estimatorCatalogRoute: z.boolean().default(false),
-	reviewQueueRoute: z.boolean().default(false),
 	advisorReportRoute: z.boolean().default(false)
 });
 /** Register the persisted default read by the currently mounted root pruner. */
@@ -952,7 +735,6 @@ function apply(ctx, config = {}) {
 			acquireSettingsRegistration(settingsCtx);
 		});
 		if (config.estimatorCatalogRoute === true) registerEstimatorCatalogRoute(ctx);
-		if (config.reviewQueueRoute === true) registerReviewQueueRoutes(ctx);
 		if (config.advisorReportRoute === true) registerAdvisorReportRoute(ctx);
 		if (config.presetOverlay !== true) return;
 		ctx.inject(["agentPresets"], (presetsCtx) => {

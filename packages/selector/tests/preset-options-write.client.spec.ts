@@ -148,35 +148,19 @@ describe('presetOptions writes are path-addressed', () => {
     expect(writes).toEqual([[{ op: 'set', path: ['presetOptions', 'estimatorProvider'], value: 'local-35b' }]])
   })
 
-  it('writes and clears the review-mode fields without touching estimator siblings', async () => {
+  it('treats a retired review-gate patch as a no-op instead of a write', async () => {
     const { injected, writes, snapshot } = bindInjected({ estimatorMode: 'host' })
+    // The patch surface no longer carries these keys, and the decoders accept
+    // them only so a legacy document keeps loading. Cast past the removed type
+    // so the test pins the RUNTIME behaviour: nothing is written.
     await injected.savePresetOptions({
       reviewMode: true,
       reviewTimeoutTurns: 8,
       cacheHitDiscountAlpha: 0.2,
       reviewHighImpactTokens: 6000,
-    })
-    expect(snapshot()['presetOptions']).toEqual({
-      estimatorMode: 'host',
-      reviewMode: true,
-      reviewTimeoutTurns: 8,
-      cacheHitDiscountAlpha: 0.2,
-      reviewHighImpactTokens: 6000,
-    })
-    await injected.savePresetOptions({ reviewMode: undefined })
-    expect(snapshot()['presetOptions']).toEqual({
-      estimatorMode: 'host',
-      reviewTimeoutTurns: 8,
-      cacheHitDiscountAlpha: 0.2,
-      reviewHighImpactTokens: 6000,
-    })
-    for (const batch of writes) {
-      for (const op of batch) {
-        expect(op.path).toEqual(['presetOptions', op.path[1] ?? ''])
-        expect(['reviewMode', 'reviewTimeoutTurns', 'cacheHitDiscountAlpha', 'reviewHighImpactTokens'])
-          .toContain(op.path[1])
-      }
-    }
+    } as unknown as Parameters<typeof injected.savePresetOptions>[0])
+    expect(writes).toEqual([])
+    expect(snapshot()['presetOptions']).toEqual({ estimatorMode: 'host' })
   })
 
   it('never replaces the whole section, so sibling overrides survive', async () => {

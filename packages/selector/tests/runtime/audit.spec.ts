@@ -170,18 +170,22 @@ describe('context-compression audit records', () => {
     }).not.toThrow()
   })
 
-  it('keeps review-outcome records free of proposal content', () => {
+  it('keeps reduction-advice records free of content, digests, and keys', () => {
     const record: CompressionAuditRecord = {
       schemaVersion: 1,
-      kind: 'review-outcome',
-      sessionId: 'review-session',
-      proposalId: 'a1b2c3d4e5f6',
-      proposalKind: 'read-state',
-      event: 'apply-receipt',
-      receiptStatus: 'applied',
+      kind: 'reduction-advice',
+      sessionId: 'advice-session',
+      profile: 'tokenpilot-inspired',
+      band: 'high-impact',
+      stage: 'fresh',
       itemSeqs: [7, 9],
-      tokensBefore: 1400,
-      tokensAfter: 1000,
+      pricedCandidates: 2,
+      maxTokensBefore: 9_200,
+      tokensBefore: 12_400,
+      tokensAfter: 3_100,
+      recoveredTokens: 9_300,
+      penaltyTokens: 0,
+      paybackTurns: 0,
       turnIndex: 12,
     }
 
@@ -195,23 +199,33 @@ describe('context-compression audit records', () => {
     expect(line).not.toContain('apiKey')
   })
 
-  it('carries reason codes on void and deferred review events', () => {
+  it('describes an advised batch without any gate vocabulary', () => {
+    // The band can be the model's worst opinion — `not-worth-it` — and the
+    // record still only DESCRIBES a batch that landed: the retired review
+    // gate's decision vocabulary cannot be expressed any more.
     const record: CompressionAuditRecord = {
       schemaVersion: 1,
-      kind: 'review-outcome',
-      sessionId: 'review-session',
-      proposalId: 'b2c3d4e5f6a1',
-      proposalKind: 'dedup',
-      event: 'apply-void',
-      reasonCode: 'review_receipt_digest_invalid',
+      kind: 'reduction-advice',
+      sessionId: 'advice-session',
+      profile: 'tokenpilot-inspired',
+      band: 'not-worth-it',
+      stage: 'history',
       itemSeqs: [3],
-      tokensBefore: 5000,
-      tokensAfter: 4000,
+      pricedCandidates: 1,
+      maxTokensBefore: 5_000,
+      tokensBefore: 5_000,
+      tokensAfter: 4_000,
+      recoveredTokens: 1_000,
+      penaltyTokens: 3_600,
+      paybackTurns: 36,
+      expectedSaving: 0,
     }
-    const parsed = JSON.parse(
-      formatCompressionAudit(record).slice(COMPRESSION_AUDIT_PREFIX.length),
-    ) as CompressionAuditRecord
+    const line = formatCompressionAudit(record)
+    const parsed = JSON.parse(line.slice(COMPRESSION_AUDIT_PREFIX.length)) as CompressionAuditRecord
     expect(parsed).toEqual(record)
+    for (const gone of ['proposalId', 'proposalKind', 'decision', 'receipt', '"event"', 'reasonCode']) {
+      expect(line).not.toContain(gone)
+    }
   })
 
   it('keeps advisor-outcome records free of prompts, keys, and content', () => {

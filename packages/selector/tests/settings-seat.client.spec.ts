@@ -3,12 +3,14 @@
  *
  * This spec locks WHERE the compression settings panel mounts: exactly ONE
  * seat — the standalone `settings.section` entry (设置 → 上下文压缩) — and
- * explicitly NOT the Plugins-section surfaces. History this pins against: the
- * 0.1.5 line first lost every entry (a lazy `ctx.get` of locale/settingsScope
- * raced the settings client and apply bailed), then showed the panel twice
- * (item card + tab on top of the standalone section). Both were fixed by the
- * declarative-inject + single-section shape below. When a future DSH line
- * moves the seat again, migrate src/client/index.ts AND this file together.
+ * explicitly NOT the Plugins-section surfaces, and NOT a `shell.overlay` float
+ * (the retired review panel's seat was removed with the gate). History this
+ * pins against: the 0.1.5 line first lost every entry (a lazy `ctx.get` of
+ * locale/settingsScope raced the settings client and apply bailed), then showed
+ * the panel twice (item card + tab on top of the standalone section). Both were
+ * fixed by the declarative-inject + single-section shape below. When a future
+ * DSH line moves the seat again, migrate src/client/index.ts AND this file
+ * together.
  */
 import { describe, expect, it, vi } from 'vitest'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
@@ -58,12 +60,16 @@ describe('settings-seat contract (standalone settings.section only)', () => {
     expect(inject).toEqual(['slots', 'locale', 'settingsScope'])
   })
 
-  it('injects exactly the settings.section seat plus the shell.overlay float', () => {
+  it('injects exactly the settings.section seat and nothing else', () => {
     const { declared, registrations } = collectRegistrations()
-    expect(declared).toEqual(['settings.section', 'shell.overlay'])
-    expect(registrations).toHaveLength(2)
+    expect(declared).toEqual(['settings.section'])
+    expect(registrations).toHaveLength(1)
     expect(registrations[0]!.slot).toBe('settings.section')
-    expect(registrations[1]!.slot).toBe('shell.overlay')
+  })
+
+  it('no longer claims a shell.overlay float (the review panel it served is gone)', () => {
+    const { declared } = collectRegistrations()
+    expect(declared).not.toContain('shell.overlay')
   })
 
   it('pins the section identity (id/order/label/locale) and the panel component', () => {

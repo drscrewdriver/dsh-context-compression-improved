@@ -13,6 +13,19 @@
  * plain import rather than constructor injection.
  */
 import type { Session } from '@deepseek-ai/dsh-session'
+import type { AdviceBand } from './benefit.ts'
+
+/** The most recent benefit-model label of a landed batch. Observational only:
+ *  no decision path reads it — the report route serves it verbatim. */
+export interface AdvisorAdviceSnapshot {
+  readonly band: AdviceBand
+  /** Turn index the advised batch landed at. */
+  readonly turn: number
+  readonly itemSeqs: readonly number[]
+  readonly recoveredTokens: number
+  readonly penaltyTokens: number
+  readonly paybackTurns?: number
+}
 
 /** One relevance score for one surface seq, with the turn it was scored at. */
 export interface AdvisorScoreEntry {
@@ -59,6 +72,8 @@ export interface AdvisorState {
   inFlight: boolean
   /** Most recent decay computation, shared verbatim by audits and the report route. */
   lastDecay: { readonly decay: number, readonly weightedChars: number, readonly turn: number } | undefined
+  /** Most recent benefit-model advice; replaced by every advised batch. */
+  lastAdvice: AdvisorAdviceSnapshot | undefined
 }
 
 /** Upper bound of the per-session scores LRU. */
@@ -85,6 +100,7 @@ export function getAdvisorState(session: Session): AdvisorState {
       failures: undefined,
       inFlight: false,
       lastDecay: undefined,
+      lastAdvice: undefined,
     }
     advisorStates.set(session, state)
   }

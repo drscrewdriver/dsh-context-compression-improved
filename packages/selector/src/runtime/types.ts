@@ -85,18 +85,6 @@ export interface PresetOptions {
     readonly sampleLimit: number
     readonly minTokens: number
   }
-  /**
-   * Human-gated review pipeline (beta): edge/high-impact candidates queue for
-   * manual approval and execute in one merged batch at the next turn boundary
-   * instead of the automatic path (R4).
-   */
-  readonly reviewMode: boolean
-  /** Turn-boundary patience: pending review proposals older than this many turns auto-expire (R4). */
-  readonly reviewTimeoutTurns: number
-  /** Cache-hit discount rate α in the benefit model; expectedSaving = α·R·Ŝ − (1−α)·tail. */
-  readonly cacheHitDiscountAlpha: number
-  /** Candidates whose tokenBefore reaches this threshold bypass payback triage and always enter review (R4). */
-  readonly reviewHighImpactTokens: number
 }
 
 /** Common user-authored Custom stages shared by persisted policy versions. */
@@ -154,11 +142,6 @@ export interface PresetOptionsSettings {
   readonly prefixStabilizer?: boolean
   readonly readState?: boolean
   readonly estimatorMode?: '' | 'host' | 'direct'
-  /** Review-mode overrides (beta); see PresetOptions.reviewMode. */
-  readonly reviewMode?: boolean
-  readonly reviewTimeoutTurns?: number
-  readonly cacheHitDiscountAlpha?: number
-  readonly reviewHighImpactTokens?: number
   /**
    * Estimator endpoint fields. Persisted-settings only: they never enter the
    * frozen CompressionPolicy, which is emitted verbatim by policy-resolved

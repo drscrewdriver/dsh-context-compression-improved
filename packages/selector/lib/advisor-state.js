@@ -408,8 +408,7 @@ function parsePresetOptionsSettings(value) {
 		"dedupeToolResults",
 		"summaryLocator",
 		"prefixStabilizer",
-		"readState",
-		"reviewMode"
+		"readState"
 	]) {
 		const entry = value[key];
 		if (entry !== void 0 && typeof entry !== "boolean") throw new TypeError(`Context-compression presetOptions.${key} must be a boolean`);
@@ -430,12 +429,6 @@ function parsePresetOptionsSettings(value) {
 	if (advisorMinTokens !== void 0 && (typeof advisorMinTokens !== "number" || !Number.isSafeInteger(advisorMinTokens) || advisorMinTokens < 1)) throw new TypeError("Context-compression presetOptions.advisorMinTokens must be a positive integer");
 	const estimatorTimeoutMs = value.estimatorTimeoutMs;
 	if (estimatorTimeoutMs !== void 0 && (typeof estimatorTimeoutMs !== "number" || !Number.isSafeInteger(estimatorTimeoutMs) || estimatorTimeoutMs < 100 || estimatorTimeoutMs > 6e4)) throw new TypeError("Context-compression presetOptions.estimatorTimeoutMs must be an integer between 100 and 60000");
-	const reviewTimeoutTurns = value.reviewTimeoutTurns;
-	if (reviewTimeoutTurns !== void 0 && (typeof reviewTimeoutTurns !== "number" || !Number.isSafeInteger(reviewTimeoutTurns) || reviewTimeoutTurns < 1)) throw new TypeError("Context-compression presetOptions.reviewTimeoutTurns must be an integer of at least 1");
-	const cacheHitDiscountAlpha = value.cacheHitDiscountAlpha;
-	if (cacheHitDiscountAlpha !== void 0 && (typeof cacheHitDiscountAlpha !== "number" || !Number.isFinite(cacheHitDiscountAlpha) || cacheHitDiscountAlpha <= 0 || cacheHitDiscountAlpha >= 1)) throw new TypeError("Context-compression presetOptions.cacheHitDiscountAlpha must be a number strictly between 0 and 1");
-	const reviewHighImpactTokens = value.reviewHighImpactTokens;
-	if (reviewHighImpactTokens !== void 0 && (typeof reviewHighImpactTokens !== "number" || !Number.isSafeInteger(reviewHighImpactTokens) || reviewHighImpactTokens < 0)) throw new TypeError("Context-compression presetOptions.reviewHighImpactTokens must be a non-negative integer");
 	for (const key of [
 		"estimatorProvider",
 		"estimatorModel",
@@ -456,10 +449,6 @@ function parsePresetOptionsSettings(value) {
 	if (value.estimatorBaseUrl !== void 0) result.estimatorBaseUrl = value.estimatorBaseUrl;
 	if (value.estimatorApiKey !== void 0) result.estimatorApiKey = value.estimatorApiKey;
 	if (estimatorTimeoutMs !== void 0) result.estimatorTimeoutMs = estimatorTimeoutMs;
-	if (value.reviewMode !== void 0) result.reviewMode = value.reviewMode;
-	if (reviewTimeoutTurns !== void 0) result.reviewTimeoutTurns = reviewTimeoutTurns;
-	if (cacheHitDiscountAlpha !== void 0) result.cacheHitDiscountAlpha = cacheHitDiscountAlpha;
-	if (reviewHighImpactTokens !== void 0) result.reviewHighImpactTokens = reviewHighImpactTokens;
 	if (advisorMode !== void 0) result.advisorMode = advisorMode;
 	if (advisorTimeoutMs !== void 0) result.advisorTimeoutMs = advisorTimeoutMs;
 	if (advisorRefreshTurns !== void 0) result.advisorRefreshTurns = advisorRefreshTurns;
@@ -681,10 +670,6 @@ const PRESET_OPTION_DEFAULTS = deepFreeze({
 	prefixStabilizer: true,
 	readState: true,
 	estimator: { mode: "" },
-	reviewMode: false,
-	reviewTimeoutTurns: 6,
-	cacheHitDiscountAlpha: .1,
-	reviewHighImpactTokens: 4e3,
 	advisor: {
 		mode: "",
 		timeoutMs: 8e3,
@@ -709,10 +694,6 @@ function mergePresetOptions(overrides) {
 		prefixStabilizer: overrides.prefixStabilizer ?? PRESET_OPTION_DEFAULTS.prefixStabilizer,
 		readState: overrides.readState ?? PRESET_OPTION_DEFAULTS.readState,
 		estimator: { mode: overrides.estimatorMode ?? PRESET_OPTION_DEFAULTS.estimator.mode },
-		reviewMode: overrides.reviewMode ?? PRESET_OPTION_DEFAULTS.reviewMode,
-		reviewTimeoutTurns: overrides.reviewTimeoutTurns ?? PRESET_OPTION_DEFAULTS.reviewTimeoutTurns,
-		cacheHitDiscountAlpha: overrides.cacheHitDiscountAlpha ?? PRESET_OPTION_DEFAULTS.cacheHitDiscountAlpha,
-		reviewHighImpactTokens: overrides.reviewHighImpactTokens ?? PRESET_OPTION_DEFAULTS.reviewHighImpactTokens,
 		advisor: {
 			mode: overrides.advisorMode ?? PRESET_OPTION_DEFAULTS.advisor.mode,
 			timeoutMs: overrides.advisorTimeoutMs ?? PRESET_OPTION_DEFAULTS.advisor.timeoutMs,
@@ -915,215 +896,6 @@ function assertPositiveInteger(name, value) {
 function assertNonNegativeInteger(name, value) {
 	if (!Number.isSafeInteger(value) || value < 0) throw new Error(`ToolResultPruneConfig: ${name} (${String(value)}) must be a non-negative safe integer`);
 }
-//#endregion
-//#region src/runtime/tokenpilot/review-queue.ts
-/** In-memory store: the fail-open fallback when no durable seam is available. */
-var MemoryReviewStore = class {
-	sessions = /* @__PURE__ */ new Map();
-	load(sessionId) {
-		return this.sessions.get(sessionId);
-	}
-	save(sessionId, record) {
-		this.sessions.set(sessionId, record);
-	}
-	ids() {
-		return [...this.sessions.keys()];
-	}
-};
-var ReviewQueue = class {
-	store;
-	options;
-	constructor(store, options) {
-		this.store = store;
-		this.options = options;
-	}
-	/**
-	* Fail-open store access: a throwing seam must never break the compression
-	* pipeline. Reads degrade to "no stored record"; writes degrade to losing
-	* durability for that call (the store itself is expected to warn).
-	*/
-	safeLoad(sessionId) {
-		try {
-			return this.store.load(sessionId);
-		} catch {
-			return;
-		}
-	}
-	safeSave(sessionId, record) {
-		try {
-			this.store.save(sessionId, record);
-		} catch {}
-	}
-	sessionRecord(sessionId) {
-		return this.safeLoad(sessionId) ?? {
-			version: 1,
-			proposals: []
-		};
-	}
-	/**
-	* Queue one classified proposal. A repeated classification of the same
-	* content re-does nothing but refresh the patience clock, so re-enqueue
-	* cannot duplicate a live proposal.
-	* @returns `false` when an identical live proposal already exists.
-	*/
-	enqueue(sessionId, skeleton, turnIndex) {
-		const record = this.sessionRecord(sessionId);
-		const existing = record.proposals.find((entry) => entry.id === skeleton.id);
-		if (existing !== void 0 && existing.status !== "expired") {
-			existing.lastTurnIndex = turnIndex;
-			this.safeSave(sessionId, record);
-			return false;
-		}
-		const proposal = {
-			id: skeleton.id,
-			sessionId,
-			kind: skeleton.kind,
-			items: skeleton.items.map((item) => ({ ...item })),
-			benefit: { ...skeleton.benefit },
-			status: "pending",
-			enqueuedTurn: turnIndex,
-			lastTurnIndex: turnIndex
-		};
-		this.safeSave(sessionId, {
-			version: 1,
-			proposals: [...record.proposals.filter((entry) => entry.id !== skeleton.id), proposal]
-		});
-		return true;
-	}
-	/** Live pending proposals of one session, oldest enqueue first. */
-	listPending(sessionId) {
-		return this.sessionRecord(sessionId).proposals.filter((entry) => entry.status === "pending").sort((left, right) => left.enqueuedTurn - right.enqueuedTurn);
-	}
-	/** Approved proposals waiting for the next turn-boundary batch. */
-	listApproved(sessionId) {
-		return this.sessionRecord(sessionId).proposals.filter((entry) => entry.status === "approved").sort((left, right) => left.enqueuedTurn - right.enqueuedTurn);
-	}
-	/**
-	* Transition one pending proposal. Idempotent: deciding an unknown id or a
-	* non-pending proposal changes nothing and reports the miss.
-	*/
-	decide(sessionId, id, decision) {
-		const record = this.sessionRecord(sessionId);
-		const proposal = record.proposals.find((entry) => entry.id === id);
-		if (proposal === void 0) return {
-			ok: false,
-			reason: "unknown-proposal"
-		};
-		if (proposal.status !== "pending") return {
-			ok: false,
-			reason: "not-pending"
-		};
-		proposal.status = decision;
-		this.safeSave(sessionId, record);
-		return { ok: true };
-	}
-	/**
-	* Expire every pending proposal whose patience has run out at this turn
-	* boundary. Expired proposals are removed from the store (the summary view
-	* aggregates them from the audit log instead).
-	* @returns the expired proposals, for the caller's audit emission.
-	*/
-	expireTurn(sessionId, turnIndex) {
-		const record = this.sessionRecord(sessionId);
-		const keep = [];
-		const expired = [];
-		for (const proposal of record.proposals) {
-			if (proposal.status === "pending" && turnIndex - proposal.lastTurnIndex > this.options.timeoutTurns) {
-				expired.push({
-					...proposal,
-					status: "expired"
-				});
-				continue;
-			}
-			keep.push(proposal);
-		}
-		if (expired.length > 0) this.safeSave(sessionId, {
-			version: 1,
-			proposals: keep
-		});
-		return expired;
-	}
-	/**
-	* Settle an approved proposal with its execution receipt and retire it from
-	* the live store. The caller is responsible for auditing the receipt; the
-	* queue only records which proposal left and why.
-	*/
-	recordReceipt(sessionId, id, receipt) {
-		const record = this.sessionRecord(sessionId);
-		const proposal = record.proposals.find((entry) => entry.id === id);
-		if (proposal === void 0 || proposal.status !== "approved") return void 0;
-		this.safeSave(sessionId, {
-			version: 1,
-			proposals: record.proposals.filter((entry) => entry.id !== id)
-		});
-		return {
-			...proposal,
-			receipt
-		};
-	}
-};
-//#endregion
-//#region src/runtime/tokenpilot/review-registry.ts
-/**
-* Scope-independent handle on the live review pipeline.
-*
-* The R4 HTTP routes are registered on the plugin's TOP-LEVEL fiber
-* (`cordis.patch.yml` → `context-compression-improved-estimator-catalog`),
-* but every `ToolResultPruner` is mounted inside an agent preset's isolated
-* group — `canonicalCompressionRows()` declares
-* `isolate: { compaction: true, toolResultPruner: true }` — so
-* `ctx.get('toolResultPruner')` at the top level is always `undefined` and the
-* queue route could only ever answer 503 "review pipeline unavailable".
-*
-* Ownership, not transport, was in the wrong place: the queue records are
-* already keyed by session id, so the store belongs to the plugin rather than
-* to one pruner instance. Every instance shares one store and publishes itself
-* here, which lets a top-level reader reach whichever instance currently holds
-* a session's proposals.
-*
-* The durable seam already behaves this way — `REVIEW_STORAGE_DOMAIN` /
-* `REVIEW_STORAGE_TABLE` are constants, so every instance opens the same table.
-* Only the in-memory fallback was per-instance, and that is what this module
-* makes shared.
-*
-* @module dsh-context-compression-improved/review-registry
-*/
-/**
-* The one in-memory fallback every pruner instance starts from. Session ids are
-* globally unique and `ReviewSessionRecord` is keyed by them, so a single store
-* is semantically identical to one store per instance — except that a reader
-* reaching any instance now observes every session.
-*/
-const sharedStore = new MemoryReviewStore();
-const live = /* @__PURE__ */ new Set();
-/** The process-wide review queue store shared by every pruner instance. */
-function sharedReviewStore() {
-	return sharedStore;
-}
-/**
-* Publish one pruner instance for scope-independent readers.
-* @param pruner - the instance to publish.
-* @returns the disposer removing it, for `ctx.effect`.
-*/
-function registerReviewPruner(pruner) {
-	live.add(pruner);
-	return () => {
-		live.delete(pruner);
-	};
-}
-/**
-* Resolve a live pruner instance for the top-level routes.
-*
-* Any instance can serve an aggregate read because the store is shared, and a
-* session-scoped read is answered from that same store. Instances that have
-* upgraded to the durable seam read the same table, so the answer does not
-* depend on which instance this happens to return.
-*
-* @returns a live instance, or `undefined` when no preset has been composed yet.
-*/
-function resolveReviewPruner() {
-	return live.values().next().value;
-}
 const advisorStates = /* @__PURE__ */ new WeakMap();
 /**
 * The per-session advisor state, created on first touch.
@@ -1141,7 +913,8 @@ function getAdvisorState(session) {
 			recertified: /* @__PURE__ */ new Map(),
 			failures: void 0,
 			inFlight: false,
-			lastDecay: void 0
+			lastDecay: void 0,
+			lastAdvice: void 0
 		};
 		advisorStates.set(session, state);
 	}
@@ -1186,4 +959,4 @@ function invalidateOnTaskChange(state, todoVersion) {
 	return true;
 }
 //#endregion
-export { DEFAULT_CUSTOM_COMPRESSION_POLICY as C, COMPRESSION_PROFILES as D, deepFreeze as E, CustomCompressionPolicySchema as S, assertNever as T, isCompressionProfile as _, registerReviewPruner as a, resolveConfig as b, ReviewQueue as c, ContextCompressionSettingsSchema as d, DEFAULTS as f, codePointLength as g, charsToTokens as h, recordScore as i, AUTO_COMPACT_THRESHOLD_LIMITS as l, charsForTokens as m, invalidateOnTaskChange as n, resolveReviewPruner as o, PRUNE_MARKER as p, recordRecertified as r, sharedReviewStore as s, getAdvisorState as t, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as u, isValidAutoCompactThresholdPercent as v, resolveCustomPolicy as w, resolvePolicy as x, parseContextCompressionSettings as y };
+export { COMPRESSION_PROFILES as C, deepFreeze as S, resolvePolicy as _, AUTO_COMPACT_THRESHOLD_LIMITS as a, resolveCustomPolicy as b, DEFAULTS as c, charsToTokens as d, codePointLength as f, resolveConfig as g, parseContextCompressionSettings as h, recordScore as i, PRUNE_MARKER as l, isValidAutoCompactThresholdPercent as m, invalidateOnTaskChange as n, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as o, isCompressionProfile as p, recordRecertified as r, ContextCompressionSettingsSchema as s, getAdvisorState as t, charsForTokens as u, CustomCompressionPolicySchema as v, assertNever as x, DEFAULT_CUSTOM_COMPRESSION_POLICY as y };
