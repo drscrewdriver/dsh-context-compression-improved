@@ -2,6 +2,44 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
+## 0.5.2 - 2026-09-20
+
+### Changed
+
+- The human-gated review pipeline (beta) is **retired**. Its semantics are replaced by
+  advice: the benefit model still prices every pass as ONE merged mutation, but the band it
+  computes (`profitable` / `high-impact` / `slow-payback` / `unpriceable` / `not-worth-it`)
+  is now published as a `reduction-advice` audit record and snapshotted onto the advisor
+  report route — it never withholds, delays, or rewrites a reduction. The gate contradicted
+  the feature's own requirement (a reduction must never block automatic processing) and, with
+  the shipped defaults (`reviewMode` on plus a 4,000-token high-impact threshold against an
+  8,192-token fresh trigger), diverted 100% of a fresh batch into human review, leaving the
+  automatic path effectively off for anyone who opted in. The advice thresholds are now
+  module constants (α `0.1`, high-impact `4,000` tokens): nothing acts on them, so they are
+  no longer settings.
+- Removed with the gate: the review queue and its `storageDomain` adapter, the process-wide
+  registry, the `review-queue` / `review-decide` HTTP routes and the `reviewQueueRoute`
+  deployment flag, the `shell.overlay` client panel, the `reviewMode` /
+  `reviewTimeoutTurns` / `cacheHitDiscountAlpha` / `reviewHighImpactTokens` settings keys,
+  and the `review-outcome` audit kind. The four settings keys stay ACCEPTED and IGNORED by
+  both decoders — an existing document (the live one carries `reviewMode: false`) still loads
+  and still renders its settings card — and never reach the resolved policy. The read-only
+  `GET .../advisor-report` route additionally serves `lastAdvice`.
+
+### Added
+
+- Regression pins for the retirement: a host-integration spec drives the exact settings that
+  used to divert everything (`reviewMode: true`, `reviewHighImpactTokens: 1`) and asserts the
+  fresh batch LANDS, described by a `high-impact` advice record; a deprecation-contract spec
+  pins accept-and-ignore for the retired keys on both the runtime parser and the browser
+  decoder.
+
+### Rollback
+
+- Reinstall the last release that still ships the gate: `npm dist-tag add
+  dsh-context-compression-improved@0.5.1 dsh-0.1.5 --registry https://registry.npmjs.org/`
+  then `dsh plugin --profile web add dsh-context-compression-improved@0.5.1`.
+
 ## 0.5.1 - 2026-09-20
 
 ### Fixed
