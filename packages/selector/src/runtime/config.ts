@@ -127,13 +127,20 @@ export function parsePresetOptionsSettings(value: unknown): PresetOptionsSetting
   const allowed = new Set([
     'dedupeToolResults', 'summaryLocator', 'prefixStabilizer', 'readState', 'estimatorMode',
     'estimatorProvider', 'estimatorModel', 'estimatorBaseUrl', 'estimatorApiKey', 'estimatorTimeoutMs',
+    // Legacy keys of the retired human-gated review pipeline. They stay in the
+    // ACCEPTED set on purpose: the keys are persisted in existing settings
+    // documents, and rejecting them would make this plugin fail to load on an
+    // upgrade. They are read by nothing — the gate they configured no longer
+    // exists, and a reduction never blocks automatic processing.
     'reviewMode', 'reviewTimeoutTurns', 'cacheHitDiscountAlpha', 'reviewHighImpactTokens',
+    'advisorMode', 'advisorTimeoutMs', 'advisorRefreshTurns', 'advisorScoreThreshold', 'advisorSampleLimit',
+    'advisorMinTokens',
   ])
   const unknown = Object.keys(value).find(key => !allowed.has(key))
   if (unknown !== undefined) {
     throw new TypeError(`Context-compression presetOptions: unknown key "${unknown}"`)
   }
-  const booleans = ['dedupeToolResults', 'summaryLocator', 'prefixStabilizer', 'readState', 'reviewMode'] as const
+  const booleans = ['dedupeToolResults', 'summaryLocator', 'prefixStabilizer', 'readState'] as const
   for (const key of booleans) {
     const entry = value[key]
     if (entry !== undefined && typeof entry !== 'boolean') {
@@ -144,28 +151,44 @@ export function parsePresetOptionsSettings(value: unknown): PresetOptionsSetting
   if (estimatorMode !== undefined && estimatorMode !== '' && estimatorMode !== 'host' && estimatorMode !== 'direct') {
     throw new TypeError('Context-compression presetOptions.estimatorMode must be "", "host", or "direct"')
   }
+  const advisorMode = value.advisorMode
+  if (advisorMode !== undefined && advisorMode !== '' && advisorMode !== 'host' && advisorMode !== 'direct') {
+    throw new TypeError('Context-compression presetOptions.advisorMode must be "", "host", or "direct"')
+  }
+  const advisorTimeoutMs = value.advisorTimeoutMs
+  if (advisorTimeoutMs !== undefined
+    && (typeof advisorTimeoutMs !== 'number' || !Number.isSafeInteger(advisorTimeoutMs)
+      || advisorTimeoutMs < 100 || advisorTimeoutMs > 60_000)) {
+    throw new TypeError('Context-compression presetOptions.advisorTimeoutMs must be an integer between 100 and 60000')
+  }
+  const advisorRefreshTurns = value.advisorRefreshTurns
+  if (advisorRefreshTurns !== undefined
+    && (typeof advisorRefreshTurns !== 'number' || !Number.isSafeInteger(advisorRefreshTurns)
+      || advisorRefreshTurns < 1)) {
+    throw new TypeError('Context-compression presetOptions.advisorRefreshTurns must be an integer of at least 1')
+  }
+  const advisorScoreThreshold = value.advisorScoreThreshold
+  if (advisorScoreThreshold !== undefined
+    && (typeof advisorScoreThreshold !== 'number' || !Number.isFinite(advisorScoreThreshold)
+      || advisorScoreThreshold <= 0 || advisorScoreThreshold >= 1)) {
+    throw new TypeError('Context-compression presetOptions.advisorScoreThreshold must be a number strictly between 0 and 1')
+  }
+  const advisorSampleLimit = value.advisorSampleLimit
+  if (advisorSampleLimit !== undefined
+    && (typeof advisorSampleLimit !== 'number' || !Number.isSafeInteger(advisorSampleLimit)
+      || advisorSampleLimit < 1 || advisorSampleLimit > 64)) {
+    throw new TypeError('Context-compression presetOptions.advisorSampleLimit must be an integer between 1 and 64')
+  }
+  const advisorMinTokens = value.advisorMinTokens
+  if (advisorMinTokens !== undefined
+    && (typeof advisorMinTokens !== 'number' || !Number.isSafeInteger(advisorMinTokens) || advisorMinTokens < 1)) {
+    throw new TypeError('Context-compression presetOptions.advisorMinTokens must be a positive integer')
+  }
   const estimatorTimeoutMs = value.estimatorTimeoutMs
   if (estimatorTimeoutMs !== undefined
     && (typeof estimatorTimeoutMs !== 'number' || !Number.isSafeInteger(estimatorTimeoutMs)
       || estimatorTimeoutMs < 100 || estimatorTimeoutMs > 60_000)) {
     throw new TypeError('Context-compression presetOptions.estimatorTimeoutMs must be an integer between 100 and 60000')
-  }
-  const reviewTimeoutTurns = value.reviewTimeoutTurns
-  if (reviewTimeoutTurns !== undefined
-    && (typeof reviewTimeoutTurns !== 'number' || !Number.isSafeInteger(reviewTimeoutTurns) || reviewTimeoutTurns < 1)) {
-    throw new TypeError('Context-compression presetOptions.reviewTimeoutTurns must be an integer of at least 1')
-  }
-  const cacheHitDiscountAlpha = value.cacheHitDiscountAlpha
-  if (cacheHitDiscountAlpha !== undefined
-    && (typeof cacheHitDiscountAlpha !== 'number' || !Number.isFinite(cacheHitDiscountAlpha)
-      || cacheHitDiscountAlpha <= 0 || cacheHitDiscountAlpha >= 1)) {
-    throw new TypeError('Context-compression presetOptions.cacheHitDiscountAlpha must be a number strictly between 0 and 1')
-  }
-  const reviewHighImpactTokens = value.reviewHighImpactTokens
-  if (reviewHighImpactTokens !== undefined
-    && (typeof reviewHighImpactTokens !== 'number' || !Number.isSafeInteger(reviewHighImpactTokens)
-      || reviewHighImpactTokens < 0)) {
-    throw new TypeError('Context-compression presetOptions.reviewHighImpactTokens must be a non-negative integer')
   }
   for (const key of ['estimatorProvider', 'estimatorModel', 'estimatorBaseUrl', 'estimatorApiKey'] as const) {
     const entry = value[key]
@@ -186,10 +209,12 @@ export function parsePresetOptionsSettings(value: unknown): PresetOptionsSetting
   if (value.estimatorBaseUrl !== undefined) result.estimatorBaseUrl = value.estimatorBaseUrl as string
   if (value.estimatorApiKey !== undefined) result.estimatorApiKey = value.estimatorApiKey as string
   if (estimatorTimeoutMs !== undefined) result.estimatorTimeoutMs = estimatorTimeoutMs as number
-  if (value.reviewMode !== undefined) result.reviewMode = value.reviewMode as boolean
-  if (reviewTimeoutTurns !== undefined) result.reviewTimeoutTurns = reviewTimeoutTurns as number
-  if (cacheHitDiscountAlpha !== undefined) result.cacheHitDiscountAlpha = cacheHitDiscountAlpha as number
-  if (reviewHighImpactTokens !== undefined) result.reviewHighImpactTokens = reviewHighImpactTokens as number
+  if (advisorMode !== undefined) result.advisorMode = advisorMode as '' | 'host' | 'direct'
+  if (advisorTimeoutMs !== undefined) result.advisorTimeoutMs = advisorTimeoutMs as number
+  if (advisorRefreshTurns !== undefined) result.advisorRefreshTurns = advisorRefreshTurns as number
+  if (advisorScoreThreshold !== undefined) result.advisorScoreThreshold = advisorScoreThreshold as number
+  if (advisorSampleLimit !== undefined) result.advisorSampleLimit = advisorSampleLimit as number
+  if (advisorMinTokens !== undefined) result.advisorMinTokens = advisorMinTokens as number
   return result
 }
 
@@ -457,12 +482,15 @@ const PRESET_OPTION_DEFAULTS: PresetOptions = deepFreeze({
   prefixStabilizer: true,
   readState: true,
   estimator: { mode: '' },
-  // Review pipeline (beta) ships off: pending proposals never block the
-  // automatic path until the user opts in.
-  reviewMode: false,
-  reviewTimeoutTurns: 6,
-  cacheHitDiscountAlpha: 0.1,
-  reviewHighImpactTokens: 4000,
+  // Advisory advisor ships off: statistics and suggestions only, never a gate.
+  advisor: {
+    mode: '',
+    timeoutMs: 8_000,
+    refreshTurns: 8,
+    scoreThreshold: 0.35,
+    sampleLimit: 16,
+    minTokens: 250,
+  },
 })
 
 /**
@@ -480,10 +508,14 @@ function mergePresetOptions(overrides: PresetOptionsSettings | undefined): Prese
     prefixStabilizer: overrides.prefixStabilizer ?? PRESET_OPTION_DEFAULTS.prefixStabilizer,
     readState: overrides.readState ?? PRESET_OPTION_DEFAULTS.readState,
     estimator: { mode: overrides.estimatorMode ?? PRESET_OPTION_DEFAULTS.estimator.mode },
-    reviewMode: overrides.reviewMode ?? PRESET_OPTION_DEFAULTS.reviewMode,
-    reviewTimeoutTurns: overrides.reviewTimeoutTurns ?? PRESET_OPTION_DEFAULTS.reviewTimeoutTurns,
-    cacheHitDiscountAlpha: overrides.cacheHitDiscountAlpha ?? PRESET_OPTION_DEFAULTS.cacheHitDiscountAlpha,
-    reviewHighImpactTokens: overrides.reviewHighImpactTokens ?? PRESET_OPTION_DEFAULTS.reviewHighImpactTokens,
+    advisor: {
+      mode: overrides.advisorMode ?? PRESET_OPTION_DEFAULTS.advisor.mode,
+      timeoutMs: overrides.advisorTimeoutMs ?? PRESET_OPTION_DEFAULTS.advisor.timeoutMs,
+      refreshTurns: overrides.advisorRefreshTurns ?? PRESET_OPTION_DEFAULTS.advisor.refreshTurns,
+      scoreThreshold: overrides.advisorScoreThreshold ?? PRESET_OPTION_DEFAULTS.advisor.scoreThreshold,
+      sampleLimit: overrides.advisorSampleLimit ?? PRESET_OPTION_DEFAULTS.advisor.sampleLimit,
+      minTokens: overrides.advisorMinTokens ?? PRESET_OPTION_DEFAULTS.advisor.minTokens,
+    },
   })
 }
 

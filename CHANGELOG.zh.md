@@ -2,6 +2,68 @@
 
 > 完整历史（含上游 0.1.0 及更早版本）见 [CHANGELOG.md](CHANGELOG.md)。本文件只翻译本 fork 的新增条目。 · [English](CHANGELOG.md) · [日本語](CHANGELOG.ja.md) · [한국어](CHANGELOG.ko.md)
 
+## 0.5.2 - 2026-09-20
+
+### Changed
+
+- **退役**人工审查管线（review gate，beta）。其语义由"建议"取代：收益模型仍按"整批一次
+  mutation"定价，但它算出的分带（`profitable` / `high-impact` / `slow-payback` /
+  `unpriceable` / `not-worth-it`）现在只作为 `reduction-advice` 审计记录发布，并在 advisor
+  报告路由上留一份快照——绝不扣留、延迟或改写任何 reduction。该 gate 与本功能自身的要求
+  （缩减不阻断自动处理）相矛盾，且在出厂默认下（`reviewMode` 开 + 4000 token 高影响阈值
+  对 8192 token 的 fresh 门槛）会把整批 fresh 100% 改道进人审，等于让选择开启它的用户失去
+  自动路径。建议阈值改为模块常量（α `0.1`、高影响 `4000` token）：没有任何路径依据它们
+  行动，因此不再作为配置项。
+- 随 gate 一并移除：审查队列及其 `storageDomain` 适配器、进程级注册表、
+  `review-queue` / `review-decide` 两条 HTTP 路由与 `reviewQueueRoute` 部署开关、
+  `shell.overlay` 客户端浮窗、`reviewMode` / `reviewTimeoutTurns` /
+  `cacheHitDiscountAlpha` / `reviewHighImpactTokens` 四个 settings 键，以及
+  `review-outcome` 审计类型。这四个键在**两个解码器**中仍被接受但被忽略——既有配置文档
+  （线上即带 `reviewMode: false`）照常加载、设置卡照常渲染——且永不进入已解析的 policy。
+  只读路由 `GET .../advisor-report` 额外提供 `lastAdvice`。
+
+### Added
+
+- 退役的回归钉桩：一条宿主集成测试用**当年会全量改道的那套配置**（`reviewMode: true`、
+  `reviewHighImpactTokens: 1`）断言 fresh 批次**照常落地**并附带 `high-impact` 建议记录；
+  另一条弃用契约测试在运行时解析器与浏览器解码器两侧钉死"接受但忽略"。
+
+### Rollback
+
+- 回退到仍带 gate 的最后一个版本：`npm dist-tag add
+  dsh-context-compression-improved@0.5.1 dsh-0.1.5 --registry https://registry.npmjs.org/`，
+  然后 `dsh plugin --profile web add dsh-context-compression-improved@0.5.1`。
+
+## 0.5.1 - 2026-09-20
+
+### Fixed
+
+- 同一 identity 的并发 preset-overlay 组装在 Windows 上不再失败：发布改为按目标路径串行，
+  且当原子 rename 仍然竞争失败时，会先确认目标文件已带有本 staging 文件的
+  `{mtimeMs, size}` standing key 才判定发布成功。Windows 的 `MoveFileEx` 会把这种竞争
+  失败报成 `EPERM`/`EBUSY`，而 POSIX `rename` 只是覆盖目标——这曾导致并发启动会话时
+  `standingKeyFor()` 抛错。目标不匹配时仍会明确失败，静默复用世代依旧被禁止。
+- 一并修复了长期掩盖该问题及其它预存红灯的发布门禁与测试：packed smoke 中陈旧的标识符与
+  已退役的审计 reason、过期的客户端 inject 断言，以及仅 Windows 触发的 spawn 陷阱
+  （`git` 与多行 `node -e` 脚本经 `cmd.exe` 转发会被改写参数）。
+
+## 0.5.0 - 2026-09-20
+
+### Added
+
+- 建议型相关度 advisor（仅统计与建议，默认关闭）：每个 turn 边界以 fire-and-forget 方式
+  运行一次 pass——从最近的 `todo/write` 事件总结尾部任务语义（无 todolist 时回退到最近
+  用户文本）、对历史 tool-result 候选做"内容+注释语义 ↔ 当前任务"的增量相关度打分、并
+  计算前缀腐化度（prefix-decay，按 characterPressure 加权的相关度均值取反）。低相关的
+  旧段标记为 `recertified`，仅作为后续 history 激进化的建议输入——本轮没有任何决策路径
+  消费它，且 advisor 输出绝不抑制、延迟或改写任何本应落地的 reduction（有专项不变量测试
+  钉死）。经 `presetOptions.advisor*` settings 键配置（`advisorMode` `''|'host'|'direct'`，
+  默认 `''`；direct 通道复用 estimator 端点；`SideChannel` 新增可选 overrides 参数，
+  共享传输层而不共享配置）。可观测性：新增 `advisor-outcome` 审计记录（content-free，
+  每阶段一条：summary / scoring / decay）与只读 HTTP 路由
+  `GET .../advisor-report?sessionId=`（部署级 opt-in 开关 `advisorReportRoute`，与 review
+  路由同骨架）。本轮刻意不提供客户端 UI。
+
 ## 0.4.0 - 2026-09-20
 
 ### Fixed

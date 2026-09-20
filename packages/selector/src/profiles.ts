@@ -135,11 +135,13 @@ export interface PresetOptionsSettings {
   readonly estimatorBaseUrl?: string
   readonly estimatorApiKey?: string
   readonly estimatorTimeoutMs?: number
-  /** Review-mode overrides (beta); mirrors the runtime PresetOptions.reviewMode. */
-  readonly reviewMode?: boolean
-  readonly reviewTimeoutTurns?: number
-  readonly cacheHitDiscountAlpha?: number
-  readonly reviewHighImpactTokens?: number
+  /** Advisory advisor channel; `''` (the default) keeps the advisor off. */
+  readonly advisorMode?: '' | 'host' | 'direct'
+  readonly advisorTimeoutMs?: number
+  readonly advisorRefreshTurns?: number
+  readonly advisorScoreThreshold?: number
+  readonly advisorSampleLimit?: number
+  readonly advisorMinTokens?: number
 }
 
 /**
@@ -153,15 +155,24 @@ export function decodePresetOptionsSettings(value: unknown): PresetOptionsSettin
   const allowed = new Set([
     'dedupeToolResults', 'summaryLocator', 'prefixStabilizer', 'readState', 'estimatorMode',
     'estimatorProvider', 'estimatorModel', 'estimatorBaseUrl', 'estimatorApiKey', 'estimatorTimeoutMs',
+    // Legacy keys of the retired review gate: still ACCEPTED so an existing
+    // settings document keeps decoding (rejecting them would report the whole
+    // card unreadable), and ignored — nothing reads them any more.
     'reviewMode', 'reviewTimeoutTurns', 'cacheHitDiscountAlpha', 'reviewHighImpactTokens',
+    'advisorMode', 'advisorTimeoutMs', 'advisorRefreshTurns', 'advisorScoreThreshold', 'advisorSampleLimit',
+    'advisorMinTokens',
   ])
   if (Object.keys(value).some(key => !allowed.has(key))) return undefined
-  for (const key of ['dedupeToolResults', 'summaryLocator', 'prefixStabilizer', 'readState', 'reviewMode'] as const) {
+  for (const key of ['dedupeToolResults', 'summaryLocator', 'prefixStabilizer', 'readState'] as const) {
     const entry = value[key]
     if (entry !== undefined && typeof entry !== 'boolean') return undefined
   }
   const estimatorMode = value.estimatorMode
   if (estimatorMode !== undefined && estimatorMode !== '' && estimatorMode !== 'host' && estimatorMode !== 'direct') {
+    return undefined
+  }
+  const advisorMode = value.advisorMode
+  if (advisorMode !== undefined && advisorMode !== '' && advisorMode !== 'host' && advisorMode !== 'direct') {
     return undefined
   }
   for (const key of ['estimatorProvider', 'estimatorModel', 'estimatorBaseUrl', 'estimatorApiKey'] as const) {
@@ -174,21 +185,33 @@ export function decodePresetOptionsSettings(value: unknown): PresetOptionsSettin
       || estimatorTimeoutMs < 100 || estimatorTimeoutMs > 60_000)) {
     return undefined
   }
-  const reviewTimeoutTurns = value.reviewTimeoutTurns
-  if (reviewTimeoutTurns !== undefined
-    && (typeof reviewTimeoutTurns !== 'number' || !Number.isSafeInteger(reviewTimeoutTurns) || reviewTimeoutTurns < 1)) {
+  const advisorTimeoutMs = value.advisorTimeoutMs
+  if (advisorTimeoutMs !== undefined
+    && (typeof advisorTimeoutMs !== 'number' || !Number.isSafeInteger(advisorTimeoutMs)
+      || advisorTimeoutMs < 100 || advisorTimeoutMs > 60_000)) {
     return undefined
   }
-  const cacheHitDiscountAlpha = value.cacheHitDiscountAlpha
-  if (cacheHitDiscountAlpha !== undefined
-    && (typeof cacheHitDiscountAlpha !== 'number' || !Number.isFinite(cacheHitDiscountAlpha)
-      || cacheHitDiscountAlpha <= 0 || cacheHitDiscountAlpha >= 1)) {
+  const advisorRefreshTurns = value.advisorRefreshTurns
+  if (advisorRefreshTurns !== undefined
+    && (typeof advisorRefreshTurns !== 'number' || !Number.isSafeInteger(advisorRefreshTurns)
+      || advisorRefreshTurns < 1)) {
     return undefined
   }
-  const reviewHighImpactTokens = value.reviewHighImpactTokens
-  if (reviewHighImpactTokens !== undefined
-    && (typeof reviewHighImpactTokens !== 'number' || !Number.isSafeInteger(reviewHighImpactTokens)
-      || reviewHighImpactTokens < 0)) {
+  const advisorScoreThreshold = value.advisorScoreThreshold
+  if (advisorScoreThreshold !== undefined
+    && (typeof advisorScoreThreshold !== 'number' || !Number.isFinite(advisorScoreThreshold)
+      || advisorScoreThreshold <= 0 || advisorScoreThreshold >= 1)) {
+    return undefined
+  }
+  const advisorSampleLimit = value.advisorSampleLimit
+  if (advisorSampleLimit !== undefined
+    && (typeof advisorSampleLimit !== 'number' || !Number.isSafeInteger(advisorSampleLimit)
+      || advisorSampleLimit < 1 || advisorSampleLimit > 64)) {
+    return undefined
+  }
+  const advisorMinTokens = value.advisorMinTokens
+  if (advisorMinTokens !== undefined
+    && (typeof advisorMinTokens !== 'number' || !Number.isSafeInteger(advisorMinTokens) || advisorMinTokens < 1)) {
     return undefined
   }
   const decoded: {
@@ -204,10 +227,12 @@ export function decodePresetOptionsSettings(value: unknown): PresetOptionsSettin
   if (value.estimatorBaseUrl !== undefined) decoded.estimatorBaseUrl = value.estimatorBaseUrl as string
   if (value.estimatorApiKey !== undefined) decoded.estimatorApiKey = value.estimatorApiKey as string
   if (estimatorTimeoutMs !== undefined) decoded.estimatorTimeoutMs = estimatorTimeoutMs as number
-  if (value.reviewMode !== undefined) decoded.reviewMode = value.reviewMode as boolean
-  if (reviewTimeoutTurns !== undefined) decoded.reviewTimeoutTurns = reviewTimeoutTurns as number
-  if (cacheHitDiscountAlpha !== undefined) decoded.cacheHitDiscountAlpha = cacheHitDiscountAlpha as number
-  if (reviewHighImpactTokens !== undefined) decoded.reviewHighImpactTokens = reviewHighImpactTokens as number
+  if (advisorMode !== undefined) decoded.advisorMode = advisorMode as '' | 'host' | 'direct'
+  if (advisorTimeoutMs !== undefined) decoded.advisorTimeoutMs = advisorTimeoutMs as number
+  if (advisorRefreshTurns !== undefined) decoded.advisorRefreshTurns = advisorRefreshTurns as number
+  if (advisorScoreThreshold !== undefined) decoded.advisorScoreThreshold = advisorScoreThreshold as number
+  if (advisorSampleLimit !== undefined) decoded.advisorSampleLimit = advisorSampleLimit as number
+  if (advisorMinTokens !== undefined) decoded.advisorMinTokens = advisorMinTokens as number
   return decoded
 }
 

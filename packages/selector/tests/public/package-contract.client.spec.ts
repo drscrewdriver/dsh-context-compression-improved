@@ -55,4 +55,24 @@ describe('standalone package contract', () => {
     expect(patch).toContain("name: 'dsh-context-compression-improved'")
     expect(patch).not.toContain('@deepseek-ai/dsh-client-ui-context-compression-selector')
   })
+
+  it('never ships a retired plugin config key in the Bundle patch', () => {
+    // Negative control: the patch is loaded by the host and validated against
+    // the plugin's own Config schema, but nothing tied the two together — so
+    // the retired review gate's `reviewQueueRoute` survived in this file after
+    // the key was removed from the schema, advertising a route that can never
+    // register. A retired key must fail here instead of shipping quietly.
+    //
+    // The pin is on KEY-SETTING lines, not on the whole document: the comments
+    // above the rows deliberately name the retired key while explaining why it
+    // is gone, and prose must not be mistaken for configuration.
+    const patch = readFileSync(resolve(root, 'selector/cordis.patch.yml'), 'utf8')
+    const lines = patch.split('\n')
+    for (const retired of ['reviewQueueRoute', 'reviewMode', 'reviewTimeoutTurns', 'reviewHighImpactTokens']) {
+      const setsRetired = lines.find(line => new RegExp(`^\\s*${retired}\\s*:`).test(line))
+      expect(setsRetired, `${retired} is still set in the Bundle patch`).toBeUndefined()
+    }
+    // And the live flag the routes row exists for is still wired.
+    expect(patch).toContain('estimatorCatalogRoute: true')
+  })
 })

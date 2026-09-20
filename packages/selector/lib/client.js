@@ -82,21 +82,28 @@ window.__ModuleLoader__.load({
 				"reviewMode",
 				"reviewTimeoutTurns",
 				"cacheHitDiscountAlpha",
-				"reviewHighImpactTokens"
+				"reviewHighImpactTokens",
+				"advisorMode",
+				"advisorTimeoutMs",
+				"advisorRefreshTurns",
+				"advisorScoreThreshold",
+				"advisorSampleLimit",
+				"advisorMinTokens"
 			]);
 			if (Object.keys(value).some((key) => !allowed.has(key))) return void 0;
 			for (const key of [
 				"dedupeToolResults",
 				"summaryLocator",
 				"prefixStabilizer",
-				"readState",
-				"reviewMode"
+				"readState"
 			]) {
 				const entry = value[key];
 				if (entry !== void 0 && typeof entry !== "boolean") return void 0;
 			}
 			const estimatorMode = value.estimatorMode;
 			if (estimatorMode !== void 0 && estimatorMode !== "" && estimatorMode !== "host" && estimatorMode !== "direct") return;
+			const advisorMode = value.advisorMode;
+			if (advisorMode !== void 0 && advisorMode !== "" && advisorMode !== "host" && advisorMode !== "direct") return;
 			for (const key of [
 				"estimatorProvider",
 				"estimatorModel",
@@ -108,12 +115,16 @@ window.__ModuleLoader__.load({
 			}
 			const estimatorTimeoutMs = value.estimatorTimeoutMs;
 			if (estimatorTimeoutMs !== void 0 && (typeof estimatorTimeoutMs !== "number" || !Number.isSafeInteger(estimatorTimeoutMs) || estimatorTimeoutMs < 100 || estimatorTimeoutMs > 6e4)) return;
-			const reviewTimeoutTurns = value.reviewTimeoutTurns;
-			if (reviewTimeoutTurns !== void 0 && (typeof reviewTimeoutTurns !== "number" || !Number.isSafeInteger(reviewTimeoutTurns) || reviewTimeoutTurns < 1)) return;
-			const cacheHitDiscountAlpha = value.cacheHitDiscountAlpha;
-			if (cacheHitDiscountAlpha !== void 0 && (typeof cacheHitDiscountAlpha !== "number" || !Number.isFinite(cacheHitDiscountAlpha) || cacheHitDiscountAlpha <= 0 || cacheHitDiscountAlpha >= 1)) return;
-			const reviewHighImpactTokens = value.reviewHighImpactTokens;
-			if (reviewHighImpactTokens !== void 0 && (typeof reviewHighImpactTokens !== "number" || !Number.isSafeInteger(reviewHighImpactTokens) || reviewHighImpactTokens < 0)) return;
+			const advisorTimeoutMs = value.advisorTimeoutMs;
+			if (advisorTimeoutMs !== void 0 && (typeof advisorTimeoutMs !== "number" || !Number.isSafeInteger(advisorTimeoutMs) || advisorTimeoutMs < 100 || advisorTimeoutMs > 6e4)) return;
+			const advisorRefreshTurns = value.advisorRefreshTurns;
+			if (advisorRefreshTurns !== void 0 && (typeof advisorRefreshTurns !== "number" || !Number.isSafeInteger(advisorRefreshTurns) || advisorRefreshTurns < 1)) return;
+			const advisorScoreThreshold = value.advisorScoreThreshold;
+			if (advisorScoreThreshold !== void 0 && (typeof advisorScoreThreshold !== "number" || !Number.isFinite(advisorScoreThreshold) || advisorScoreThreshold <= 0 || advisorScoreThreshold >= 1)) return;
+			const advisorSampleLimit = value.advisorSampleLimit;
+			if (advisorSampleLimit !== void 0 && (typeof advisorSampleLimit !== "number" || !Number.isSafeInteger(advisorSampleLimit) || advisorSampleLimit < 1 || advisorSampleLimit > 64)) return;
+			const advisorMinTokens = value.advisorMinTokens;
+			if (advisorMinTokens !== void 0 && (typeof advisorMinTokens !== "number" || !Number.isSafeInteger(advisorMinTokens) || advisorMinTokens < 1)) return;
 			const decoded = {};
 			if (value.dedupeToolResults !== void 0) decoded.dedupeToolResults = value.dedupeToolResults;
 			if (value.summaryLocator !== void 0) decoded.summaryLocator = value.summaryLocator;
@@ -125,10 +136,12 @@ window.__ModuleLoader__.load({
 			if (value.estimatorBaseUrl !== void 0) decoded.estimatorBaseUrl = value.estimatorBaseUrl;
 			if (value.estimatorApiKey !== void 0) decoded.estimatorApiKey = value.estimatorApiKey;
 			if (estimatorTimeoutMs !== void 0) decoded.estimatorTimeoutMs = estimatorTimeoutMs;
-			if (value.reviewMode !== void 0) decoded.reviewMode = value.reviewMode;
-			if (reviewTimeoutTurns !== void 0) decoded.reviewTimeoutTurns = reviewTimeoutTurns;
-			if (cacheHitDiscountAlpha !== void 0) decoded.cacheHitDiscountAlpha = cacheHitDiscountAlpha;
-			if (reviewHighImpactTokens !== void 0) decoded.reviewHighImpactTokens = reviewHighImpactTokens;
+			if (advisorMode !== void 0) decoded.advisorMode = advisorMode;
+			if (advisorTimeoutMs !== void 0) decoded.advisorTimeoutMs = advisorTimeoutMs;
+			if (advisorRefreshTurns !== void 0) decoded.advisorRefreshTurns = advisorRefreshTurns;
+			if (advisorScoreThreshold !== void 0) decoded.advisorScoreThreshold = advisorScoreThreshold;
+			if (advisorSampleLimit !== void 0) decoded.advisorSampleLimit = advisorSampleLimit;
+			if (advisorMinTokens !== void 0) decoded.advisorMinTokens = advisorMinTokens;
 			return decoded;
 		}
 		/**
@@ -1010,123 +1023,6 @@ window.__ModuleLoader__.load({
 				]
 			});
 		}
-		/**
-		* TokenPilot-inspired review-mode card (beta). When enabled, edge/high-impact
-		* reduction candidates queue for manual approval and execute in one merged
-		* batch at the next turn boundary; the numeric fields tune the benefit model.
-		* Numeric drafts commit on blur and only when they parse to a value the
-		* runtime schema accepts, so an invalid keystroke never disables the panel.
-		*/
-		function ReviewModeControls({ options, disabled, save, settle, t }) {
-			const [turnsDraft, setTurnsDraft] = (0, react.useState)(String(options.reviewTimeoutTurns ?? 6));
-			const [alphaDraft, setAlphaDraft] = (0, react.useState)(String(options.cacheHitDiscountAlpha ?? .1));
-			const [highImpactDraft, setHighImpactDraft] = (0, react.useState)(String(options.reviewHighImpactTokens ?? 4e3));
-			const reviewMode = options.reviewMode ?? false;
-			const commit = (patch) => {
-				settle(() => save(patch));
-			};
-			const commitTurns = () => {
-				const next = Number(turnsDraft);
-				if (!Number.isSafeInteger(next) || next < 1 || next === (options.reviewTimeoutTurns ?? 6)) return;
-				commit({ reviewTimeoutTurns: next });
-			};
-			const commitAlpha = () => {
-				const next = Number(alphaDraft);
-				if (!Number.isFinite(next) || next <= 0 || next >= 1 || next === (options.cacheHitDiscountAlpha ?? .1)) return;
-				commit({ cacheHitDiscountAlpha: next });
-			};
-			const commitHighImpact = () => {
-				const next = Number(highImpactDraft);
-				if (!Number.isSafeInteger(next) || next < 0 || next === (options.reviewHighImpactTokens ?? 4e3)) return;
-				commit({ reviewHighImpactTokens: next });
-			};
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
-				className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.autoCompact,
-				"aria-labelledby": "context-compression-review-title",
-				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
-						id: "context-compression-review-title",
-						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.autoCompactTitle,
-						children: t("review.title")
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.customNote,
-						children: t("review.description")
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.field,
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("review.enabled") }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
-							value: reviewMode ? "on" : "off",
-							disabled,
-							onChange: (event) => {
-								settle(() => save({ reviewMode: event.currentTarget.value === "on" }));
-							},
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-								value: "off",
-								children: t("review.enabled.off")
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-								value: "on",
-								children: t("review.enabled.on")
-							})]
-						})]
-					}),
-					reviewMode ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.field,
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("review.timeoutTurns") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-								type: "number",
-								min: 1,
-								step: 1,
-								value: turnsDraft,
-								disabled,
-								onChange: (event) => {
-									setTurnsDraft(event.currentTarget.value);
-								},
-								onBlur: commitTurns,
-								onKeyDown: (event) => {
-									if (event.key === "Enter") event.currentTarget.blur();
-								}
-							})]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.field,
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("review.alpha") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-								type: "number",
-								min: .01,
-								max: .99,
-								step: .05,
-								value: alphaDraft,
-								disabled,
-								onChange: (event) => {
-									setAlphaDraft(event.currentTarget.value);
-								},
-								onBlur: commitAlpha,
-								onKeyDown: (event) => {
-									if (event.key === "Enter") event.currentTarget.blur();
-								}
-							})]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.field,
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("review.highImpact") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-								type: "number",
-								min: 0,
-								step: 500,
-								value: highImpactDraft,
-								disabled,
-								onChange: (event) => {
-									setHighImpactDraft(event.currentTarget.value);
-								},
-								onBlur: commitHighImpact,
-								onKeyDown: (event) => {
-									if (event.key === "Enter") event.currentTarget.blur();
-								}
-							})]
-						})
-					] }) : null
-				]
-			});
-		}
 		//#endregion
 		//#region src/client/settings-section.tsx
 		/**
@@ -1230,19 +1126,13 @@ window.__ModuleLoader__.load({
 					current !== "tokenpilot-inspired" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EstimatorInactiveNotice, {
 						profile: t(`profile.${current}`),
 						t
-					}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(EstimatorControls, {
+					}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EstimatorControls, {
 						options: state.value?.presetOptions ?? {},
 						disabled: busy || !state.writable || false,
 						save: savePresetOptions,
 						settle,
 						t
-					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ReviewModeControls, {
-						options: state.value?.presetOptions ?? {},
-						disabled: busy || !state.writable || false,
-						save: savePresetOptions,
-						settle,
-						t
-					})] }),
+					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.pricing,
 						children: t("pricing.disclosure")
@@ -1332,25 +1222,6 @@ window.__ModuleLoader__.load({
 			"estimator.apiKey.set": "已设置 · 输入新值覆盖",
 			"estimator.apiKey.clear": "清除",
 			"estimator.apiKey.overwrite": "已设置保密值，输入新值并失焦即可覆盖。",
-			"review.title": "人工审查（beta）",
-			"review.description": "开启后，边缘区间与高影响的压缩候选不再自动执行，而是进入待审队列并在你批准后的下一个回合边界批量执行；未处理的提案超过过期轮数后自动作废。仅随「TokenPilot 启发模式」提供，默认关闭。",
-			"review.enabled": "审查模式",
-			"review.enabled.on": "开（提案等待人工批准）",
-			"review.enabled.off": "关（默认，全自动）",
-			"review.timeoutTurns": "提案过期轮数",
-			"review.alpha": "缓存命中折扣 α",
-			"review.highImpact": "高影响门槛（tokens）",
-			"review.badge": "待审",
-			"review.summary.autoApplied": "自动应用",
-			"review.summary.reviewApplied": "审查应用",
-			"review.summary.expired": "已过期",
-			"review.summary.voided": "已作废",
-			"review.row.payback": "回本轮数",
-			"review.row.expectedSaving": "预期节省",
-			"review.row.estimated": "估计",
-			"review.action.approve": "批准",
-			"review.action.reject": "驳回",
-			"review.action.ignore": "本会话忽略",
 			"detail.tokenpilot-inspired": "在平衡模式之上叠加去重指针、恢复豁免、摘要定位块、前缀稳定与读取状态语义；估计器需另行配置端点",
 			"profile.custom": "Custom／实验模式",
 			"profile.native": "原生对照",
@@ -1447,25 +1318,6 @@ window.__ModuleLoader__.load({
 			"estimator.apiKey.set": "Set · type a new value to overwrite",
 			"estimator.apiKey.clear": "Clear",
 			"estimator.apiKey.overwrite": "A secret is stored; type a new value and blur to overwrite it.",
-			"review.title": "Review mode (beta)",
-			"review.description": "When enabled, edge-band and high-impact reduction candidates no longer apply automatically: they queue for manual approval and execute in one merged batch at the next turn boundary after approval. Unhandled proposals expire after the configured number of turns. Ships with the TokenPilot-inspired profile only, off by default.",
-			"review.enabled": "Review mode",
-			"review.enabled.on": "On (proposals wait for manual approval)",
-			"review.enabled.off": "Off (default, fully automatic)",
-			"review.timeoutTurns": "Proposal expiry (turns)",
-			"review.alpha": "Cache-hit discount α",
-			"review.highImpact": "High-impact threshold (tokens)",
-			"review.badge": "Review",
-			"review.summary.autoApplied": "Auto-applied",
-			"review.summary.reviewApplied": "Review-applied",
-			"review.summary.expired": "Expired",
-			"review.summary.voided": "Voided",
-			"review.row.payback": "Payback",
-			"review.row.expectedSaving": "Expected saving",
-			"review.row.estimated": "estimated",
-			"review.action.approve": "Approve",
-			"review.action.reject": "Reject",
-			"review.action.ignore": "Ignore",
 			"detail.tokenpilot-inspired": "Layered on Balanced: dedupe pointers, recovery exemption, summary locators, prefix stabilization, and read-state semantics; the estimator needs an endpoint configured separately",
 			"profile.custom": "Custom / Experimental",
 			"profile.native": "Native baseline",
@@ -1529,7 +1381,9 @@ window.__ModuleLoader__.load({
 		//#region src/client/preset-options.ts
 		/** The namespace key holding every tokenpilot-inspired sub-capability override. */
 		const PRESET_OPTIONS_KEY = "presetOptions";
-		/** Every field a patch may address, in the schema's own order. */
+		/** Every field a patch may address, in the schema's own order. The retired
+		*  review-gate keys are deliberately absent: nothing writes them any more, and
+		*  a stored document that still carries them is tolerated by the decoders. */
 		const PRESET_OPTION_KEYS = [
 			"dedupeToolResults",
 			"summaryLocator",
@@ -1541,10 +1395,12 @@ window.__ModuleLoader__.load({
 			"estimatorBaseUrl",
 			"estimatorApiKey",
 			"estimatorTimeoutMs",
-			"reviewMode",
-			"reviewTimeoutTurns",
-			"cacheHitDiscountAlpha",
-			"reviewHighImpactTokens"
+			"advisorMode",
+			"advisorTimeoutMs",
+			"advisorRefreshTurns",
+			"advisorScoreThreshold",
+			"advisorSampleLimit",
+			"advisorMinTokens"
 		];
 		/**
 		* Plan the path ops one patch needs against the section currently stored.
@@ -1596,314 +1452,6 @@ window.__ModuleLoader__.load({
 				if (key === void 0) return false;
 				return op.op === "set" ? stored[key] === op.value : stored[key] === void 0;
 			});
-		}
-		//#endregion
-		//#region src/client/ReviewOverlay.tsx
-		/**
-		* TokenPilot-inspired R4: the review floating window.
-		*
-		* Mounted on the host `shell.overlay` slot (dsh-tidychat precedent: the layer
-		* is click-through by default and only the card opts back in), showing a
-		* bottom-right badge while any session has pending proposals and a card with
-		* the four-state summary row plus one row per proposal. Every 10s it polls the
-		* review-queue route; when the queue is empty or review mode is off the
-		* component renders null, so it never disturbs the session.
-		*
-		* Styles carry the `dsh-cc-review-` prefix and ride a one-shot style tag.
-		*/
-		const QUEUE_ROUTES = ["/api/dsh-context-compression-improved/review-queue", "/endpoint/dsh-context-compression-improved/review-queue"];
-		const DECIDE_ROUTES = ["/api/dsh-context-compression-improved/review-decide", "/endpoint/dsh-context-compression-improved/review-decide"];
-		const CSS = `
-.dsh-cc-review-badge {
-  position: fixed;
-  right: 20px;
-  bottom: 20px;
-  z-index: 70;
-  pointer-events: auto;
-  box-sizing: border-box;
-  min-width: 34px;
-  height: 34px;
-  padding: 0 10px;
-  border-radius: 17px;
-  border: 1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.4));
-  background: var(--dsw-alias-bg-layer-3, #fff);
-  color: var(--dsw-alias-label-primary, #222);
-  font-size: 13px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  cursor: pointer;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
-}
-.dsh-cc-review-card {
-  position: fixed;
-  right: 20px;
-  bottom: 62px;
-  z-index: 70;
-  pointer-events: auto;
-  box-sizing: border-box;
-  width: min(420px, calc(100vw - 40px));
-  max-height: min(60vh, 520px);
-  overflow: auto;
-  background: var(--dsw-alias-bg-layer-3, #fff);
-  border: 1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.4));
-  border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
-  padding: 12px 14px;
-  color: var(--dsw-alias-label-primary, #222);
-  font-size: 13px;
-}
-.dsh-cc-review-title {
-  font-weight: 600;
-  margin: 0 0 6px;
-  font-size: 13px;
-}
-.dsh-cc-review-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  color: var(--dsw-alias-label-tertiary, #888);
-  font-size: 12px;
-  margin-bottom: 8px;
-}
-.dsh-cc-review-row {
-  border-top: 1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.25));
-  padding: 8px 0;
-}
-.dsh-cc-review-row-meta {
-  color: var(--dsw-alias-label-tertiary, #888);
-  font-size: 12px;
-  margin-bottom: 4px;
-}
-.dsh-cc-review-actions {
-  display: flex;
-  gap: 8px;
-}
-.dsh-cc-review-btn {
-  appearance: none;
-  border: 1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.4));
-  background: transparent;
-  color: inherit;
-  border-radius: 6px;
-  padding: 3px 10px;
-  font-size: 12px;
-  cursor: pointer;
-}
-.dsh-cc-review-btn-primary {
-  background: var(--dsw-alias-state-business-primary, #3b82f6);
-  border-color: transparent;
-  color: #fff;
-}
-`;
-		function injectOnce() {
-			const tag = document.createElement("style");
-			tag.setAttribute("data-plugin-css", "dsh-context-compression-improved-review");
-			tag.textContent = CSS;
-			document.head.appendChild(tag);
-			return () => {
-				tag.remove();
-			};
-		}
-		async function fetchJson(route, init) {
-			const response = await fetch(route, {
-				headers: { "cache-control": "no-cache" },
-				...init
-			});
-			if (!response.ok) return void 0;
-			return response.json();
-		}
-		async function pollQueue() {
-			for (const route of QUEUE_ROUTES) {
-				const body = await fetchJson(route);
-				if (body?.ok === true) return {
-					pending: body.pending ?? [],
-					summary: body.summary
-				};
-			}
-		}
-		async function postDecide(proposal, decision) {
-			for (const route of DECIDE_ROUTES) try {
-				const response = await fetch(route, {
-					method: "POST",
-					headers: { "content-type": "application/json" },
-					body: JSON.stringify({
-						sessionId: proposal.sessionId,
-						proposalId: proposal.id,
-						decision
-					})
-				});
-				if (response.status !== 404) return response.ok;
-			} catch {}
-			return false;
-		}
-		/**
-		* Slot factory helper: the client entry is a .ts file and cannot carry JSX,
-		* so the element construction lives here.
-		*/
-		function renderReviewOverlay(scope, t) {
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ReviewOverlay, {
-				scope,
-				t
-			});
-		}
-		/**
-		* The floating window itself: renders null (and stays silent) while review
-		* mode is off or nothing is pending.
-		*/
-		function ReviewOverlay({ scope, t }) {
-			const [reviewMode, setReviewMode] = (0, react.useState)(false);
-			const [pending, setPending] = (0, react.useState)([]);
-			const [summary, setSummary] = (0, react.useState)();
-			const [expanded, setExpanded] = (0, react.useState)(false);
-			const [busy, setBusy] = (0, react.useState)(false);
-			(0, react.useEffect)(injectOnce, []);
-			(0, react.useEffect)(() => {
-				const pull = () => {
-					try {
-						const snapshot = scope.getSnapshot();
-						setReviewMode(snapshot.status === "ready" && snapshot.value?.presetOptions?.reviewMode === true);
-					} catch {
-						setReviewMode(false);
-					}
-				};
-				pull();
-				let unsubscribe;
-				try {
-					unsubscribe = scope.subscribe(pull);
-				} catch {
-					unsubscribe = () => {};
-				}
-				return unsubscribe;
-			}, [scope]);
-			(0, react.useEffect)(() => {
-				if (!reviewMode) return;
-				let alive = true;
-				let timer;
-				const tick = () => {
-					pollQueue().then((result) => {
-						if (!alive) return;
-						setPending(result?.pending ?? []);
-						setSummary(result?.summary);
-						timer = setTimeout(tick, 1e4);
-					});
-				};
-				tick();
-				return () => {
-					alive = false;
-					if (timer !== void 0) clearTimeout(timer);
-				};
-			}, [reviewMode]);
-			if (!reviewMode || pending.length === 0) return null;
-			const decide = (proposal, decision) => {
-				setBusy(true);
-				postDecide(proposal, decision).then(() => {
-					return pollQueue().then((result) => {
-						setPending(result?.pending ?? []);
-						setSummary(result?.summary);
-						setBusy(false);
-					});
-				}).catch(() => {
-					setBusy(false);
-				});
-			};
-			const seqRange = (proposal) => {
-				const seqs = proposal.items.map((item) => item.seq);
-				const min = Math.min(...seqs);
-				const max = Math.max(...seqs);
-				return min === max ? `#${String(min)}` : `#${String(min)}–#${String(max)}`;
-			};
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [expanded ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-				className: "dsh-cc-review-card",
-				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-						className: "dsh-cc-review-title",
-						children: t("review.title")
-					}),
-					summary !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: "dsh-cc-review-summary",
-						children: [
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: [
-								t("review.summary.autoApplied"),
-								": ",
-								String(summary.autoApplied)
-							] }),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: [
-								t("review.summary.reviewApplied"),
-								": ",
-								String(summary.reviewApplied)
-							] }),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: [
-								t("review.summary.expired"),
-								": ",
-								String(summary.expired)
-							] }),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: [
-								t("review.summary.voided"),
-								": ",
-								String(summary.voided)
-							] })
-						]
-					}) : null,
-					pending.map((proposal) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: "dsh-cc-review-row",
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "dsh-cc-review-row-meta",
-							children: [
-								proposal.kind,
-								" · ",
-								seqRange(proposal),
-								" · R ≈ ",
-								String(proposal.benefit.recoveredTokens),
-								proposal.benefit.paybackTurns !== void 0 ? ` · ${t("review.row.payback")}: ${String(Math.round(proposal.benefit.paybackTurns * 100) / 100)}` : "",
-								proposal.benefit.expectedSaving !== void 0 ? ` · ${t("review.row.expectedSaving")}: ${String(Math.round(proposal.benefit.expectedSaving))} (${t("review.row.estimated")})` : ""
-							]
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "dsh-cc-review-actions",
-							children: [
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-									type: "button",
-									className: "dsh-cc-review-btn dsh-cc-review-btn-primary",
-									disabled: busy,
-									onClick: () => {
-										decide(proposal, "approved");
-									},
-									children: t("review.action.approve")
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-									type: "button",
-									className: "dsh-cc-review-btn",
-									disabled: busy,
-									onClick: () => {
-										decide(proposal, "rejected");
-									},
-									children: t("review.action.reject")
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-									type: "button",
-									className: "dsh-cc-review-btn",
-									disabled: busy,
-									onClick: () => {
-										decide(proposal, "ignored");
-									},
-									children: t("review.action.ignore")
-								})
-							]
-						})]
-					}, proposal.id))
-				]
-			}) : null, /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
-				type: "button",
-				className: "dsh-cc-review-badge",
-				onClick: () => {
-					setExpanded((value) => !value);
-				},
-				children: [
-					t("review.badge"),
-					" ",
-					String(pending.length)
-				]
-			})] });
 		}
 		//#endregion
 		//#region src/client/index.ts
@@ -1958,19 +1506,6 @@ window.__ModuleLoader__.load({
 				}, ContextCompressionSettingsSection));
 			} catch (error) {
 				console.warn("[dsh-context-compression-improved] settings.section 注册失败(新宿主已收编):", error);
-			}
-			try {
-				ctx.slots.inject("shell.overlay", () => ctx.slots.register({
-					name: "shell.overlay",
-					id: "context-compression-review"
-				}, () => {
-					return renderReviewOverlay(ctx.settingsScope.bind({
-						namespace: NS,
-						decode: decodeSettings
-					}), ctx.locale.bind(NS));
-				}));
-			} catch (error) {
-				console.warn("[dsh-context-compression-improved] shell.overlay 注册失败(宿主无浮层或已收编):", error);
 			}
 		}
 		//#endregion

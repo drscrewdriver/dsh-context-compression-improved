@@ -49,22 +49,37 @@ export interface SideChannelRequest {
 
 /** One bound side channel. `ask` resolves `undefined` on ANY failure. */
 export class SideChannel {
+  /**
+   * @param overrides - per-consumer overrides of the estimator-named options.
+   * The estimator itself never passes them (byte-identical behavior); the
+   * advisory advisor passes its own mode/timeout/output budget so both
+   * consumers share one transport without sharing one configuration.
+   */
   constructor(
     private readonly ctx: Context,
     private readonly options: PresetOptionsSettings,
+    private readonly overrides?: {
+      readonly mode?: '' | 'host' | 'direct'
+      readonly timeoutMs?: number
+      readonly maxTokens?: number
+    },
   ) {}
 
+  private get mode(): '' | 'host' | 'direct' {
+    return this.overrides?.mode ?? this.options.estimatorMode ?? ''
+  }
+
   get enabled(): boolean {
-    return this.options.estimatorMode === 'host' || this.options.estimatorMode === 'direct'
+    return this.mode === 'host' || this.mode === 'direct'
   }
 
   async ask(request: SideChannelRequest): Promise<string | undefined> {
-    const timeoutMs = this.options.estimatorTimeoutMs ?? 3_000
+    const timeoutMs = this.overrides?.timeoutMs ?? this.options.estimatorTimeoutMs ?? 3_000
     const timeout = AbortSignal.timeout(timeoutMs)
     const signal = typeof AbortSignal.any === 'function' ? AbortSignal.any([request.signal, timeout]) : timeout
     try {
-      if (this.options.estimatorMode === 'host') return await this.askHost(request.system, request.user, signal)
-      if (this.options.estimatorMode === 'direct') return await this.askDirect(request.system, request.user, signal)
+      if (this.mode === 'host') return await this.askHost(request.system, request.user, signal)
+      if (this.mode === 'direct') return await this.askDirect(request.system, request.user, signal)
       return undefined
     } catch {
       return undefined
@@ -79,16 +94,16 @@ export class SideChannel {
       ok: text !== undefined,
       latencyMs: Date.now() - now,
       ...this.identity() !== undefined ? { channel: this.identity()! } : {},
-      ...(text === undefined ? { reason: 'channel returned no content (timeout, non-2xx, parse failure, or reasoning ate the 256-token budget)' } : {}),
+      ...(text === undefined ? { reason: 'channel returned no content (timeout, non-2xx, parse failure, or reasoning ate the output-token budget)' } : {}),
     }
     return { ...(text === undefined ? {} : { text }), audit }
   }
 
   identity(): string | undefined {
-    if (this.options.estimatorMode === 'direct') {
+    if (this.mode === 'direct') {
       return `direct:${this.options.estimatorModel ?? ''}`
     }
-    if (this.options.estimatorMode === 'host') {
+    if (this.mode === 'host') {
       const route = this.resolveHostRoute()
       return route === undefined ? 'host' : `host:${route.provider}/${route.model}`
     }
@@ -137,7 +152,7 @@ export class SideChannel {
       system,
       temperature: 0,
       reasoningEffort: 'off',
-      maxTokens: 256,
+      maxTokens: this.overrides?.maxTokens ?? 256,
       signal,
     })
     for await (const chunk of stream) {
@@ -172,7 +187,7 @@ export class SideChannel {
           { role: 'user', content: user },
         ],
         temperature: 0,
-        max_tokens: 256,
+        max_tokens: this.overrides?.maxTokens ?? 256,
       }),
       signal,
     })
