@@ -32,7 +32,7 @@ import {
   tailTrimStub,
 } from './runtime/tail-trim.ts'
 import { installContextCompressionRetrieve } from './runtime/retrieve.ts'
-import type { PrunerState, ReviewSessionSummary } from './pruner/state.ts'
+import type { PrunerState } from './pruner/state.ts'
 import { countOmittedLines, CAPACITY_PRESSURE_RATIO } from './pruner/tuning.ts'
 import type { ToolCallInfo, SnapshotCandidate, PlannedReplacement, HistoryPlanOutcome } from './pruner/types.ts'
 import {
@@ -70,16 +70,10 @@ import {
   type EstimatorSample,
 } from './runtime/tokenpilot/estimator.ts'
 import {
-  classifyCandidates,
-  contentDigest,
-} from './runtime/tokenpilot/proposal.ts'
-import {
-  ReviewQueue,
-  type ReviewProposalRecord,
-  type ReviewReceipt,
-} from './runtime/tokenpilot/review-queue.ts'
-import { registerReviewPruner, sharedReviewStore } from './runtime/tokenpilot/review-registry.ts'
-import { openReviewStorage } from './runtime/tokenpilot/review-storage.ts'
+  adviseCandidates,
+  DEFAULT_ADVICE_ALPHA,
+  DEFAULT_ADVICE_HIGH_IMPACT_TOKENS,
+} from './runtime/tokenpilot/benefit.ts'
 import { SideChannel } from './runtime/tokenpilot/sidechannel.ts'
 import {
   advisorCandidatePreview,
@@ -241,33 +235,10 @@ export class ToolResultPruner extends Service {
       activeRequestBoundaries: new WeakMap(),
       tailTrimBoundaryAttempts: new WeakMap(),
       policyResolutionAudits: new WeakMap(),
-      reviewStore: sharedReviewStore(),
-      reviewQueues: new WeakMap(),
-      reviewClocks: new WeakMap(),
+      turnClocks: new WeakMap(),
       estimatorRemainingTurns: new WeakMap(),
       advisorChannels: new WeakMap(),
-      reviewSummaries: new WeakMap(),
     }
-
-    // Publish this instance for the top-level R4 routes. They are registered on
-    // the plugin's top-level fiber while every pruner lives inside an agent
-    // preset's isolated group, so a top-level `ctx.get` can never find one and
-    // the queue route could only answer 503.
-    ctx.effect(
-      () => registerReviewPruner(this),
-      'contextCompressionSelector.reviewRegistry()',
-    )
-
-    // TokenPilot-inspired R4: upgrade the review queue to durable storage when
-    // the optional storageDomain seam is available; the memory fallback above
-    // serves every session until (and unless) that open succeeds.
-    void openReviewStorage(name => this.ctx.get(name as never))
-      .then(store => {
-        if (store !== undefined) this.state.reviewStore = store
-      })
-      .catch(() => {
-        this.ctx.logger.warn('context-compression review storage unavailable; keeping in-memory review queue')
-      })
 
     ctx.on('session/event', (session, event) => {
       this.scanForSeededNativeSummary(session)
@@ -300,7 +271,7 @@ export class ToolResultPruner extends Service {
             // Only the immediately preceding step can contain results that have
             // not yet been exposed. This freezes both REDUCE and KEEP decisions:
             // older original events are never reconsidered after a profile change.
-            this.reviewClock(agent.session, turn)
+            this.turnClock(agent.session, turn)
             this.runRequestBoundary(agent.session, turn, step - 1, signal)
           } catch (error: unknown) {
             this.auditFailure(agent.session, 'fresh', 'request-boundary', error)
@@ -328,16 +299,6 @@ export class ToolResultPruner extends Service {
       } catch (error: unknown) {
         this.auditFailure(agent.session, 'fresh', 'terminal-pass', error)
         ctx.logger.warn('context-compression terminal pass failed open: %o', error)
-      }
-      // TokenPilot-inspired R4: review-pipeline housekeeping at the turn
-      // boundary, strictly fail-open — expire stale pendings, then execute
-      // every approved proposal as one merged batch. Order matters: expiring
-      // first keeps just-expired proposals from executing.
-      try {
-        this.expireReviewProposals(agent.session, turn)
-        this.applyApprovedProposals(agent.session)
-      } catch (error: unknown) {
-        ctx.logger.warn('context-compression review turn-boundary pass failed open: %o', error)
       }
       // TokenPilot-inspired E1: advisory estimator pass, strictly off the
       // synchronous chain. Verdicts only feed the next pressure pass.
@@ -401,7 +362,7 @@ export class ToolResultPruner extends Service {
       const planned = eligible
         .map(candidate => this.planNative(candidate, session, stage, policy, view))
         .filter((entry): entry is PlannedReplacement => entry !== null)
-      landed.push(...this.landAll(session, this.triageForReview(session, policy, planned, 'history')))
+      landed.push(...this.landAll(session, this.adviseReplacements(session, policy, planned, 'history')))
       if (landed.length === 0) {
         const chars = eligible.map(candidate => candidate.characterPressure)
         this.auditComponent(session, policy, 'native-tool-result', 'pressure', 'skipped',
@@ -435,7 +396,7 @@ export class ToolResultPruner extends Service {
           capacityPressure,
         )
         if (historyAllowed) {
-          landed.push(...this.landAll(session, this.triageForReview(session, policy, historyOutcome.plans, 'history')))
+          landed.push(...this.landAll(session, this.adviseReplacements(session, policy, historyOutcome.plans, 'history')))
         }
       }
     } else {
@@ -443,7 +404,7 @@ export class ToolResultPruner extends Service {
       if (historyAllowed) {
         historyOutcome = this.planHistoricalAging(session, policy, view)
         if (historyOutcome.kind === 'planned') {
-          landed.push(...this.landAll(session, this.triageForReview(session, policy, historyOutcome.plans, 'history')))
+          landed.push(...this.landAll(session, this.adviseReplacements(session, policy, historyOutcome.plans, 'history')))
         }
       }
     }
@@ -757,369 +718,85 @@ export class ToolResultPruner extends Service {
     }
   }
 
-  // ─────────── TokenPilot-inspired R4: human-gated review pipeline ───────────
+  // ─────────── Advisory benefit model (statistics & suggestions only) ───────────
 
   /**
-   * The per-session review queue, or `undefined` while review mode is off
-   * (every review path must then behave exactly like before).
+   * Monotonic per-session turn clock for advisory records. Bumped by the agent
+   * loop payloads (`pre-step`); passes without a turn coordinate reuse the last
+   * observed value.
    */
-  private reviewQueueFor(session: Session, policy: CompressionPolicy | undefined): ReviewQueue | undefined {
-    const presetOptions = policy?.presetOptions
-    if (presetOptions?.reviewMode !== true) return undefined
-    let queue = this.state.reviewQueues.get(session)
-    if (queue === undefined) {
-      queue = new ReviewQueue(this.state.reviewStore, { timeoutTurns: presetOptions.reviewTimeoutTurns })
-      this.state.reviewQueues.set(session, queue)
-    }
-    return queue
-  }
-
-  /**
-   * Monotonic per-session turn clock for review patience and expiry. Bumped by
-   * the agent loop payloads (`pre-step` / `turn-stopping`); passes without a
-   * turn coordinate reuse the last observed value.
-   */
-  private reviewClock(session: Session, turn?: number): number {
-    const previous = this.state.reviewClocks.get(session) ?? 0
+  private turnClock(session: Session, turn?: number): number {
+    const previous = this.state.turnClocks.get(session) ?? 0
     const next = typeof turn === 'number' && Number.isSafeInteger(turn) && turn > previous ? turn : previous
-    this.state.reviewClocks.set(session, next)
+    this.state.turnClocks.set(session, next)
     return next
   }
 
-  private auditReviewOutcome(
-    session: Session,
-    proposal: Pick<ReviewProposalRecord, 'id' | 'kind' | 'items'>,
-    event: 'enqueue' | 'expire' | 'decide' | 'apply-void' | 'apply-receipt',
-    extra: {
-      decision?: 'approved' | 'rejected' | 'ignored' | undefined
-      receiptStatus?: 'applied' | 'deferred' | undefined
-      reasonCode?: string | undefined
-    } = {},
-    turnIndex?: number,
-  ): void {
-    const tokensBefore = proposal.items.reduce((sum, item) => sum + item.tokensBefore, 0)
-    const tokensAfter = proposal.items.reduce((sum, item) => sum + item.tokensAfter, 0)
-    emitCompressionAudit(this.ctx.logger, {
-      schemaVersion: 1,
-      kind: 'review-outcome',
-      sessionId: String(session.id),
-      proposalId: proposal.id,
-      proposalKind: proposal.kind,
-      event,
-      ...extra.decision === undefined ? {} : { decision: extra.decision },
-      ...extra.receiptStatus === undefined ? {} : { receiptStatus: extra.receiptStatus },
-      ...extra.reasonCode === undefined ? {} : { reasonCode: extra.reasonCode },
-      itemSeqs: proposal.items.map(item => item.seq),
-      tokensBefore,
-      tokensAfter,
-      ...turnIndex === undefined ? {} : { turnIndex },
-    })
-  }
-
   /**
-   * Review-mode triage hook: classify one pass's planned replacements and
-   * withhold the review bucket from landing, enqueuing it for human approval
-   * instead. With review mode off (or nothing planned) this is the identity.
-   *
-   * The digest freezes each candidate's ORIGINAL surface content, so the apply
-   * point can prove "what is removed now is what was approved then".
+   * Advisory benefit-model hook — what the retired human-gated review pipeline
+   * left behind. It is the IDENTITY on the landing path: every plan it is given
+   * comes back unchanged, because a reduction must never block automatic
+   * processing. The model's band is published as a `reduction-advice` audit and
+   * snapshotted onto the advisor state for the read-only report route, so the
+   * cache-accounting insight survives without a gate.
    */
-  private triageForReview(
+  private adviseReplacements(
     session: Session,
     policy: CompressionPolicy,
     plans: readonly PlannedReplacement[],
     stage: 'fresh' | 'history' = 'history',
   ): readonly PlannedReplacement[] {
-    const queue = this.reviewQueueFor(session, policy)
-    if (queue === undefined || plans.length === 0) return plans
-    const presetOptions = policy.presetOptions!
-    const estimatorVerdicts = this.state.estimatorVerdicts.get(session)
-    const estimatorSeqs = new Set<number>([...(estimatorVerdicts?.entries() ?? [])]
-      .filter(([, expired]) => expired)
-      .map(([seq]) => seq))
-    const input = {
-      alpha: presetOptions.cacheHitDiscountAlpha,
-      // One-phase approximation of the tail that a mutation must refill: the
-      // frozen protected recent-token tail (findings.md, 约束与依赖).
-      tailTokens: Math.max(1, policy.historyKeepRecentTokens),
-      reviewHighImpactTokens: presetOptions.reviewHighImpactTokens,
-      ...this.state.estimatorRemainingTurns.get(session) === undefined
-        ? {}
-        : { remainingTurns: this.state.estimatorRemainingTurns.get(session) },
-      estimatorSeqs,
-      // Fresh plans shape content before its first request — it is not in the
-      // KV cache yet, so no cache break occurs and the refill penalty would
-      // be a phantom cost pricing every realistic fresh batch into drop.
-      stage,
-    }
-    const classified = classifyCandidates(plans.map(plan => ({
+    if (plans.length === 0) return plans
+    const remainingTurns = this.state.estimatorRemainingTurns.get(session)
+    const advice = adviseCandidates(plans.map(plan => ({
       sourceSeq: plan.sourceSeq,
       tokensBefore: plan.tokensBefore,
       tokensAfter: plan.tokensAfter,
-      component: plan.component,
-      reducer: plan.reducer,
-      content: plan.candidate.event.data.message.content[0].content,
-    })), input)
-    const autoSeqs = new Set(classified.auto.map(candidate => candidate.sourceSeq))
-    const clock = this.reviewClock(session)
-    for (const skeleton of classified.review) {
-      const enqueued = queue.enqueue(String(session.id), skeleton, clock)
-      if (enqueued) {
-        this.auditReviewOutcome(session, {
-          id: skeleton.id,
-          kind: skeleton.kind,
-          items: skeleton.items,
-        }, 'enqueue', {}, clock)
-      }
+    })), {
+      alpha: DEFAULT_ADVICE_ALPHA,
+      // One-phase approximation of the tail that a mutation must refill: the
+      // frozen protected recent-token tail (findings.md, 约束与依赖).
+      tailTokens: Math.max(1, policy.historyKeepRecentTokens),
+      highImpactTokens: DEFAULT_ADVICE_HIGH_IMPACT_TOKENS,
+      ...remainingTurns === undefined ? {} : { remainingTurns },
+      // Fresh plans shape content before its first request — it is not in the
+      // KV cache yet, so no cache break occurs and the refill penalty would be
+      // a phantom cost pricing every realistic fresh batch into the
+      // not-worth-it band.
+      stage,
+    })
+    if (advice === undefined) return plans
+    const turn = this.turnClock(session)
+    const itemSeqs = plans.map(plan => plan.sourceSeq)
+    // Observational snapshot only: the advisory-only invariant (K13) holds
+    // because no decision path reads this field.
+    getAdvisorState(session).lastAdvice = {
+      band: advice.band,
+      turn,
+      itemSeqs,
+      recoveredTokens: advice.benefit.recoveredTokens,
+      penaltyTokens: advice.benefit.penaltyTokens,
+      ...advice.benefit.paybackTurns === undefined ? {} : { paybackTurns: advice.benefit.paybackTurns },
     }
-    return plans.filter(plan => autoSeqs.has(plan.sourceSeq))
-  }
-
-  /**
-   * Execute every approved proposal of one session as ONE merged replacement
-   * batch at the current turn boundary, following the upstream applied-receipt
-   * discipline: applied receipts are built only from real mutation evidence —
-   * estimates never cross into applied savings.
-   *
-   * Per proposal: every item's frozen digest is re-checked against the current
-   * surface content; any mismatch voids the whole proposal (deferred with a
-   * reason code) instead of deleting something the user never approved.
-   * Fail-open: any unexpected error only logs and leaves the queue intact.
-   */
-  applyApprovedProposals(session: Session): void {
-    const policy = this.activePolicy(session)
-    const queue = this.reviewQueueFor(session, policy)
-    if (queue === undefined) return
-    const sessionId = String(session.id)
-    const approved = [...queue.listApproved(sessionId)]
-    if (approved.length === 0) return
-    try {
-      const view = measureForCompaction(this.ctx, session)
-      const candidatesBySeq = new Map(this.snapshot(session, view).map(candidate => [candidate.seq, candidate]))
-      const settled: {
-        proposal: ReviewProposalRecord
-        auditItems?: ReviewProposalRecord['items']
-        receipt: ReviewReceipt
-      }[] = []
-      const now = new Date().toISOString()
-      for (const proposal of approved) {
-        // Digest re-check at the execution point (the approval point cannot
-        // protect against later mutations of the same seq).
-        const voidedReason = this.reviewProposalVoided(session, proposal)
-        if (voidedReason !== undefined) {
-          settled.push({
-            proposal,
-            receipt: {
-              status: 'deferred',
-              reasonCode: voidedReason,
-              estimatedTokens: proposal.benefit.recoveredTokens,
-              updatedAt: now,
-            },
-          })
-          continue
-        }
-        // One merged batch: every still-valid proposal takes the same
-        // whole-result placeholder path in a single landAll call, so the tail
-        // refill penalty is paid once for the whole approval set.
-        const batchPlans: PlannedReplacement[] = []
-        let planned = true
-        for (const item of proposal.items) {
-          const candidate = candidatesBySeq.get(item.seq)
-          if (candidate === undefined) {
-            planned = false
-            break
-          }
-          const plan = this.planAggregate(
-            candidate,
-            session,
-            view,
-            'review-approved-whole-result',
-            'pressure',
-            undefined,
-            'history',
-            policy?.historyMode,
-          )
-          if (plan === null) {
-            planned = false
-            break
-          }
-          batchPlans.push(plan)
-        }
-        if (!planned || batchPlans.length === 0) {
-          settled.push({
-            proposal,
-            receipt: {
-              status: 'deferred',
-              reasonCode: 'review_receipt_execution_invalid',
-              estimatedTokens: proposal.benefit.recoveredTokens,
-              updatedAt: now,
-            },
-          })
-          continue
-        }
-        const landed = this.landAll(session, batchPlans)
-        if (landed.length === 0) {
-          settled.push({
-            proposal,
-            receipt: {
-              status: 'deferred',
-              reasonCode: 'review_receipt_execution_invalid',
-              estimatedTokens: proposal.benefit.recoveredTokens,
-              updatedAt: now,
-            },
-          })
-          continue
-        }
-        const landedForProposal = new Map(landed.map(entry => [entry.originalSeq, entry]))
-        const measuredItems = proposal.items.map((item) => {
-          const entry = landedForProposal.get(item.seq)
-          return entry === undefined ? item : {
-            ...item,
-            tokensBefore: entry.tokensBefore,
-            tokensAfter: entry.tokensAfter,
-          }
-        })
-        const appliedTokens = measuredItems.reduce(
-          (sum, item) => sum + item.tokensBefore - item.tokensAfter,
-          0,
-        )
-        settled.push({
-          proposal,
-          // The audit face carries the MEASURED numbers of the executed
-          // mutation; estimates never cross into applied savings.
-          auditItems: measuredItems,
-          receipt: {
-            status: 'applied',
-            estimatedTokens: proposal.benefit.recoveredTokens,
-            appliedTokens,
-            updatedAt: now,
-          },
-        })
-      }
-      for (const { proposal, auditItems, receipt } of settled) {
-        queue.recordReceipt(sessionId, proposal.id, receipt)
-        const summary = this.reviewSummaryFor(session)
-        if (receipt.status === 'applied') summary.reviewApplied += 1
-        else summary.voided += 1
-        this.auditReviewOutcome(
-          session,
-          auditItems === undefined
-            ? proposal
-            : { ...proposal, items: auditItems },
-          receipt.status === 'applied' ? 'apply-receipt' : 'apply-void',
-          receipt.status === 'applied'
-            ? { receiptStatus: 'applied' }
-            : { receiptStatus: 'deferred', reasonCode: receipt.reasonCode },
-        )
-      }
-    } catch (error: unknown) {
-      // Fail-open: a broken apply must never break the turn or the queue.
-      this.ctx.logger.warn('context-compression review apply failed open: %o', error)
-    }
-  }
-
-  /**
-   * Current surface content at one seq: the newest covering replacement's
-   * blocks when the seq was rewritten, otherwise the original event's blocks.
-   */
-  private surfaceContentAt(session: Session, seq: number): ContentBlock[] | undefined {
-    let content: ContentBlock[] | undefined
-    for (const event of sessionEvents(session)) {
-      if (event.type !== 'tool/result') continue
-      const op = event.surfaceOp
-      if (typeof op === 'object' && op.op === 'replace' && op.startSeq <= seq && seq <= op.endSeq) {
-        content = event.data.message.content[0].content
-      }
-    }
-    if (content !== undefined) return content
-    const original = sessionEvents(session).find(entry => entry.seq === seq)
-    return original?.type === 'tool/result' ? original.data.message.content[0].content : undefined
-  }
-
-  /**
-   * The execution-point digest check: `undefined` when every item's frozen
-   * digest still matches the current surface content, otherwise the aligned
-   * reason code explaining the void.
-   */
-  private reviewProposalVoided(
-    session: Session,
-    proposal: ReviewProposalRecord,
-  ): 'review_receipt_digest_invalid' | 'review_receipt_missing_candidate' | undefined {
-    for (const item of proposal.items) {
-      const current = this.surfaceContentAt(session, item.seq)
-      if (current === undefined) return 'review_receipt_missing_candidate'
-      if (contentDigest(current) !== item.digest) return 'review_receipt_digest_invalid'
-    }
-    return undefined
-  }
-
-  private reviewSummaryFor(session: Session): ReviewSessionSummary {
-    let summary = this.state.reviewSummaries.get(session)
-    if (summary === undefined) {
-      summary = { autoApplied: 0, reviewApplied: 0, expired: 0, voided: 0 }
-      this.state.reviewSummaries.set(session, summary)
-    }
-    return summary
-  }
-
-  /** Live pending review proposals of one session; empty when review mode is off. */
-  listReviewProposals(session: Session): readonly ReviewProposalRecord[] {
-    const queue = this.reviewQueueFor(session, this.activePolicy(session))
-    return queue?.listPending(String(session.id)) ?? []
-  }
-
-  /**
-   * Every session's live pending proposals, for the floating window's
-   * aggregate badge (the client carries no session id of its own).
-   */
-  listAllReviewProposals(): readonly { readonly sessionId: string, readonly proposals: readonly ReviewProposalRecord[] }[] {
-    const ids = this.state.reviewStore.ids?.() ?? []
-    const reader = new ReviewQueue(this.state.reviewStore, { timeoutTurns: 1 })
-    return ids
-      .map(sessionId => ({ sessionId, proposals: [...reader.listPending(sessionId)] }))
-      .filter(entry => entry.proposals.length > 0)
-  }
-
-  /** Four-state outcome counters of one session (floating-window summary row). */
-  reviewSummary(session: Session): ReviewSessionSummary {
-    return { ...this.reviewSummaryFor(session) }
-  }
-
-  /**
-   * Record one human decision. Returns the outcome, or `undefined` when
-   * review mode is off for this session (the route maps that to 503).
-   */
-  decideReviewProposal(
-    session: Session,
-    proposalId: string,
-    decision: 'approved' | 'rejected' | 'ignored',
-  ): { ok: true } | { ok: false, reason: 'unknown-proposal' | 'not-pending' } | undefined {
-    const queue = this.reviewQueueFor(session, this.activePolicy(session))
-    if (queue === undefined) return undefined
-    const sessionId = String(session.id)
-    const pending = queue.listPending(sessionId).find(entry => entry.id === proposalId)
-    const outcome = queue.decide(sessionId, proposalId, decision)
-    if (outcome.ok && pending !== undefined) {
-      this.auditReviewOutcome(session, pending, 'decide', { decision }, this.reviewClock(session))
-    }
-    return outcome
-  }
-
-  /**
-   * Expire stale pending proposals at one turn boundary and audit each.
-   * Public because tests drive it directly; the turn-stopping handler calls
-   * it with the loop's own turn index.
-   */
-  expireReviewProposals(session: Session, turnIndex?: number): readonly ReviewProposalRecord[] {
-    const queue = this.reviewQueueFor(session, this.activePolicy(session))
-    if (queue === undefined) return []
-    const clock = this.reviewClock(session, turnIndex)
-    const expired = queue.expireTurn(String(session.id), clock)
-    if (expired.length > 0) this.reviewSummaryFor(session).expired += expired.length
-    for (const proposal of expired) {
-      this.auditReviewOutcome(session, proposal, 'expire', {}, clock)
-    }
-    return expired
+    emitCompressionAudit(this.ctx.logger, {
+      schemaVersion: 1,
+      kind: 'reduction-advice',
+      sessionId: String(session.id),
+      profile: policy.profile,
+      band: advice.band,
+      stage,
+      itemSeqs,
+      pricedCandidates: advice.priced,
+      maxTokensBefore: advice.maxTokensBefore,
+      tokensBefore: plans.reduce((sum, plan) => sum + plan.tokensBefore, 0),
+      tokensAfter: plans.reduce((sum, plan) => sum + plan.tokensAfter, 0),
+      recoveredTokens: advice.benefit.recoveredTokens,
+      penaltyTokens: advice.benefit.penaltyTokens,
+      ...advice.benefit.paybackTurns === undefined ? {} : { paybackTurns: advice.benefit.paybackTurns },
+      ...advice.benefit.expectedSaving === undefined ? {} : { expectedSaving: advice.benefit.expectedSaving },
+      turnIndex: turn,
+    })
+    return plans
   }
 
   private activePolicy(
@@ -1130,10 +807,11 @@ export class ToolResultPruner extends Service {
     const settings = this.activeSettings(session)
     try {
       // R4 bridge: the persisted settings document's presetOptions (the
-      // settings-card writes, including reviewMode) must reach the policy —
-      // before this bridge only the estimator endpoint read them directly and
-      // every policy consumer saw the deployment defaults. User settings win
-      // over deployment config; absent fields inherit via mergePresetOptions.
+      // settings-card writes, including the advisor keys) must reach the
+      // policy — before this bridge only the estimator endpoint read them
+      // directly and every policy consumer saw the deployment defaults. User
+      // settings win over deployment config; absent fields inherit via
+      // mergePresetOptions.
       const policy = resolvePolicy(
         settings.presetOptions === undefined
           ? this.state.config
@@ -1584,7 +1262,7 @@ export class ToolResultPruner extends Service {
     const freshCandidates = candidates
       .map(candidate => plans.get(candidate.seq))
       .filter((plan): plan is PlannedReplacement => plan !== undefined)
-    const landed = this.landAll(session, this.triageForReview(session, policy, freshCandidates, 'fresh'))
+    const landed = this.landAll(session, this.adviseReplacements(session, policy, freshCandidates, 'fresh'))
     const freshLanded = landed.some(entry => entry.stage === 'fresh'
       && plans.get(entry.originalSeq)?.component === 'fresh')
     const aggregateLanded = landed.some(entry => entry.stage === 'fresh'
@@ -2443,12 +2121,6 @@ export class ToolResultPruner extends Service {
       // record ONLY — the replacement content is untouched by this field.
       ...plan.elidedLines === undefined ? {} : { elidedLines: plan.elidedLines },
     })
-    // R4: the four-state summary counts automatic-path rewrites at the single
-    // landing chokepoint; the review-approved batch settles its own counters
-    // in applyApprovedProposals.
-    if (plan.reducer !== 'review-approved-whole-result') {
-      this.reviewSummaryFor(session).autoApplied += 1
-    }
     return {
       originalSeq: candidate.seq,
       sourceSeq: plan.sourceSeq,

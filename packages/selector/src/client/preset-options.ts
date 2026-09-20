@@ -20,11 +20,12 @@ import type { PresetOptionsSettings } from '../profiles.ts'
 /** The namespace key holding every tokenpilot-inspired sub-capability override. */
 const PRESET_OPTIONS_KEY = 'presetOptions'
 
-/** Every field a patch may address, in the schema's own order. */
+/** Every field a patch may address, in the schema's own order. The retired
+ *  review-gate keys are deliberately absent: nothing writes them any more, and
+ *  a stored document that still carries them is tolerated by the decoders. */
 const PRESET_OPTION_KEYS = [
   'dedupeToolResults', 'summaryLocator', 'prefixStabilizer', 'readState', 'estimatorMode',
   'estimatorProvider', 'estimatorModel', 'estimatorBaseUrl', 'estimatorApiKey', 'estimatorTimeoutMs',
-  'reviewMode', 'reviewTimeoutTurns', 'cacheHitDiscountAlpha', 'reviewHighImpactTokens',
   'advisorMode', 'advisorTimeoutMs', 'advisorRefreshTurns', 'advisorScoreThreshold', 'advisorSampleLimit',
   'advisorMinTokens',
 ] as const

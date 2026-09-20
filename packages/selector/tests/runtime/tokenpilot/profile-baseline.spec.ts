@@ -61,15 +61,14 @@ describe('tokenpilot-inspired preset', () => {
       prefixStabilizer: true,
       readState: true,
       estimator: { mode: '' },
-      // Review pipeline (beta) ships off with its documented defaults.
-      reviewMode: false,
-      reviewTimeoutTurns: 6,
-      cacheHitDiscountAlpha: 0.1,
-      reviewHighImpactTokens: 4000,
       // Advisory advisor ships off with its documented defaults. The
       // resolved matrix intentionally gains this group so it follows the
       // estimator's resolved-consumption pattern; see
       // .agents/plans/ctx-relevance-advisor/spec.md decision record.
+      //
+      // The retired review gate's four keys are intentionally absent here:
+      // they are still ACCEPTED by the parser for upgrade safety but never
+      // reach the resolved policy (a reduction must not be gated).
       advisor: {
         mode: '',
         timeoutMs: 8000,
