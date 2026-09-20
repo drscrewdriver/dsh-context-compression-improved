@@ -420,13 +420,29 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
 
   /**
    * Bare package names the installed package's host-plane runtime files import.
+   *
+   * The runtime directory is read off the INSTALLED manifest's own `main` rather
+   * than assumed: the tarball this gate packs is `packages/selector` (`main`
+   * `lib/index.js`), while the published root manifest points at
+   * `packages/selector/lib/index.js`. Guessing either one read the wrong tree
+   * and failed closed on an ENOENT that said nothing about the plugin.
+   *
    * @param selectorDir - Installed directory of the plugin package.
+   * @param selectorManifest - The installed manifest, for its `main` field.
    * @returns The package roots the host must be able to resolve.
    */
-  const hostPlaneRuntimeImports = async (selectorDir) => {
+  const hostPlaneRuntimeImports = async (selectorDir, selectorManifest) => {
+    const main = selectorManifest?.main
+    if (typeof main !== 'string' || main.length === 0) {
+      throw new Error(`installed package declares no main entry: ${JSON.stringify(selectorManifest?.main)}`)
+    }
+    const runtimeDir = dirname(join(selectorDir, main))
+    if (!existsSync(runtimeDir)) {
+      throw new Error(`installed package main ${main} points at a directory that is not in the tarball: ${runtimeDir}`)
+    }
     const names = new Set()
     for (const entry of HOST_PLANE_ENTRIES) {
-      const source = await readFile(join(selectorDir, 'packages/selector/lib', entry), 'utf8')
+      const source = await readFile(join(runtimeDir, entry), 'utf8')
       for (const match of source.matchAll(/(?:^|[^.\w])(?:import|export)\s[^;]*?from\s*['"]([^'"]+)['"]|(?:^|[^.\w])(?:import|require)\s*\(\s*['"]([^'"]+)['"]\s*\)/gmu)) {
         const specifier = match[1] ?? match[2]
         if (specifier.startsWith('.') || specifier.startsWith('node:')) continue
@@ -502,7 +518,7 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
     const { profileRoot, selectorPath, selector } = profilePackages()
     const selectorPeers = Object.keys(selector.peerDependencies ?? {})
     const selectorDependencies = Object.keys(selector.dependencies ?? {})
-    const runtimeImports = [...await hostPlaneRuntimeImports(dirname(selectorPath))].sort()
+    const runtimeImports = [...await hostPlaneRuntimeImports(dirname(selectorPath), selector)].sort()
     const required = [...new Set([...runtimeImports, ...selectorDependencies])].sort()
     const script = [
       "const { createRequire } = require('node:module')",
