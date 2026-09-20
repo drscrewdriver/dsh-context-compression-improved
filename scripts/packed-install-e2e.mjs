@@ -316,10 +316,35 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
   let added = false
   const environment = { ...process.env, DSH_HOME: dshHome }
   let lastLifecycle = { command: '(none)', code: 0, stdout: '', stderr: '' }
+  // Positive controls for the CLI invocation path (issue #2). Declared at
+  // function scope so the failure evidence can always report them, and assigned
+  // once the clone checkout exists (spawn needs `cwd: worktree` to resolve).
+  let scriptLayerControl = { code: null, stdout: '', stderr: '' }
+  let directEntryControl = { code: null, stdout: '', stderr: '' }
+  /** Path of the tiny runner that invokes the CLI's exported entry (see below). */
+  let cliRunnerPath = null
+  /**
+   * Run the clone's CLI.
+   *
+   * Measured root cause of issue #2: the pinned clone's `apps/cli/src/bin.ts`
+   * dispatches through `if (import.meta.main) { await runCli() }`, and under
+   * tsx that flag evaluates falsy — so the module loads and does NOTHING. Both
+   * `pnpm dsh …` (the clone's own `dsh` script) and a direct
+   * `node --import tsx/esm apps/cli/src/bin.ts …` therefore exit 0 with empty
+   * output, which is exactly what the two positive controls report. The leg
+   * calls the CLI's EXPORTED entry instead, with argv shaped the way the entry
+   * would see it, so the lifecycle exercises the CLI rather than the loader's
+   * handling of a self-execution guard.
+   */
   const dsh = async (...args) => {
-    const outcome = await captureOutcome('pnpm', ['dsh', ...args], { cwd: worktree, env: environment })
+    if (cliRunnerPath === null) throw new Error('e2e: the CLI runner probe was not prepared')
+    const outcome = await captureOutcome(
+      process.execPath,
+      ['--import', 'tsx/esm', cliRunnerPath, ...args],
+      { cwd: worktree, env: environment },
+    )
     lastLifecycle = {
-      command: `pnpm dsh ${args.join(' ')}`,
+      command: `dsh ${args.join(' ')}`,
       code: outcome.code ?? -1,
       stdout: outcome.stdout,
       stderr: outcome.stderr,
@@ -332,10 +357,14 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
       ].filter(Boolean).join('\n'))
     }
   }
-  const dumpConfig = () => capture('pnpm', ['dsh', '--profile', 'web', '--dump-config'], {
-    cwd: worktree,
-    env: environment,
-  }).then(captured => captured.stdout)
+  const dumpConfig = () => capture(
+    process.execPath,
+    ['--import', 'tsx/esm', cliRunnerPath, '--profile', 'web', '--dump-config'],
+    {
+      cwd: worktree,
+      env: environment,
+    },
+  ).then(captured => captured.stdout)
 
   /** Installed manifest of the profile-resolved plugin package. */
   const profilePackages = () => {
@@ -367,6 +396,9 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
         `last lifecycle: ${lastLifecycle.command} (exit ${String(lastLifecycle.code)})`,
         `lifecycle stdout: ${lastLifecycle.stdout.trim()}`,
         `lifecycle stderr: ${lastLifecycle.stderr.trim()}`,
+        // Positive controls: see the comment where they are captured (issue #2).
+        `control script-layer (pnpm dsh --version): exit ${String(scriptLayerControl.code)} out=${scriptLayerControl.stdout.trim()} err=${scriptLayerControl.stderr.trim()}`,
+        `control direct-entry (tsx bin.ts --version): exit ${String(directEntryControl.code)} out=${directEntryControl.stdout.trim()} err=${directEntryControl.stderr.trim()}`,
         `profile dependencies: ${declared}`,
         `profiles/web/node_modules: ${installed}`,
       ].join('\n'), { cause: error })
@@ -662,6 +694,36 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
     // AND the web frontend; the healed profiles/node_modules fallback also
     // symlinks the CLI's own workspace packages.
     await run('pnpm', ['run', 'build'], { cwd: worktree })
+
+    // Positive controls (recorded, never asserted), captured HERE because the
+    // clone checkout must exist: `cwd: worktree` is what makes spawn work at
+    // all. The clone's `dsh` script is `node --import tsx/esm
+    // apps/cli/src/bin.ts`, and bin.ts' `plugin` mode ALWAYS calls runPlugin —
+    // which either initializes the profile (printing `dsh: initialized profile
+    // …`), forwards pnpm's inherited stdio, or reports a missing pnpm with exit
+    // 127. It therefore cannot exit 0 with empty output, so a silent lifecycle
+    // means the CLI never reached that mode. These two probes tell the two
+    // candidate causes apart: the package manager's script layer swallowing the
+    // invocation, versus the CLI entry itself. See issue #2.
+    scriptLayerControl = await captureOutcome('pnpm', ['dsh', '--version'], { cwd: worktree, env: environment })
+    directEntryControl = await captureOutcome(
+      process.execPath,
+      ['--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--version'],
+      { cwd: worktree, env: environment },
+    )
+    // The runner the lifecycle uses. It imports the entry and calls the
+    // exported `runCli()` after shaping argv exactly as the entry would see it
+    // (`argv[1]` = the entry path), so every mode the entry supports — profile
+    // boot, plugin forwarding, config dumps, help, version — behaves as it does
+    // when the file really is the process entry point.
+    cliRunnerPath = join(temporaryRoot, 'run-cli.mjs')
+    await writeFile(cliRunnerPath, [
+      "import { pathToFileURL } from 'node:url'",
+      `const entry = ${JSON.stringify(join(worktree, 'apps/cli/src/bin.ts'))}`,
+      'process.argv = [process.argv[0], entry, ...process.argv.slice(2)]',
+      'const { runCli } = await import(pathToFileURL(entry).href)',
+      'await runCli()',
+    ].join('\n'), 'utf8')
 
     // Real lifecycle: start on the published previous release.
     if (upgradeFrom === undefined) throw new Error('release gate requires the previous published release for the official lifecycle')
