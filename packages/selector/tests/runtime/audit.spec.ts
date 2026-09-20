@@ -71,6 +71,7 @@ describe('context-compression audit records', () => {
       tokensRemoved: 600_000,
       tokenizerId: 'mock-tokenizer',
       tokenizerRevision: 'r1',
+      measurementBasis: 'exact-tokenizer',
     }
 
     const parsed = JSON.parse(
@@ -103,6 +104,7 @@ describe('context-compression audit records', () => {
       tokensRemoved: 17_000,
       tokenizerId: 'mock-tokenizer',
       tokenizerRevision: 'r1',
+      measurementBasis: 'exact-tokenizer',
       elidedLines: 412,
     }
     const parsed = JSON.parse(

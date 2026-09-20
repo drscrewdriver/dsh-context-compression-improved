@@ -44,6 +44,7 @@ import ToolResultPruner, {
   resolvePolicy,
 } from '../../../src/pruner.ts'
 import type { CustomCompressionPolicy } from '../../../src/pruner.ts'
+import { CHARS_PER_TOKEN } from '../../../src/runtime/config.ts'
 import { DEEPSEEK_V4_TOKENIZER_ARTIFACT, deepSeekV4TokenizerForModel } from '../../../src/deepseek-v4-tokenizer.ts'
 import {
   DEEPSEEK_VISION_DEFAULT_IMAGE_TOKENS,
@@ -503,13 +504,16 @@ describe('standalone runtime on published Harness APIs', () => {
     )
     session.append('turn/start', { turn: 2 })
     const view = measureForCompaction(ctx, session)
+    // Decision gates run on the character basis, so the thresholds below are
+    // derived from per-result character pressure and expressed in the
+    // token-named settings keys via CHARS_PER_TOKEN.
     const counts = batch.resultSeqs.map((seq) => {
-      const entry = view.measuredNodes.find(node => node.seq === seq)?.count
-      if (entry?.kind !== 'exact-tokenizer') throw new Error('working-set test needs exact result counts')
-      return entry.tokens
+      const entry = view.measuredNodes.find(node => node.seq === seq)
+      if (entry === undefined) throw new Error('working-set test needs measured results')
+      return entry.characterPressure
     })
-    const recentTailTokens = counts.slice(-3).reduce((sum, tokens) => sum + tokens, 0) - 1
-    const totalToolTokens = counts.reduce((sum, tokens) => sum + tokens, 0)
+    const recentTailChars = counts.slice(-3).reduce((sum, chars) => sum + chars, 0) - 1
+    const totalToolChars = counts.reduce((sum, chars) => sum + chars, 0)
 
     await ctx.plugin(ToolResultPruner, {
       profile: 'balanced',
@@ -517,12 +521,15 @@ describe('standalone runtime on published Harness APIs', () => {
       freshTargetTokens: 90_000,
       aggregateTriggerTokens: 100_000,
       aggregateTargetTokens: 90_000,
-      // The strict required-reclaim gate demands one batch pull tool tokens
+      // The strict required-reclaim gate demands one batch pull tool chars
       // back below the trigger; 72% leaves exactly the two oldest results as
       // the reclaimable margin above the placeholder residue.
-      historyTriggerTokens: Math.floor(totalToolTokens * 0.72),
+      historyTriggerTokens: Math.floor(totalToolChars * 0.72 / CHARS_PER_TOKEN),
       historyKeepRecentToolCalls: 2,
-      historyKeepRecentTokens: recentTailTokens,
+      // 4 x floor(recentTailChars / 4) sits above the two-newest char total
+      // and at or below the three-newest total, so the tail protects exactly
+      // the three newest results.
+      historyKeepRecentTokens: Math.floor(recentTailChars / CHARS_PER_TOKEN),
       historyMinReclaimTokens: 1,
     }).await()
 
@@ -1367,7 +1374,7 @@ describe('standalone runtime on published Harness APIs', () => {
     }))
   })
 
-  it('preserves exact-tokenizer-unavailable before Adaptive cost authority', async () => {
+  it('audits adaptive-cost-rejected on the character basis when the authority lacks request telemetry', async () => {
     const ctx = await runtimeContext()
     const audit = captureAudit(ctx)
     await ctx.plugin(ToolResultPruner, {
@@ -1378,7 +1385,9 @@ describe('standalone runtime on published Harness APIs', () => {
       aggregateTargetTokens: 90_000,
       historyTriggerTokens: 100,
       historyKeepRecentToolCalls: 0,
-      historyKeepRecentTokens: 1,
+      // A zero tail budget keeps nothing in the char-basis protection loop
+      // (0 < 0 is false), so the batch can actually form.
+      historyKeepRecentTokens: 0,
       historyMinReclaimTokens: 1,
     }).await()
     const session = Session.create(SessionId('public-history-adaptive-exact-unavailable'))
@@ -1393,18 +1402,21 @@ describe('standalone runtime on published Harness APIs', () => {
     )
     session.append('turn/start', { turn: 2 })
     ctx.toolResultPruner.pruneSession(session, { stage: 'pressure' })
+    // Planning now succeeds on the character basis; the batch is refused by
+    // the adaptive cost authority (no adjacent request telemetry), not by a
+    // missing exact count.
     expect(audit.records()).toContainEqual(expect.objectContaining({
       kind: 'component-evaluation',
       sessionId: String(session.id),
       component: 'history',
       status: 'skipped',
-      reason: 'exact-tokenizer-unavailable',
+      reason: 'adaptive-cost-rejected',
       historyMode: 'adaptive',
-      measurementKind: 'unavailable',
+      measurementKind: 'characters',
     }))
   })
 
-  it('audits exact-tokenizer-unavailable for History when counts are not exact', async () => {
+  it('plans and lands History on the character basis when counts are not exact', async () => {
     const ctx = await runtimeContext()
     const audit = captureAudit(ctx)
     await ctx.plugin(ToolResultPruner, {
@@ -1415,21 +1427,28 @@ describe('standalone runtime on published Harness APIs', () => {
       aggregateTargetTokens: 90_000,
       historyTriggerTokens: 100,
       historyKeepRecentToolCalls: 0,
-      historyKeepRecentTokens: 1,
+      historyKeepRecentTokens: 0,
       historyMinReclaimTokens: 1,
     }).await()
     const session = Session.create(SessionId('public-history-exact-unavailable'))
     appendToolTurn(session, 1, 'unknown model history evidence '.repeat(300), true, undefined, 'deepseek', 'unsupported-public-model')
     session.append('turn/start', { turn: 2 })
     ctx.toolResultPruner.pruneSession(session, { stage: 'pressure' })
+    // A committed batch forms from character pressure alone and lands, because
+    // this pruner registers its own recovery tool. The sibling case below drops
+    // the tool registry to exercise the recovery-tool-unavailable path.
     expect(audit.records()).toContainEqual(expect.objectContaining({
-      kind: 'component-evaluation',
+      kind: 'rewrite',
       sessionId: String(session.id),
       component: 'history',
-      status: 'skipped',
-      reason: 'exact-tokenizer-unavailable',
-      measurementKind: 'unavailable',
+      reducer: 'historical-tool-result-aging',
+      measurementBasis: 'characters',
+      tokenizerId: 'characters',
+      tokenizerRevision: 'chars-per-token-4.0',
     }))
+    // The character basis never claims an exact tokenizer it does not have.
+    expect(audit.records().some(record =>
+      record.kind === 'rewrite' && record.measurementBasis === 'exact-tokenizer')).toBe(false)
   })
 
   it('audits recovery-tool-unavailable when a committed batch cannot land without the recovery tool', async () => {
@@ -1800,14 +1819,15 @@ describe('standalone runtime on published Harness APIs', () => {
     expect(replayRecovered).toEqual(recovered)
   })
 
-  it('audits TailTrim threshold, tokenizer, safety-group, and min-reclaim skip paths', async () => {
+  it('audits TailTrim threshold, safety-group, and min-reclaim skip paths and lands on the character basis for an unknown model', async () => {
     async function runScenario(options: {
       readonly id: string
-      readonly expectedReason: string
+      readonly expectedReason?: string
       readonly trigger: number
       readonly minReclaim: number
       readonly candidateTurns: number
       readonly model?: string
+      readonly expectLanding?: boolean
     }): Promise<void> {
       const ctx = new Context()
       activeContexts.push(ctx)
@@ -1849,7 +1869,17 @@ describe('standalone runtime on published Harness APIs', () => {
 
       ctx.toolResultPruner.pruneSession(session, { stage: 'pressure' })
 
-      expect(rewrites(audit.records()).filter(record => record.component === 'tail-trim')).toHaveLength(0)
+      const tailTrimRewrites = rewrites(audit.records()).filter(record => record.component === 'tail-trim')
+      if (options.expectLanding === true) {
+        // An unknown model id no longer skips: the group lands and the record
+        // must honestly report the character basis.
+        expect(tailTrimRewrites).toHaveLength(1)
+        expect(tailTrimRewrites[0]?.measurementBasis).toBe('characters')
+        expect(tailTrimRewrites[0]?.tokenizerId).toBe('characters')
+        expect(tailTrimRewrites[0]?.tokenizerRevision).toBe('chars-per-token-4.0')
+        return
+      }
+      expect(tailTrimRewrites).toHaveLength(0)
       expect(audit.records()).toContainEqual(expect.objectContaining({
         kind: 'component-evaluation',
         sessionId: String(session.id),
@@ -1867,12 +1897,12 @@ describe('standalone runtime on published Harness APIs', () => {
       candidateTurns: 2,
     })
     await runScenario({
-      id: 'public-tailtrim-tokenizer-unavailable',
-      expectedReason: 'exact-tokenizer-unavailable',
+      id: 'public-tailtrim-character-basis-landing',
       trigger: 1,
       minReclaim: 1,
       candidateTurns: 2,
       model: 'unsupported-public-model',
+      expectLanding: true,
     })
     await runScenario({
       id: 'public-tailtrim-first-group-protected',
@@ -2308,19 +2338,25 @@ describe('standalone runtime on published Harness APIs', () => {
     // The original image-bearing result stays on the surface untouched.
     const original = session.events[imageResult.seq]
     expect(original?.type).toBe('tool/result')
+    // Character basis: the text-only guard rejects a rich node, so the fresh and
+    // aggregate passes report no reducible candidate and the single candidate
+    // stays inside the protected History tail. The image itself is never
+    // rewritten, which is the behaviour this case exists to protect.
     expect(audit.records()).toContainEqual(expect.objectContaining({
       kind: 'component-evaluation',
       sessionId: String(session.id),
       component: 'fresh',
       status: 'skipped',
-      reason: 'exact-tokenizer-unavailable',
+      reason: 'no-valid-reduction',
+      measurementKind: 'characters',
     }))
     expect(audit.records()).toContainEqual(expect.objectContaining({
       kind: 'component-evaluation',
       sessionId: String(session.id),
       component: 'history',
       status: 'skipped',
-      reason: 'exact-tokenizer-unavailable',
+      reason: 'protected-working-set',
+      measurementKind: 'characters',
     }))
   })
 
@@ -2580,5 +2616,87 @@ describe('standalone runtime on published Harness APIs', () => {
       record.reason === 'no-safe-eligible-tool-group'
       || record.reason === 'exact-tokenizer-unavailable-in-protected-set'
       || record.reason === 'exact-tokenizer-unavailable')).toBe(true)
+  })
+})
+
+describe('character basis / model-id independence', () => {
+  // ~57,688 characters of read-type output on the decision surface, in the
+  // code shape the hypa-code-skeleton reducer collapses.
+  const readFixture = [
+    "import { readFile } from 'node:fs/promises'",
+    '',
+    ...Array.from({ length: 300 }, (_, index) => [
+      `export function handler${String(index)}(input: string): string {`,
+      `  const normalized = input.trim().toLowerCase()`,
+      `  if (normalized.length === 0) return 'empty-${String(index)}'`,
+      `  return normalized.split('-').join('+')`,
+      '}',
+      '',
+    ]).flat(),
+  ].join('\n')
+
+  async function characterBasisContext(): Promise<Context> {
+    const ctx = await runtimeContext()
+    await ctx.plugin(TestSettings).await()
+    await ctx.plugin(SelectorHost).await()
+    await ctx.settings.update(settingsNamespace(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE), {
+      profile: 'balanced',
+      codeSkeleton: { enabled: true },
+    })
+    await ctx.plugin(ToolResultPruner, {
+      profile: 'balanced',
+      freshTriggerTokens: 1_000,
+      freshTargetTokens: 800,
+      aggregateTriggerTokens: 500_000,
+      aggregateTargetTokens: 450_000,
+      historyTriggerTokens: 500_000,
+    }).await()
+    return ctx
+  }
+
+  for (const routedModel of ['deepseek-nonexistent-9', 'deepseek-flash']) {
+    it(`lands a fresh reduction on the character basis for routed model ${routedModel}`, async () => {
+      const ctx = await characterBasisContext()
+      const audit = captureAudit(ctx)
+      const session = Session.create(SessionId(`public-char-basis-${routedModel}`))
+      appendToolTurn(session, 1, readFixture, false, undefined, 'deepseek-official', routedModel, 'read')
+
+      const result = ctx.toolResultPruner.pruneSession(session, {
+        stage: 'fresh',
+        freshTurn: 1,
+        freshStep: 1,
+      })
+
+      expect(result.pruned.length).toBe(1)
+      expect(result.pruned[0]?.reducer).toBe('hypa-code-skeleton')
+      // The decision ran on characters: the record must not claim an exact
+      // tokenizer it never used.
+      const record = rewrites(audit.records()).find(entry => entry.component === 'fresh')
+      expect(record?.measurementBasis).toBe('characters')
+      expect(record?.tokenizerId).toBe('characters')
+      expect(record?.tokenizerRevision).toBe('chars-per-token-4.0')
+    })
+  }
+
+  it('keeps the exact-tokenizer basis and the same reducer for a whitelisted model', async () => {
+    const ctx = await characterBasisContext()
+    const audit = captureAudit(ctx)
+    const session = Session.create(SessionId('public-char-basis-whitelisted'))
+    appendToolTurn(session, 1, readFixture, false, undefined, 'deepseek-official', MODEL, 'read')
+
+    const result = ctx.toolResultPruner.pruneSession(session, {
+      stage: 'fresh',
+      freshTurn: 1,
+      freshStep: 1,
+    })
+
+    expect(result.pruned.length).toBe(1)
+    expect(result.pruned[0]?.reducer).toBe('hypa-code-skeleton')
+    const record = rewrites(audit.records()).find(entry => entry.component === 'fresh')
+    expect(record?.measurementBasis).toBe('exact-tokenizer')
+    expect(record?.tokenizerId).toEqual(expect.stringContaining('deepseek'))
+    expect(record?.tokenizerRevision).toEqual(expect.any(String))
+    expect(record?.tokensBefore).toBeGreaterThan(0)
+    expect(record?.tokensAfter).toBeGreaterThan(0)
   })
 })

@@ -31,9 +31,9 @@ describe('Conservative Adaptive interval', () => {
       expectedTokenizerRevision: 'DeepSeek-V4-Pro-0813',
       previousRequestMeasurement: exact(30_500),
       measuredNodes: [
-        { seq: 0, count: exact(10_000) },
-        { seq: 2, count: exact(20_000) },
-        { seq: 3, count: exact(500) },
+        { seq: 0, count: exact(10_000), characterPressure: 40_000 },
+        { seq: 2, count: exact(20_000), characterPressure: 80_000 },
+        { seq: 3, count: exact(500), characterPressure: 2_000 },
       ],
     })).toEqual({
       kind: 'available',
@@ -57,7 +57,7 @@ describe('Conservative Adaptive interval', () => {
         estimatorRevision: 'r1',
         calibration: { sampleCount: 1, conservativeMarginTokens: 200 },
       }),
-      measuredNodes: [{ seq: 0, count: exact(10_000) }],
+      measuredNodes: [{ seq: 0, count: exact(10_000), characterPressure: 40_000 }],
     })).toMatchObject({
       kind: 'available',
       measurementKind: 'tokenizer-estimate',
@@ -79,7 +79,7 @@ describe('Conservative Adaptive interval', () => {
       previousPromptTokens: 200,
       expectedTokenizerRevision: 'DeepSeek-V4-Pro-0813',
       previousRequestMeasurement: measurement,
-      measuredNodes: [{ seq: 0, count: exact(50) }],
+      measuredNodes: [{ seq: 0, count: exact(50), characterPressure: 200 }],
     })).toEqual({ kind: 'unknown', reason })
   })
 
@@ -90,7 +90,7 @@ describe('Conservative Adaptive interval', () => {
       previousPromptTokens: 200,
       expectedTokenizerRevision: 'DeepSeek-V4-Pro-0813',
       previousRequestMeasurement: exact(200, 'DeepSeek-V4-Flash-0731'),
-      measuredNodes: [{ seq: 0, count: exact(50) }],
+      measuredNodes: [{ seq: 0, count: exact(50), characterPressure: 200 }],
     })).toEqual({ kind: 'unknown', reason: 'request-tokenizer-revision-mismatch' })
   })
 
@@ -101,7 +101,7 @@ describe('Conservative Adaptive interval', () => {
       previousPromptTokens: 200,
       expectedTokenizerRevision: 'DeepSeek-V4-Pro-0813',
       previousRequestMeasurement: exact(200),
-      measuredNodes: [{ seq: 0, count: exact(50, 'DeepSeek-V4-Flash-0731') }],
+      measuredNodes: [{ seq: 0, count: exact(50, 'DeepSeek-V4-Flash-0731'), characterPressure: 200 }],
     })).toEqual({ kind: 'unknown', reason: 'exact-prefix-tokenizer-revision-mismatch' })
   })
 

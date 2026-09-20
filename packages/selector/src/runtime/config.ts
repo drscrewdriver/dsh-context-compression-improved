@@ -315,6 +315,24 @@ export function codePointLength(text: string): number {
 }
 
 /**
+ * Conservative upper bound on characters per token. Same convention the
+ * readInputCapChars invariant already uses (see resolvePolicy): English
+ * code runs approximately four characters per token at the upper bound.
+ */
+export const CHARS_PER_TOKEN = 4.0
+
+/** Express one token-named policy gate on the character basis. */
+export function charsForTokens(tokens: number): number {
+  return tokens * CHARS_PER_TOKEN
+}
+
+/** Derive the telemetry-only token figure from a character measurement. */
+export function charsToTokens(chars: number): number {
+  if (!Number.isFinite(chars) || chars <= 0) return 0
+  return Math.max(1, Math.round(chars / CHARS_PER_TOKEN))
+}
+
+/**
  * Test whether a settings value names a supported compression profile.
  * @param value - untrusted settings value.
  * @returns whether the value is a supported compression profile.
