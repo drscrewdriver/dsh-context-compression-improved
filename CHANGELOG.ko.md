@@ -2,6 +2,30 @@
 
 > 전체 히스토리(업스트림 0.1.0 이전 포함)는 [CHANGELOG.md](CHANGELOG.md)를 참고하세요. 이 파일은 포크의 추가 항목만 번역한 것입니다. · [English](CHANGELOG.md) · [中文](CHANGELOG.zh.md) · [日本語](CHANGELOG.ja.md)
 
+## 0.5.4 - 2026-09-20
+
+### Fixed(수정)
+
+- 설치 표면이 `@deepseek-ai/schemastery`를 **런타임 의존성**으로 선언합니다. 패키징된 런타임은 이를
+  무조건 임포트합니다(`packages/selector/lib/index.js`, `lib/pruner.js`, `lib/advisor-state.js`의
+  `import z from '@deepseek-ai/schemastery'`). 그런데 0.5.3은 소비자 설치가 읽는 어느 위치에도 이를
+  선언하지 않았습니다. 배포용 루트 매니페스트는 `@huggingface/tokenizers`와 `js-yaml`만 나열했고,
+  `packages/selector/package.json`은 peer로 나열했지만 자신이 설치하는 중첩 패키지에 대해 패키지
+  관리자가 그 선언을 참조하지는 않습니다. 그래서 해석 여부는 무관한 다른 설치 패키지가
+  `@deepseek-ai/schemastery`를 프로필로 끌어올려 주는지에 달려 있었습니다. 깨끗한 설치에서는 Harness
+  설치의 공유 모듈 폴백 `$DSH_HOME/profiles/node_modules`로 떨어졌고, 그 폴백에 빌드된 패키지가 없는
+  호스트에서는 모든 플러그인 엔트리 로드가 실패해 Bundle 계층 없이 기동했습니다. 이제 두 매니페스트 모두
+  `3.18.2`(이번 릴리스의 빌드와 테스트에 사용한 버전)로 고정하며, selector는 지지 않을 peer 의무를
+  주장하지 않습니다.
+
+### Added(추가)
+
+- `verify:release`가 설치 표면 의존성을 패키징된 런타임 파일이 실제로 임포트하는 베어 지정자에서
+  도출합니다(`@huggingface/tokenizers`와 `js-yaml`을 손으로 나열하던 방식 제거). 플러그인과 함께
+  배포되는 것과 Harness 설치가 제공하는 것의 구분은 **검토된 목록**이며, 어느 매니페스트에도 제공자가 없는
+  임포트는 누락된 이름과 함께 게이트가 실패합니다. 이 게이트는 수정 전 매니페스트에 대해 **음성 대조**로
+  먼저 실행해 `@deepseek-ai/schemastery`에서 실패함을 확인했습니다.
+
 ## 0.5.3 - 2026-09-20
 
 ### Fixed(수정)

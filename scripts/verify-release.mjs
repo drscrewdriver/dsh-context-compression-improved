@@ -28,9 +28,50 @@ for (const specifier of ['.', './invariant', './pruner', './client']) {
 if (rootPackage.dsh?.bundle?.patch !== './packages/selector/cordis.patch.yml') {
   fail('root must declare the DSH Bundle patch of the selector package')
 }
-for (const dependency of ['@huggingface/tokenizers', 'js-yaml']) {
+// The root manifest is the install surface: every bare specifier the packaged
+// runtime files import must be provided by that install or by the Harness
+// installation, and that split is REVIEWED here rather than assumed. 0.5.3
+// imported `@deepseek-ai/schemastery` while neither manifest declared it, so the
+// import resolved only while an unrelated package happened to hoist it into the
+// profile; a clean install fell through to the installation's shared-module
+// fallback and failed where that fallback had no built package. An import with
+// no provider fails here instead of at a consumer's first boot.
+const INSTALLATION_PROVIDED_RUNTIME = new Set([
+  '@deepseek-ai/cordis',
+  '@deepseek-ai/cordis-plugin-include',
+  '@deepseek-ai/dsh-llm',
+  '@deepseek-ai/dsh-session',
+  '@deepseek-ai/dsh-settings',
+  '@deepseek-ai/dsh-tools',
+])
+// The client-plane entry loads in the web bundler, which carries the client
+// stack (`react`, the ui-slot packages); its requires are reviewed from the
+// built artifact further down instead.
+const HOST_PLANE_ENTRIES = [
+  'lib/advisor-state.js',
+  'lib/index.js',
+  'lib/invariant.js',
+  'lib/pruner.js',
+  'lib/tail-trim.js',
+]
+const RUNTIME_IMPORT = /(?:^|[^.\w])(?:import|export)\s[^;]*?from\s*['"]([^'"]+)['"]|(?:^|[^.\w])(?:import|require)\s*\(\s*['"]([^'"]+)['"]\s*\)/gmu
+const runtimeImports = new Set()
+for (const entry of HOST_PLANE_ENTRIES) {
+  const source = await readFile(join(root, 'packages/selector', entry), 'utf8')
+  for (const match of source.matchAll(RUNTIME_IMPORT)) {
+    const specifier = match[1] ?? match[2]
+    if (specifier.startsWith('.') || specifier.startsWith('node:')) continue
+    runtimeImports.add(specifier.split('/').slice(0, specifier.startsWith('@') ? 2 : 1).join('/'))
+  }
+}
+if (runtimeImports.size === 0) fail('the packaged runtime import scan found no bare specifier')
+for (const dependency of [...runtimeImports].sort()) {
+  if (INSTALLATION_PROVIDED_RUNTIME.has(dependency)) continue
   if (rootPackage.dependencies?.[dependency] === undefined) {
-    fail(`root dependencies are missing ${dependency}`)
+    fail(`root dependencies are missing ${dependency}, which the packaged runtime imports`)
+  }
+  if (selectorPackage.dependencies?.[dependency] === undefined) {
+    fail(`selector dependencies are missing ${dependency}, which the packed candidate imports`)
   }
 }
 for (const specifier of ['.', './invariant', './pruner', './client']) {

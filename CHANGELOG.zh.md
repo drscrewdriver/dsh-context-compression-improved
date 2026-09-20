@@ -2,6 +2,27 @@
 
 > 完整历史（含上游 0.1.0 及更早版本）见 [CHANGELOG.md](CHANGELOG.md)。本文件只翻译本 fork 的新增条目。 · [English](CHANGELOG.md) · [日本語](CHANGELOG.ja.md) · [한국어](CHANGELOG.ko.md)
 
+## 0.5.4 - 2026-09-20
+
+### Fixed
+
+- 安装面现在把 `@deepseek-ai/schemastery` 声明为**运行时依赖**。打包后的运行时无条件导入它
+  （`packages/selector/lib/index.js`、`lib/pruner.js`、`lib/advisor-state.js` 中的
+  `import z from '@deepseek-ai/schemastery'`），但 0.5.3 在任何"消费者安装会读取"的位置都没有声明：
+  发布用的根清单只列了 `@huggingface/tokenizers` 与 `js-yaml`，而 `packages/selector/package.json`
+  把它列为 peer——对于它自己安装的嵌套包，包管理器根本不会去读该声明。于是能否解析取决于别的已装包是否
+  恰好把 `@deepseek-ai/schemastery` 提升进 profile。干净安装时该导入会落到 Harness 安装自身的共享模块
+  回退目录 `$DSH_HOME/profiles/node_modules`；当该回退处没有已构建的包时，每个插件入口都加载失败，
+  宿主启动后就没有 Bundle 层。现在两份清单都钉死 `3.18.2`（本次发布构建与实测所用版本），selector 也
+  不再声称一个它并不承担的 peer 义务。
+
+### Added
+
+- `verify:release` 改为**从打包运行时文件实际导入的裸标识符推导**安装面依赖，不再手工点名
+  `@huggingface/tokenizers` 与 `js-yaml`。哪些随插件发布、哪些由 Harness 安装提供，这份分界是一份
+  **经评审的清单**；一旦某个导入的提供方不在两份清单中，门禁就会带着缺失的包名失败。该门禁先以"未修复
+  的清单"做了**阴性对照**，当时正是在 `@deepseek-ai/schemastery` 上失败。
+
 ## 0.5.3 - 2026-09-20
 
 ### Fixed
