@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { createReadStream } from 'node:fs'
 import { copyFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
-import { readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -316,10 +316,35 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
   let added = false
   const environment = { ...process.env, DSH_HOME: dshHome }
   let lastLifecycle = { command: '(none)', code: 0, stdout: '', stderr: '' }
+  // Positive controls for the CLI invocation path (issue #2). Declared at
+  // function scope so the failure evidence can always report them, and assigned
+  // once the clone checkout exists (spawn needs `cwd: worktree` to resolve).
+  let scriptLayerControl = { code: null, stdout: '', stderr: '' }
+  let directEntryControl = { code: null, stdout: '', stderr: '' }
+  /** Path of the tiny runner that invokes the CLI's exported entry (see below). */
+  let cliRunnerPath = null
+  /**
+   * Run the clone's CLI.
+   *
+   * Measured root cause of issue #2: the pinned clone's `apps/cli/src/bin.ts`
+   * dispatches through `if (import.meta.main) { await runCli() }`, and under
+   * tsx that flag evaluates falsy — so the module loads and does NOTHING. Both
+   * `pnpm dsh …` (the clone's own `dsh` script) and a direct
+   * `node --import tsx/esm apps/cli/src/bin.ts …` therefore exit 0 with empty
+   * output, which is exactly what the two positive controls report. The leg
+   * calls the CLI's EXPORTED entry instead, with argv shaped the way the entry
+   * would see it, so the lifecycle exercises the CLI rather than the loader's
+   * handling of a self-execution guard.
+   */
   const dsh = async (...args) => {
-    const outcome = await captureOutcome('pnpm', ['dsh', ...args], { cwd: worktree, env: environment })
+    if (cliRunnerPath === null) throw new Error('e2e: the CLI runner probe was not prepared')
+    const outcome = await captureOutcome(
+      process.execPath,
+      ['--import', 'tsx/esm', cliRunnerPath, ...args],
+      { cwd: worktree, env: environment },
+    )
     lastLifecycle = {
-      command: `pnpm dsh ${args.join(' ')}`,
+      command: `dsh ${args.join(' ')}`,
       code: outcome.code ?? -1,
       stdout: outcome.stdout,
       stderr: outcome.stderr,
@@ -332,10 +357,14 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
       ].filter(Boolean).join('\n'))
     }
   }
-  const dumpConfig = () => capture('pnpm', ['dsh', '--profile', 'web', '--dump-config'], {
-    cwd: worktree,
-    env: environment,
-  }).then(captured => captured.stdout)
+  const dumpConfig = () => capture(
+    process.execPath,
+    ['--import', 'tsx/esm', cliRunnerPath, '--profile', 'web', '--dump-config'],
+    {
+      cwd: worktree,
+      env: environment,
+    },
+  ).then(captured => captured.stdout)
 
   /** Installed manifest of the profile-resolved plugin package. */
   const profilePackages = () => {
@@ -367,6 +396,9 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
         `last lifecycle: ${lastLifecycle.command} (exit ${String(lastLifecycle.code)})`,
         `lifecycle stdout: ${lastLifecycle.stdout.trim()}`,
         `lifecycle stderr: ${lastLifecycle.stderr.trim()}`,
+        // Positive controls: see the comment where they are captured (issue #2).
+        `control script-layer (pnpm dsh --version): exit ${String(scriptLayerControl.code)} out=${scriptLayerControl.stdout.trim()} err=${scriptLayerControl.stderr.trim()}`,
+        `control direct-entry (tsx bin.ts --version): exit ${String(directEntryControl.code)} out=${directEntryControl.stdout.trim()} err=${directEntryControl.stderr.trim()}`,
         `profile dependencies: ${declared}`,
         `profiles/web/node_modules: ${installed}`,
       ].join('\n'), { cause: error })
@@ -379,16 +411,47 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
   }
 
   /**
-   * Peers a headless official profile can never provide: pure web-host UI
-   * packages supplied by the web app, not the CLI installation. The list is
-   * REVIEWED and exact — any OTHER unresolved selector peer fails the gate,
-   * and every web/client peer is still import-verified from the built
-   * client libraries below.
+   * Host-plane runtime entries of the installed package. `client.js` is
+   * excluded: it is a lazy-CJS web artifact whose requires (`react`, the
+   * ui-slot packages) the web bundler supplies, and that stack is verified
+   * from the built client libraries below.
    */
-  const WEB_ONLY_HEADLESS_UNRESOLVED_PEERS = [
-    '@deepseek-ai/dsh-client-ui-primitives',
-    '@deepseek-ai/dsh-client-ui-slots',
-  ]
+  const HOST_PLANE_ENTRIES = ['index.js', 'pruner.js', 'advisor-state.js', 'tail-trim.js', 'invariant.js']
+
+  /**
+   * Bare package names the installed package's host-plane runtime files import.
+   *
+   * The runtime directory is read off the INSTALLED manifest's own `main` rather
+   * than assumed: the tarball this gate packs is `packages/selector` (`main`
+   * `lib/index.js`), while the published root manifest points at
+   * `packages/selector/lib/index.js`. Guessing either one read the wrong tree
+   * and failed closed on an ENOENT that said nothing about the plugin.
+   *
+   * @param selectorDir - Installed directory of the plugin package.
+   * @param selectorManifest - The installed manifest, for its `main` field.
+   * @returns The package roots the host must be able to resolve.
+   */
+  const hostPlaneRuntimeImports = async (selectorDir, selectorManifest) => {
+    const main = selectorManifest?.main
+    if (typeof main !== 'string' || main.length === 0) {
+      throw new Error(`installed package declares no main entry: ${JSON.stringify(selectorManifest?.main)}`)
+    }
+    const runtimeDir = dirname(join(selectorDir, main))
+    if (!existsSync(runtimeDir)) {
+      throw new Error(`installed package main ${main} points at a directory that is not in the tarball: ${runtimeDir}`)
+    }
+    const names = new Set()
+    for (const entry of HOST_PLANE_ENTRIES) {
+      const source = await readFile(join(runtimeDir, entry), 'utf8')
+      for (const match of source.matchAll(/(?:^|[^.\w])(?:import|export)\s[^;]*?from\s*['"]([^'"]+)['"]|(?:^|[^.\w])(?:import|require)\s*\(\s*['"]([^'"]+)['"]\s*\)/gmu)) {
+        const specifier = match[1] ?? match[2]
+        if (specifier.startsWith('.') || specifier.startsWith('node:')) continue
+        names.add(specifier.split('/').slice(0, specifier.startsWith('@') ? 2 : 1).join('/'))
+      }
+    }
+    if (names.size === 0) throw new Error('installed package exposes no host-plane runtime import to verify')
+    return names
+  }
 
   /**
    * Verify every web/client peer exists as a BUILT artifact resolvable from
@@ -436,37 +499,41 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
   }
 
   /**
-   * Prove the plugin actually loads in the official profile: pnpm's peers
-   * check cannot see the healed profiles/node_modules fallback by design, so
-   * the release gate resolves and imports instead. Fail-closed parts: every
-   * RUNTIME peer (the engine surface the headless host must provide) and the
-   * selector's node entry with a callable apply(). The selector's remaining
-   * unresolved peers must equal the REVIEWED web-only whitelist above —
-   * anything else (a newly missing host dependency) fails immediately.
+   * Prove the plugin actually loads in the official profile: pnpm's peers check
+   * cannot see the healed profiles/node_modules fallback by design, so the
+   * release gate resolves and imports instead. Fail-closed parts:
+   *
+   * - every bare specifier the HOST-plane runtime files import must resolve from
+   *   the profile. That set is DERIVED from the installed artifact rather than
+   *   listed by hand: 0.5.3 imported `@deepseek-ai/schemastery` while declaring
+   *   it in no manifest a consumer reads, and a hand-maintained whitelist plus a
+   *   hand-maintained dependency list could not see it;
+   * - every declared runtime dependency must resolve (the install surface);
+   * - the node entry must import and export a callable `apply()`;
+   * - a declared peer may stay unresolved only when no host-plane file imports
+   *   it — the web-host client packages are supplied by the web app, and their
+   *   built libraries are verified separately below.
    */
   const provePluginLoads = async () => {
-    const { profileRoot, selector } = profilePackages()
+    const { profileRoot, selectorPath, selector } = profilePackages()
     const selectorPeers = Object.keys(selector.peerDependencies ?? {})
-    const enginePeers = selectorPeers.filter(peer => !WEB_ONLY_HEADLESS_UNRESOLVED_PEERS.includes(peer))
-    for (const allowed of WEB_ONLY_HEADLESS_UNRESOLVED_PEERS) {
-      if (!selectorPeers.includes(allowed)) {
-        throw new Error(`web-only whitelist names a peer the selector no longer declares: ${allowed}`)
-      }
-    }
+    const selectorDependencies = Object.keys(selector.dependencies ?? {})
+    const runtimeImports = [...await hostPlaneRuntimeImports(dirname(selectorPath), selector)].sort()
+    const required = [...new Set([...runtimeImports, ...selectorDependencies])].sort()
     const script = [
       "const { createRequire } = require('node:module')",
       `const requireFromProfile = createRequire(String.raw\`${join(profileRoot, 'package.json')}\`)`,
-      `for (const peer of ${JSON.stringify(enginePeers)}) {`,
-      '  requireFromProfile.resolve(peer)',
+      `for (const name of ${JSON.stringify(required)}) {`,
+      '  requireFromProfile.resolve(name)',
       '}',
       "const selectorEntry = requireFromProfile.resolve('dsh-context-compression-improved')",
       'const plugin = require(selectorEntry)',
       "if (typeof plugin.apply !== 'function') throw new Error('selector entry exports no apply()')",
-      `const unresolved = []`,
+      'const unresolvedPeers = []',
       `for (const peer of ${JSON.stringify(selectorPeers)}) {`,
-      '  try { requireFromProfile.resolve(peer) } catch { unresolved.push(peer) }',
+      '  try { requireFromProfile.resolve(peer) } catch { unresolvedPeers.push(peer) }',
       '}',
-      "console.log('LOAD_OK ' + JSON.stringify(unresolved))",
+      "console.log('LOAD_OK ' + JSON.stringify(unresolvedPeers))",
     ].join('\n')
     const outcome = await captureOutcome(process.execPath, ['--input-type=commonjs', '-e', script], {
       cwd: worktree,
@@ -474,17 +541,17 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
     })
     const marker = outcome.stdout.split('\n').find(line => line.startsWith('LOAD_OK'))
     if (outcome.code !== 0 || marker === undefined) {
-      throw new Error(`official profile failed to load the plugin and its engine peers:\n${outcome.stdout}\n${outcome.stderr}`)
+      throw new Error(`official profile failed to load the plugin, its host-plane imports and its engine peers:\n${outcome.stdout}\n${outcome.stderr}`)
     }
-    const unresolved = JSON.parse(marker.slice('LOAD_OK '.length))
-    const unexpected = unresolved.filter(peer => !WEB_ONLY_HEADLESS_UNRESOLVED_PEERS.includes(peer))
-    if (unexpected.length > 0) {
-      throw new Error(`selector peers failed to resolve headless outside the reviewed web-only whitelist: ${unexpected.join(', ')}`)
+    const unresolvedPeers = JSON.parse(marker.slice('LOAD_OK '.length))
+    const importedWithoutProvider = unresolvedPeers.filter(peer => runtimeImports.includes(peer))
+    if (importedWithoutProvider.length > 0) {
+      throw new Error(`selector peers the host-plane runtime imports did not resolve from the profile: ${importedWithoutProvider.join(', ')}`)
     }
     return {
-      enginePeers: enginePeers.length,
-      headlessUnresolvedSelectorPeers: unresolved,
-      whitelist: WEB_ONLY_HEADLESS_UNRESOLVED_PEERS,
+      hostPlaneRuntimeImports: runtimeImports,
+      installedRuntimeDependencies: selectorDependencies,
+      unresolvedSelectorPeers: unresolvedPeers,
       builtClientPeersVerified: await proveBuiltClientPeersLoad(),
     }
   }
@@ -660,8 +727,60 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
     // dsh-base + dsh-web-app, the only bundle that mounts agent-presets and
     // therefore the selector's preset overlay — so build both library faces
     // AND the web frontend; the healed profiles/node_modules fallback also
-    // symlinks the CLI's own workspace packages.
+    // symlinks the CLI's own workspace packages, which is why the checkout's
+    // `vendor/schemastery/lib` has to exist too.
     await run('pnpm', ['run', 'build'], { cwd: worktree })
+    // Fail closed on the artifacts every later probe needs. Measured on the Node
+    // this workflow used to pin (24.0.0): `tsx` leaves `import.meta.main`
+    // undefined there, the clone's guarded `scripts/build.ts` exited 0 in about
+    // eight seconds having emitted nothing, and the boot probe then failed twice
+    // over — `client bundles not found; run \`pnpm run build\` before launch`
+    // from client composition, and `Cannot find module
+    // .../profiles/node_modules/@deepseek-ai/schemastery/lib/index.mjs` from the
+    // plugin, because the installation fallback resolves that name to the source
+    // checkout's `vendor/schemastery`, whose `lib` only this build produces.
+    for (const artifact of [
+      'packages/client/ui-settings/lib/client.js',
+      'vendor/schemastery/lib/index.mjs',
+    ]) {
+      if (!existsSync(join(worktree, artifact))) {
+        throw new Error([
+          `official clone build produced no ${artifact}`,
+          'the clone\'s build script is `tsx scripts/build.ts`, guarded by `if (import.meta.main)`;',
+          'tsx leaves that flag undefined on Node < 24.2, so the build exits 0 without building',
+        ].join(' '))
+      }
+    }
+
+    // Positive controls (recorded, never asserted), captured HERE because the
+    // clone checkout must exist: `cwd: worktree` is what makes spawn work at
+    // all. The clone's `dsh` script is `node --import tsx/esm
+    // apps/cli/src/bin.ts`, and bin.ts' `plugin` mode ALWAYS calls runPlugin —
+    // which either initializes the profile (printing `dsh: initialized profile
+    // …`), forwards pnpm's inherited stdio, or reports a missing pnpm with exit
+    // 127. It therefore cannot exit 0 with empty output, so a silent lifecycle
+    // means the CLI never reached that mode. These two probes tell the two
+    // candidate causes apart: the package manager's script layer swallowing the
+    // invocation, versus the CLI entry itself. See issue #2.
+    scriptLayerControl = await captureOutcome('pnpm', ['dsh', '--version'], { cwd: worktree, env: environment })
+    directEntryControl = await captureOutcome(
+      process.execPath,
+      ['--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--version'],
+      { cwd: worktree, env: environment },
+    )
+    // The runner the lifecycle uses. It imports the entry and calls the
+    // exported `runCli()` after shaping argv exactly as the entry would see it
+    // (`argv[1]` = the entry path), so every mode the entry supports — profile
+    // boot, plugin forwarding, config dumps, help, version — behaves as it does
+    // when the file really is the process entry point.
+    cliRunnerPath = join(temporaryRoot, 'run-cli.mjs')
+    await writeFile(cliRunnerPath, [
+      "import { pathToFileURL } from 'node:url'",
+      `const entry = ${JSON.stringify(join(worktree, 'apps/cli/src/bin.ts'))}`,
+      'process.argv = [process.argv[0], entry, ...process.argv.slice(2)]',
+      'const { runCli } = await import(pathToFileURL(entry).href)',
+      'await runCli()',
+    ].join('\n'), 'utf8')
 
     // Real lifecycle: start on the published previous release.
     if (upgradeFrom === undefined) throw new Error('release gate requires the previous published release for the official lifecycle')
