@@ -1,6 +1,6 @@
 {
   "id": "dsh-external/dsh-context-compression-improved",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "main": "./lib/index.js",
   "description": "Auditable tool-result context-compression selector with code-skeleton gate for DeepSeek Harness",
   "engines": {
