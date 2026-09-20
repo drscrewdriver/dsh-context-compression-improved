@@ -2,6 +2,34 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
+## 0.5.3 - 2026-09-20
+
+### Fixed
+
+- The Bundle patch no longer sets the retired review route flag. `reviewQueueRoute` was
+  removed from the plugin's Config schema when the review gate was retired, but it stayed in
+  `packages/selector/cordis.patch.yml`, where it advertised a route that can never register.
+  Hosts tolerate the unknown key today (the plugin loads and serves — verified on a live host),
+  so this is a stale-config defect rather than a break, but it would break on any host that
+  validates plugin config strictly.
+- Generated artifacts are pinned to LF (`packages/selector/lib/** text eol=lf`). With
+  `core.autocrlf=true` every checkout rewrote the committed `lib/**` to CRLF, so any branch
+  switch or merge left the whole artifact directory reported as modified with EOL-only
+  differences. Nothing was ever committed from that state, but it made every tree look dirty
+  and it would hide a real artifact change.
+
+### Added
+
+- A negative-control contract pin on the Bundle patch: it fails when a retired config key is
+  set in the patch (asserted on key-setting lines, so the explanatory comment may still name
+  the key), and it requires the live `estimatorCatalogRoute` flag to stay wired.
+
+### Tests
+
+- The client seat contract also pins the older-host degradation: a host that does not declare
+  the seat rejects the registration at the slot boundary, and `apply()` must swallow it and
+  warn instead of taking every settings entry down with it.
+
 ## 0.5.2 - 2026-09-20
 
 ### Changed
