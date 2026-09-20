@@ -2,6 +2,28 @@
 
 > 完整历史（含上游 0.1.0 及更早版本）见 [CHANGELOG.md](CHANGELOG.md)。本文件只翻译本 fork 的新增条目。 · [English](CHANGELOG.md) · [日本語](CHANGELOG.ja.md) · [한국어](CHANGELOG.ko.md)
 
+## 0.5.3 - 2026-09-20
+
+### Fixed
+
+- Bundle patch 不再设置已退役的 review 路由开关。`reviewQueueRoute` 在 review gate 退役时已从插件的
+  Config schema 删除，却仍留在 `packages/selector/cordis.patch.yml` 中，等于宣告了一条永远注册不了的
+  路由。宿主对未知配置键宽容（插件加载与服务均正常，已在真机验证），故属**陈旧配置**而非故障；但任何
+  严格校验插件配置的宿主都会失败。
+- 生成产物钉死为 LF（`packages/selector/lib/** text eol=lf`）。此前在 `core.autocrlf=true` 下，每次
+  检出都会把已提交的 `lib/**` 改写成 CRLF，于是任何分支切换或合并都会让整个产物目录以"仅行尾差异"
+  显示为已修改。该状态从未被提交过，但它让每棵树看起来都是脏的，并且会掩盖真实的产物变更。
+
+### Added
+
+- Bundle patch 的**阴性对照**契约钉桩：patch 中一旦设置退役配置键即失败（按"键赋值行"判定，注释里
+  仍可点名该键），并要求在线的 `estimatorCatalogRoute` 开关保持接线。
+
+### Tests
+
+- 客户端座位契约补充了老宿主降级钉桩：未声明该 seat 的宿主会在槽边界拒绝注册，`apply()` 必须吞掉该
+  拒绝并告警，而不是把全部设置入口一起弄丢。
+
 ## 0.5.2 - 2026-09-20
 
 ### Changed

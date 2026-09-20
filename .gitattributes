@@ -1,1 +1,2 @@
 ﻿packages/selector/assets/** -text
+packages/selector/lib/** text eol=lf
