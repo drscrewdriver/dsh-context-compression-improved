@@ -1,6 +1,6 @@
 {
   "name": "dsh-context-compression-improved",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "publishConfig": {
     "registry": "https://registry.npmjs.org",
     "access": "public",
