@@ -5,7 +5,12 @@ The installable Product Bundle for the unofficial community DeepSeek Harness con
 **0.1.0 highlights:** DeepSeek V4 Flash Vision's official tokenizer is included; users can choose the model-driven Auto Compact threshold; standard profile watermarks and compression parameters follow that choice.
 
 ```sh
-dsh plugin --profile web add dsh-context-compression-improved@latest
+```sh
+dsh plugin --profile web add dsh-context-compression-improved@dsh-0.1.5
+# DSH 0.1.2 line:
+# dsh plugin --profile web add dsh-context-compression-improved@dsh-0.1.2
+dsh --profile web --dump-config
+```
 dsh --profile web --dump-config
 ```
 
