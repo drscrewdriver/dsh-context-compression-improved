@@ -5,7 +5,12 @@
 **0.1.0 更新：**已加入 DeepSeek V4 Flash 视觉模型的官方 tokenizer；用户可选择模型驱动 Auto Compact 的触发阈值；标准 Profile 的水位与压缩参数会随该选择联动。
 
 ```sh
-dsh plugin --profile web add dsh-context-compression-improved@latest
+```sh
+dsh plugin --profile web add dsh-context-compression-improved@dsh-0.1.5
+# DSH 0.1.2 line:
+# dsh plugin --profile web add dsh-context-compression-improved@dsh-0.1.2
+dsh --profile web --dump-config
+```
 dsh --profile web --dump-config
 ```
 
