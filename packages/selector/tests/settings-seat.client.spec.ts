@@ -16,6 +16,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { apply, inject } from '../src/client/index.ts'
 import { ContextCompressionSettingsSection } from '../src/client/CompressionProfileSelector.tsx'
+import { DEFAULT_CUSTOM_COMPRESSION_POLICY } from '../src/profiles.ts'
 
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
   IconChevronDownOutlineMedium: () => null,
@@ -97,6 +98,52 @@ describe('settings-seat contract (standalone settings.section only)', () => {
     const { declared } = collectRegistrations()
     expect(declared).not.toContain('settings.plugins.tab')
     expect(declared).not.toContain('settings.plugin.item')
+  })
+
+  it('projects an identity-stable snapshot between form changes (React #185 regression)', () => {
+    // The 0.1.7 adapter wraps configForms into the legacy scope shape. Its
+    // getSnapshot MUST return the same object reference until the underlying
+    // form snapshot changes: a fresh literal per call re-renders
+    // useSyncExternalStore forever — "Minified React error #185" (maximum
+    // update depth exceeded), and the slot boundary abdicates the whole
+    // settings.section on the production host.
+    let source = {
+      status: 'ready' as const,
+      value: { settings: { profile: 'balanced', custom: DEFAULT_CUSTOM_COMPRESSION_POLICY } },
+      revision: 1, writable: true, base: undefined, user: undefined, mode: 'host' as const,
+    }
+    const listeners: (() => void)[] = []
+    const ctx = {
+      locale: { register: vi.fn(() => () => {}), bind: () => (key: string) => key },
+      configForms: { get: () => ({
+        getSnapshot: () => source,
+        subscribe: (listener: () => void) => { listeners.push(listener); return () => {} },
+        set: async () => true,
+      }) },
+      slots: {
+        inject: (_slot: string, factory: () => (() => void) | Generator<() => void>) => { void factory() },
+        register: (record: Record<string, unknown>) => {
+          registrations.push({ slot: String(record['name']), options: record, component: null })
+          return () => {}
+        },
+      },
+    }
+    const registrations: CapturedRegistration[] = []
+    apply(ctx as unknown as ClientContext)
+    const face = (registrations[0]!.options['inject'] as () => { hooks: { compression: { getSnapshot(): unknown; subscribe(l: () => void): () => void } } })()
+    const scope = face.hooks.compression
+
+    const first = scope.getSnapshot()
+    expect(scope.getSnapshot()).toBe(first)
+    // value decodes through the whole strict validator
+    expect(first && typeof first === 'object' && 'value' in first && (first as { value?: { profile?: string } }).value?.profile).toBe('balanced')
+
+    // Host accepts a change → NEW form snapshot object → projection recomputes
+    source = { ...source, revision: 2, value: { settings: { profile: 'off', custom: DEFAULT_CUSTOM_COMPRESSION_POLICY } } }
+    for (const listener of listeners) listener()
+    const second = scope.getSnapshot()
+    expect(second).not.toBe(first)
+    expect(second && typeof second === 'object' && 'value' in second && (second as { value?: { profile?: string } }).value?.profile).toBe('off')
   })
 
   it('survives an older host that does not declare the seat, warning instead of crashing', () => {
