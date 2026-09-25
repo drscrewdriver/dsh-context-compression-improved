@@ -4170,7 +4170,8 @@ var ToolResultPruner = class extends Service {
 	activeSettings(session) {
 		const frozen = this.state.sessionSettings.get(session);
 		if (frozen !== void 0) return frozen;
-		const settings = this.ctx.get("settings")?.get(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE);
+		const settingsHost = this.ctx.get("settings");
+		const settings = settingsHost?.describe?.().find((d) => String(d.ns) === "context-compression-improved-bundle")?.value ?? settingsHost?.get?.("context-compression");
 		let resolved;
 		let settingsSource = settings === void 0 ? "plugin-config-fallback" : "host-settings";
 		let autoCompactThresholdSource = settings === void 0 ? "schema-default" : "host-settings";

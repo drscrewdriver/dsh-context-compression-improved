@@ -11,6 +11,7 @@ import {
 import { DEFAULT_CUSTOM_COMPRESSION_POLICY } from '../profiles.ts'
 import { decodeSettings } from './decode.ts'
 import { en, zh } from './locales.ts'
+import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { planPresetOptionsOps, presetOptionsOpsAccepted } from './preset-options.ts'
 
 /**
@@ -28,18 +29,39 @@ interface SlotsService {
 declare module '@deepseek-ai/cordis' {
   interface Context {
     slots: SlotsService
+    configForms: ConfigFormsFace
   }
 }
 
 // Declare all consumed services (the official client-plugin pattern, and the
 // shape dsh-thinking-levels proves on this same 0.1.5 host line): cordis holds
-// apply until `locale` / `settingsScope` are provided, so registration can use
+// apply until `locale` / `configForms` are provided, so registration can use
 // them directly. Resolving them lazily via ctx.get() instead races the settings
 // client's activation — on a loss the apply early-returned and EVERY settings
-// entry (the standalone section, the plugins-tab card, the item card) silently
-// vanished.
-export const inject = ['slots', 'locale', 'settingsScope']
+// entry silently vanished.
+export const inject = ['slots', 'locale', 'configForms']
 const NS = 'context-compression'
+
+/** 0.1.7: the profile entry whose config carries the compression settings doc. */
+const ENTRY_ID = 'context-compression-improved-bundle'
+
+/** The configForms face this client consumes (structural; 0.1.7 ui-settings). */
+interface ConfigFormsFace {
+  get<T>(entryId: string): {
+    getSnapshot(): {
+      status: 'loading' | 'ready' | 'unavailable'
+      value: T | undefined
+      revision: number | undefined
+      writable: boolean
+      base: unknown
+      user: unknown
+      mode: 'host' | 'memory'
+    }
+    subscribe(listener: () => void): () => void
+    set(field: string, value: unknown): Promise<boolean>
+    unset(field: string): Promise<boolean>
+  }
+}
 
 
 function sameCustomPolicy(
@@ -68,10 +90,51 @@ function sameCustomPolicy(
 export function apply(ctx: ClientContext): void {
   ctx.locale.register(NS, { zh, en })
   const injected = (): CompressionSelectorInjected => {
-    // Bind per factory call on the caller's fiber (0.1.5: activation must
-    // never block on the settings transport; the scope disposer belongs to
-    // the calling registration's lifecycle).
-    const scope = ctx.settingsScope.bind<ContextCompressionSettings>({ namespace: NS, decode: decodeSettings })
+    // 0.1.7: the compression document rides the selector row's entry config as
+    // the volatile `settings` field. The form handle is fetched per factory
+    // call on the caller's fiber (same activation rule as the old bind); the
+    // wrapper below decodes the stored doc and converts per-field writes into
+    // whole-doc commits (a volatile object replaces as one snapshot).
+    const form = ctx.configForms.get<Record<string, unknown>>(ENTRY_ID)
+    const readDoc = (): ContextCompressionSettings | undefined =>
+      decodeSettings(form.getSnapshot().value?.settings)
+    const scope: SettingsScope<ContextCompressionSettings> = {
+      getSnapshot() {
+        const snap = form.getSnapshot()
+        return {
+          status: snap.status,
+          value: readDoc(),
+          revision: snap.revision,
+          writable: snap.writable,
+          base: snap.base,
+          user: snap.user,
+          mode: snap.mode,
+        }
+      },
+      subscribe: (listener) => form.subscribe(listener),
+      set: async (field, value) => {
+        const next = { ...(readDoc() ?? {}) } as Record<string, unknown>
+        next[field] = value
+        await form.set('settings', next)
+      },
+      unset: async (field) => {
+        const next = { ...(readDoc() ?? {}) } as Record<string, unknown>
+        delete next[field]
+        await form.set('settings', next)
+      },
+      mutate: async (ops) => {
+        const doc = { ...(readDoc() ?? {}) } as Record<string, unknown>
+        for (const op of ops) {
+          const [head, key] = op.path as [string, string]
+          if (head !== 'presetOptions') return
+          const section = { ...((doc.presetOptions ?? {}) as Record<string, unknown>) }
+          if (op.op === 'unset') delete section[key]
+          else section[key] = (op as { value?: unknown }).value
+          doc.presetOptions = section
+        }
+        await form.set('settings', doc)
+      },
+    }
     const writeAndConfirm = async (
       write: () => Promise<void>,
       accepts: (settings: ContextCompressionSettings) => boolean,

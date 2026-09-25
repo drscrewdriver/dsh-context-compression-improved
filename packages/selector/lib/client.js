@@ -1458,9 +1458,11 @@ window.__ModuleLoader__.load({
 		const inject = [
 			"slots",
 			"locale",
-			"settingsScope"
+			"configForms"
 		];
 		const NS = "context-compression";
+		/** 0.1.7: the profile entry whose config carries the compression settings doc. */
+		const ENTRY_ID = "context-compression-improved-bundle";
 		function sameCustomPolicy(left, right) {
 			if (left.version !== 3 || right.version !== 3) return false;
 			return left.version === right.version && left.unit === right.unit && left.prefixPolicy === right.prefixPolicy && left.fresh.enabled === right.fresh.enabled && left.fresh.trigger === right.fresh.trigger && left.fresh.target === right.fresh.target && left.aggregate.enabled === right.aggregate.enabled && left.aggregate.trigger === right.aggregate.trigger && left.aggregate.target === right.aggregate.target && left.history.enabled === right.history.enabled && left.history.trigger === right.history.trigger && left.history.keepRecentToolCalls === right.history.keepRecentToolCalls && left.history.keepRecentTokens === right.history.keepRecentTokens && left.history.minReclaim === right.history.minReclaim && left.tailTrim.enabled === right.tailTrim.enabled && left.tailTrim.trigger === right.tailTrim.trigger;
@@ -1471,10 +1473,45 @@ window.__ModuleLoader__.load({
 				en
 			});
 			const injected = () => {
-				const scope = ctx.settingsScope.bind({
-					namespace: NS,
-					decode: decodeSettings
-				});
+				const form = ctx.configForms.get(ENTRY_ID);
+				const readDoc = () => decodeSettings(form.getSnapshot().value?.settings);
+				const scope = {
+					getSnapshot() {
+						const snap = form.getSnapshot();
+						return {
+							status: snap.status,
+							value: readDoc(),
+							revision: snap.revision,
+							writable: snap.writable,
+							base: snap.base,
+							user: snap.user,
+							mode: snap.mode
+						};
+					},
+					subscribe: (listener) => form.subscribe(listener),
+					set: async (field, value) => {
+						const next = { ...readDoc() ?? {} };
+						next[field] = value;
+						await form.set("settings", next);
+					},
+					unset: async (field) => {
+						const next = { ...readDoc() ?? {} };
+						delete next[field];
+						await form.set("settings", next);
+					},
+					mutate: async (ops) => {
+						const doc = { ...readDoc() ?? {} };
+						for (const op of ops) {
+							const [head, key] = op.path;
+							if (head !== "presetOptions") return;
+							const section = { ...doc.presetOptions ?? {} };
+							if (op.op === "unset") delete section[key];
+							else section[key] = op.value;
+							doc.presetOptions = section;
+						}
+						await form.set("settings", doc);
+					}
+				};
 				const writeAndConfirm = async (write, accepts) => {
 					const beforeRevision = scope.getSnapshot().revision;
 					await write();

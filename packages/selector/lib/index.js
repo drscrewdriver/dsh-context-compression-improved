@@ -1,6 +1,5 @@
-import { o as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, s as ContextCompressionSettingsSchema, t as getAdvisorState } from "./advisor-state.js";
+import { t as getAdvisorState } from "./advisor-state.js";
 import z from "@deepseek-ai/schemastery";
-import "@deepseek-ai/dsh-settings";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { chmod, mkdtemp, readFile, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
@@ -503,7 +502,6 @@ function restoreMethod(presets, snapshot) {
 }
 //#endregion
 //#region src/index.ts
-const CONTEXT_COMPRESSION_NAMESPACE = CONTEXT_COMPRESSION_SETTINGS_NAMESPACE;
 const ESTIMATOR_CATALOG_ROUTES = ["/endpoint/dsh-context-compression-improved/estimator-catalog", "/api/dsh-context-compression-improved/estimator-catalog"];
 const ADVISOR_REPORT_ROUTES = ["/endpoint/dsh-context-compression-improved/advisor-report", "/api/dsh-context-compression-improved/advisor-report"];
 function sessionFor(readService, sessionId) {
@@ -720,20 +718,34 @@ function registerEstimatorCatalogRoute(ctx) {
 	});
 	log("warn", "context-compression webServer not active yet — estimator catalog route pending: %s", ESTIMATOR_CATALOG_ROUTES.join(", "));
 }
-/** Symbol properties reach the shared service target through Cordis proxies. */
-const SHARED_SETTINGS = Symbol.for("dsh-context-compression-improved/settings-registration");
+/**
+* Resolve one possibly-volatile field: a live ref on 0.1.7+, a plain value
+* otherwise (0.1.7 hands `.volatile()` fields to `apply()` as live refs).
+*/
+function readVolatileValue(value) {
+	if (value !== null && typeof value === "object" && typeof value.get === "function") return value.get();
+	return value;
+}
+/** The compression settings document carried by this row's composition entry. */
+function readCompressionDoc(config) {
+	return readVolatileValue(config?.settings);
+}
 /** Loader validation for the standalone Bundle opt-in. */
 const Config = z.object({
 	presetOverlay: z.boolean().default(false),
 	estimatorCatalogRoute: z.boolean().default(false),
-	advisorReportRoute: z.boolean().default(false)
+	advisorReportRoute: z.boolean().default(false),
+	settings: z.object({
+		profile: z.string().default("balanced"),
+		custom: z.any(),
+		autoCompact: z.any(),
+		codeSkeleton: z.any(),
+		presetOptions: z.any()
+	}).volatile()
 });
 /** Register the persisted default read by the currently mounted root pruner. */
 function apply(ctx, config = {}) {
 	try {
-		ctx.inject(["settings"], (settingsCtx) => {
-			acquireSettingsRegistration(settingsCtx);
-		});
 		if (config.estimatorCatalogRoute === true) registerEstimatorCatalogRoute(ctx);
 		if (config.advisorReportRoute === true) registerAdvisorReportRoute(ctx);
 		if (config.presetOverlay !== true) return;
@@ -741,7 +753,7 @@ function apply(ctx, config = {}) {
 			const installation = decorateAgentPresets(presetsCtx.agentPresets, {
 				modules: resolveCompressionModulePaths(),
 				excludedPresetIds: ["minimal"],
-				autoCompactThresholdPercent: () => resolveAutoCompactThresholdPercent(presetsCtx)
+				autoCompactThresholdPercent: () => resolveAutoCompactThresholdPercent(config, presetsCtx)
 			});
 			presetsCtx.effect(() => () => installation.dispose(), "contextCompressionSelector.agentPresets()");
 		});
@@ -755,8 +767,8 @@ function apply(ctx, config = {}) {
 * values are revalidated here, and any unreadable value falls back to the 80%
 * default rather than blocking preset composition.
 */
-function resolveAutoCompactThresholdPercent(presetsCtx) {
-	const raw = presetsCtx.get("settings")?.get(CONTEXT_COMPRESSION_NAMESPACE);
+function resolveAutoCompactThresholdPercent(config, presetsCtx) {
+	const raw = readCompressionDoc(config) ?? (presetsCtx?.get("settings"))?.get?.("context-compression");
 	try {
 		const threshold = structuredClone(raw)?.autoCompact;
 		const value = typeof threshold?.thresholdPercent === "number" ? threshold.thresholdPercent : 80;
@@ -764,44 +776,6 @@ function resolveAutoCompactThresholdPercent(presetsCtx) {
 	} catch {
 		return 80;
 	}
-}
-/**
-* Lease one native settings registration across duplicate Host rows.
-*
-* The lease effect is intentionally registered before settings.register().
-* Cordis disposes effects in reverse order, so the native registration first
-* releases the namespace; this disposer can then transfer it to another live
-* owner without a duplicate-registration window.
-*/
-function acquireSettingsRegistration(ctx) {
-	const settings = ctx.settings;
-	const owner = { settings };
-	let shared = settings[SHARED_SETTINGS];
-	if (shared === void 0) {
-		shared = {
-			owners: /* @__PURE__ */ new Set(),
-			registrationOwner: owner,
-			scope: void 0
-		};
-		Object.defineProperty(settings, SHARED_SETTINGS, {
-			configurable: true,
-			enumerable: false,
-			writable: false,
-			value: shared
-		});
-	}
-	shared.owners.add(owner);
-	const state = shared;
-	ctx.effect(() => () => {
-		state.owners.delete(owner);
-		if (state.registrationOwner === owner && state.owners.size > 0) {
-			const next = state.owners.values().next().value;
-			state.registrationOwner = next;
-			state.scope = next.settings.register(CONTEXT_COMPRESSION_NAMESPACE, ContextCompressionSettingsSchema);
-		}
-		if (state.owners.size === 0 && settings[SHARED_SETTINGS] === state) Reflect.deleteProperty(settings, SHARED_SETTINGS);
-	}, "contextCompressionSelector.settingsLease()");
-	if (state.owners.size === 1) state.scope = settings.register(CONTEXT_COMPRESSION_NAMESPACE, ContextCompressionSettingsSchema);
 }
 //#endregion
 export { Config, apply };

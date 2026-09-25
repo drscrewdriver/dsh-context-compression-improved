@@ -1,3 +1,4 @@
+import { n as ContextCompressionSettings } from "./profiles.js";
 import z from "@deepseek-ai/schemastery";
 import { Context } from "@deepseek-ai/cordis";
 //#region src/index.d.ts
@@ -25,6 +26,14 @@ interface Config {
    * `presetOptions.advisor*` settings keys.
    */
   advisorReportRoute?: boolean;
+  /**
+   * 0.1.7: the compression settings document as ONE `.volatile()` whole-object
+   * field (the old dedicated namespace has no declarative equivalent). The
+   * browser selector writes it through `configForms`; the runtime reads the
+   * dereferenced value. Loose section schemas keep unknown keys — the strict
+   * validation stays in `decodeSettings` (client) and the runtime resolver.
+   */
+  settings?: ContextCompressionSettings;
 }
 /** Loader validation for the standalone Bundle opt-in. */
 declare const Config: z<Config>;
