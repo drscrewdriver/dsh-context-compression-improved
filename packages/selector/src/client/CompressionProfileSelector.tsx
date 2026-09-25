@@ -8,7 +8,7 @@
  * @module dsh-context-compression-improved/client/CompressionProfileSelector
  */
 
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { SettingsScope } from './scope-face.ts'
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   COMPRESSION_PROFILES,

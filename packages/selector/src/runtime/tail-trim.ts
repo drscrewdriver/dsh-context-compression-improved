@@ -55,7 +55,7 @@ export function tailTrimStub(
 export function tailTrimMessage(stub: string): UserMessage {
   return createUserMessage({
     content: [{ type: 'text', text: stub }],
-    source: { kind: 'plugin', plugin: 'dsh-context-compression-improved-runtime' },
+    source: { kind: 'dsh-context-compression' },
   })
 }
 
@@ -75,8 +75,7 @@ export function validatePublishedTailTrim(
   const replacement = events[manifestSeq + 1]
   if (replacement?.type !== 'user/message'
     || replacement.seq !== manifest.seq + 1
-    || replacement.data.source.kind !== 'plugin'
-    || replacement.data.source.plugin !== 'dsh-context-compression-improved-runtime'
+    || replacement.data.source.kind !== 'dsh-context-compression'
     || replacement.surfaceOp === undefined
     || replacement.surfaceOp === 'append'
     || replacement.surfaceOp.startSeq !== manifest.data.shadowedRange.start
@@ -150,12 +149,12 @@ function validRootGroup(roots: readonly SessionEvent[], manifestSeq: number): bo
   if (new Set(callIds).size !== callIds.length || roots.length !== callIds.length + 1) return false
   for (const [index, root] of roots.slice(1).entries()) {
     if (root.type !== 'tool/result' || root.seq >= manifestSeq || root.surfaceOp !== 'append') return false
-    const result = root.data.message.content[0]
+    const result = root.data.message as { isError?: boolean }
     if (result.isError === true
       || root.data.error !== undefined
       || root.data.turn !== assistant.data.turn
       || root.data.step !== assistant.data.step
-      || String(root.data.message.source.callId) !== String(callIds[index])) return false
+      || String((root.data.message as { toolCallId?: unknown }).toolCallId) !== String(callIds[index])) return false
   }
   return true
 }

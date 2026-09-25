@@ -35,8 +35,9 @@ export type { TokenCount } from './token-count.ts'
  * @returns character pressure in Unicode code points, plus rich-block costs.
  */
 function nodeCharacterPressure(content: readonly ContentBlock[]): number {
-  const only = content.length === 1 ? content[0] : undefined
-  return pressureCost(only?.type === 'tool-result' ? only.content : content)
+  // 0.1.7-rc.2: tool results are tool-role messages, so a node's content
+  // array can no longer wrap them — the blocks are measured as-is.
+  return pressureCost(content)
 }
 
 /** Request identity retained only when every dimension is publicly known. */
@@ -252,10 +253,6 @@ function countCanonicalContent(
           if (!absorb(counter.countText(block.arguments))) return false
           break
         }
-        case 'tool-result': {
-          if (!walk(block.content)) return false
-          break
-        }
         case 'image': {
           if (!absorb(counter.countImage(block.attachment))) return false
           break
@@ -377,8 +374,6 @@ function intrinsicImageDiagnostic(
         paddingMinimumTokens += estimate.paddingMinimumTokens
         paddingMaximumTokens += estimate.paddingMaximumTokens
         seen = true
-      } else if (block.type === 'tool-result') {
-        walk(block.content)
       }
     }
   }

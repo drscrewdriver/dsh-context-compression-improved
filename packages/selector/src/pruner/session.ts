@@ -73,8 +73,10 @@ function tokenizerAuditFact(route: { provider: string, model: string }): { token
 
 /** Check whether a snapshot candidate represents an error result. */
 function isError(candidate: SnapshotCandidate): boolean {
-  const result = candidate.event.data.message.content[0]
-  return result.isError === true || candidate.event.data.error !== undefined
+  // 0.1.7-rc.2: tool results are first-class `tool`-role messages — `isError`
+  // moved from the result block onto the message itself.
+  const message = candidate.event.data.message as { isError?: boolean }
+  return message.isError === true || candidate.event.data.error !== undefined
 }
 
 /** Wrap a plan list into a HistoryPlanOutcome. */

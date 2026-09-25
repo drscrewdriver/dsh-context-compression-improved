@@ -59,10 +59,7 @@ function tailTrimMessage(stub) {
 			type: "text",
 			text: stub
 		}],
-		source: {
-			kind: "plugin",
-			plugin: "dsh-context-compression-improved-runtime"
-		}
+		source: { kind: "dsh-context-compression" }
 	});
 }
 /** Validate the standard prune, adjacent replacement, append roots and stub. */
@@ -71,7 +68,7 @@ function validatePublishedTailTrim(session, manifestSeq) {
 	const manifest = events[manifestSeq];
 	if (manifest?.type !== "compaction/prune" || manifest.data.shadowedSeqs.length < 2 || manifest.data.shadowedSeqs.length > MAX_ROOTS || manifest.data.shadowedSeqs[0] !== Number(manifest.data.shadowedRange.start) || manifest.data.shadowedSeqs.at(-1) !== Number(manifest.data.shadowedRange.end) || new Set(manifest.data.shadowedSeqs).size !== manifest.data.shadowedSeqs.length) return null;
 	const replacement = events[manifestSeq + 1];
-	if (replacement?.type !== "user/message" || replacement.seq !== manifest.seq + 1 || replacement.data.source.kind !== "plugin" || replacement.data.source.plugin !== "dsh-context-compression-improved-runtime" || replacement.surfaceOp === void 0 || replacement.surfaceOp === "append" || replacement.surfaceOp.startSeq !== manifest.data.shadowedRange.start || replacement.surfaceOp.endSeq !== manifest.data.shadowedRange.end || !sameNumbers(replacement.sourceEventSeqs, [manifest.seq, ...manifest.data.shadowedSeqs]) || replacement.data.content.length !== 1 || replacement.data.content[0]?.type !== "text") return null;
+	if (replacement?.type !== "user/message" || replacement.seq !== manifest.seq + 1 || replacement.data.source.kind !== "dsh-context-compression" || replacement.surfaceOp === void 0 || replacement.surfaceOp === "append" || replacement.surfaceOp.startSeq !== manifest.data.shadowedRange.start || replacement.surfaceOp.endSeq !== manifest.data.shadowedRange.end || !sameNumbers(replacement.sourceEventSeqs, [manifest.seq, ...manifest.data.shadowedSeqs]) || replacement.data.content.length !== 1 || replacement.data.content[0]?.type !== "text") return null;
 	const tracedRoots = manifest.data.shadowedSeqs.map((seq) => uniqueAppendRoot(session, seq, manifestSeq));
 	if (tracedRoots.some((root) => root === null)) return null;
 	const sourceEventSeqs = tracedRoots;
@@ -134,7 +131,7 @@ function validRootGroup(roots, manifestSeq) {
 	if (new Set(callIds).size !== callIds.length || roots.length !== callIds.length + 1) return false;
 	for (const [index, root] of roots.slice(1).entries()) {
 		if (root.type !== "tool/result" || root.seq >= manifestSeq || root.surfaceOp !== "append") return false;
-		if (root.data.message.content[0].isError === true || root.data.error !== void 0 || root.data.turn !== assistant.data.turn || root.data.step !== assistant.data.step || String(root.data.message.source.callId) !== String(callIds[index])) return false;
+		if (root.data.message.isError === true || root.data.error !== void 0 || root.data.turn !== assistant.data.turn || root.data.step !== assistant.data.step || String(root.data.message.toolCallId) !== String(callIds[index])) return false;
 	}
 	return true;
 }

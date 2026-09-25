@@ -407,9 +407,6 @@ function pressureCost(blocks) {
 		case "tool-call":
 			cost += 256 + codePointLength(block.name) + codePointLength(block.arguments);
 			break;
-		case "tool-result":
-			cost += 256 + pressureCost(block.content);
-			break;
 		default: {
 			const serialized = JSON.stringify(block);
 			cost += Math.max(256, codePointLength(serialized));
@@ -481,8 +478,7 @@ function emptyResult() {
 * @returns character pressure in Unicode code points, plus rich-block costs.
 */
 function nodeCharacterPressure(content) {
-	const only = content.length === 1 ? content[0] : void 0;
-	return pressureCost(only?.type === "tool-result" ? only.content : content);
+	return pressureCost(content);
 }
 const VISION_MODEL_ID = DEEPSEEK_VISION_TOKENIZER_ARTIFACT.modelIds[0];
 /**
@@ -587,9 +583,6 @@ function countCanonicalContent(blocks, counter, subject) {
 				if (!absorb(counter.countText(block.name))) return false;
 				if (!absorb(counter.countText(block.arguments))) return false;
 				break;
-			case "tool-result":
-				if (!walk(block.content)) return false;
-				break;
 			case "image":
 				if (!absorb(counter.countImage(block.attachment))) return false;
 				break;
@@ -688,7 +681,7 @@ function intrinsicImageDiagnostic(blocks, target) {
 			paddingMinimumTokens += estimate.paddingMinimumTokens;
 			paddingMaximumTokens += estimate.paddingMaximumTokens;
 			seen = true;
-		} else if (block.type === "tool-result") walk(block.content);
+		}
 	};
 	walk(blocks);
 	return seen ? Object.freeze({
@@ -805,7 +798,7 @@ function installContextCompressionRetrieve(ctx, config = {}) {
 			const event = sessionEvents(exec.agent.session)[seq];
 			if (event?.type !== "tool/result") throw new Error(`context_compression_retrieve: event ${String(seq)} is not a tool/result in the current session`);
 			const maxLines = resolveMaxLines(args.max_lines);
-			const scan = scanBlocks(event.data.message.content[0].content, maxScanChars);
+			const scan = scanBlocks(event.data.message.content, maxScanChars);
 			const scannedLines = splitScannedLines(scan);
 			const lines = scannedLines.lines;
 			const query = args.query;
@@ -814,8 +807,8 @@ function installContextCompressionRetrieve(ctx, config = {}) {
 			const total = scan.complete ? String(lines.length) : `at least ${String(lines.length)}`;
 			const output = `${[
 				`source: ${args.ref}`,
-				`tool_call_id: ${event.data.message.source.callId}`,
-				`status: ${event.data.message.content[0].isError === true ? "error" : "completed"}`,
+				`tool_call_id: ${event.data.message.toolCallId}`,
+				`status: ${event.data.message.isError === true ? "error" : "completed"}`,
 				`lines: ${String(selected.start)}-${String(selected.end)} of ${total}`,
 				scan.complete ? "" : "note: source scan limit reached; later lines were not inspected",
 				selected.partialLine === void 0 ? "" : `note: line ${String(selected.partialLine)} is a partial prefix ending at the source scan limit`,
@@ -1111,7 +1104,7 @@ function tokenizerAuditFact(route) {
 }
 /** Check whether a snapshot candidate represents an error result. */
 function isError(candidate) {
-	return candidate.event.data.message.content[0].isError === true || candidate.event.data.error !== void 0;
+	return candidate.event.data.message.isError === true || candidate.event.data.error !== void 0;
 }
 /** Wrap a plan list into a HistoryPlanOutcome. */
 function historyOutcome(plans) {
@@ -4244,10 +4237,7 @@ var ToolResultPruner = class extends Service {
 		lastText.text = `${lastText.text}\n\n${block}`;
 		const replacement = createUserMessage({
 			content,
-			source: {
-				kind: "plugin",
-				plugin: "dsh-context-compression-improved-runtime"
-			}
+			source: { kind: "dsh-context-compression" }
 		});
 		session.append("user/message", replacement, {
 			surfaceOp: {
@@ -4842,11 +4832,11 @@ var ToolResultPruner = class extends Service {
 			if (event?.type !== "tool/result") continue;
 			const shadowedHeuristicTokenCount = projectionPrices.get(seq);
 			if (shadowedHeuristicTokenCount === void 0) throw new Error(`surface node ${String(seq)} is absent from the atomic legacy projection`);
-			const content = event.data.message.content[0].content;
+			const content = event.data.message.content;
 			candidates.push({
 				seq,
 				event,
-				call: calls.get(event.data.message.source.callId) ?? {
+				call: calls.get(event.data.message.toolCallId) ?? {
 					name: "unknown",
 					arguments: "{}"
 				},
@@ -4860,7 +4850,7 @@ var ToolResultPruner = class extends Service {
 	planNative(candidate, session, stage, policy, view) {
 		if (this.isRecoveryExempt(session, candidate)) return null;
 		if (candidate.characterPressure <= charsForTokens(policy.nativeTriggerTokens)) return null;
-		const result = candidate.event.data.message.content[0];
+		const result = candidate.event.data.message;
 		if (onlyTextBlocks(result.content) === null) return null;
 		const sourceSeq = rootToolResultSeq(session, candidate.seq);
 		const marker = (startLine) => recoveryMarker(sourceRef(session, sourceSeq), "tool result middle pruned", startLine);
@@ -4887,7 +4877,7 @@ var ToolResultPruner = class extends Service {
 	*/
 	planDedupe(candidate, session, policy, view) {
 		if (typeof candidate.event.surfaceOp === "object") return null;
-		const result = candidate.event.data.message.content[0];
+		const result = candidate.event.data.message;
 		const text = flattenPlainText(result.content);
 		if (text === void 0) return null;
 		if (candidate.characterPressure <= charsForTokens(policy.freshTriggerTokens)) return null;
@@ -4917,7 +4907,7 @@ var ToolResultPruner = class extends Service {
 	}
 	planFresh(candidate, session, policy, view) {
 		if (typeof candidate.event.surfaceOp === "object") return null;
-		const result = candidate.event.data.message.content[0];
+		const result = candidate.event.data.message;
 		if (candidate.characterPressure <= charsForTokens(policy.freshTriggerTokens)) return null;
 		const sourceSeq = candidate.seq;
 		const sourceRef$1 = sourceRef(session, sourceSeq);
@@ -4955,7 +4945,7 @@ var ToolResultPruner = class extends Service {
 		if (isError(candidate)) return this.planErrorEvidence(candidate, session, view, stage, targetTokens, component, historyMode);
 		const sourceSeq = rootToolResultSeq(session, candidate.seq);
 		const sourceRef$2 = sourceRef(session, sourceSeq);
-		const redacted = candidate.event.data.message.content[0];
+		const redacted = candidate.event.data.message;
 		if (onlyTextBlocks(redacted.content) === null) return null;
 		const text = [
 			"[Tool result reduced to satisfy the completed-step aggregate budget]",
@@ -4972,7 +4962,7 @@ var ToolResultPruner = class extends Service {
 	/** Preserve bounded diagnostic evidence whenever an all-text error is reduced. */
 	planErrorEvidence(candidate, session, view, stage, targetTokens, component = "aggregate", historyMode) {
 		if (!isError(candidate)) return null;
-		const result = candidate.event.data.message.content[0];
+		const result = candidate.event.data.message;
 		const blocks = onlyTextBlocks(result.content);
 		if (blocks === null) return null;
 		const text = blocks.map((block) => block.text).join("\n");
@@ -5011,7 +5001,7 @@ var ToolResultPruner = class extends Service {
 		const protectedSeqs = this.protectedHistoryCandidateSeqs(candidates, policy);
 		const isUnsafe = (candidate) => {
 			if (this.isRecoveryExempt(session, candidate)) return true;
-			const result = candidate.event.data.message.content[0];
+			const result = candidate.event.data.message;
 			return onlyTextBlock(result.content)?.text.includes("[Old tool result content cleared from active context]") === true;
 		};
 		const safe = candidates.filter((candidate) => !isUnsafe(candidate));
@@ -5024,7 +5014,7 @@ var ToolResultPruner = class extends Service {
 		const required = Math.max(minReclaimChars, total - trigger, ...microTarget === void 0 ? [] : [charsForTokens(view.totalTokens) - microTarget]);
 		const batchTarget = microTarget === void 0 ? minReclaimChars : required;
 		for (const candidate of eligible) {
-			const result = candidate.event.data.message.content[0];
+			const result = candidate.event.data.message;
 			const block = onlyTextBlock(result.content);
 			if (policy.presetOptions?.readState === true && block !== null) {
 				const readPath = toolCallPath(candidate.call.arguments);
@@ -5165,7 +5155,7 @@ var ToolResultPruner = class extends Service {
 			const results = resultSeqs.map((seq) => events[seq]);
 			if (results.some((event) => {
 				if (event?.type !== "tool/result" || event.data.turn !== assistant.data.turn || event.data.step !== assistant.data.step || event.data.error !== void 0) return true;
-				const block = event.data.message.content[0];
+				const block = event.data.message;
 				if (block.isError === true) return true;
 				return block.content.some((contentBlock) => contentBlock.type !== "text");
 			})) continue;
@@ -5312,7 +5302,7 @@ var ToolResultPruner = class extends Service {
 		const tokensBefore = exact ? countBefore.tokens : charsToTokens(charsBefore);
 		const tokensAfter = exact ? countAfter.tokens : charsToTokens(charsAfter);
 		if (options.noNetSavingsGuard === true) {
-			const originalBlocks = onlyTextBlocks(candidate.event.data.message.content[0].content);
+			const originalBlocks = onlyTextBlocks(candidate.event.data.message.content);
 			const replacementBlocks = onlyTextBlocks(content);
 			if (originalBlocks !== null && replacementBlocks !== null) {
 				const originalChars = originalBlocks.reduce((sum, block) => sum + codePointLength(block.text), 0);
@@ -5339,13 +5329,10 @@ var ToolResultPruner = class extends Service {
 	}
 	land(session, plan) {
 		const { candidate } = plan;
-		const result = candidate.event.data.message.content[0];
+		candidate.event.data.message;
 		const message = freezeMessage({
 			...candidate.event.data.message,
-			content: [{
-				...result,
-				content: plan.content
-			}]
+			content: plan.content
 		});
 		const manifest = session.append("compaction/prune", {
 			shadowedRange: {

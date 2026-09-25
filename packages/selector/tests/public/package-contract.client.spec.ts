@@ -47,7 +47,7 @@ describe('standalone package contract', () => {
       '@deepseek-ai/dsh-client-ui-slots',
       '@deepseek-ai/dsh-client-ui-settings',
     ])
-    expect(rootManifest.engines?.dsh).toBe('>=0.1.5-rc.1 <0.2.0-0')
+    expect(rootManifest.engines?.dsh).toBe('>=0.1.7-rc.1 <0.1.8-0')
   })
 
   it('uses the community package in the one Bundle patch', () => {

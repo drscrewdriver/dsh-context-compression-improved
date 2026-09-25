@@ -13,7 +13,7 @@ import type {
 } from '../src/client/CompressionProfileSelector.tsx'
 
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
-  IconChevronDownOutline14: () => null,
+  IconChevronDownOutlineMedium: () => null,
   Menu: () => null,
 }))
 
