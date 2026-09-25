@@ -248,7 +248,7 @@ const isSupportedProfile = (value: unknown): boolean =>
 const isUsableCustomDocument = (value: unknown): boolean =>
   isPlainRecord(value)
 
-const DEFAULT_CONTEXT_COMPRESSION_SETTINGS: ContextCompressionSettings = {
+export const DEFAULT_CONTEXT_COMPRESSION_SETTINGS: ContextCompressionSettings = {
   profile: 'balanced',
   custom: structuredClone(DEFAULT_CUSTOM_COMPRESSION_POLICY),
   autoCompact: { thresholdPercent: AUTO_COMPACT_THRESHOLD_LIMITS.default },

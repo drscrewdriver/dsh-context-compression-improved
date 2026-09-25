@@ -1,4 +1,4 @@
-import { t as getAdvisorState } from "./advisor-state.js";
+import { l as DEFAULT_CONTEXT_COMPRESSION_SETTINGS, t as getAdvisorState } from "./advisor-state.js";
 import z from "@deepseek-ai/schemastery";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
@@ -735,13 +735,7 @@ const Config = z.object({
 	presetOverlay: z.boolean().default(false),
 	estimatorCatalogRoute: z.boolean().default(false),
 	advisorReportRoute: z.boolean().default(false),
-	settings: z.object({
-		profile: z.string().default("balanced"),
-		custom: z.any(),
-		autoCompact: z.any(),
-		codeSkeleton: z.any(),
-		presetOptions: z.any()
-	}).volatile()
+	settings: z.any().default(DEFAULT_CONTEXT_COMPRESSION_SETTINGS).volatile()
 });
 /** Register the persisted default read by the currently mounted root pruner. */
 function apply(ctx, config = {}) {

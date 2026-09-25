@@ -31,6 +31,7 @@ import {
   standingStampMs,
   standingStampMsAtWindow,
 } from '../src/preset-overlay.ts'
+import { LegacyNamespaceRegistrar } from './helpers/legacy-namespace.ts'
 import type {
   CompressionModulePaths,
   OverlayableAgentPresets,
@@ -223,6 +224,7 @@ async function assertStandingSwitch(
   await ctx.plugin(SessionProjectionRegistry).await()
   await ctx.plugin(TokenMeter).await()
   await ctx.plugin(MemorySettings).await()
+  await ctx.plugin(LegacyNamespaceRegistrar).await()
   await ctx.plugin({ apply }).await()
   await ctx.plugin(AgentPresets, {
     default: 'standard',
@@ -393,6 +395,7 @@ describe('real AgentPresets standing generations with the overlay threshold', ()
     await ctx.plugin(SessionProjectionRegistry).await()
     await ctx.plugin(TokenMeter).await()
     await ctx.plugin(MemorySettings).await()
+  await ctx.plugin(LegacyNamespaceRegistrar).await()
     await ctx.plugin({ apply }).await()
     await ctx.plugin(AgentPresets, {
       default: 'standard',
@@ -458,6 +461,7 @@ describe('real AgentPresets standing generations with the overlay threshold', ()
     await ctx.plugin(SessionProjectionRegistry).await()
     await ctx.plugin(TokenMeter).await()
     await ctx.plugin(MemorySettings).await()
+  await ctx.plugin(LegacyNamespaceRegistrar).await()
     await ctx.plugin({ apply }).await()
     await ctx.plugin(AgentPresets, {
       default: 'standard',
@@ -545,6 +549,7 @@ describe('real AgentPresets standing generations with the overlay threshold', ()
     await ctx.plugin(SessionProjectionRegistry).await()
     await ctx.plugin(TokenMeter).await()
     await ctx.plugin(MemorySettings).await()
+  await ctx.plugin(LegacyNamespaceRegistrar).await()
     await ctx.plugin({ apply }).await()
     await ctx.plugin(AgentPresets, {
       default: 'standard',
@@ -611,6 +616,7 @@ describe('real AgentPresets standing generations with the overlay threshold', ()
     await ctx.plugin(SessionProjectionRegistry).await()
     await ctx.plugin(TokenMeter).await()
     await ctx.plugin(MemorySettings).await()
+  await ctx.plugin(LegacyNamespaceRegistrar).await()
     await ctx.plugin({ apply }).await()
     await ctx.plugin(AgentPresets, {
       default: 'standard',
@@ -658,6 +664,7 @@ describe('real AgentPresets standing generations with the overlay threshold', ()
     await ctx.plugin(SessionProjectionRegistry).await()
     await ctx.plugin(TokenMeter).await()
     await ctx.plugin(MemorySettings).await()
+  await ctx.plugin(LegacyNamespaceRegistrar).await()
     await ctx.plugin({ apply }).await()
     await ctx.plugin(AgentPresets, {
       default: 'standard',

@@ -10,6 +10,7 @@ import {
 import { afterEach, describe, expect, it } from 'vitest'
 import { apply } from '../src/index.ts'
 import type { OverlayableAgentPresets } from '../src/preset-overlay.ts'
+import { LegacyNamespaceRegistrar } from './helpers/legacy-namespace.ts'
 
 // 0.1.5 removed the settingsNamespace() wrapper; namespaces are validated at runtime.
 const nsBrand = (value: string): SettingsNamespace => value as unknown as SettingsNamespace
@@ -73,6 +74,7 @@ describe('context compression selector Host preset integration', () => {
     const preset = await sourcePreset()
     ctx = new Context()
     await ctx.plugin(MemorySettings).await()
+  await ctx.plugin(LegacyNamespaceRegistrar).await()
     await ctx.plugin(FakeAgentPresets, preset).await()
 
     const selector = ctx.plugin({ apply: (child) => {
@@ -90,7 +92,7 @@ describe('context compression selector Host preset integration', () => {
     expect((await service.mount({})).path).toBe(preset.path)
   })
 
-  it('keeps settings and overlay alive across duplicate Host row disposal', async () => {
+  it('0.1.7: duplicate Host rows own independent entry configs — one row\u2019s disposal never disturbs the other', async () => {
     const preset = await sourcePreset()
     ctx = new Context()
     await ctx.plugin(MemorySettings).await()
@@ -99,39 +101,35 @@ describe('context compression selector Host preset integration', () => {
     const builtIn = ctx.plugin({ apply })
     await builtIn.await()
 
-    const namespace = nsBrand('context-compression')
     const service = ctx.agentPresets as unknown as OverlayableAgentPresets
     expect((await service.mount({})).path).toBe(preset.path)
-    expect(ctx.settings.describe().filter(row => row.ns === namespace)).toHaveLength(1)
 
-    await ctx.settings.update(namespace, { profile: 'cache-strict' })
-    const selectedSettings = structuredClone(ctx.settings.get(namespace))
-    expect(selectedSettings).toMatchObject({ profile: 'cache-strict' })
-
+    // 0.1.7: there is no shared settings registration to lease — each row
+    // carries its own compression doc on its entry config, so duplicate rows
+    // cannot disturb each other and disposal is purely per row.
     const bundle = ctx.plugin({ apply: (child) => {
-      apply(child, { presetOverlay: true })
+      apply(child, { presetOverlay: true, settings: { profile: 'cache-strict' } })
     } })
     await bundle.await()
 
     const mounted = await service.mount({})
     expect(mounted.path).not.toBe(preset.path)
     expect((await service.recompose({}, 'standard')).path).toBe(mounted.path)
-    expect(ctx.settings.get(namespace)).toEqual(selectedSettings)
-    expect(ctx.settings.describe().filter(row => row.ns === namespace)).toHaveLength(1)
 
+    // Disposing the non-overlay row never touches the overlay row's decoration
+    // or its entry config.
     await builtIn.dispose()
     expect((await service.mount({})).path).toBe(mounted.path)
-    expect(ctx.settings.describe().filter(row => row.ns === namespace)).toHaveLength(1)
 
     await bundle.dispose()
     expect((await service.mount({})).path).toBe(preset.path)
-    expect(ctx.settings.describe().filter(row => row.ns === namespace)).toHaveLength(0)
   })
 
   it('writes the saved Auto Compact threshold into the generated compaction-basic composition', async () => {
     const preset = await sourcePreset()
     ctx = new Context()
     await ctx.plugin(MemorySettings).await()
+  await ctx.plugin(LegacyNamespaceRegistrar).await()
     await ctx.plugin(FakeAgentPresets, preset).await()
     // A settings-owning row must register the namespace before the update.
     await ctx.plugin({ apply }).await()
@@ -161,6 +159,7 @@ describe('context compression selector Host preset integration', () => {
     const preset = await sourcePreset()
     ctx = new Context()
     await ctx.plugin(MemorySettings).await()
+  await ctx.plugin(LegacyNamespaceRegistrar).await()
     await ctx.plugin(FakeAgentPresets, preset).await()
 
     const bundle = ctx.plugin({ apply: (child) => {
@@ -178,6 +177,7 @@ describe('context compression selector Host preset integration', () => {
     const preset = await sourcePreset()
     ctx = new Context()
     await ctx.plugin(MemorySettings).await()
+  await ctx.plugin(LegacyNamespaceRegistrar).await()
     await ctx.plugin(FakeAgentPresets, preset).await()
     // A settings-owning row must register the namespace before the update.
     await ctx.plugin({ apply }).await()

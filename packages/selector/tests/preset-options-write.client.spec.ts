@@ -6,82 +6,60 @@ import type { CompressionSelectorInjected } from '../src/client/CompressionProfi
 import type { ContextCompressionSettings } from '../src/profiles.ts'
 
 /**
- * The settings transport applies a `set` op AT its path, so the write path is
- * asserted through the ops it submits: a whole-section write is what silently
- * deleted `estimatorMode` (and every sibling override) whenever the user
- * touched a second field of the TokenPilot-inspired card.
+ * 0.1.7 contract: the compression document rides the entry config as ONE
+ * volatile whole-object field, so every write commits the full document
+ * through `configForms.set('settings', doc)`. The sibling-safety that the old
+ * path-addressed settings service provided is now enforced CLIENT-side:
+ * `planPresetOptionsOps` is still computed against the current doc and applied
+ * locally before the commit, so a second field write never erases the first.
  */
 
-type PathOp = { op: 'set', path: string[], value: unknown } | { op: 'unset', path: string[] }
-
-interface ScopeStub {
-  readonly writes: PathOp[][]
+interface FormStub {
+  /** Whole-doc commits the fake Host accepted. */
+  readonly commits: Record<string, unknown>[]
+  /** Whole-doc writes the fake Host refused. */
+  readonly refused: Record<string, unknown>[]
   readonly snapshot: () => Record<string, unknown>
 }
 
-/** Emulate the Host settings service: apply ops at their path, then bump the revision. */
-function createScopeStub(initial: ContextCompressionSettings, commit = true): ScopeStub {
+function createFormStub(initial: ContextCompressionSettings, commit = true): FormStub {
   let revision = 1
-  let value: Record<string, unknown> = structuredClone(initial) as unknown as Record<string, unknown>
-  const writes: PathOp[][] = []
+  let value: Record<string, unknown> = { settings: structuredClone(initial) as unknown as Record<string, unknown> }
+  const commits: Record<string, unknown>[] = []
+  const refused: Record<string, unknown>[] = []
   const listeners = new Set<() => void>()
-  const applyOps = (ops: readonly PathOp[]): void => {
-    for (const op of ops) {
-      const [head, ...rest] = op.path
-      if (head === undefined) continue
-      if (rest.length === 0) {
-        if (op.op === 'set') value = { ...value, [head]: op.value }
-        else delete value[head]
-        continue
-      }
-      const child = { ...(value[head] as Record<string, unknown> | undefined) }
-      const leaf = rest[rest.length - 1] as string
-      if (op.op === 'set') child[leaf] = op.value
-      else delete child[leaf]
-      value = { ...value, [head]: child }
-    }
-    revision += 1
-    for (const listener of listeners) listener()
-  }
   return {
-    writes,
-    snapshot: () => value,
-    // The scope face the injection factory binds.
-    scope: {
+    commits,
+    refused,
+    snapshot: () => structuredClone(value.settings as Record<string, unknown>),
+    form: {
       getSnapshot: () => ({
-        status: 'ready',
-        value: value as unknown as ContextCompressionSettings,
-        base: undefined,
-        user: undefined,
+        status: 'ready' as const,
+        value: value as unknown as Record<string, unknown>,
         revision,
         writable: true,
-        mode: 'host',
+        base: undefined,
+        user: undefined,
+        mode: 'host' as const,
       }),
       subscribe: (listener: () => void) => {
         listeners.add(listener)
         return () => { listeners.delete(listener) }
       },
-      set: (field: string, fieldValue: unknown) => {
-        const ops: PathOp[] = [{ op: 'set', path: [field], value: fieldValue }]
-        writes.push(ops)
-        applyOps(ops)
-        return Promise.resolve()
+      set: (_field: string, doc: unknown) => {
+        if (!commit) {
+          refused.push(doc as Record<string, unknown>)
+          return Promise.resolve(false)
+        }
+        value = { settings: structuredClone(doc) as unknown as Record<string, unknown> }
+        revision += 1
+        commits.push({ settings: structuredClone(doc) as unknown as Record<string, unknown> })
+        for (const listener of listeners) listener()
+        return Promise.resolve(true)
       },
-      unset: (field: string) => {
-        const ops: PathOp[] = [{ op: 'unset', path: [field] }]
-        writes.push(ops)
-        applyOps(ops)
-        return Promise.resolve()
-      },
-      mutate: (ops: readonly PathOp[]) => {
-        writes.push([...ops])
-        // A refused or lost write changes no document, so the revision the
-        // confirmation read fences on never moves.
-        if (commit) applyOps(ops)
-        return Promise.resolve()
-      },
+      unset: () => Promise.resolve(false),
     },
-  } as ScopeStub & { scope: unknown }
+  } as FormStub & { form: Record<string, unknown> }
 }
 
 const DEFAULT_CUSTOM = {
@@ -91,7 +69,7 @@ const DEFAULT_CUSTOM = {
   aggregate: { enabled: true, trigger: 16_384, target: 8_192 },
   history: {
     enabled: true,
-    trigger: 32_768,
+    trigger: 16_384,
     keepRecentTurns: 2,
     keepRecent: 16_384,
     minReclaim: 8_192,
@@ -104,8 +82,7 @@ function bindInjected(
   commit = true,
 ): {
   injected: CompressionSelectorInjected
-  writes: PathOp[][]
-  snapshot: () => Record<string, unknown>
+  stub: FormStub
 } {
   const settings: ContextCompressionSettings = {
     profile: 'tokenpilot-inspired',
@@ -114,7 +91,7 @@ function bindInjected(
     codeSkeleton: { enabled: false },
     ...(presetOptions === undefined ? {} : { presetOptions }),
   }
-  const stub = createScopeStub(settings, commit)
+  const stub = createFormStub(settings, commit)
   let options: Record<string, unknown> | undefined
   const ctx = {
     slots: {
@@ -130,26 +107,26 @@ function bindInjected(
       },
     },
     // apply consumes the services through their declarative-inject faces
-    // (ctx.locale / ctx.settingsScope), the same shape cordis binds on the host.
+    // (ctx.locale / ctx.configForms), the same shape cordis binds on the host.
     locale: { bind: () => (key: string) => key, register: () => {} },
-    settingsScope: { bind: () => (stub as unknown as { scope: unknown }).scope },
+    configForms: { get: () => (stub.form as unknown as { getSnapshot(): unknown }) },
   }
   apply(ctx as never)
   if (options === undefined) throw new Error('the settings card never registered')
   const factory = options['inject'] as () => CompressionSelectorInjected
-  return { injected: factory(), writes: stub.writes, snapshot: stub.snapshot }
+  return { injected: factory(), stub }
 }
 
-describe('presetOptions writes are path-addressed', () => {
+describe('presetOptions writes commit the whole doc through configForms', () => {
   it('keeps the estimator channel when a provider is chosen afterwards', async () => {
-    const { injected, writes, snapshot } = bindInjected({ estimatorMode: 'host' })
+    const { injected, stub } = bindInjected({ estimatorMode: 'host' })
     await injected.savePresetOptions({ estimatorProvider: 'local-35b' })
-    expect(snapshot()['presetOptions']).toEqual({ estimatorMode: 'host', estimatorProvider: 'local-35b' })
-    expect(writes).toEqual([[{ op: 'set', path: ['presetOptions', 'estimatorProvider'], value: 'local-35b' }]])
+    expect(stub.snapshot()['presetOptions']).toEqual({ estimatorMode: 'host', estimatorProvider: 'local-35b' })
+    expect(stub.commits.length).toBe(1)
   })
 
   it('treats a retired review-gate patch as a no-op instead of a write', async () => {
-    const { injected, writes, snapshot } = bindInjected({ estimatorMode: 'host' })
+    const { injected, stub } = bindInjected({ estimatorMode: 'host' })
     // The patch surface no longer carries these keys, and the decoders accept
     // them only so a legacy document keeps loading. Cast past the removed type
     // so the test pins the RUNTIME behaviour: nothing is written.
@@ -159,12 +136,12 @@ describe('presetOptions writes are path-addressed', () => {
       cacheHitDiscountAlpha: 0.2,
       reviewHighImpactTokens: 6000,
     } as unknown as Parameters<typeof injected.savePresetOptions>[0])
-    expect(writes).toEqual([])
-    expect(snapshot()['presetOptions']).toEqual({ estimatorMode: 'host' })
+    expect(stub.commits.length).toBe(0)
+    expect(stub.snapshot()['presetOptions']).toEqual({ estimatorMode: 'host' })
   })
 
-  it('never replaces the whole section, so sibling overrides survive', async () => {
-    const { injected, writes, snapshot } = bindInjected({
+  it('never loses sibling overrides across whole-doc commits', async () => {
+    const { injected, stub } = bindInjected({
       estimatorMode: 'direct',
       estimatorBaseUrl: 'http://192.168.100.242:8200',
       dedupeToolResults: false,
@@ -172,7 +149,7 @@ describe('presetOptions writes are path-addressed', () => {
     })
     await injected.savePresetOptions({ estimatorModel: 'Qwen3.6-35B-A3B' })
     await injected.savePresetOptions({ estimatorProvider: 'local-35b' })
-    expect(snapshot()['presetOptions']).toEqual({
+    expect(stub.snapshot()['presetOptions']).toEqual({
       estimatorMode: 'direct',
       estimatorBaseUrl: 'http://192.168.100.242:8200',
       dedupeToolResults: false,
@@ -180,22 +157,25 @@ describe('presetOptions writes are path-addressed', () => {
       estimatorModel: 'Qwen3.6-35B-A3B',
       estimatorProvider: 'local-35b',
     })
-    for (const batch of writes) {
-      for (const op of batch) expect(op.path.length).toBe(2)
+    // Two user actions, two whole-doc commits.
+    expect(stub.commits.length).toBe(2)
+    for (const doc of stub.commits) {
+      // Each commit carries the complete document under the volatile field.
+      expect(Object.keys(doc)).toEqual(['settings'])
     }
   })
 
   it('clears exactly the field a patch names with undefined', async () => {
-    const { injected, writes, snapshot } = bindInjected({ estimatorMode: 'direct', estimatorApiKey: 'sk-stored' })
+    const { injected, stub } = bindInjected({ estimatorMode: 'direct', estimatorApiKey: 'sk-stored' })
     await injected.savePresetOptions({ estimatorApiKey: undefined })
-    expect(snapshot()['presetOptions']).toEqual({ estimatorMode: 'direct' })
-    expect(writes).toEqual([[{ op: 'unset', path: ['presetOptions', 'estimatorApiKey'] }]])
+    expect(stub.snapshot()['presetOptions']).toEqual({ estimatorMode: 'direct' })
   })
 
   it('writes nothing when the patch already matches the stored section', async () => {
-    const { injected, writes } = bindInjected({ estimatorMode: 'host', estimatorProvider: 'local-35b' })
+    const { injected, stub } = bindInjected({ estimatorMode: 'host', estimatorProvider: 'local-35b' })
     await injected.savePresetOptions({ estimatorMode: 'host' })
-    expect(writes).toEqual([])
+    expect(stub.commits.length).toBe(0)
+    expect(stub.refused.length).toBe(0)
   })
 
   it('reports a save the Host did not commit', async () => {

@@ -145,7 +145,25 @@ describe('context compression browser contract', () => {
     const ctx = {
       effect: (install: () => unknown) => { install() },
       locale: { register: vi.fn(() => () => {}) },
-      settingsScope: { bind: vi.fn(() => scope) },
+      // 0.1.7: the plugin commits the whole doc through configForms; the fake
+      // routes each changed top-level field back onto the old scope stub so
+      // the rewrite/drop semantics below stay observable per field.
+      configForms: {
+        get: vi.fn(() => ({
+          getSnapshot: () => ({ ...snapshot(), value: { settings: value } }),
+          subscribe: scope.subscribe,
+          set: async (_field: string, doc: unknown) => {
+            const next = doc as ContextCompressionSettings
+            for (const key of Object.keys(next)) {
+              if (JSON.stringify((value as Record<string, unknown>)[key]) !== JSON.stringify(next[key])) {
+                await scope.set(key, next[key])
+              }
+            }
+            return true
+          },
+          unset: scope.unset,
+        })),
+      },
       slots: {
         inject: (_slot: string, install: () => unknown) => { install() },
         register: (registration: { inject?: () => CompressionSelectorInjected }) => {

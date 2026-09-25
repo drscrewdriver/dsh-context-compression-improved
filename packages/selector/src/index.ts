@@ -7,6 +7,7 @@ import type { ContextCompressionSettings } from './profiles.ts'
 import {
   CONTEXT_COMPRESSION_SETTINGS_NAMESPACE,
   ContextCompressionSettingsSchema,
+  DEFAULT_CONTEXT_COMPRESSION_SETTINGS,
 } from './runtime/config.ts'
 
 import { getAdvisorState } from './runtime/tokenpilot/advisor-state.ts'
@@ -346,13 +347,9 @@ export const Config = z.object({
   presetOverlay: z.boolean().default(false),
   estimatorCatalogRoute: z.boolean().default(false),
   advisorReportRoute: z.boolean().default(false),
-  settings: z.object({
-    profile: z.string().default('balanced'),
-    custom: z.any(),
-    autoCompact: z.any(),
-    codeSkeleton: z.any(),
-    presetOptions: z.any(),
-  }).volatile(),
+  // The daily Custom defaults ride the field's schema default so every
+  // composition resolves a complete document without a stored user layer.
+  settings: z.any().default(DEFAULT_CONTEXT_COMPRESSION_SETTINGS).volatile(),
 }) as unknown as z<Config>
 
 /** Register the persisted default read by the currently mounted root pruner. */
