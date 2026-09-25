@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import Group from '@deepseek-ai/cordis-plugin-group'
 import Include from '@deepseek-ai/cordis-plugin-include'
+import { Config } from '../src/index.ts'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
@@ -23,6 +24,7 @@ import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { afterEach, describe, expect, it } from 'vitest'
 import { apply } from '../src/index.ts'
+import { LegacyNamespaceRegistrar } from "../helpers/legacy-namespace.ts"
 
 // 0.1.5 removed the settingsNamespace() wrapper; namespaces are validated at runtime.
 const nsBrand = (value: string): SettingsNamespace => value as unknown as SettingsNamespace
@@ -190,10 +192,13 @@ describe('standalone selector Bundle through the real preset Loader', () => {
     expect(hasCompactCommand(runtime, child)).toBe(true)
   })
 
-  it('publishes the daily Custom defaults from the plugin-owned settings row', async () => {
-    const runtime = await harness()
-    const namespace = nsBrand('context-compression')
-    const settings = runtime.settings.get(namespace) as CustomSettings
+  it('carries the daily Custom defaults on the bundle entry config schema', async () => {
+    // 0.1.7: there is no plugin-owned settings row publishing defaults — the
+    // volatile `settings` field's schema defaults ARE the daily Custom doc the
+    // loader resolves into every composition.
+    const settings = (Config({ presetOverlay: true }).settings as unknown as {
+      get(): CustomSettings
+    }).get()
 
     expect(settings.custom.history.trigger).toBe(500_000)
     expect(settings.custom.tailTrim).toEqual({ enabled: false, trigger: 700_000 })

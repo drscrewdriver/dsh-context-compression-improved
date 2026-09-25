@@ -41,7 +41,7 @@ function collectRegistrations(
   const registrations: CapturedRegistration[] = []
   const ctx = {
     locale: { register: vi.fn(() => () => {}), bind: () => (key: string) => key },
-    settingsScope: { bind: vi.fn(() => ({}) as never) },
+    configForms: { get: vi.fn(() => ({}) as never) },
     slots: {
       inject: (slot: string, factory: () => (() => void) | Generator<() => void>) => {
         declared.push(slot)
@@ -65,7 +65,7 @@ function collectRegistrations(
 
 describe('settings-seat contract (standalone settings.section only)', () => {
   it('declares the services apply consumes (cordis waits; no lazy-get race)', () => {
-    expect(inject).toEqual(['slots', 'locale', 'settingsScope'])
+    expect(inject).toEqual(['slots', 'locale', 'configForms'])
   })
 
   it('injects exactly the settings.section seat and nothing else', () => {
