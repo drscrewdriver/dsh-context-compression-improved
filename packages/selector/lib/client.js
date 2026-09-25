@@ -1475,18 +1475,32 @@ window.__ModuleLoader__.load({
 			const injected = () => {
 				const form = ctx.configForms.get(ENTRY_ID);
 				const readDoc = () => decodeSettings(form.getSnapshot().value?.settings);
+				let projectedSource;
+				let projected = {
+					status: "loading",
+					value: void 0,
+					revision: void 0,
+					writable: false,
+					base: void 0,
+					user: void 0,
+					mode: "host"
+				};
 				const scope = {
 					getSnapshot() {
 						const snap = form.getSnapshot();
-						return {
-							status: snap.status,
-							value: readDoc(),
-							revision: snap.revision,
-							writable: snap.writable,
-							base: snap.base,
-							user: snap.user,
-							mode: snap.mode
-						};
+						if (snap !== projectedSource) {
+							projectedSource = snap;
+							projected = {
+								status: snap.status,
+								value: decodeSettings(snap.value?.settings),
+								revision: snap.revision,
+								writable: snap.writable,
+								base: snap.base,
+								user: snap.user,
+								mode: snap.mode
+							};
+						}
+						return projected;
 					},
 					subscribe: (listener) => form.subscribe(listener),
 					set: async (field, value) => {

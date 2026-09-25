@@ -113,16 +113,18 @@ type ContextCompressionLocaleKey = keyof typeof zh;
  * selector consumes lives here instead (getSnapshot shape mirrors the 0.1.7
  * `ConfigFormSnapshot` minus the parts the components never read).
  */
+/** The projected snapshot shape (identity-stable between changes — React #185). */
+interface ScopeSnapshot<T> {
+  status: 'loading' | 'ready' | 'unavailable';
+  value: T | undefined;
+  revision: number | undefined;
+  writable: boolean;
+  base: unknown;
+  user: unknown;
+  mode: 'host' | 'memory';
+}
 interface SettingsScope<T> {
-  getSnapshot(): {
-    status: 'loading' | 'ready' | 'unavailable';
-    value: T | undefined;
-    revision: number | undefined;
-    writable: boolean;
-    base: unknown;
-    user: unknown;
-    mode: 'host' | 'memory';
-  };
+  getSnapshot(): ScopeSnapshot<T>;
   subscribe(listener: () => void): () => void;
   set(field: string, value: unknown): Promise<boolean>;
   unset(field: string): Promise<boolean>;

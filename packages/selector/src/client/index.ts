@@ -12,7 +12,7 @@ import { DEFAULT_CUSTOM_COMPRESSION_POLICY } from '../profiles.ts'
 import { decodeSettings } from './decode.ts'
 import { en, zh } from './locales.ts'
 import { planPresetOptionsOps, presetOptionsOpsAccepted } from './preset-options.ts'
-import type { SettingsScope } from './scope-face.ts'
+import type { ScopeSnapshot, SettingsScope } from './scope-face.ts'
 
 /**
  * Harness 0.1.5 mounts the web core's `slots` service on the client context
@@ -97,18 +97,32 @@ export function apply(ctx: ClientContext): void {
     const form = ctx.configForms.get<Record<string, unknown>>(ENTRY_ID)
     const readDoc = (): ContextCompressionSettings | undefined =>
       decodeSettings(form.getSnapshot().value?.settings)
+    // useSyncExternalStore requires a getSnapshot that returns a STABLE
+    // reference between changes — a fresh object per call is React error #185
+    // (maximum update depth exceeded). Cache the projection keyed on the form
+    // snapshot's identity: ConfigFormSnapshot is documented stable until the
+    // next accepted change.
+    let projectedSource: object | undefined
+    let projected: ScopeSnapshot<ContextCompressionSettings> = {
+      status: 'loading', value: undefined, revision: undefined,
+      writable: false, base: undefined, user: undefined, mode: 'host',
+    }
     const scope: SettingsScope<ContextCompressionSettings> = {
       getSnapshot() {
         const snap = form.getSnapshot()
-        return {
-          status: snap.status,
-          value: readDoc(),
-          revision: snap.revision,
-          writable: snap.writable,
-          base: snap.base,
-          user: snap.user,
-          mode: snap.mode,
+        if (snap !== projectedSource) {
+          projectedSource = snap
+          projected = {
+            status: snap.status,
+            value: decodeSettings(snap.value?.settings),
+            revision: snap.revision,
+            writable: snap.writable,
+            base: snap.base,
+            user: snap.user,
+            mode: snap.mode,
+          }
         }
+        return projected
       },
       subscribe: (listener) => form.subscribe(listener),
       set: async (field, value) => {
