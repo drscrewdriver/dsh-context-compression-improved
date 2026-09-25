@@ -5,7 +5,6 @@ import { DEFAULT_CUSTOM_COMPRESSION_POLICY } from '../src/profiles.ts'
 import { apply } from '../src/client/index.ts'
 import type { CompressionSelectorInjected } from '../src/client/CompressionProfileSelector.tsx'
 import type { ContextCompressionSettings } from '../src/profiles.ts'
-import type { ClientContext } from '../src/client/index.ts'
 
 /**
  * 0.1.7 contract: `codeSkeleton` rides the entry config as part of the volatile
@@ -65,7 +64,7 @@ describe('codeSkeleton confirm-on-write client contract', () => {
           return () => {}
         },
       },
-    } as unknown as ClientContext
+    } as unknown as Parameters<typeof apply>[0]
 
     apply(ctx)
     const actions = injected?.()

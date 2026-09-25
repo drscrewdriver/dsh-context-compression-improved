@@ -108,7 +108,7 @@ describe('context compression selector Host preset integration', () => {
     // carries its own compression doc on its entry config, so duplicate rows
     // cannot disturb each other and disposal is purely per row.
     const bundle = ctx.plugin({ apply: (child) => {
-      apply(child, { presetOverlay: true, settings: { profile: 'cache-strict' } })
+      apply(child, { presetOverlay: true, settings: { profile: 'cache-strict' } } as never)
     } })
     await bundle.await()
 

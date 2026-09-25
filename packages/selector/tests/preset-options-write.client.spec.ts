@@ -15,6 +15,7 @@ import type { ContextCompressionSettings } from '../src/profiles.ts'
  */
 
 interface FormStub {
+  form: Record<string, unknown>
   /** Whole-doc commits the fake Host accepted. */
   readonly commits: Record<string, unknown>[]
   /** Whole-doc writes the fake Host refused. */
