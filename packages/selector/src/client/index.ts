@@ -11,8 +11,8 @@ import {
 import { DEFAULT_CUSTOM_COMPRESSION_POLICY } from '../profiles.ts'
 import { decodeSettings } from './decode.ts'
 import { en, zh } from './locales.ts'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { planPresetOptionsOps, presetOptionsOpsAccepted } from './preset-options.ts'
+import type { SettingsScope } from './scope-face.ts'
 
 /**
  * Harness 0.1.5 mounts the web core's `slots` service on the client context
@@ -29,7 +29,6 @@ interface SlotsService {
 declare module '@deepseek-ai/cordis' {
   interface Context {
     slots: SlotsService
-    configForms: ConfigFormsFace
   }
 }
 
@@ -115,28 +114,28 @@ export function apply(ctx: ClientContext): void {
       set: async (field, value) => {
         const next = { ...(readDoc() ?? {}) } as Record<string, unknown>
         next[field] = value
-        await form.set('settings', next)
+        return form.set('settings', next)
       },
       unset: async (field) => {
         const next = { ...(readDoc() ?? {}) } as Record<string, unknown>
         delete next[field]
-        await form.set('settings', next)
+        return form.set('settings', next)
       },
       mutate: async (ops) => {
         const doc = { ...(readDoc() ?? {}) } as Record<string, unknown>
         for (const op of ops) {
           const [head, key] = op.path as [string, string]
-          if (head !== 'presetOptions') return
+          if (head !== 'presetOptions') return false
           const section = { ...((doc.presetOptions ?? {}) as Record<string, unknown>) }
           if (op.op === 'unset') delete section[key]
           else section[key] = (op as { value?: unknown }).value
           doc.presetOptions = section
         }
-        await form.set('settings', doc)
+        return form.set('settings', doc)
       },
     }
     const writeAndConfirm = async (
-      write: () => Promise<void>,
+      write: () => Promise<unknown>,
       accepts: (settings: ContextCompressionSettings) => boolean,
     ): Promise<void> => {
       const beforeRevision = scope.getSnapshot().revision
@@ -182,7 +181,7 @@ export function apply(ctx: ClientContext): void {
         const ops = planPresetOptionsOps(scope.getSnapshot().value?.presetOptions, options)
         if (ops.length === 0) return Promise.resolve()
         return writeAndConfirm(
-          () => scope.mutate(ops),
+          () => scope.mutate?.(ops) ?? Promise.resolve(false),
           settings => presetOptionsOpsAccepted(settings.presetOptions, ops),
         )
       },

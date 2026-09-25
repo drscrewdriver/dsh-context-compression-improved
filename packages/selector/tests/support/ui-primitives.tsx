@@ -12,7 +12,7 @@ interface MenuProps {
   open: boolean
 }
 
-export function IconChevronDownOutline14({ className }: { className?: string }) {
+export function IconChevronDownOutlineMedium({ className }: { className?: string }) {
   return <span aria-hidden="true" className={className}>⌄</span>
 }
 

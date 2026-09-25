@@ -693,6 +693,13 @@ interface CompactionTokenView extends TokenMeasurement {
 declare function measureForCompaction(ctx: Context, session: Session): CompactionTokenView;
 //#endregion
 //#region src/pruner.d.ts
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'dsh-context-compression': {
+      readonly kind: 'dsh-context-compression';
+    };
+  }
+}
 declare module '@deepseek-ai/cordis' {
   interface Context {
     toolResultPruner: ToolResultPruner;

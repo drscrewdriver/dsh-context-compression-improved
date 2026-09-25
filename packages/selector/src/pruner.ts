@@ -14,6 +14,15 @@ import z from '@deepseek-ai/schemastery'
 import { createUserMessage, freezeMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, UserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionSeq } from '@deepseek-ai/dsh-session'
+
+// 0.1.7-rc.2 removed the shared 'plugin' source kind — each producer declares
+// its own kind in its own module (official pattern: compaction's
+// 'compact-checkpoint' in compaction/src/index.ts).
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'dsh-context-compression': { readonly kind: 'dsh-context-compression' }
+  }
+}
 import type { Session, SessionEvent, ToolResultMessage } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-compaction'
@@ -535,7 +544,7 @@ export class ToolResultPruner extends Service {
     // carrying the marker would fail the host's closed-transaction validation.
     const replacement = createUserMessage({
       content,
-      source: { kind: 'plugin', plugin: 'dsh-context-compression-improved-runtime' },
+      source: { kind: 'dsh-context-compression' },
     })
     session.append('user/message', replacement, {
       surfaceOp: { op: 'replace', startSeq: SessionSeq(checkpointSeq), endSeq: SessionSeq(checkpointSeq) },
@@ -1325,11 +1334,11 @@ export class ToolResultPruner extends Service {
       if (shadowedHeuristicTokenCount === undefined) {
         throw new Error(`surface node ${String(seq)} is absent from the atomic legacy projection`)
       }
-      const content = event.data.message.content[0].content
+      const content = event.data.message.content
       candidates.push({
         seq,
         event,
-        call: calls.get(event.data.message.source.callId) ?? { name: 'unknown', arguments: '{}' },
+        call: calls.get(event.data.message.toolCallId) ?? { name: 'unknown', arguments: '{}' },
         count: onlyTextBlocks(content) === null
           ? unavailableCount(`surface node ${String(seq)} contains unsupported rich tool-result content`)
           : measured.get(seq) ?? unavailableCount(`surface node ${String(seq)} is absent from the atomic token view`),
@@ -1349,7 +1358,7 @@ export class ToolResultPruner extends Service {
   ): PlannedReplacement | null {
     if (this.isRecoveryExempt(session, candidate)) return null
     if (candidate.characterPressure <= charsForTokens(policy.nativeTriggerTokens)) return null
-    const result = candidate.event.data.message.content[0]
+    const result = candidate.event.data.message as ToolResultMessage
     if (onlyTextBlocks(result.content) === null) return null
     const sourceSeq = rootToolResultSeq(session, candidate.seq)
     // R9b site: the marker's retrieve hint starts at the event line right
@@ -1401,7 +1410,7 @@ export class ToolResultPruner extends Service {
     view: CompactionTokenView,
   ): PlannedReplacement | null {
     if (typeof candidate.event.surfaceOp === 'object') return null
-    const result = candidate.event.data.message.content[0]
+    const result = candidate.event.data.message as ToolResultMessage
     const text = flattenPlainText(result.content)
     if (text === undefined) return null
     if (candidate.characterPressure <= charsForTokens(policy.freshTriggerTokens)) return null
@@ -1449,7 +1458,7 @@ export class ToolResultPruner extends Service {
     // pre-step coordinate filter prevents previously-kept originals from ever
     // being reconsidered after their first request.
     if (typeof candidate.event.surfaceOp === 'object') return null
-    const result = candidate.event.data.message.content[0]
+    const result = candidate.event.data.message as ToolResultMessage
     if (candidate.characterPressure <= charsForTokens(policy.freshTriggerTokens)) return null
     const sourceSeq = candidate.seq
     const sourceRef = sourceRefFn(session, sourceSeq)
@@ -1527,7 +1536,7 @@ export class ToolResultPruner extends Service {
     // example one carrying an image) must never reach it. The character basis
     // no longer inherits the exact-tokenizer precondition that used to reject
     // this path implicitly, so the guard has to be explicit.
-    const redacted = candidate.event.data.message.content[0]
+    const redacted = candidate.event.data.message as ToolResultMessage
     if (onlyTextBlocks(redacted.content) === null) return null
     const text = [
       '[Tool result reduced to satisfy the completed-step aggregate budget]',
@@ -1561,7 +1570,7 @@ export class ToolResultPruner extends Service {
     historyMode?: HistoryMode,
   ): PlannedReplacement | null {
     if (!isError(candidate)) return null
-    const result = candidate.event.data.message.content[0]
+    const result = candidate.event.data.message as ToolResultMessage
     const blocks = onlyTextBlocks(result.content)
     if (blocks === null) return null
     const text = blocks.map(block => block.text).join('\n')
@@ -1619,7 +1628,7 @@ export class ToolResultPruner extends Service {
     const protectedSeqs = this.protectedHistoryCandidateSeqs(candidates, policy)
     const isUnsafe = (candidate: SnapshotCandidate): boolean => {
       if (this.isRecoveryExempt(session, candidate)) return true
-      const result = candidate.event.data.message.content[0]
+      const result = candidate.event.data.message as ToolResultMessage
       const block = onlyTextBlock(result.content)
       return block?.text.includes('[Old tool result content cleared from active context]') === true
     }
@@ -1649,7 +1658,7 @@ export class ToolResultPruner extends Service {
       ? minReclaimChars
       : required
     for (const candidate of eligible) {
-      const result = candidate.event.data.message.content[0]
+      const result = candidate.event.data.message as ToolResultMessage
       const block = onlyTextBlock(result.content)
       // TokenPilot-inspired R2: a read output whose file was later mutated is
       // superseded — its text can no longer match the file — so it takes the
@@ -1858,11 +1867,11 @@ export class ToolResultPruner extends Service {
         if (event?.type !== 'tool/result'
           || event.data.turn !== assistant.data.turn || event.data.step !== assistant.data.step
           || event.data.error !== undefined) return true
-        const block = event.data.message.content[0]
+        const block = event.data.message as ToolResultMessage
         if (block.isError === true) return true
         // Images and other rich inner blocks stay fail-open: a TailTrim stub
         // would silently delete them from the active context.
-        return block.content.some(contentBlock => contentBlock.type !== 'text')
+        return block.content.some((contentBlock: ContentBlock) => contentBlock.type !== 'text')
       })) continue
       const next = events[nodes[index + 1 + calls.length] ?? -1]
       if (next?.type === 'tool/result'
@@ -2049,7 +2058,7 @@ export class ToolResultPruner extends Service {
     // noise without reclaiming context. Text-level because the placeholder
     // guidance lines (source refs, retrieval hints) must pay for themselves.
     if (options.noNetSavingsGuard === true) {
-      const originalBlocks = onlyTextBlocks(candidate.event.data.message.content[0].content)
+      const originalBlocks = onlyTextBlocks(candidate.event.data.message.content)
       const replacementBlocks = onlyTextBlocks(content)
       if (originalBlocks !== null && replacementBlocks !== null) {
         const originalChars = originalBlocks.reduce((sum, block) => sum + codePointLength(block.text), 0)
@@ -2078,10 +2087,12 @@ export class ToolResultPruner extends Service {
 
   private land(session: Session, plan: PlannedReplacement): PrunedEntry | null {
     const { candidate } = plan
-    const result = candidate.event.data.message.content[0]
+    const result = candidate.event.data.message as ToolResultMessage
+    // 0.1.7-rc.2: the tool message's own `content` is the result block set —
+    // no wrapping result block anymore.
     const message = freezeMessage<ToolResultMessage>({
       ...candidate.event.data.message,
-      content: [{ ...result, content: plan.content }] as [typeof result],
+      content: plan.content,
     })
     const manifest = session.append('compaction/prune', {
       shadowedRange: { start: SessionSeq(candidate.seq), end: SessionSeq(candidate.seq) },

@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useId, useState } from 'react'
-import { IconChevronDownOutline14, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconChevronDownOutlineMedium, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ContextCompressionLocaleKey } from './locales.ts'
 import css from './CompressionProfileSelector.module.css'
 import {
@@ -90,7 +90,7 @@ export function CompressionProfileControls({
               <span className={css.label}>{t('label')}</span>
               <span className={css.value}>{label}</span>
             </span>
-            <IconChevronDownOutline14 className={css.chevron} />
+            <IconChevronDownOutlineMedium className={css.chevron} />
           </button>
         )}
       />

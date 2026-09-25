@@ -1492,24 +1492,24 @@ window.__ModuleLoader__.load({
 					set: async (field, value) => {
 						const next = { ...readDoc() ?? {} };
 						next[field] = value;
-						await form.set("settings", next);
+						return form.set("settings", next);
 					},
 					unset: async (field) => {
 						const next = { ...readDoc() ?? {} };
 						delete next[field];
-						await form.set("settings", next);
+						return form.set("settings", next);
 					},
 					mutate: async (ops) => {
 						const doc = { ...readDoc() ?? {} };
 						for (const op of ops) {
 							const [head, key] = op.path;
-							if (head !== "presetOptions") return;
+							if (head !== "presetOptions") return false;
 							const section = { ...doc.presetOptions ?? {} };
 							if (op.op === "unset") delete section[key];
 							else section[key] = op.value;
 							doc.presetOptions = section;
 						}
-						await form.set("settings", doc);
+						return form.set("settings", doc);
 					}
 				};
 				const writeAndConfirm = async (write, accepts) => {
@@ -1528,7 +1528,7 @@ window.__ModuleLoader__.load({
 					savePresetOptions: (options) => {
 						const ops = planPresetOptionsOps(scope.getSnapshot().value?.presetOptions, options);
 						if (ops.length === 0) return Promise.resolve();
-						return writeAndConfirm(() => scope.mutate(ops), (settings) => presetOptionsOpsAccepted(settings.presetOptions, ops));
+						return writeAndConfirm(() => scope.mutate?.(ops) ?? Promise.resolve(false), (settings) => presetOptionsOpsAccepted(settings.presetOptions, ops));
 					}
 				};
 			};
