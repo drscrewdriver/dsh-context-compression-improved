@@ -1,6 +1,6 @@
 {
   "name": "dsh-context-compression-improved",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "publishConfig": {
     "registry": "https://registry.npmjs.org",
     "access": "public",
@@ -55,7 +55,7 @@
   "packageManager": "pnpm@11.7.0",
   "engines": {
     "node": "^22.19.0 || >=24.0.0",
-    "dsh": ">=0.1.5-rc.1 <0.2.0-0"
+    "dsh": ">=0.1.5-rc.1 <0.1.6-0"
   },
   "scripts": {
     "build": "pnpm -r --if-present run bundle",
@@ -72,10 +72,10 @@
     "pack:dry-run": "pnpm -r --if-present run pack:dry-run"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-client-locale": ">=0.1.5-rc.1 <0.2.0-0",
-    "@deepseek-ai/dsh-client-ui-primitives": ">=0.1.5-rc.1 <0.2.0-0",
-    "@deepseek-ai/dsh-client-ui-settings": ">=0.1.5-rc.1 <0.2.0-0",
-    "@deepseek-ai/dsh-client-ui-slots": ">=0.1.5-rc.1 <0.2.0-0"
+    "@deepseek-ai/dsh-client-locale": ">=0.1.5-rc.1 <0.1.6-0",
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.1.5-rc.1 <0.1.6-0",
+    "@deepseek-ai/dsh-client-ui-settings": ">=0.1.5-rc.1 <0.1.6-0",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.1.5-rc.1 <0.1.6-0"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-client-locale": {
