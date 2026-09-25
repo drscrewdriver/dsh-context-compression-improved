@@ -423,9 +423,18 @@ export class ToolResultPruner extends Service {
   private activeSettings(session: Session): ContextCompressionSettings {
     const frozen = this.state.sessionSettings.get(session)
     if (frozen !== undefined) return frozen
-    // Harness 0.1.1 brands namespace values through a helper while 0.1.2
-    // validates the same public literal at its SettingsProvider boundary.
-    const settings = this.ctx.get('settings')?.get(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as never)
+    // 0.1.7: the compression document rides the selector row's entry config as a
+    // `.volatile()` field — read it through the settings service's describe()
+    // mirror (keyed by the profile entry id). The legacy per-namespace get stays
+    // as a fallback; both are undefined-safe and the caller handles absence.
+    const settingsHost = this.ctx.get('settings') as {
+      describe?: () => Array<{ ns: unknown; value?: unknown }>
+      get?: (ns: never) => unknown
+    } | undefined
+    const settings = (settingsHost?.describe?.().find(
+      (d) => String(d.ns) === 'context-compression-improved-bundle',
+    )?.value
+      ?? settingsHost?.get?.(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as never)) as ContextCompressionSettings | undefined
     let resolved: ContextCompressionSettings
     let settingsSource: 'host-settings' | 'plugin-config-fallback' = settings === undefined
       ? 'plugin-config-fallback'

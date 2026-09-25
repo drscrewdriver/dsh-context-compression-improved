@@ -1,10 +1,8 @@
 {
   "name": "dsh-context-compression-improved",
-  "version": "0.5.5",
+  "version": "0.6.0",
   "publishConfig": {
-    "registry": "https://registry.npmjs.org",
-    "access": "public",
-    "tag": "dsh-0.1.5"
+    "tag": "dsh-0.1.7"
   },
   "type": "module",
   "main": "packages/selector/lib/index.js",
@@ -29,7 +27,7 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "3.18.2",
+    "@deepseek-ai/schemastery": "3.18.4",
     "@huggingface/tokenizers": "0.1.3",
     "js-yaml": "^4.3.2"
   },
@@ -144,7 +142,7 @@
     "@deepseek-ai/dsh-tools": "0.1.5-rc.2",
     "@deepseek-ai/dsh-user-approval": "0.1.5-rc.2",
     "@deepseek-ai/dsh-user-questions": "0.1.5-rc.2",
-    "@deepseek-ai/schemastery": "3.18.2",
+    "@deepseek-ai/schemastery": "3.18.4",
     "@eslint/js": "^10.0.1",
     "@testing-library/react": "^16.3.2",
     "@tsdown/css": "^0.22.14",

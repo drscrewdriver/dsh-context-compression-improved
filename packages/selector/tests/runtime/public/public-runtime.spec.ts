@@ -36,6 +36,7 @@ import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { CompactionId } from '@deepseek-ai/dsh-compaction'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import * as SelectorHost from '../../../src/index.ts'
+import { LegacyNamespaceRegistrar } from '../../helpers/legacy-namespace.ts'
 import * as RuntimeInvariant from '../../../src/invariant.ts'
 import { sessionEvents } from '../../../src/runtime/session-events.ts'
 import ToolResultPruner, {
@@ -424,7 +425,7 @@ describe('standalone runtime on published Harness APIs', () => {
     // replacement → audit record) without ever touching the replacement text.
     const ctx = await runtimeContext()
     await ctx.plugin(TestSettings).await()
-    await ctx.plugin(SelectorHost).await()
+    $1await ctx.plugin(LegacyNamespaceRegistrar).await()
     await ctx.settings.update(nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE), {
       profile: 'balanced',
       codeSkeleton: { enabled: true },
@@ -589,7 +590,7 @@ describe('standalone runtime on published Harness APIs', () => {
   it('moves the capacity-pressure gate with the frozen Auto Compact threshold', async () => {
     const ctx = await runtimeContext()
     await ctx.plugin(TestSettings).await()
-    await ctx.plugin(SelectorHost).await()
+    $1await ctx.plugin(LegacyNamespaceRegistrar).await()
     const audit = captureAudit(ctx)
     const namespace = nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE)
 
@@ -625,7 +626,7 @@ describe('standalone runtime on published Harness APIs', () => {
   it('ages History earlier when the frozen Auto Compact threshold is low', async () => {
     const ctx = await runtimeContext()
     await ctx.plugin(TestSettings).await()
-    await ctx.plugin(SelectorHost).await()
+    $1await ctx.plugin(LegacyNamespaceRegistrar).await()
     const audit = captureAudit(ctx)
     const namespace = nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE)
 
@@ -659,7 +660,7 @@ describe('standalone runtime on published Harness APIs', () => {
   it('freezes the generation-owned threshold over later global settings changes', async () => {
     const ctx = await runtimeContext()
     await ctx.plugin(TestSettings).await()
-    await ctx.plugin(SelectorHost).await()
+    $1await ctx.plugin(LegacyNamespaceRegistrar).await()
     const audit = captureAudit(ctx)
     const namespace = nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE)
     // The preset overlay captured 70% into this generation's deployment
@@ -695,7 +696,7 @@ describe('standalone runtime on published Harness APIs', () => {
   it('fails open to a lossless frozen policy when stored settings are malformed', async () => {
     const ctx = await runtimeContext()
     await ctx.plugin(TestSettings).await()
-    await ctx.plugin(SelectorHost).await()
+    $1await ctx.plugin(LegacyNamespaceRegistrar).await()
     const audit = captureAudit(ctx)
     const namespace = nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE)
     // A hand-edited store can surface a document the schema rejects (unknown
@@ -745,7 +746,7 @@ describe('standalone runtime on published Harness APIs', () => {
   ])('fails open to a lossless frozen policy when the stored document carries %s', async (label, malformed) => {
     const ctx = await runtimeContext()
     await ctx.plugin(TestSettings).await()
-    await ctx.plugin(SelectorHost).await()
+    $1await ctx.plugin(LegacyNamespaceRegistrar).await()
     const audit = captureAudit(ctx)
     const namespace = nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE)
     // Schemastery `.default(...)` would silently replace these present-but-null
@@ -782,7 +783,7 @@ describe('standalone runtime on published Harness APIs', () => {
 
     const ctx = await runtimeContext()
     await ctx.plugin(TestSettings).await()
-    await ctx.plugin(SelectorHost).await()
+    $1await ctx.plugin(LegacyNamespaceRegistrar).await()
     const audit = captureAudit(ctx)
     const namespace = nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE)
     const malformed = {
@@ -882,7 +883,7 @@ describe('standalone runtime on published Harness APIs', () => {
   it('audits the Auto Compact coordination block on policy resolution', async () => {
     const ctx = await runtimeContext()
     await ctx.plugin(TestSettings).await()
-    await ctx.plugin(SelectorHost).await()
+    $1await ctx.plugin(LegacyNamespaceRegistrar).await()
     const audit = captureAudit(ctx)
     const namespace = nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE)
     await ctx.settings.update(namespace, { autoCompact: { thresholdPercent: 73 } })
@@ -979,7 +980,7 @@ describe('standalone runtime on published Harness APIs', () => {
   it('freezes the Auto Compact threshold per Session and applies new values only to new Sessions', async () => {
     const ctx = await runtimeContext()
     await ctx.plugin(TestSettings).await()
-    await ctx.plugin(SelectorHost).await()
+    $1await ctx.plugin(LegacyNamespaceRegistrar).await()
     const audit = captureAudit(ctx)
     const namespace = nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE)
     await ctx.plugin(ToolResultPruner, { profile: 'balanced' }).await()
@@ -1503,7 +1504,7 @@ describe('standalone runtime on published Harness APIs', () => {
   it('still commits unlinked Custom History batches at the minimum reclaim', async () => {
     const ctx = await runtimeContext()
     await ctx.plugin(TestSettings).await()
-    await ctx.plugin(SelectorHost).await()
+    $1await ctx.plugin(LegacyNamespaceRegistrar).await()
     const audit = captureAudit(ctx)
     // A protected token tail larger than the trigger leaves the linked-style
     // whole-excess demand unreachable; Custom stays manual and must still
@@ -1689,7 +1690,7 @@ describe('standalone runtime on published Harness APIs', () => {
     const ctx = new Context()
     activeContexts.push(ctx)
     await ctx.plugin(TestSettings).await()
-    await ctx.plugin(SelectorHost).await()
+    $1await ctx.plugin(LegacyNamespaceRegistrar).await()
     await ctx.plugin(SessionStore).await()
     await ctx.plugin(SystemPrompt).await()
     await ctx.plugin(ToolRuntime).await()
@@ -1751,7 +1752,7 @@ describe('standalone runtime on published Harness APIs', () => {
     const ctx = new Context()
     activeContexts.push(ctx)
     await ctx.plugin(TestSettings).await()
-    await ctx.plugin(SelectorHost).await()
+    $1await ctx.plugin(LegacyNamespaceRegistrar).await()
     await ctx.plugin(SessionStore).await()
     await ctx.plugin(SystemPrompt).await()
     await ctx.plugin(ToolRuntime).await()
@@ -1848,7 +1849,7 @@ describe('standalone runtime on published Harness APIs', () => {
       const ctx = new Context()
       activeContexts.push(ctx)
       await ctx.plugin(TestSettings).await()
-      await ctx.plugin(SelectorHost).await()
+      $1await ctx.plugin(LegacyNamespaceRegistrar).await()
       await ctx.plugin(SessionStore).await()
       await ctx.plugin(SystemPrompt).await()
       await ctx.plugin(ToolRuntime).await()
@@ -1941,7 +1942,7 @@ describe('standalone runtime on published Harness APIs', () => {
     const ctx = new Context()
     activeContexts.push(ctx)
     await ctx.plugin(TestSettings).await()
-    await ctx.plugin(SelectorHost).await()
+    $1await ctx.plugin(LegacyNamespaceRegistrar).await()
     await ctx.plugin(SessionStore).await()
     await ctx.plugin(InvariantRegistry).await()
     await ctx.plugin(RuntimeInvariant).await()
@@ -2121,7 +2122,7 @@ describe('standalone runtime on published Harness APIs', () => {
     const ctx = new Context()
     activeContexts.push(ctx)
     await ctx.plugin(TestSettings).await()
-    await ctx.plugin(SelectorHost).await()
+    $1await ctx.plugin(LegacyNamespaceRegistrar).await()
     await ctx.plugin(LlmRuntime).await()
     await ctx.plugin(SessionStore).await()
     await ctx.plugin(SystemPrompt).await()
@@ -2568,7 +2569,7 @@ describe('standalone runtime on published Harness APIs', () => {
   it('never TailTrims a tool group whose results carry images', async () => {
     const ctx = await runtimeContext()
     await ctx.plugin(TestSettings).await()
-    await ctx.plugin(SelectorHost).await()
+    $1await ctx.plugin(LegacyNamespaceRegistrar).await()
     const audit = captureAudit(ctx)
     await ctx.settings.update(nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE), {
       profile: 'custom',
@@ -2660,7 +2661,7 @@ describe('character basis / model-id independence', () => {
   async function characterBasisContext(): Promise<Context> {
     const ctx = await runtimeContext()
     await ctx.plugin(TestSettings).await()
-    await ctx.plugin(SelectorHost).await()
+    $1await ctx.plugin(LegacyNamespaceRegistrar).await()
     await ctx.settings.update(nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE), {
       profile: 'balanced',
       codeSkeleton: { enabled: true },

@@ -2,11 +2,8 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import {
-  type SettingsScope,
-  type default as SettingsService,
-} from '@deepseek-ai/dsh-settings'
 import { buildEstimatorCatalog, type EstimatorCatalogDeps } from './estimator-catalog.ts'
+import type { ContextCompressionSettings } from './profiles.ts'
 import {
   CONTEXT_COMPRESSION_SETTINGS_NAMESPACE,
   ContextCompressionSettingsSchema,
@@ -21,7 +18,6 @@ import { getAdvisorState } from './runtime/tokenpilot/advisor-state.ts'
 // package, so the real schema is back and the daily Custom defaults are
 // published again through settings.register(). The namespace value is
 // unchanged ('context-compression').
-const CONTEXT_COMPRESSION_NAMESPACE = CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as never
 import {
   decorateAgentPresets,
   resolveCompressionModulePaths,
@@ -295,31 +291,20 @@ function registerEstimatorCatalogRoute(ctx: Context): void {
   log('warn', 'context-compression webServer not active yet — estimator catalog route pending: %s', ESTIMATOR_CATALOG_ROUTES.join(', '))
 }
 
-
-
-/** Shared state forwarded through every Cordis proxy of one settings service. */
-interface SharedSettingsRegistration {
-  /** Plugin fibers currently leasing the namespace. */
-  readonly owners: Set<SettingsOwner>
-  /** Owner whose fiber currently carries settings.register's native effect. */
-  registrationOwner: SettingsOwner
-  /** Current owner scope; replaced without changing the stored document. */
-  scope: SettingsScope<unknown>
+/**
+ * Resolve one possibly-volatile field: a live ref on 0.1.7+, a plain value
+ * otherwise (0.1.7 hands `.volatile()` fields to `apply()` as live refs).
+ */
+function readVolatileValue<T>(value: T | { get(): T } | undefined): T | undefined {
+  if (value !== null && typeof value === 'object' && typeof (value as { get?: unknown }).get === 'function') {
+    return (value as { get(): T }).get()
+  }
+  return value as T | undefined
 }
 
-/** One selector Host row able to own the registration effect. */
-interface SettingsOwner {
-  /** Traceable service proxy binding register() to this row's fiber. */
-  readonly settings: SettingsService
-}
-
-/** Symbol properties reach the shared service target through Cordis proxies. */
-const SHARED_SETTINGS = Symbol.for(
-  'dsh-context-compression-improved/settings-registration',
-)
-
-type SettingsCarrier = SettingsService & {
-  [SHARED_SETTINGS]?: SharedSettingsRegistration
+/** The compression settings document carried by this row's composition entry. */
+function readCompressionDoc(config: Config | undefined): ContextCompressionSettings | undefined {
+  return readVolatileValue(config?.settings)
 }
 
 /** Standalone Bundle behavior; the settings/UI owner remains safe when false. */
@@ -346,14 +331,29 @@ export interface Config {
    * `presetOptions.advisor*` settings keys.
    */
   advisorReportRoute?: boolean
+  /**
+   * 0.1.7: the compression settings document as ONE `.volatile()` whole-object
+   * field (the old dedicated namespace has no declarative equivalent). The
+   * browser selector writes it through `configForms`; the runtime reads the
+   * dereferenced value. Loose section schemas keep unknown keys — the strict
+   * validation stays in `decodeSettings` (client) and the runtime resolver.
+   */
+  settings?: ContextCompressionSettings
 }
 
 /** Loader validation for the standalone Bundle opt-in. */
-export const Config: z<Config> = z.object({
+export const Config = z.object({
   presetOverlay: z.boolean().default(false),
   estimatorCatalogRoute: z.boolean().default(false),
   advisorReportRoute: z.boolean().default(false),
-})
+  settings: z.object({
+    profile: z.string().default('balanced'),
+    custom: z.any(),
+    autoCompact: z.any(),
+    codeSkeleton: z.any(),
+    presetOptions: z.any(),
+  }).volatile(),
+}) as unknown as z<Config>
 
 /** Register the persisted default read by the currently mounted root pruner. */
 export function apply(ctx: Context, config: Config = {}): void {
@@ -363,10 +363,6 @@ export function apply(ctx: Context, config: Config = {}): void {
   // and quietly did nothing. Report it to a sink the host shows, then re-throw
   // unchanged: behaviour is untouched, only observability is restored.
   try {
-    ctx.inject(['settings'], (settingsCtx) => {
-      acquireSettingsRegistration(settingsCtx)
-    })
-
     // The settings card's host-route dropdowns read this route; it lives on the
     // top-level plugin fiber, not inside the isolated `toolResultPruner`
     // service, because the route is host-wide rather than per-pruner-instance.
@@ -383,7 +379,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         {
           modules: resolveCompressionModulePaths(),
           excludedPresetIds: ['minimal'],
-          autoCompactThresholdPercent: () => resolveAutoCompactThresholdPercent(presetsCtx),
+          autoCompactThresholdPercent: () => resolveAutoCompactThresholdPercent(config, presetsCtx),
         },
       )
       presetsCtx.effect(() => () => installation.dispose(), 'contextCompressionSelector.agentPresets()')
@@ -399,8 +395,13 @@ export function apply(ctx: Context, config: Config = {}): void {
  * values are revalidated here, and any unreadable value falls back to the 80%
  * default rather than blocking preset composition.
  */
-function resolveAutoCompactThresholdPercent(presetsCtx: Context): number {
-  const raw = presetsCtx.get('settings')?.get(CONTEXT_COMPRESSION_NAMESPACE)
+function resolveAutoCompactThresholdPercent(config: Config | undefined, presetsCtx?: Context): number {
+  // 0.1.7: the volatile entry field is authoritative; the legacy per-namespace
+  // read stays as a fallback so a host that still serves the old service shape
+  // keeps working (test hosts do exactly that).
+  const raw = readCompressionDoc(config)
+    ?? (presetsCtx?.get('settings') as { get?: (ns: never) => unknown } | undefined)
+      ?.get?.(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as never)
   try {
     const record = structuredClone(raw) as Record<string, unknown> | undefined
     const threshold = record?.autoCompact as { thresholdPercent?: number } | undefined
@@ -411,53 +412,4 @@ function resolveAutoCompactThresholdPercent(presetsCtx: Context): number {
   }
 }
 
-/**
- * Lease one native settings registration across duplicate Host rows.
- *
- * The lease effect is intentionally registered before settings.register().
- * Cordis disposes effects in reverse order, so the native registration first
- * releases the namespace; this disposer can then transfer it to another live
- * owner without a duplicate-registration window.
- */
-function acquireSettingsRegistration(ctx: Context): void {
-  const settings = ctx.settings as SettingsCarrier
-  const owner: SettingsOwner = { settings }
-  let shared = settings[SHARED_SETTINGS]
-  if (shared === undefined) {
-    shared = {
-      owners: new Set(),
-      registrationOwner: owner,
-      scope: undefined as unknown as SettingsScope<unknown>,
-    }
-    Object.defineProperty(settings, SHARED_SETTINGS, {
-      configurable: true,
-      enumerable: false,
-      writable: false,
-      value: shared,
-    })
-  }
-  shared.owners.add(owner)
-  const state = shared
 
-  ctx.effect(() => () => {
-    state.owners.delete(owner)
-    if (state.registrationOwner === owner && state.owners.size > 0) {
-      const next = state.owners.values().next().value as SettingsOwner
-      state.registrationOwner = next
-      state.scope = next.settings.register(
-        CONTEXT_COMPRESSION_NAMESPACE,
-        ContextCompressionSettingsSchema,
-      )
-    }
-    if (state.owners.size === 0 && settings[SHARED_SETTINGS] === state) {
-      Reflect.deleteProperty(settings, SHARED_SETTINGS)
-    }
-  }, 'contextCompressionSelector.settingsLease()')
-
-  if (state.owners.size === 1) {
-    state.scope = settings.register(
-      CONTEXT_COMPRESSION_NAMESPACE,
-      ContextCompressionSettingsSchema,
-    )
-  }
-}

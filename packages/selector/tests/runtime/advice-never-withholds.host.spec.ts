@@ -31,6 +31,7 @@ import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import * as SelectorHost from '../../src/index.ts'
+import { LegacyNamespaceRegistrar } from '../helpers/legacy-namespace.ts'
 import ToolResultPruner, {
   CONTEXT_COMPRESSION_SETTINGS_NAMESPACE,
 } from '../../src/pruner.ts'
@@ -135,7 +136,7 @@ function appendToolTurn(session: Session, turn: number, text: string): void {
  */
 async function gatedSettings(ctx: Context): Promise<void> {
   await ctx.plugin(TestSettings).await()
-  await ctx.plugin(SelectorHost).await()
+  $1await ctx.plugin(LegacyNamespaceRegistrar).await()
   await ctx.settings.update(nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE), {
     profile: 'tokenpilot-inspired',
     presetOptions: { reviewMode: true, reviewHighImpactTokens: 1 },
@@ -207,7 +208,7 @@ describe('advice never withholds (retired review gate)', () => {
   it('keeps the automatic path identical when no legacy gate key is present', async () => {
     const ctx = await runtimeContext()
     await ctx.plugin(TestSettings).await()
-    await ctx.plugin(SelectorHost).await()
+    $1await ctx.plugin(LegacyNamespaceRegistrar).await()
     await ctx.settings.update(nsBrand(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE), {
       profile: 'tokenpilot-inspired',
     })
