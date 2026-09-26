@@ -2,7 +2,7 @@
 
 > 전체 히스토리(업스트림 0.1.0 이전 포함)는 [CHANGELOG.md](CHANGELOG.md)를 참고하세요. 이 파일은 포크의 추가 항목만 번역한 것입니다. · [English](CHANGELOG.md) · [中文](CHANGELOG.zh.md) · [日本語](CHANGELOG.ja.md)
 
-## 0.7.0-beta.1 - 2026-09-27
+## 0.5.7-beta.1 - 2026-09-27
 
 ### 추가
 

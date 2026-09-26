@@ -2,7 +2,7 @@
 
 > 完整历史（含上游 0.1.0 及更早版本）见 [CHANGELOG.md](CHANGELOG.md)。本文件只翻译本 fork 的新增条目。 · [English](CHANGELOG.md) · [日本語](CHANGELOG.ja.md) · [한국어](CHANGELOG.ko.md)
 
-## 0.7.0-beta.1 - 2026-09-27
+## 0.5.7-beta.1 - 2026-09-27
 
 ### 新增
 
