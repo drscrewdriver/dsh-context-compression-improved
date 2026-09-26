@@ -2,7 +2,7 @@
   "id": "dsh-external/dsh-context-compression-improved",
   "version": "0.1.0",
   "main": "./lib/index.js",
-  "description": "Auditable tool-result context-compression selector with code-skeleton gate for DeepSeek Harness",
+  "description": "Token-saving tool-result context-compression selector with code-skeleton gate for DeepSeek Harness — fewer tokens, fully auditable",
   "engines": {
     "dsh": ">=0.1.5-rc.1 <0.2.0-0"
   },
