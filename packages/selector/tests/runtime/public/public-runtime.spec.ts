@@ -28,7 +28,7 @@ import {
 import {
   SettingsProvider,
   type SettingsNamespace,
-} from '@deepseek-ai/dsh-settings'
+} from '../../helpers/settings-provider-shim.ts'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'

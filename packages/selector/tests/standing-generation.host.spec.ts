@@ -21,7 +21,7 @@ import ToolRuntime from '@deepseek-ai/dsh-tools'
 import {
   SettingsProvider,
   type SettingsNamespace,
-} from '@deepseek-ai/dsh-settings'
+} from './helpers/settings-provider-shim.ts'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { apply } from '../src/index.ts'

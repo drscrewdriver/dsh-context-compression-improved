@@ -6,7 +6,7 @@ import type { AgentPreset } from '@deepseek-ai/dsh-agent-presets'
 import {
   SettingsProvider,
   type SettingsNamespace,
-} from '@deepseek-ai/dsh-settings'
+} from './helpers/settings-provider-shim.ts'
 import { afterEach, describe, expect, it } from 'vitest'
 import { apply } from '../src/index.ts'
 import type { OverlayableAgentPresets } from '../src/preset-overlay.ts'
