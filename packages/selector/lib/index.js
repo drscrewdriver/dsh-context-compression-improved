@@ -1,4 +1,4 @@
-import { c as setSummaryOverride, i as getSummaryOverride, n as getLastIntentFold, p as DEFAULT_CONTEXT_COMPRESSION_SETTINGS, r as getObservedIntentEnabled, t as getAdvisorState } from "./advisor-state.js";
+import { a as getLastIntentFold, i as getAdvisorState, n as INTENT_GATE_GROWTH_TOKENS, o as getObservedIntentEnabled, p as setSummaryOverride, s as getSummaryOverride, t as INTENT_GATE_FLOOR_FRACTION, v as DEFAULT_CONTEXT_COMPRESSION_SETTINGS } from "./intent-gate.js";
 import z from "@deepseek-ai/schemastery";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
@@ -74,23 +74,6 @@ async function buildEstimatorCatalog(deps) {
 		...selection === void 0 ? {} : { selection }
 	};
 }
-//#endregion
-//#region src/runtime/tokenpilot/intent-gate.ts
-/**
-* Turn-tail intent-summary growth gate (TokenPilot-inspired E2).
-*
-* Pure decision helper evaluated at the turn-boundary postflight: it decides
-* whether this turn may spend a summary-writer LLM call and stage a fold for
-* the next pressure round. The gate is deliberately conservative — every
-* unresolved input (unknown context window, non-finite counters) fails closed
-* toward "do not run", because a skipped fold is free while a wasted summary
-* call is not. Content safety is unaffected either way: fail-open semantics
-* live in the fold landing path, not here.
-*/
-/** Floor: the live surface must exceed this fraction of the context window. */
-const INTENT_GATE_FLOOR_FRACTION = .45;
-/** Growth: the live surface must have grown by more than this since the last landed fold. */
-const INTENT_GATE_GROWTH_TOKENS = 5e4;
 //#endregion
 //#region src/runtime/summary-command.ts
 const SUMMARY_COMMAND_NAME = "ctx-summary";
