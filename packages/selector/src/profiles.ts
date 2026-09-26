@@ -109,12 +109,30 @@ export interface CodeSkeletonSettings {
 }
 
 /**
+ * Orthogonal turn-tail intent-summary gate, mirrored browser-safe from the
+ * runtime: independent of every profile, default off.
+ */
+export interface IntentSummarySettings {
+  enabled: boolean
+}
+
+/**
  * Decode the persisted codeSkeleton section with exactly the runtime schema's
  * strictness: absent means the lossless off default; present values must be a
  * plain object carrying only a boolean `enabled`. Anything else is invalid,
  * never silently coerced.
  */
 export function decodeCodeSkeletonSettings(value: unknown): CodeSkeletonSettings | undefined {
+  if (value === undefined) return { enabled: false }
+  if (!isPlainRecord(value)) return undefined
+  const keys = Object.keys(value)
+  if (keys.length !== 1 || keys[0] !== 'enabled') return undefined
+  const enabled = (value as Record<string, unknown>).enabled
+  return typeof enabled === 'boolean' ? { enabled } : undefined
+}
+
+/** Browser-safe mirror of the runtime intentSummary section (absent inherits off). */
+export function decodeIntentSummarySettings(value: unknown): IntentSummarySettings | undefined {
   if (value === undefined) return { enabled: false }
   if (!isPlainRecord(value)) return undefined
   const keys = Object.keys(value)
@@ -237,6 +255,8 @@ export interface ContextCompressionSettings {
   autoCompact: AutoCompactSettings
   /** Code-skeleton reducer gate captured independently of `profile`. */
   codeSkeleton: CodeSkeletonSettings
+  /** Turn-tail intent-summary gate captured independently of `profile`. */
+  intentSummary: IntentSummarySettings
   /** Optional tokenpilot-inspired sub-capability overrides (presence-validated only). */
   presetOptions?: PresetOptionsSettings
 }

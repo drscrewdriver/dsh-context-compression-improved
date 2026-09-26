@@ -118,6 +118,16 @@ export interface CodeSkeletonSettings {
 }
 
 /**
+ * Orthogonal turn-tail intent-summary gate. Independent of every profile:
+ * when enabled, the turn-boundary growth gate may fold consumed-increment
+ * tool results into an LLM-written intent block (skeleton + verbatim error
+ * lines are kept; the model only ever writes the summary segment).
+ */
+export interface IntentSummarySettings {
+  enabled: boolean
+}
+
+/**
  * Persisted sub-capability overrides for the `tokenpilot-inspired` preset.
  * Absent fields inherit the preset defaults; the section is only meaningful
  * while the resolved profile is `tokenpilot-inspired`.
@@ -150,6 +160,8 @@ export interface ContextCompressionSettings {
   autoCompact: AutoCompactSettings
   /** Code-skeleton reducer gate snapped independently of `profile`. */
   codeSkeleton: CodeSkeletonSettings
+  /** Turn-tail intent-summary gate snapped independently of `profile`. */
+  intentSummary: IntentSummarySettings
   /** Optional tokenpilot-inspired sub-capability overrides; absent inherits preset defaults. */
   presetOptions?: PresetOptionsSettings
 }
