@@ -30,7 +30,6 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
-import * as SelectorHost from '../../src/index.ts'
 import { LegacyNamespaceRegistrar } from '../helpers/legacy-namespace.ts'
 import ToolResultPruner, {
   CONTEXT_COMPRESSION_SETTINGS_NAMESPACE,

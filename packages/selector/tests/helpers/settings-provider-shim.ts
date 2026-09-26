@@ -30,7 +30,6 @@ export class SettingsProvider extends Service {
     return Promise.resolve({})
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   protected persist(_ns: SettingsNamespace, _section: Record<string, unknown>): Promise<void> {
     return Promise.resolve()
   }

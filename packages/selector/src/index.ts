@@ -6,7 +6,6 @@ import { buildEstimatorCatalog, type EstimatorCatalogDeps } from './estimator-ca
 import type { ContextCompressionSettings } from './profiles.ts'
 import {
   CONTEXT_COMPRESSION_SETTINGS_NAMESPACE,
-  ContextCompressionSettingsSchema,
   DEFAULT_CONTEXT_COMPRESSION_SETTINGS,
 } from './runtime/config.ts'
 
