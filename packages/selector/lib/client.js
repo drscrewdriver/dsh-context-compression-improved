@@ -60,6 +60,15 @@ window.__ModuleLoader__.load({
 			const enabled = value.enabled;
 			return typeof enabled === "boolean" ? { enabled } : void 0;
 		}
+		/** Browser-safe mirror of the runtime intentSummary section (absent inherits off). */
+		function decodeIntentSummarySettings(value) {
+			if (value === void 0) return { enabled: false };
+			if (!isPlainRecord(value)) return void 0;
+			const keys = Object.keys(value);
+			if (keys.length !== 1 || keys[0] !== "enabled") return void 0;
+			const enabled = value.enabled;
+			return typeof enabled === "boolean" ? { enabled } : void 0;
+		}
 		/**
 		* Browser mirror of the runtime presetOptions section: absent inherits the
 		* preset defaults (decodes to `undefined`); present values must be a plain
@@ -1160,7 +1169,7 @@ window.__ModuleLoader__.load({
 		/**
 		* Decode one stored context-compression settings document with exactly the
 		* runtime schema's strictness: a plain object with only `profile`, `custom`,
-		* `autoCompact`, and `codeSkeleton` keys, a supported profile, a valid Custom
+		* `autoCompact`, `codeSkeleton`, and `intentSummary` keys, a supported profile, a valid Custom
 		* document canonicalized to v3 exactly as the runtime resolver would, a
 		* strictly-shaped autoCompact section (absent inherits the 80% default), and
 		* a strictly-shaped codeSkeleton gate (absent inherits off). Anything else
@@ -1169,17 +1178,19 @@ window.__ModuleLoader__.load({
 		*/
 		function decodeSettings(value) {
 			if (!isPlainRecord(value)) return void 0;
-			if (Object.keys(value).some((key) => key !== "profile" && key !== "custom" && key !== "autoCompact" && key !== "codeSkeleton" && key !== "presetOptions")) return;
+			if (Object.keys(value).some((key) => key !== "profile" && key !== "custom" && key !== "autoCompact" && key !== "codeSkeleton" && key !== "intentSummary" && key !== "presetOptions")) return;
 			const profile = value.profile;
 			const custom = value.custom;
 			const autoCompact = decodeAutoCompactSettings(value.autoCompact);
 			const codeSkeleton = decodeCodeSkeletonSettings(value.codeSkeleton);
+			const intentSummary = decodeIntentSummarySettings(value.intentSummary);
 			const presetOptions = decodePresetOptionsSettings(value.presetOptions);
-			return typeof profile === "string" && COMPRESSION_PROFILES.includes(profile) && isCustomCompressionPolicy(custom) && autoCompact !== void 0 && codeSkeleton !== void 0 ? {
+			return typeof profile === "string" && COMPRESSION_PROFILES.includes(profile) && isCustomCompressionPolicy(custom) && autoCompact !== void 0 && codeSkeleton !== void 0 && intentSummary !== void 0 ? {
 				profile,
 				custom: canonicalizeCustomPolicy(custom),
 				autoCompact,
 				codeSkeleton,
+				intentSummary,
 				...presetOptions === void 0 ? {} : { presetOptions }
 			} : void 0;
 		}
