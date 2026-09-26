@@ -2197,6 +2197,7 @@ describe('standalone runtime on published Harness APIs', () => {
       thresholdRatio: 0.5,
       retainTokens: 0,
       maxTokens: 100,
+      headroomTokens: 0,
       compactionRetries: 0,
     })
     const signal = new AbortController().signal
@@ -2626,10 +2627,11 @@ describe('standalone runtime on published Harness APIs', () => {
     expect(result.pruned).toHaveLength(0)
     expect(rewrites(audit.records()).some(record =>
       record.sessionId === String(session.id) && record.component === 'tail-trim')).toBe(false)
+    // 0.1.7-rc.2: the tool/result message's own `content` IS the result block
+    // set — there is no wrapping `tool-result` block anymore (see pruner land).
     expect(sessionEvents(session).some(event =>
       event.type === 'tool/result'
-      && event.data.message.content.some(block => block.type === 'tool-result'
-        && block.content.some(inner => inner.type === 'image')))).toBe(true)
+      && event.data.message.content.some(block => block.type === 'image'))).toBe(true)
     // Either fail-open gate is acceptable: the protected-set scan refuses the
     // image-bearing candidate, and the group scan independently refuses it.
     const tailTrimSkips = audit.records().filter((record): record is Extract<CompressionAuditRecord, { kind: 'component-evaluation' }> =>
