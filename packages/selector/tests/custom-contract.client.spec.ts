@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-import type { SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ScopeSnapshot } from '../src/client/scope-face.ts'
 import {
   DEFAULT_CUSTOM_COMPRESSION_POLICY,
   isCustomCompressionPolicy,
@@ -13,7 +13,7 @@ import type {
 } from '../src/client/CompressionProfileSelector.tsx'
 
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
-  IconChevronDownOutline14: () => null,
+  IconChevronDownOutlineMedium: () => null,
   Menu: () => null,
 }))
 
@@ -89,7 +89,7 @@ describe('context compression browser contract', () => {
       autoCompact: { thresholdPercent: 80 },
       codeSkeleton: { enabled: false },
     }
-    const snapshot = (): SettingsScopeSnapshot<ContextCompressionSettings> => ({
+    const snapshot = (): ScopeSnapshot<ContextCompressionSettings> => ({
       status: 'ready',
       value,
       base: undefined,

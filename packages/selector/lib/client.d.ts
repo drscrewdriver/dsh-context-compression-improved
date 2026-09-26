@@ -1,7 +1,6 @@
 import { i as PresetOptionsSettings, n as ContextCompressionSettings, r as CustomCompressionPolicy, t as CompressionProfile } from "./profiles.js";
 import { Context } from "@deepseek-ai/cordis";
 import "@deepseek-ai/dsh-settings/types";
-import { SettingsScope } from "@deepseek-ai/dsh-client-ui-settings/client";
 import { InjectFace, PropsLocale } from "@deepseek-ai/dsh-client-ui-slots";
 //#region src/client/preset-options.d.ts
 /** One partial edit of `presetOptions`; `undefined` clears the named field. */
@@ -107,6 +106,35 @@ declare const zh: {
 /** Locale keys that every context-compression selector dictionary must provide. */
 type ContextCompressionLocaleKey = keyof typeof zh;
 //#endregion
+//#region src/client/scope-face.d.ts
+/**
+ * 0.1.7-rc.2 stopped exporting `SettingsScope` from
+ * `@deepseek-ai/dsh-client-ui-settings/client`; the structural face the
+ * selector consumes lives here instead (getSnapshot shape mirrors the 0.1.7
+ * `ConfigFormSnapshot` minus the parts the components never read).
+ */
+/** The projected snapshot shape (identity-stable between changes — React #185). */
+interface ScopeSnapshot<T> {
+  status: 'loading' | 'ready' | 'unavailable';
+  value: T | undefined;
+  revision: number | undefined;
+  writable: boolean;
+  base: unknown;
+  user: unknown;
+  mode: 'host' | 'memory';
+}
+interface SettingsScope<T> {
+  getSnapshot(): ScopeSnapshot<T>;
+  subscribe(listener: () => void): () => void;
+  set(field: string, value: unknown): Promise<boolean>;
+  unset(field: string): Promise<boolean>;
+  mutate?(ops: readonly {
+    path: readonly string[];
+    op: string;
+    value?: unknown;
+  }[]): Promise<boolean>;
+}
+//#endregion
 //#region src/client/CompressionProfileSelector.d.ts
 interface CompressionSelectorInjected {
   hooks: {
@@ -151,27 +179,9 @@ interface SlotsService {
 declare module '@deepseek-ai/cordis' {
   interface Context {
     slots: SlotsService;
-    configForms: ConfigFormsFace;
   }
 }
 declare const inject: string[];
-/** The configForms face this client consumes (structural; 0.1.7 ui-settings). */
-interface ConfigFormsFace {
-  get<T>(entryId: string): {
-    getSnapshot(): {
-      status: 'loading' | 'ready' | 'unavailable';
-      value: T | undefined;
-      revision: number | undefined;
-      writable: boolean;
-      base: unknown;
-      user: unknown;
-      mode: 'host' | 'memory';
-    };
-    subscribe(listener: () => void): () => void;
-    set(field: string, value: unknown): Promise<boolean>;
-    unset(field: string): Promise<boolean>;
-  };
-}
 declare function apply(ctx: Context): void;
 //#endregion
 export { type CompressionProfile, type CompressionProfileSelectorProps, type CompressionSelectorInjected, type ContextCompressionSettings, apply, inject };

@@ -1475,41 +1475,55 @@ window.__ModuleLoader__.load({
 			const injected = () => {
 				const form = ctx.configForms.get(ENTRY_ID);
 				const readDoc = () => decodeSettings(form.getSnapshot().value?.settings);
+				let projectedSource;
+				let projected = {
+					status: "loading",
+					value: void 0,
+					revision: void 0,
+					writable: false,
+					base: void 0,
+					user: void 0,
+					mode: "host"
+				};
 				const scope = {
 					getSnapshot() {
 						const snap = form.getSnapshot();
-						return {
-							status: snap.status,
-							value: readDoc(),
-							revision: snap.revision,
-							writable: snap.writable,
-							base: snap.base,
-							user: snap.user,
-							mode: snap.mode
-						};
+						if (snap !== projectedSource) {
+							projectedSource = snap;
+							projected = {
+								status: snap.status,
+								value: decodeSettings(snap.value?.settings),
+								revision: snap.revision,
+								writable: snap.writable,
+								base: snap.base,
+								user: snap.user,
+								mode: snap.mode
+							};
+						}
+						return projected;
 					},
 					subscribe: (listener) => form.subscribe(listener),
 					set: async (field, value) => {
 						const next = { ...readDoc() ?? {} };
 						next[field] = value;
-						await form.set("settings", next);
+						return form.set("settings", next);
 					},
 					unset: async (field) => {
 						const next = { ...readDoc() ?? {} };
 						delete next[field];
-						await form.set("settings", next);
+						return form.set("settings", next);
 					},
 					mutate: async (ops) => {
 						const doc = { ...readDoc() ?? {} };
 						for (const op of ops) {
 							const [head, key] = op.path;
-							if (head !== "presetOptions") return;
+							if (head !== "presetOptions") return false;
 							const section = { ...doc.presetOptions ?? {} };
 							if (op.op === "unset") delete section[key];
 							else section[key] = op.value;
 							doc.presetOptions = section;
 						}
-						await form.set("settings", doc);
+						return form.set("settings", doc);
 					}
 				};
 				const writeAndConfirm = async (write, accepts) => {
@@ -1528,7 +1542,7 @@ window.__ModuleLoader__.load({
 					savePresetOptions: (options) => {
 						const ops = planPresetOptionsOps(scope.getSnapshot().value?.presetOptions, options);
 						if (ops.length === 0) return Promise.resolve();
-						return writeAndConfirm(() => scope.mutate(ops), (settings) => presetOptionsOpsAccepted(settings.presetOptions, ops));
+						return writeAndConfirm(() => scope.mutate?.(ops) ?? Promise.resolve(false), (settings) => presetOptionsOpsAccepted(settings.presetOptions, ops));
 					}
 				};
 			};

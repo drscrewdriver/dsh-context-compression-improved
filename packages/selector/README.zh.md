@@ -1,6 +1,6 @@
 # dsh-context-compression-improved
 
-这是可直接安装的非官方社区 DeepSeek Harness 上下文压缩选择器 Product Bundle。
+省 token 优先：可直接安装的非官方社区 DeepSeek Harness 上下文压缩选择器 Product Bundle——每轮工具结果占用更少 token，且全程可审计。
 
 **0.1.0 更新：**已加入 DeepSeek V4 Flash 视觉模型的官方 tokenizer；用户可选择模型驱动 Auto Compact 的触发阈值；标准 Profile 的水位与压缩参数会随该选择联动。
 

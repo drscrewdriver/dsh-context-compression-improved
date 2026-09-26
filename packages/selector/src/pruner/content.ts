@@ -105,9 +105,6 @@ function pressureCost(blocks: readonly ContentBlock[]): number {
           + codePointLength(block.name)
           + codePointLength(block.arguments)
         break
-      case 'tool-result':
-        cost += RICH_BLOCK_PRESSURE_COST + pressureCost(block.content)
-        break
       default: {
         // ContentBlockMap is merge-extensible. Unknown model-visible blocks
         // scale with their durable JSON payload instead of receiving a fixed
