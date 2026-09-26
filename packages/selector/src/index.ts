@@ -12,6 +12,7 @@ import {
 } from './runtime/config.ts'
 
 import { getAdvisorState } from './runtime/tokenpilot/advisor-state.ts'
+import { registerSummaryCommand } from './runtime/summary-command.ts'
 
 // The settings namespace literal and the settings schema are owned by the
 // runtime config module. Both were once inlined/replaced here to dodge a
@@ -502,6 +503,12 @@ export function apply(ctx: Context, config: Config = {}): void {
 
     // Advisory advisor: read-only decay/score/advice report (opt-in).
     if (config.advisorReportRoute === true) registerAdvisorReportRoute(ctx)
+
+    // Turn-tail intent summary: `/ctx-summary off|on|status`. The command is
+    // free to register and stays quiet on hosts without the commands
+    // registry; the capability itself is gated by the frozen `intentSummary`
+    // setting plus the session-scoped override this command controls.
+    registerSummaryCommand(ctx)
 
     if (config.presetOverlay !== true) return
 
