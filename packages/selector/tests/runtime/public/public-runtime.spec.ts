@@ -2088,6 +2088,7 @@ describe('standalone runtime on published Harness APIs', () => {
       thresholdRatio: 0.3,
       retainTokens: 0,
       maxTokens: 100,
+      headroomTokens: 0,
       compactionRetries: 0,
     })
     const agent = await ctx.agentLoop.create(SessionId('public-native-auto-real'), {
