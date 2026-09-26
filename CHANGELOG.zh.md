@@ -2,6 +2,12 @@
 
 > 完整历史（含上游 0.1.0 及更早版本）见 [CHANGELOG.md](CHANGELOG.md)。本文件只翻译本 fork 的新增条目。 · [English](CHANGELOG.md) · [日本語](CHANGELOG.ja.md) · [한국어](CHANGELOG.ko.md)
 
+## 0.7.0-beta.1 - 2026-09-27
+
+### 新增
+
+- 回合末意图摘要（`intentSummary.enabled`，默认关）：增长门控通过（活跃表面 > 窗口 45% 且距上次折叠增长超 50K token）后，回合收尾阶段把"已消费增量"按语义角色 mask——读类工具结果经共享的 `classifyToolSource()`（另加 write 先行层）压缩为单行目标/规模记录，写类保留骨架头与逐字错误行——然后只花一次摘要写手 LLM 调用（todolist 锚定、JSON-only、fail-open）。折叠在下一压力回合经既有 plan/apply 机器落地为逐候选 `intent-summary` 块：首块携带 LLM 摘要段、读取记录行与逐字错误行，其余块携带各自 mask 行与 seq 区间溯源脚注。fold-once：已折叠 seq（及含 `INTENT_FOLD_MARKER` 的块）永不再进入候选。审计新增 `intent-summary-outcome` 记录，含保持率与摘要调用成本（credit 净额）。
+- `/ctx-summary off|on|status`：会话作用域临时禁用/恢复/查看状态（settings 是 session-frozen，"临时"只能活在运行时状态）；随进程消亡、不跨会话，status 报告覆盖、观测到的设置开关、门控常量与最近一次折叠。
 ## 0.5.4 - 2026-09-20
 
 ### Fixed

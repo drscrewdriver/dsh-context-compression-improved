@@ -2,6 +2,30 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
+## 0.7.0-beta.1 - 2026-09-27
+
+### Added
+
+- Turn-tail intent summary (`intentSummary.enabled`, default off): when the
+  growth gate passes (live surface > 45% of the context window AND more than
+  50K tokens grown since the last fold), the turn-boundary postflight masks
+  the consumed increment to semantic-role records — read-class tool results
+  become one-line target/scale records via the shared `classifyToolSource()`
+  classifier plus a write-class layer, write-class results keep skeleton
+  heads plus verbatim error lines — and spends ONE summary-writer LLM call
+  (todolist-anchored, JSON-only, fail-open). The staged fold lands on the
+  next pressure round through the ordinary plan/apply machinery as per-
+  candidate `intent-summary` blocks: the first carries the LLM summary
+  segment, consulted-record lines, and verbatim error lines; the rest carry
+  their mask line and a seq-range provenance footer. Fold-once: folded seqs
+  (and anything carrying the `INTENT_FOLD_MARKER`) are never re-candidated.
+  Rewrite audits carry `intent-summary-outcome` records with retention ratio
+  and summary-call credit accounting.
+- `/ctx-summary off|on|status`: session-scoped temporary override for the
+  gate (settings are session-frozen, so "temporary" can only live in runtime
+  state); dies with the process, never crosses sessions, and reports the
+  override, observed settings flag, gate constants, and the last landed fold.
+
 ## 0.5.4 - 2026-09-20
 
 ### Fixed
