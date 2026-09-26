@@ -12,7 +12,6 @@ import {
   observeIntentEnabled,
 } from '../../src/runtime/tokenpilot/advisor-state.ts'
 import {
-  formatSummaryStatus,
   parseSummaryCommandArgs,
   registerSummaryCommand,
 } from '../../src/runtime/summary-command.ts'

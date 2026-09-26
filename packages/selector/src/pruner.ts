@@ -82,6 +82,12 @@ import {
   runSessionAdvisorPass,
 } from './runtime/tokenpilot/advisor.ts'
 import { getAdvisorState } from './runtime/tokenpilot/advisor-state.ts'
+import { evaluateIntentGate } from './runtime/tokenpilot/intent-gate.ts'
+import { extractErrorLines, maskCandidateForSummary, type IntentRole } from './runtime/tokenpilot/intent-input-mask.ts'
+import { computeIntentRange, INTENT_RANGE_MAX_CANDIDATES } from './runtime/tokenpilot/intent-range.ts'
+import { INTENT_FOLD_MARKER, renderIntentFoldBlock } from './runtime/tokenpilot/intent-fold.ts'
+import { buildIntentSummarySystemPrompt, buildIntentSummaryUserPrompt, parseIntentSummaryAnswer } from './runtime/tokenpilot/advisor-prompt.ts'
+import { getSummaryOverride, observeIntentEnabled, recordIntentFold } from './runtime/tokenpilot/advisor-state.ts'
 
 import {
   DedupeTable,
@@ -238,6 +244,9 @@ export class ToolResultPruner extends Service {
       turnClocks: new WeakMap(),
       estimatorRemainingTurns: new WeakMap(),
       advisorChannels: new WeakMap(),
+      pendingIntentFolds: new WeakMap(),
+      intentFoldedSeqs: new WeakMap(),
+      intentBaselines: new WeakMap(),
     }
 
     ctx.on('session/event', (session, event) => {
@@ -307,6 +316,9 @@ export class ToolResultPruner extends Service {
       // summaries, scores, and decay figure never touch any decision path.
       // Strictly fire-and-forget, with its own backoff state.
       void this.postflightAdvisorPass(agent.session, turn, signal).catch(() => undefined)
+      // Turn-tail intent summary: strictly fire-and-forget like the advisor;
+      // the growth gate inside decides whether a summary call is even spent.
+      void this.postflightIntentFoldPass(agent.session, turn, signal).catch(() => undefined)
     })
   }
 
@@ -716,6 +728,200 @@ export class ToolResultPruner extends Service {
     } else if (outcome !== undefined) {
       advisorState.failures = undefined
     }
+  }
+
+  // ─────────── Turn-tail intent summary (host-driven fold, model writes text only) ───────────
+
+  /**
+   * Fire-and-forget postflight: evaluate the growth gate, and only when it
+   * passes, select the consumed increment OUTSIDE the protected working set,
+   * mask it to semantic-role records, and spend ONE summary-writer call. The
+   * verdict stages as a pending fold that the NEXT pressure round lands via
+   * the ordinary plan/apply machinery — the synchronous decision path never
+   * waits on an LLM.
+   */
+  private async postflightIntentFoldPass(session: Session, turn: number, signal: AbortSignal): Promise<void> {
+    const started = Date.now()
+    const sessionId = String(session.id)
+    const policy = this.activePolicy(session)
+    const settings = this.activeSettings(session)
+    const intentEnabled = settings.intentSummary.enabled
+    const override = getSummaryOverride(sessionId)
+    observeIntentEnabled(sessionId, intentEnabled)
+    if (policy === undefined) return
+    if (this.state.pendingIntentFolds.has(session)) return
+    const advisorState = getAdvisorState(session)
+    if (advisorState.inFlight) return
+    if (isCoolingDown(advisorState.failures, Date.now())) return
+
+    const view = measureForCompaction(this.ctx, session)
+    // The window is the Auto Compact linkage input: policy.autoCompactTokens
+    // == floor(window * threshold/100); invert for the gate floor.
+    const thresholdPercent = settings.autoCompact.thresholdPercent
+    const contextWindow = policy.autoCompactTokens !== undefined && thresholdPercent > 0
+      ? Math.round(policy.autoCompactTokens / (thresholdPercent / 100))
+      : undefined
+    const gate = evaluateIntentGate({
+      enabled: intentEnabled,
+      override,
+      liveTokens: view.totalTokens,
+      contextWindow,
+      baselineTokens: this.state.intentBaselines.get(session) ?? 0,
+    })
+    if (!gate.decision) return
+
+    const settingsPreset = settings.presetOptions
+    if (settingsPreset === undefined) return
+    if (settingsPreset.estimatorBaseUrl === undefined || settingsPreset.estimatorBaseUrl.length === 0
+      || settingsPreset.estimatorModel === undefined || settingsPreset.estimatorModel.length === 0) {
+      emitCompressionAudit(this.ctx.logger, {
+        schemaVersion: 1,
+        kind: 'intent-summary-outcome',
+        sessionId,
+        ok: false,
+        reason: 'no-direct-endpoint',
+        turnIndex: turn,
+        latencyMs: Date.now() - started,
+      })
+      return
+    }
+
+    const candidates = this.snapshot(session, view).filter(candidate => !this.isRecoveryExempt(session, candidate))
+    const protectedSeqs = this.protectedHistoryCandidateSeqs(candidates, policy)
+    const range = computeIntentRange({
+      candidates,
+      protectedSeqs,
+      foldedSeqs: this.state.intentFoldedSeqs.get(session) ?? new Set<number>(),
+      maxCandidates: INTENT_RANGE_MAX_CANDIDATES,
+    })
+    if (range.seqs.length === 0) return
+
+    const bySeq = new Map(candidates.map(candidate => [candidate.seq, candidate]))
+    const records: { seq: number, role: IntentRole, toolName: string, line: string }[] = []
+    const errorLines = new Set<string>()
+    for (const seq of range.seqs) {
+      const candidate = bySeq.get(seq)
+      if (candidate === undefined) continue
+      const result = candidate.event.data.message as ToolResultMessage
+      const text = onlyTextBlock(result.content)?.text ?? ''
+      const masked = maskCandidateForSummary(seq, candidate.call.name, candidate.call.arguments, text)
+      records.push({ seq, role: masked.role, toolName: candidate.call.name, line: masked.record })
+      for (const line of extractErrorLines(text)) errorLines.add(line)
+    }
+    if (records.length === 0) return
+
+    const events = sessionEvents(session)
+    const task = collectTaskSemantics(events)
+    let channel = this.state.advisorChannels.get(session)
+    if (channel === undefined) {
+      channel = new SideChannel(this.ctx, settingsPreset, {
+        mode: 'direct',
+        timeoutMs: 30_000,
+        maxTokens: 512,
+      })
+      this.state.advisorChannels.set(session, channel)
+    }
+
+    const answer = await channel.ask({
+      system: buildIntentSummarySystemPrompt(),
+      user: buildIntentSummaryUserPrompt(task?.taskText ?? '(no task semantics yet)', records.map(record => record.line), collectTailText(events)),
+      signal,
+    })
+    const summaryCallChars = answer?.length ?? 0
+    const parsed = answer === undefined ? undefined : parseIntentSummaryAnswer(answer)
+    if (parsed === undefined) {
+      const failures = (advisorState.failures?.failures ?? 0) + 1
+      advisorState.failures = { failures, cooldownUntil: Date.now() + backoffCooldownMs(failures) }
+      emitCompressionAudit(this.ctx.logger, {
+        schemaVersion: 1,
+        kind: 'intent-summary-outcome',
+        sessionId,
+        ok: false,
+        reason: answer === undefined ? 'ask-failed' : 'parse-failed',
+        turnIndex: turn,
+        foldedCount: records.length,
+        summaryCallChars,
+        latencyMs: Date.now() - started,
+      })
+      return
+    }
+    this.state.pendingIntentFolds.set(session, {
+      createdAt: Date.now(),
+      turn,
+      startSeq: range.seqs[0]!,
+      endSeq: range.seqs[range.seqs.length - 1]!,
+      summary: parsed.summary,
+      errorLines: [...errorLines],
+      records,
+      summaryCallChars,
+    })
+    emitCompressionAudit(this.ctx.logger, {
+      schemaVersion: 1,
+      kind: 'intent-summary-outcome',
+      sessionId,
+      ok: true,
+      reason: 'staged',
+      turnIndex: turn,
+      foldedCount: records.length,
+      summaryCallChars,
+      latencyMs: Date.now() - started,
+    })
+  }
+
+  /**
+   * Convert a staged pending fold into per-candidate planned replacements
+   * (reducer `intent-summary`). Fail-open: a candidate that would grow, is
+   * rich-content, or no longer exists keeps its original text. Returns
+   * `undefined` when there is nothing (or no longer anything) to fold.
+   */
+  private applyPendingIntentFold(
+    session: Session,
+    policy: CompressionPolicy,
+    view: CompactionTokenView,
+    eligible: readonly SnapshotCandidate[],
+  ): { plans: PlannedReplacement[], reclaim: number, foldedSeqs: Set<number>, charsBefore: number, charsAfter: number, turn: number, summaryCallChars: number } | undefined {
+    const pending = this.state.pendingIntentFolds.get(session)
+    if (pending === undefined) return undefined
+    const bySeq = new Map(eligible.map(candidate => [candidate.seq, candidate]))
+    const foldable = pending.records
+      .map(record => record.seq)
+      .filter(seq => bySeq.has(seq))
+      .sort((a, b) => a - b)
+    if (foldable.length === 0) {
+      this.state.pendingIntentFolds.delete(session)
+      return undefined
+    }
+    const plans: PlannedReplacement[] = []
+    const foldedSeqs = new Set<number>()
+    let reclaim = 0
+    let charsBefore = 0
+    let charsAfter = 0
+    for (const seq of foldable) {
+      const candidate = bySeq.get(seq)!
+      const result = candidate.event.data.message as ToolResultMessage
+      const block = onlyTextBlock(result.content)
+      if (block === null) continue
+      const text = renderIntentFoldBlock(pending, seq)
+      const plan = this.plan(
+        candidate,
+        [{ ...block, text }],
+        rootToolResultSeq(session, candidate.seq),
+        'intent-summary',
+        'pressure',
+        'history',
+        policy.historyMode,
+        view,
+      )
+      if (plan === null || plan.charsAfter >= plan.charsBefore) continue
+      plans.push(plan)
+      foldedSeqs.add(seq)
+      reclaim += plan.charsBefore - plan.charsAfter
+      charsBefore += plan.charsBefore
+      charsAfter += plan.charsAfter
+    }
+    if (plans.length === 0) return undefined
+    this.state.intentFoldedSeqs.get(session)?.forEach(seq => foldedSeqs.add(seq))
+    return { plans, reclaim, foldedSeqs, charsBefore, charsAfter, turn: pending.turn, summaryCallChars: pending.summaryCallChars }
   }
 
   // ─────────── Advisory benefit model (statistics & suggestions only) ───────────
@@ -1612,13 +1818,15 @@ export class ToolResultPruner extends Service {
       if (this.isRecoveryExempt(session, candidate)) return true
       const result = candidate.event.data.message.content[0]
       const block = onlyTextBlock(result.content)
+      // Fold-once: an already-folded intent block is never re-candidated.
+      if (block?.text.includes(INTENT_FOLD_MARKER) === true) return true
       return block?.text.includes('[Old tool result content cleared from active context]') === true
     }
     // Distinguish "nothing safe to touch" (recovery tool output or already
     // cleared) from "everything left is inside the protected working set":
     // both skip, but they are different operational facts.
     const safe = candidates.filter(candidate => !isUnsafe(candidate))
-    const eligible = safe.filter(candidate => !protectedSeqs.has(candidate.seq))
+    const eligible: SnapshotCandidate[] = safe.filter(candidate => !protectedSeqs.has(candidate.seq))
     if (eligible.length === 0) {
       return safe.length === 0
         ? { kind: 'no-safe-candidates' }
@@ -1626,6 +1834,38 @@ export class ToolResultPruner extends Service {
     }
     const planned: PlannedReplacement[] = []
     let reclaim = 0
+    // Turn-tail intent summary (task_2.5): a fold staged by a previous turn's
+    // postflight lands FIRST, through the same plan pipeline as every other
+    // reducer; its reclaim counts toward the batch target and its seqs are
+    // removed from the ordinary loop (fold-once).
+    const intentApplied = this.applyPendingIntentFold(session, policy, view, eligible)
+    if (intentApplied !== undefined) {
+      planned.push(...intentApplied.plans)
+      reclaim += intentApplied.reclaim
+      this.state.intentFoldedSeqs.set(session, intentApplied.foldedSeqs)
+      this.state.pendingIntentFolds.delete(session)
+      this.state.intentBaselines.set(session, view.totalTokens)
+      recordIntentFold(String(session.id), {
+        turn: intentApplied.turn,
+        startSeq: intentApplied.foldedSeqs.size > 0 ? Math.min(...intentApplied.foldedSeqs) : 0,
+        endSeq: intentApplied.foldedSeqs.size > 0 ? Math.max(...intentApplied.foldedSeqs) : 0,
+        liveTokensBefore: view.totalTokens,
+        at: Date.now(),
+      })
+      emitCompressionAudit(this.ctx.logger, {
+        schemaVersion: 1,
+        kind: 'intent-summary-outcome',
+        sessionId: String(session.id),
+        ok: true,
+        reason: 'landed',
+        foldedCount: intentApplied.plans.length,
+        ...(intentApplied.charsBefore > 0 ? { retentionRatio: intentApplied.charsAfter / intentApplied.charsBefore } : {}),
+        summaryCallChars: intentApplied.summaryCallChars,
+      })
+      for (let index = eligible.length - 1; index >= 0; index -= 1) {
+        if (intentApplied.foldedSeqs.has(eligible[index]!.seq)) eligible.splice(index, 1)
+      }
+    }
     // Linked batches must reach the deadline target; unlinked batches keep
     // the traditional minimum-reclaim commit threshold. All arithmetic runs on
     // the character basis: token-named thresholds enter via charsForTokens.
