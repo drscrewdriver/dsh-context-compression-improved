@@ -408,6 +408,32 @@ interface EstimatorFailures {
   cooldownUntil: number;
 }
 //#endregion
+//#region src/runtime/tokenpilot/intent-input-mask.d.ts
+type IntentRole = 'read-mask' | 'write-keep' | 'conservative';
+//#endregion
+//#region src/runtime/tokenpilot/intent-fold.d.ts
+/** One staged fold awaiting the next pressure round. */
+interface PendingIntentFold {
+  readonly createdAt: number;
+  readonly turn: number;
+  /** Inclusive seq span of the folded candidates. */
+  readonly startSeq: number;
+  readonly endSeq: number;
+  /** LLM-written summary segment (fail-open parsed, char-capped). */
+  readonly summary: string;
+  /** Verbatim error lines collected across the batch (never LLM-revoiced). */
+  readonly errorLines: readonly string[];
+  /** Per-candidate faces: read-mask single lines ride the block, keep-class lines prompt-only. */
+  readonly records: ReadonlyArray<{
+    readonly seq: number;
+    readonly role: IntentRole;
+    readonly toolName: string;
+    readonly line: string;
+  }>;
+  /** Characters consumed by the summary-writer call (credit accounting). */
+  readonly summaryCallChars: number;
+}
+//#endregion
 //#region src/pruner/state.d.ts
 /** Mutable per-session state bag used inside {@link ToolResultPruner}. */
 interface PrunerState {
@@ -441,6 +467,12 @@ interface PrunerState {
   readonly estimatorRemainingTurns: WeakMap<Session, number>;
   /** Per-session advisor side channel, constructed once with the advisor overrides. */
   readonly advisorChannels: WeakMap<Session, SideChannel>;
+  /** Staged intent fold awaiting the next pressure round (at most one per session). */
+  readonly pendingIntentFolds: WeakMap<Session, PendingIntentFold>;
+  /** Landed intent-fold seqs: fold-once, never reconsidered by any later stage. */
+  readonly intentFoldedSeqs: WeakMap<Session, Set<number>>;
+  /** Live-surface tokens when the last intent fold landed (growth-gate baseline). */
+  readonly intentBaselines: WeakMap<Session, number>;
 }
 //#endregion
 //#region src/runtime/custom-policy.d.ts
@@ -770,6 +802,22 @@ declare class ToolResultPruner extends Service {
    * reads, so the default configuration adds exactly zero behavior.
    */
   private postflightAdvisorPass;
+  /**
+   * Fire-and-forget postflight: evaluate the growth gate, and only when it
+   * passes, select the consumed increment OUTSIDE the protected working set,
+   * mask it to semantic-role records, and spend ONE summary-writer call. The
+   * verdict stages as a pending fold that the NEXT pressure round lands via
+   * the ordinary plan/apply machinery — the synchronous decision path never
+   * waits on an LLM.
+   */
+  private postflightIntentFoldPass;
+  /**
+   * Convert a staged pending fold into per-candidate planned replacements
+   * (reducer `intent-summary`). Fail-open: a candidate that would grow, is
+   * rich-content, or no longer exists keeps its original text. Returns
+   * `undefined` when there is nothing (or no longer anything) to fold.
+   */
+  private applyPendingIntentFold;
   /**
    * Monotonic per-session turn clock for advisory records. Bumped by the agent
    * loop payloads (`pre-step`); passes without a turn coordinate reuse the last

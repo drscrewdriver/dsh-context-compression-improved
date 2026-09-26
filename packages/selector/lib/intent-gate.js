@@ -993,14 +993,58 @@ function setSummaryOverride(sessionId, value) {
 }
 /** Last observed `intentSummary.enabled` for a session, for `/ctx-summary status`. */
 const lastObservedIntentEnabled = /* @__PURE__ */ new Map();
+/** Record the gate input the pass last evaluated for this session. */
+function observeIntentEnabled(sessionId, enabled) {
+	lastObservedIntentEnabled.set(sessionId, enabled);
+}
 /** The settings-side enabled flag last observed for the session, if any. */
 function getObservedIntentEnabled(sessionId) {
 	return lastObservedIntentEnabled.get(sessionId);
 }
 const lastIntentFolds = /* @__PURE__ */ new Map();
+/** Record a landed intent fold for the session (newest wins). */
+function recordIntentFold(sessionId, record) {
+	lastIntentFolds.set(sessionId, record);
+}
 /** The most recent landed intent fold for the session, if any. */
 function getLastIntentFold(sessionId) {
 	return lastIntentFolds.get(sessionId);
 }
 //#endregion
-export { CustomCompressionPolicySchema as C, deepFreeze as D, assertNever as E, COMPRESSION_PROFILES as O, resolvePolicy as S, resolveCustomPolicy as T, codePointLength as _, invalidateOnTaskChange as a, parseContextCompressionSettings as b, setSummaryOverride as c, ContextCompressionSettingsSchema as d, DEFAULTS as f, charsToTokens as g, charsForTokens as h, getSummaryOverride as i, AUTO_COMPACT_THRESHOLD_LIMITS as l, PRUNE_MARKER as m, getLastIntentFold as n, recordRecertified as o, DEFAULT_CONTEXT_COMPRESSION_SETTINGS as p, getObservedIntentEnabled as r, recordScore as s, getAdvisorState as t, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as u, isCompressionProfile as v, DEFAULT_CUSTOM_COMPRESSION_POLICY as w, resolveConfig as x, isValidAutoCompactThresholdPercent as y };
+//#region src/runtime/tokenpilot/intent-gate.ts
+/**
+* Turn-tail intent-summary growth gate (TokenPilot-inspired E2).
+*
+* Pure decision helper evaluated at the turn-boundary postflight: it decides
+* whether this turn may spend a summary-writer LLM call and stage a fold for
+* the next pressure round. The gate is deliberately conservative — every
+* unresolved input (unknown context window, non-finite counters) fails closed
+* toward "do not run", because a skipped fold is free while a wasted summary
+* call is not. Content safety is unaffected either way: fail-open semantics
+* live in the fold landing path, not here.
+*/
+/** Floor: the live surface must exceed this fraction of the context window. */
+const INTENT_GATE_FLOOR_FRACTION = .45;
+/** Growth: the live surface must have grown by more than this since the last landed fold. */
+const INTENT_GATE_GROWTH_TOKENS = 5e4;
+function isUsableNumber(value) {
+	return Number.isFinite(value) && value >= 0;
+}
+/** Same evaluation with the reason attached, for audits and `/ctx-summary status`. */
+function evaluateIntentGate(input) {
+	const snapshot = (decision, reason) => ({
+		...input,
+		decision,
+		reason
+	});
+	if (!input.enabled) return snapshot(false, "disabled");
+	if (input.override === "off") return snapshot(false, "override-off");
+	if (!isUsableNumber(input.liveTokens)) return snapshot(false, "below-floor");
+	if (input.contextWindow === void 0 || !isUsableNumber(input.contextWindow)) return snapshot(false, "no-window");
+	if (!(input.liveTokens > input.contextWindow * .45)) return snapshot(false, "below-floor");
+	if (!isUsableNumber(input.baselineTokens)) return snapshot(false, "below-growth");
+	if (!(input.liveTokens - input.baselineTokens > 5e4)) return snapshot(false, "below-growth");
+	return snapshot(true, "passed");
+}
+//#endregion
+export { resolveCustomPolicy as A, isCompressionProfile as C, resolvePolicy as D, resolveConfig as E, deepFreeze as M, COMPRESSION_PROFILES as N, CustomCompressionPolicySchema as O, codePointLength as S, parseContextCompressionSettings as T, DEFAULTS as _, getLastIntentFold as a, charsForTokens as b, invalidateOnTaskChange as c, recordRecertified as d, recordScore as f, ContextCompressionSettingsSchema as g, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as h, getAdvisorState as i, assertNever as j, DEFAULT_CUSTOM_COMPRESSION_POLICY as k, observeIntentEnabled as l, AUTO_COMPACT_THRESHOLD_LIMITS as m, INTENT_GATE_GROWTH_TOKENS as n, getObservedIntentEnabled as o, setSummaryOverride as p, evaluateIntentGate as r, getSummaryOverride as s, INTENT_GATE_FLOOR_FRACTION as t, recordIntentFold as u, DEFAULT_CONTEXT_COMPRESSION_SETTINGS as v, isValidAutoCompactThresholdPercent as w, charsToTokens as x, PRUNE_MARKER as y };
