@@ -24,10 +24,8 @@ import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { afterEach, describe, expect, it } from 'vitest'
 import { apply } from '../src/index.ts'
-import { LegacyNamespaceRegistrar } from './helpers/legacy-namespace.ts'
 
 // 0.1.5 removed the settingsNamespace() wrapper; namespaces are validated at runtime.
-const nsBrand = (value: string): SettingsNamespace => value as unknown as SettingsNamespace
 
 const CORDIS_ORIGINAL = Symbol.for('cordis.original')
 type Traceable = { [CORDIS_ORIGINAL]?: unknown }
