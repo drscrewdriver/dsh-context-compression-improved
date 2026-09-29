@@ -90,6 +90,7 @@ function bindInjected(
     custom: structuredClone(DEFAULT_CUSTOM),
     autoCompact: { thresholdPercent: 80 },
     codeSkeleton: { enabled: false },
+    intentSummary: { enabled: false },
     ...(presetOptions === undefined ? {} : { presetOptions }),
   }
   const stub = createFormStub(settings, commit)
