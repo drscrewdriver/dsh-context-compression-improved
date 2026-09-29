@@ -39,6 +39,7 @@ if (rootPackage.dsh?.bundle?.patch !== './packages/selector/cordis.patch.yml') {
 const INSTALLATION_PROVIDED_RUNTIME = new Set([
   '@deepseek-ai/cordis',
   '@deepseek-ai/cordis-plugin-include',
+  '@deepseek-ai/dsh-commands',
   '@deepseek-ai/dsh-llm',
   '@deepseek-ai/dsh-session',
   '@deepseek-ai/dsh-settings',
@@ -48,7 +49,7 @@ const INSTALLATION_PROVIDED_RUNTIME = new Set([
 // stack (`react`, the ui-slot packages); its requires are reviewed from the
 // built artifact further down instead.
 const HOST_PLANE_ENTRIES = [
-  'lib/advisor-state.js',
+  'lib/intent-gate.js',
   'lib/index.js',
   'lib/invariant.js',
   'lib/pruner.js',
