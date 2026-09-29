@@ -99,6 +99,7 @@ function mountEstimator(
       custom: structuredClone(DEFAULT_CUSTOM),
       autoCompact: { thresholdPercent: 80 },
       codeSkeleton: { enabled: false },
+      intentSummary: { enabled: false },
       presetOptions: presetOptions ?? {},
     },
     base: undefined,

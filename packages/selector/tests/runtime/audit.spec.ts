@@ -34,6 +34,7 @@ describe('context-compression audit records', () => {
         custom,
         autoCompact: { thresholdPercent: 80 },
         codeSkeleton: { enabled: false },
+        intentSummary: { enabled: false },
       },
       deploymentConfig: {
         profile: 'balanced',

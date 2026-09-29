@@ -24,6 +24,7 @@ describe('codeSkeleton confirm-on-write client contract', () => {
       custom: structuredClone(DEFAULT_CUSTOM_COMPRESSION_POLICY),
       autoCompact: { thresholdPercent: 80 },
       codeSkeleton: { enabled: false },
+      intentSummary: { enabled: false },
     }
     const form = {
       getSnapshot: vi.fn(() => ({
