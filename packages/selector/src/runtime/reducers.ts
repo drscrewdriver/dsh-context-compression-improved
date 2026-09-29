@@ -80,7 +80,7 @@ export function documentSectionSummaries(text: string): readonly { readonly id: 
   const headings: { id: string, level: number, line: number }[] = []
   for (let index = 0; index < lines.length; index++) {
     const match = /^#{1,6}\s+(.*)$/.exec(lines[index] ?? '')
-    if (match !== null) headings.push({ id: match[1]!.trim(), level: (lines[index]!.match(/^#+/) ?? ['#'])[0]!.length, line: index })
+    if (match !== null) headings.push({ id: match[1]!.trim(), level: (lines[index]!.match(/^#+/) ?? ['#'])[0].length, line: index })
   }
   return headings.map((heading, position) => {
     const from = heading.line + 1

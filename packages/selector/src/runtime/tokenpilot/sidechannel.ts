@@ -137,7 +137,10 @@ export class SideChannel {
   private async askHost(system: string, user: string, signal: AbortSignal): Promise<string | undefined> {
     let llm: HostLlmLike | undefined
     try {
-      llm = this.ctx.get('llm' as never) as HostLlmLike | undefined
+      // The standalone checkout has no typed registry entry for the host `llm`
+      // service (`ctx.get` narrows to `never`); read it through an untyped face
+      // and restate the minimal shape this module consumes.
+      llm = (this.ctx as { get(key: string): unknown }).get('llm') as HostLlmLike | undefined
     } catch {
       return undefined
     }

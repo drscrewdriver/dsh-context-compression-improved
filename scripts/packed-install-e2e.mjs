@@ -977,6 +977,8 @@ try {
     })
   }
 
+  // The handler is fully try/catch-guarded below; node drops the returned promise.
+  // eslint-disable-next-line @typescript-eslint/no-misused-promises
   server = createServer(async (request, response) => {
     try {
       const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1')

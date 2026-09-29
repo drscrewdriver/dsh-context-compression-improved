@@ -88,7 +88,7 @@ function adviceOf(records: readonly CompressionAuditRecord[]): ReductionAdviceAu
   return records.filter((record): record is ReductionAdviceAuditRecord => record.kind === 'reduction-advice')
 }
 
-const nsBrand = (value: string): SettingsNamespace => value as unknown as SettingsNamespace
+const nsBrand = (value: string): SettingsNamespace => value
 
 function appendToolTurn(session: Session, turn: number, text: string): void {
   const callId = CallId(`call-${String(turn)}`)
