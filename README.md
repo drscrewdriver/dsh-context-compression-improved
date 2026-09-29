@@ -47,10 +47,12 @@ Choose a compression profile, set the Auto Compact trigger level, and toggle cod
 
 ## Install
 
-**Recommended: install from npm.** One dist-tag per Harness line — `dsh-0.1.5` for the 0.1.5 line (this branch), `dsh-0.1.2` for the 0.1.2 line.
+**Recommended: install from npm.** One dist-tag per Harness line — `dsh-0.1.7` for the 0.1.7 line (this branch), `dsh-0.1.5` for the 0.1.5 line, `dsh-0.1.2` for the 0.1.2 line.
 
 ```sh
-dsh plugin --profile web add dsh-context-compression-improved@dsh-0.1.5
+dsh plugin --profile web add dsh-context-compression-improved@dsh-0.1.7
+# DSH 0.1.5 line:
+# dsh plugin --profile web add dsh-context-compression-improved@dsh-0.1.5
 # DSH 0.1.2 line:
 # dsh plugin --profile web add dsh-context-compression-improved@dsh-0.1.2
 dsh --profile web --dump-config
@@ -83,7 +85,7 @@ Contributions follow the upstream discipline: add the failing regression first, 
 
 ## Compatibility
 
-- Verified against DeepSeek Harness `dsh-v0.1.1-rc.2` using public plugin and profile APIs only; compatible with the official `dsh-v0.1.2-alpha.5` release.
+- Built and tested against the official DeepSeek Harness `dsh-v0.1.7-rc.2` release; peers declare `>=0.1.7-rc.1 <0.2.0-0` and the plugin uses public plugin and profile APIs only. Earlier lines remain served from their own dist-tags (`dsh-0.1.5`, `dsh-0.1.2`).
 - Requires Node `^22.19.0 || >=24` and pnpm `11.7.0`.
 - The plugin uses only public Harness extension APIs and does not modify Harness core code. Unofficial community project, not affiliated with or endorsed by DeepSeek.
 

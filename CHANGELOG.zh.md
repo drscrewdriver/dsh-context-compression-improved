@@ -2,7 +2,45 @@
 
 > 完整历史（含上游 0.1.0 及更早版本）见 [CHANGELOG.md](CHANGELOG.md)。本文件只翻译本 fork 的新增条目。 · [English](CHANGELOG.md) · [日本語](CHANGELOG.ja.md) · [한국어](CHANGELOG.ko.md)
 
+## 0.6.5 - 2026-09-29
+
+### Fixed
+
+- 开发依赖对齐 Harness 0.1.7 线：48 项 `@deepseek-ai/dsh-*` 开发依赖中的 46 项由精确钉版
+  `0.1.5-rc.2` 换为精确钉版 `0.1.7-rc.2`，`pnpm-lock.yaml` 清树重新生成。typecheck、build、
+  test、lint、`verify:release` 从此跑在真实的 0.1.7-rc.2 基线上，而不是用 0.1.5 输入校验
+  0.1.7 适配（假绿）。两个包从未发布 0.1.7 线版本，保留其安装期钉值：
+  `@deepseek-ai/dsh-agent-presets`（`0.1.6-alpha.2`）与 `@deepseek-ai/dsh-code-runtime`
+  （`0.1.5-rc.3`）。`react-dom` 新增显式 `^18.2.0` 开发依赖，避免全新解析把 React-DOM 19
+  与 React 18 混装进测试套件。
+- 测试宿主的 settings 接缝按真实 0.1.7 宿主重建：`@deepseek-ai/dsh-settings` 已删除
+  `SettingsProvider`（由声明式 `SettingsForms` 取代），而插件保留 legacy
+  `ctx.settings.get(ns)` 作为宿主形状回退。各 spec 现挂载 vendor 进仓的 0.1.5-rc.2 provider
+  原版副本（`tests/helpers/legacy-settings/`）来专门驱动这条回退路径，legacy 命名空间注册器
+  在接缝处收窄服务类型。真机 DeepSeek 套件改用 0.1.7 适配器接缝注册 provider，不再依赖已被
+  移除的 `llm-deepseek` 自包含插件。
+- 真实基线暴露的测试适配：compaction 引擎夹具显式传 `headroomTokens: 0`（0.1.7-rc.2 默认
+  65536 token 的 compaction headroom 会吞掉夹具的 1k token 探针窗口）；tool-result 资产断言
+  跟随一等 `role: 'tool'` 消息形状（不再有 `tool-result` 包裹内容块）。
+- 发布门禁重新钉到官方 0.1.7 发布物：`verify-release.mjs` 与打包 E2E 断言 selector peers
+  `>=0.1.7-rc.1 <0.2.0-0`；打包 E2E 的官方 harness 克隆断言 tag `dsh-v0.1.7-rc.2`
+  （commit `477b4f42`、tree `e3e63253`）。
+- `packages/selector/dsh.plugin.json` 首次携带发布版本（0.6.5；此前所有 0.6.x 都冻结在
+  0.1.0），并声明真实的引擎范围 `>=0.1.7-rc.1 <0.2.0-0`。
+- 清掉 0.6.3 两次手工适配遗留的 lint 债务：`src/index.ts`、`src/client/index.ts`、
+  `src/pruner.ts` 与三个 host spec 的未用导入/变量；standing-generation 的 staging 残留扫描
+  收窄到本 spec 自己的 store，避免并发发布的 spec 打爆断言。
+
+## 0.6.4 - 2026-09-26
+
+### Fixed
+
+- 客户端 locale 绑定器改为 eager：切换宿主语言后压缩设置 UI 无需重挂载即跟随重渲染。
+- 该版本从 stash 发布、未提交到任何分支（发布它的那棵工作树丢失）；compat/0.1.7 在 0.6.5
+  中恢复了与其注册表 tarball 逐字节核验一致的完整内容。
+
 ## 0.5.4 - 2026-09-20
+
 
 ### Fixed
 

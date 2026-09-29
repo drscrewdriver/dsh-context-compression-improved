@@ -6,6 +6,7 @@
  * and falls back to this namespace; on a real 0.1.7 host neither the
  * registration nor this helper exists.
  */
+import type { Context } from '@deepseek-ai/cordis'
 import {
   CONTEXT_COMPRESSION_SETTINGS_NAMESPACE,
   ContextCompressionSettingsSchema,
@@ -13,13 +14,16 @@ import {
 
 export const LegacyNamespaceRegistrar = {
   name: 'context-compression:test/legacy-namespace-registrar',
-  async apply(ctx: {
-    inject(deps: readonly string[], fn: (s: { settings: { register(ns: never, schema: unknown): unknown } }) => void): void
-  }): Promise<void> {
+  async apply(ctx: Context): Promise<void> {
     await new Promise<void>((resolve) => {
       ctx.inject(['settings'], (s) => {
         try {
-          s.settings.register(
+          // The test host mounts a vendored 0.1.5-shaped provider whose
+          // static type is the 0.1.7 Context augmentation (`SettingsForms`);
+          // narrow to the legacy registry surface at the seam.
+          ;(s.settings as unknown as {
+            register(ns: never, schema: unknown): unknown
+          }).register(
             CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as never,
             ContextCompressionSettingsSchema,
           )

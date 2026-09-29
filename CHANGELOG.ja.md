@@ -2,7 +2,49 @@
 
 > 完全な履歴（アップストリーム 0.1.0 以前を含む）は [CHANGELOG.md](CHANGELOG.md) を参照。このファイルはフォークの追加エントリーのみを翻訳したものです。 · [English](CHANGELOG.md) · [中文](CHANGELOG.zh.md) · [한국어](CHANGELOG.ko.md)
 
+## 0.6.5 - 2026-09-29
+
+### Fixed
+
+- 開発依存を Harness 0.1.7 系に整合：48 個の `@deepseek-ai/dsh-*` devDependencies のうち
+  46 個を厳密ピン `0.1.5-rc.2` から `0.1.7-rc.2` へ移し、`pnpm-lock.yaml` をクリーンな
+  ツリーから再生成。typecheck・build・test・lint・`verify:release` が 0.1.5 の入力で
+  0.1.7 適応を検証する偽の緑ではなく、実際の 0.1.7-rc.2 ベースラインで走るようになった。
+  0.1.7 系のリリースが存在しない 2 パッケージはインストール時のピンを維持：
+  `@deepseek-ai/dsh-agent-presets`（`0.1.6-alpha.2`）と `@deepseek-ai/dsh-code-runtime`
+  （`0.1.5-rc.3`）。`react-dom` に明示的な `^18.2.0` devDependency を追加し、新規解決で
+  React-DOM 19 と React 18 が混在しないようにした。
+- テストホストの settings シームを実際の 0.1.7 ホストに合わせて再構築：
+  `@deepseek-ai/dsh-settings` から `SettingsProvider` は削除され（宣言的 `SettingsForms`
+  に置換）、プラグインは legacy `ctx.settings.get(ns)` をホスト形状フォールバックとして
+  維持している。各 spec はベンダー copies した 0.1.5-rc.2 プロバイダー
+  （`tests/helpers/legacy-settings/`）をマウントしてこのフォールバックを検証する。実
+  DeepSeek ハーネスのテストは削除された自己完結 `llm-deepseek` プラグインの代わりに
+  0.1.7 アダプターシームで provider を登録する。
+- 実ベースラインで露呈したテスト適応：compaction エンジンのフィクスチャは
+  `headroomTokens: 0` を渡す（0.1.7-rc.2 は既定で 65536 トークンの headroom を取り、
+  フィクスチャの 1k トークン窓を食い潰す）；tool-result アセットのアサーションは
+  第一級 `role: 'tool'` メッセージ形状に追従。
+- リリースゲートを公式 0.1.7 リリースに再ピン：`verify-release.mjs` とパック E2E は
+  selector peers `>=0.1.7-rc.1 <0.2.0-0` を、公式ハーネスクローンはタグ
+  `dsh-v0.1.7-rc.2`（commit `477b4f42`、tree `e3e63253`）をアサートする。
+- `packages/selector/dsh.plugin.json` が初めてリリースバージョンを刻む（0.6.5；従来の
+  0.6.x はすべて 0.1.0 の凍結値）とともに、正直なエンジン範囲
+  `>=0.1.7-rc.1 <0.2.0-0` を宣言。
+- 0.6.3 の手動適応で残った lint 負債を解消：`src/index.ts`・`src/client/index.ts`・
+  `src/pruner.ts` と 3 つのホスト spec の未使用インポート・変数の削除。
+
+## 0.6.4 - 2026-09-26
+
+### Fixed
+
+- クライアントのロケールバインダーを eager 化：ホストのロケール切替に設定 UI が
+  再マウントなしで追従する。
+- このバージョンは stash から公開され、どのブランチにもコミットされなかった；
+  compat/0.1.7 は 0.6.5 でレジストリ tarball とバイト一致する内容を復元した。
+
 ## 0.5.4 - 2026-09-20
+
 
 ### Fixed（修正）
 

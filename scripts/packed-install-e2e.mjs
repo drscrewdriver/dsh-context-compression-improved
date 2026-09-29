@@ -19,7 +19,7 @@ const packages = [
   { directory: join(root, 'packages/selector') },
 ]
 // The full @deepseek-ai/* host closure (pinned in the workspace root manifest,
-// currently 0.1.5-rc.2): auto-installed peers must all resolve from the mock
+// currently 0.1.7-rc.2): auto-installed peers must all resolve from the mock
 // registry, so the list must cover every peer the packed plugins and the
 // official packages declare.
 const rootManifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
@@ -303,10 +303,10 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
     tree: await git('rev-parse', 'HEAD^{tree}'),
     status: await git('status', '--porcelain'),
   }
-  assert(before.tag === 'dsh-v0.1.5-rc.2', `official clone tag is ${before.tag}`)
-  assert(before.commit === 'fb2c4b9e698e30edb738bca4cf0618587db7d203',
+  assert(before.tag === 'dsh-v0.1.7-rc.2', `official clone tag is ${before.tag}`)
+  assert(before.commit === '477b4f420553e8a52c2fbccc464d7561b239c443',
     `official clone commit is ${before.commit}`)
-  assert(before.tree === 'bd7dd6d90010a35d3d6ff9f12c1f6207d5b6fe38',
+  assert(before.tree === 'e3e63253d1d35ad07f785273235c40813cb6c8bd',
     `official clone tree is ${before.tree}`)
   assert(before.status === '', 'official clone is dirty before CLI smoke')
 
@@ -1113,7 +1113,7 @@ try {
     throw new Error('packed package is not guarded by publishConfig.tag=latest')
   }
   for (const peer of ['@deepseek-ai/dsh-command-compact', '@deepseek-ai/dsh-compaction-basic']) {
-    if (selector.peerDependencies?.[peer] !== '>=0.1.5-rc.2 <0.2.0-0') {
+    if (selector.peerDependencies?.[peer] !== '>=0.1.7-rc.1 <0.2.0-0') {
       throw new Error(`packed selector has an invalid ${peer} peer range`)
     }
   }
@@ -1222,7 +1222,7 @@ try {
     const cloneRoot = join(artifactRoot, 'official-clone')
     try {
       await run('git', [
-        'clone', '--depth', '1', '--branch', 'dsh-v0.1.5-rc.2',
+        'clone', '--depth', '1', '--branch', 'dsh-v0.1.7-rc.2',
         'https://github.com/deepseek-ai/deepseek-harness.git', cloneRoot,
       ])
       officialCloneSmoke = await runOfficialCloneCliSmoke(

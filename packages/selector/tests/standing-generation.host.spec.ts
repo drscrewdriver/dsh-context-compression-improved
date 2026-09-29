@@ -18,10 +18,8 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
-import {
-  SettingsProvider,
-  type SettingsNamespace,
-} from '@deepseek-ai/dsh-settings'
+import { type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import { LegacySettingsProvider } from './helpers/legacy-settings/index.ts'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { apply } from '../src/index.ts'
@@ -51,7 +49,7 @@ afterEach(async () => {
   root = undefined
 })
 
-class MemorySettings extends SettingsProvider {
+class MemorySettings extends LegacySettingsProvider {
   readonly writable = true
   private readonly stored: Record<string, unknown> = {}
 
@@ -428,18 +426,40 @@ describe('real AgentPresets standing generations with the overlay threshold', ()
     // No staging leftovers survive a publish. A spec file running in parallel
     // disposes its own store while this scan runs, so a vanished directory means
     // "no leftovers to find" rather than a failure (mirrors overlayFiles).
+    // No staging leftovers survive a publish. Scan only this test's own store,
+    // identified by its latest source marker: a concurrently running spec's
+    // store may legitimately hold .tmp staging while this scan runs, and a
+    // vanished directory means "no leftovers to find" (mirrors overlayFiles).
     const storeDirs = await Promise.all(
       (await readdir(tmpdir(), { withFileTypes: true }))
         .filter(entry => entry.isDirectory() && entry.name.startsWith('dsh-context-compression-presets-'))
         .map(async entry => {
+          const directory = join(tmpdir(), entry.name)
           try {
-            return await readdir(join(tmpdir(), entry.name))
+            return { directory, entries: await readdir(directory) }
           } catch {
-            return []
+            return { directory: '', entries: [] as string[] }
           }
         }),
     )
-    expect(storeDirs.flat().some(name => name.endsWith('.tmp'))).toBe(false)
+    const ownStores: string[] = []
+    await Promise.all(storeDirs.map(async ({ directory, entries }) => {
+      if (directory === '') return
+      for (const name of entries) {
+        if (!name.startsWith('standard-') || !name.endsWith('.agent.cordis.yml')) continue
+        try {
+          const rendered = await readFile(join(directory, name), 'utf8')
+          if (rendered.includes('marker-00000wil.mjs')) {
+            ownStores.push(directory)
+            return
+          }
+        } catch { /* a concurrent spec disposed its store mid-scan */ }
+      }
+    }))
+    const leftovers = (await Promise.all(ownStores.map(directory => readdir(directory))))
+      .flat()
+      .filter(name => name.endsWith('.tmp'))
+    expect(leftovers).toEqual([])
 
     await bundle.dispose()
   })

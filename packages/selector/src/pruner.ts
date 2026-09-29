@@ -2087,7 +2087,6 @@ export class ToolResultPruner extends Service {
 
   private land(session: Session, plan: PlannedReplacement): PrunedEntry | null {
     const { candidate } = plan
-    const result = candidate.event.data.message as ToolResultMessage
     // 0.1.7-rc.2: the tool message's own `content` is the result block set —
     // no wrapping result block anymore.
     const message = freezeMessage<ToolResultMessage>({
