@@ -88,6 +88,7 @@ describe('context compression browser contract', () => {
       custom: structuredClone(CUSTOM),
       autoCompact: { thresholdPercent: 80 },
       codeSkeleton: { enabled: false },
+      intentSummary: { enabled: false },
     }
     const snapshot = (): ScopeSnapshot<ContextCompressionSettings> => ({
       status: 'ready',

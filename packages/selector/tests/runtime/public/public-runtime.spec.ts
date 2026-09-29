@@ -274,7 +274,7 @@ function appendToolBatchTurn(
 
 // 0.1.5 removed the settingsNamespace() wrapper; namespaces are branded
 // strings validated at runtime by SettingsProvider.parse.
-const nsBrand = (value: string): SettingsNamespace => value
+const nsBrand = (value: string): SettingsNamespace => value as unknown as SettingsNamespace
 
 function stubAgent(ctx: Context, session: Session): Agent {
   return {
@@ -709,6 +709,7 @@ describe('standalone runtime on published Harness APIs', () => {
     const legacySettings = ctx.settings as unknown as LegacySettingsProvider
     const originalGet = legacySettings.get.bind(legacySettings)
     vi.spyOn(legacySettings, 'get').mockImplementation((ns: unknown) =>
+      // eslint-disable-next-line @typescript-eslint/no-base-to-string -- namespace keys are scalars by contract
       ns === undefined || String(ns) === String(namespace) ? structuredClone(malformed) : originalGet(ns as never))
     await ctx.plugin(ToolResultPruner, {
       profile: 'balanced',
@@ -754,6 +755,7 @@ describe('standalone runtime on published Harness APIs', () => {
     const legacySettings = ctx.settings as unknown as LegacySettingsProvider
     const originalGet = legacySettings.get.bind(legacySettings)
     vi.spyOn(legacySettings, 'get').mockImplementation((ns: unknown) =>
+      // eslint-disable-next-line @typescript-eslint/no-base-to-string -- namespace keys are scalars by contract
       ns === undefined || String(ns) === String(namespace) ? structuredClone(malformed) : originalGet(ns as never))
     await ctx.plugin(ToolResultPruner, {
       profile: 'balanced',
@@ -794,6 +796,7 @@ describe('standalone runtime on published Harness APIs', () => {
     const legacySettings = ctx.settings as unknown as LegacySettingsProvider
     const originalGet = legacySettings.get.bind(legacySettings)
     vi.spyOn(legacySettings, 'get').mockImplementation((ns: unknown) =>
+      // eslint-disable-next-line @typescript-eslint/no-base-to-string -- namespace keys are scalars by contract
       ns === undefined || String(ns) === String(namespace) ? malformed : originalGet(ns as never))
     await ctx.plugin(ToolResultPruner, {
       profile: 'balanced',
@@ -2091,7 +2094,6 @@ describe('standalone runtime on published Harness APIs', () => {
       thresholdRatio: 0.3,
       retainTokens: 0,
       maxTokens: 100,
-      headroomTokens: 0,
       compactionRetries: 0,
     })
     const agent = await ctx.agentLoop.create(SessionId('public-native-auto-real'), {
@@ -2202,7 +2204,6 @@ describe('standalone runtime on published Harness APIs', () => {
       thresholdRatio: 0.5,
       retainTokens: 0,
       maxTokens: 100,
-      headroomTokens: 0,
       compactionRetries: 0,
     })
     const signal = new AbortController().signal

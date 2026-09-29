@@ -27,6 +27,9 @@ export default tseslint.config(
     ignores: [
       '**/node_modules/**', '**/lib/**', '**/dist/**', '**/coverage/**',
       'docs/**', 'scripts-dist/**',
+      // Vendored 0.1.5-era helper shipped as plain JS; it has no tsconfig
+      // project, so type-checked rules cannot run on it.
+      'packages/selector/tests/helpers/legacy-settings/**',
     ],
   },
   js.configs.recommended,
