@@ -47,7 +47,7 @@
 
 ## インストール
 
-ソースからビルドしてインストールします —— 本フォークは npm にも `dsh-context-compression-improved` として公開済みです（dist-tag `dsh-0.1.5`）。内部パッケージ名は意図的にアップストリームのままです：
+ソースからビルドしてインストールします —— 本フォークは npm にも `dsh-context-compression-improved` として公開済みです（0.1.7 系は dist-tag `dsh-0.1.7`、0.1.5 系は `dsh-0.1.5`）。内部パッケージ名は意図的にアップストリームのままです：
 
 ```sh
 git clone https://github.com/drscrewdriver/dsh-context-compression-improved.git
@@ -74,7 +74,7 @@ pnpm verify:release
 
 ## 互換性
 
-- 公開されているプラグインおよびプロファイル API のみを使用し、DeepSeek Harness `dsh-v0.1.1-rc.2` に対して検証済み。公式 `dsh-v0.1.2-alpha.5` リリースと互換。
+- 公式 DeepSeek Harness `dsh-v0.1.7-rc.2` リリースに対してビルド・テスト済み。peers は `>=0.1.7-rc.1 <0.2.0-0` を宣言し、公開されているプラグインおよびプロファイル API のみを使用します。それ以前の Harness 系はそれぞれの dist-tag（`dsh-0.1.5`、`dsh-0.1.2`）で提供を継続します。
 - Node `^22.19.0 || >=24` と pnpm `11.7.0` が必要です。
 - プラグインは Harness の公開拡張 API のみを使用し、Harness コアは改変しません。非公式のコミュニティプロジェクトであり、DeepSeek とは提携・承認関係にありません。
 

@@ -2,13 +2,54 @@
 
 > 전체 히스토리(업스트림 0.1.0 이전 포함)는 [CHANGELOG.md](CHANGELOG.md)를 참고하세요. 이 파일은 포크의 추가 항목만 번역한 것입니다. · [English](CHANGELOG.md) · [中文](CHANGELOG.zh.md) · [日本語](CHANGELOG.ja.md)
 
+<<<<<<< HEAD
 ## 0.7.0-beta.1 - 2026-09-27
 
 ### 추가
 
 - 턴 말머리 인텐트 요약(`intentSummary.enabled`, 기본 꺼짐): 성장 게이트(라이브 표면이 창의 45% 초과, 마지막 폴드 대비 50K 토큰 초과 증가)를 통과하면 턴 경계 포스트플라이트가 "소비된 증분"을 의미론적 역할로 마스킹합니다——read 계열 도구 결과는 공유 `classifyToolSource()`(write 레이어 추가)를 통해 1줄 대상/규모 레코드로, write 계열은 스켈레톤 헤드와 축자적 오류 행을 유지——한 번의 요약 작성기 LLM 호출만 소비합니다(todolist 앵커, JSON 전용, fail-open). 폴드는 다음 압력 라운드에서 기존 plan/apply 메커니즘을 통해 후보별 `intent-summary` 블록으로 착지하며, 첫 블록이 요약·읽기 레코드·축자적 오류 행을, 나머지는 마스크 행과 seq 범위 출처 각주를 담습니다. fold-once: 접힌 seq(`INTENT_FOLD_MARKER` 포함 블록)는 다시 후보가 되지 않습니다. 감사에 `intent-summary-outcome`(보존율 및 요약 호출 비용 크레딧) 추가.
 - `/ctx-summary off|on|status`: 세션 범위의 임시 비활성화/재개/상태 조회(설정은 세션 고정이므로 "임시"는 런타임 상태로만 가능). 프로세스와 함께 소멸하며 세션을 cross하지 않습니다.
+=======
+## 0.6.5 - 2026-09-29
+
+### Fixed
+
+- 개발 의존성을 Harness 0.1.7 라인에 정렬: 48개 `@deepseek-ai/dsh-*` devDependencies 중
+  46개를 정확 핀 `0.1.5-rc.2`에서 `0.1.7-rc.2`로 옮기고 `pnpm-lock.yaml`을 클린 트리에서
+  재생성. typecheck·build·test·lint·`verify:release`가 이제 실제 0.1.7-rc.2 베이스라인에서
+  실행됩니다 (0.1.5 입력으로 0.1.7 적응을 검증하던 가짜 그린 해소). 0.1.7 라인 릴리스가
+  없는 2개 패키지는 설치 시 핀 값을 유지: `@deepseek-ai/dsh-agent-presets`
+  (`0.1.6-alpha.2`), `@deepseek-ai/dsh-code-runtime` (`0.1.5-rc.3`). `react-dom`에 명시적
+  `^18.2.0` devDependency를 추가해 새 해석이 React-DOM 19와 React 18을 섞지 않도록 함.
+- 테스트 호스트의 settings 이음새를 실제 0.1.7 호스트에 맞춰 재구축:
+  `@deepseek-ai/dsh-settings`에서 `SettingsProvider`가 선언적 `SettingsForms`로 대체되었지만
+  플러그인은 legacy `ctx.settings.get(ns)` 폴백을 유지. 각 spec은 벤더링한 0.1.5-rc.2
+  프로바이더 복사본(`tests/helpers/legacy-settings/`)을 마운트해 이 폴백을 검증. 실제
+  DeepSeek 하니스 테스트는 제거된 자체 완결 `llm-deepseek` 플러그인 대신 0.1.7 어댑터
+  시임으로 provider를 등록.
+- 실제 베이스라인이 드러낸 테스트 적응: compaction 엔진 픽스처에 `headroomTokens: 0`
+  전달 (0.1.7-rc.2는 기본 65536 토큰 headroom으로 픽스처의 1k 토큰 창을 잠식);
+  tool-result 자산 어설션은 일급 `role: 'tool'` 메시지 형태를 따름.
+- 릴리스 게이트를 공식 0.1.7 릴리스에 재고정: `verify-release.mjs`와 팩 E2E는 selector
+  peers `>=0.1.7-rc.1 <0.2.0-0`를, 공식 하니스 클론은 태그 `dsh-v0.1.7-rc.2`
+  (commit `477b4f42`, tree `e3e63253`)를 단언.
+- `packages/selector/dsh.plugin.json`이 처음으로 릴리스 버전을 새김 (0.6.5; 기존 0.6.x는
+  모두 0.1.0 동결값)과 함께 실제 엔진 범위 `>=0.1.7-rc.1 <0.2.0-0` 선언.
+- 0.6.3 수동 적응에서 남은 lint 부채 해소: `src/index.ts`, `src/client/index.ts`,
+  `src/pruner.ts`와 3개 호스트 spec의 미사용 임포트·변수 제거.
+
+## 0.6.4 - 2026-09-26
+
+### Fixed
+
+- 클라이언트 로케일 바인더를 eager로 전환: 호스트 로케일 변경 시 설정 UI가 리마운트 없이
+  따라갑니다.
+- 이 버전은 stash에서 공개되어 어떤 브랜치에도 커밋되지 않았음; compat/0.1.7은 0.6.5에서
+  레지스트리 tarball과 바이트 단위로 일치하는 콘텐츠를 복원.
+
+>>>>>>> compat/0.1.7
 ## 0.5.4 - 2026-09-20
+
 
 ### Fixed(수정)
 

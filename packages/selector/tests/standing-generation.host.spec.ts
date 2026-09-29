@@ -18,10 +18,8 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
-import {
-  SettingsProvider,
-  type SettingsNamespace,
-} from './helpers/settings-provider-shim.ts'
+import { type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import { LegacySettingsProvider } from './helpers/legacy-settings/index.ts'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { apply } from '../src/index.ts'
@@ -51,7 +49,7 @@ afterEach(async () => {
   root = undefined
 })
 
-class MemorySettings extends SettingsProvider {
+class MemorySettings extends LegacySettingsProvider {
   readonly writable = true
   private readonly stored: Record<string, unknown> = {}
 

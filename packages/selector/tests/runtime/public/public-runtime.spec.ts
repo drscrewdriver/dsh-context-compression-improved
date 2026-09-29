@@ -25,10 +25,8 @@ import {
   agentEvents,
   type Agent,
 } from '@deepseek-ai/dsh-agent'
-import {
-  SettingsProvider,
-  type SettingsNamespace,
-} from '../../helpers/settings-provider-shim.ts'
+import { type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import { LegacySettingsProvider } from '../../helpers/legacy-settings/index.ts'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
@@ -87,7 +85,7 @@ afterEach(async () => {
   for (const ctx of activeContexts.splice(0)) await ctx.fiber.dispose()
 })
 
-class TestSettings extends SettingsProvider {
+class TestSettings extends LegacySettingsProvider {
   readonly writable = true
   private readonly stored: Record<string, unknown> = {}
 
@@ -708,10 +706,10 @@ describe('standalone runtime on published Harness APIs', () => {
       custom: structuredClone(DEFAULT_CUSTOM_COMPRESSION_POLICY),
       unrelated: true,
     }
-    const originalGet = ctx.settings.get.bind(ctx.settings)
-    vi.spyOn(ctx.settings, 'get').mockImplementation((ns: unknown) =>
-      // eslint-disable-next-line @typescript-eslint/no-base-to-string -- namespace keys are scalars by contract
-      ns === undefined || String(ns) === String(namespace) ? structuredClone(malformed) : originalGet(ns))
+    const legacySettings = ctx.settings as unknown as LegacySettingsProvider
+    const originalGet = legacySettings.get.bind(legacySettings)
+    vi.spyOn(legacySettings, 'get').mockImplementation((ns: unknown) =>
+      ns === undefined || String(ns) === String(namespace) ? structuredClone(malformed) : originalGet(ns as never))
     await ctx.plugin(ToolResultPruner, {
       profile: 'balanced',
       freshTriggerTokens: 10,
@@ -753,10 +751,10 @@ describe('standalone runtime on published Harness APIs', () => {
     // Schemastery `.default(...)` would silently replace these present-but-null
     // sections with the balanced/default-v3 policy; the runtime must reject the
     // document and freeze the session losslessly instead.
-    const originalGet = ctx.settings.get.bind(ctx.settings)
-    vi.spyOn(ctx.settings, 'get').mockImplementation((ns: unknown) =>
-      // eslint-disable-next-line @typescript-eslint/no-base-to-string -- namespace keys are scalars by contract
-      ns === undefined || String(ns) === String(namespace) ? structuredClone(malformed) : originalGet(ns))
+    const legacySettings = ctx.settings as unknown as LegacySettingsProvider
+    const originalGet = legacySettings.get.bind(legacySettings)
+    vi.spyOn(legacySettings, 'get').mockImplementation((ns: unknown) =>
+      ns === undefined || String(ns) === String(namespace) ? structuredClone(malformed) : originalGet(ns as never))
     await ctx.plugin(ToolResultPruner, {
       profile: 'balanced',
       freshTriggerTokens: 10,
@@ -793,10 +791,10 @@ describe('standalone runtime on published Harness APIs', () => {
       custom: structuredClone(DEFAULT_CUSTOM_COMPRESSION_POLICY),
       autoCompact: new AutoCompactDocument(),
     }
-    const originalGet = ctx.settings.get.bind(ctx.settings)
-    vi.spyOn(ctx.settings, 'get').mockImplementation((ns: unknown) =>
-      // eslint-disable-next-line @typescript-eslint/no-base-to-string -- namespace keys are scalars by contract
-      ns === undefined || String(ns) === String(namespace) ? malformed : originalGet(ns))
+    const legacySettings = ctx.settings as unknown as LegacySettingsProvider
+    const originalGet = legacySettings.get.bind(legacySettings)
+    vi.spyOn(legacySettings, 'get').mockImplementation((ns: unknown) =>
+      ns === undefined || String(ns) === String(namespace) ? malformed : originalGet(ns as never))
     await ctx.plugin(ToolResultPruner, {
       profile: 'balanced',
       freshTriggerTokens: 10,
@@ -2087,6 +2085,8 @@ describe('standalone runtime on published Harness APIs', () => {
     )
     await ctx.plugin(ToolResultPruner, { profile: 'off' }).await()
     void new BasicCompactionEngine(ctx, {
+      // 0.1.7-rc.2 defaults a 65536-token compaction headroom; the tiny probe windows here need it zeroed.
+      headroomTokens: 0,
       auto: true,
       thresholdRatio: 0.3,
       retainTokens: 0,
@@ -2196,6 +2196,8 @@ describe('standalone runtime on published Harness APIs', () => {
       new NativeSummaryAdapter(['full-pipeline native summary'], beforeNative),
     )
     void new BasicCompactionEngine(ctx, {
+      // 0.1.7-rc.2 defaults a 65536-token compaction headroom; the tiny probe windows here need it zeroed.
+      headroomTokens: 0,
       auto: true,
       thresholdRatio: 0.5,
       retainTokens: 0,

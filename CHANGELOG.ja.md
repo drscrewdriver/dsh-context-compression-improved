@@ -2,13 +2,58 @@
 
 > 完全な履歴（アップストリーム 0.1.0 以前を含む）は [CHANGELOG.md](CHANGELOG.md) を参照。このファイルはフォークの追加エントリーのみを翻訳したものです。 · [English](CHANGELOG.md) · [中文](CHANGELOG.zh.md) · [한국어](CHANGELOG.ko.md)
 
+<<<<<<< HEAD
 ## 0.7.0-beta.1 - 2026-09-27
 
 ### 追加
 
 - ターン末尾インテント要約（`intentSummary.enabled`、デフォルト無効）：成長ゲート（ライブ表面がウィンドウの 45% 超、かつ前回フォールドより 50K トークン超の増加）を通過した場合、ターン境界のポストフライトが「消費済み増分」をセマンティックロールでマスク——read 系ツール結果は共有の `classifyToolSource()`（write レイヤー追加）経由で 1 行の対象/規模レコードに、write 系はスケルトン先頭と逐語エラー行を保持——し、要約ライター LLM 呼び出しは 1 回のみ（todolist アンカー、JSON のみ、fail-open）。フォールドは次の圧力ラウンドで既存の plan/apply 機構を通じて候補ごとの `intent-summary` ブロックとして着地し、先頭ブロックが要約・読み取りレコード・逐語エラー行を、残りはマスク行と seq 範囲の出身情報を担う。fold-once：折りたたまれた seq（`INTENT_FOLD_MARKER` 含むブロック）は再候補になりません。監査に `intent-summary-outcome`（保持率と要約呼び出しコストのクレジット計上）を追加。
 - `/ctx-summary off|on|status`：セッション単位の一時的な無効化/再開/状態表示（設定はセッション凍結のため「一時」はランタイム状態でのみ可能）。プロセスとともに消滅し、セッションを跨ぎません。
+=======
+## 0.6.5 - 2026-09-29
+
+### Fixed
+
+- 開発依存を Harness 0.1.7 系に整合：48 個の `@deepseek-ai/dsh-*` devDependencies のうち
+  46 個を厳密ピン `0.1.5-rc.2` から `0.1.7-rc.2` へ移し、`pnpm-lock.yaml` をクリーンな
+  ツリーから再生成。typecheck・build・test・lint・`verify:release` が 0.1.5 の入力で
+  0.1.7 適応を検証する偽の緑ではなく、実際の 0.1.7-rc.2 ベースラインで走るようになった。
+  0.1.7 系のリリースが存在しない 2 パッケージはインストール時のピンを維持：
+  `@deepseek-ai/dsh-agent-presets`（`0.1.6-alpha.2`）と `@deepseek-ai/dsh-code-runtime`
+  （`0.1.5-rc.3`）。`react-dom` に明示的な `^18.2.0` devDependency を追加し、新規解決で
+  React-DOM 19 と React 18 が混在しないようにした。
+- テストホストの settings シームを実際の 0.1.7 ホストに合わせて再構築：
+  `@deepseek-ai/dsh-settings` から `SettingsProvider` は削除され（宣言的 `SettingsForms`
+  に置換）、プラグインは legacy `ctx.settings.get(ns)` をホスト形状フォールバックとして
+  維持している。各 spec はベンダー copies した 0.1.5-rc.2 プロバイダー
+  （`tests/helpers/legacy-settings/`）をマウントしてこのフォールバックを検証する。実
+  DeepSeek ハーネスのテストは削除された自己完結 `llm-deepseek` プラグインの代わりに
+  0.1.7 アダプターシームで provider を登録する。
+- 実ベースラインで露呈したテスト適応：compaction エンジンのフィクスチャは
+  `headroomTokens: 0` を渡す（0.1.7-rc.2 は既定で 65536 トークンの headroom を取り、
+  フィクスチャの 1k トークン窓を食い潰す）；tool-result アセットのアサーションは
+  第一級 `role: 'tool'` メッセージ形状に追従。
+- リリースゲートを公式 0.1.7 リリースに再ピン：`verify-release.mjs` とパック E2E は
+  selector peers `>=0.1.7-rc.1 <0.2.0-0` を、公式ハーネスクローンはタグ
+  `dsh-v0.1.7-rc.2`（commit `477b4f42`、tree `e3e63253`）をアサートする。
+- `packages/selector/dsh.plugin.json` が初めてリリースバージョンを刻む（0.6.5；従来の
+  0.6.x はすべて 0.1.0 の凍結値）とともに、正直なエンジン範囲
+  `>=0.1.7-rc.1 <0.2.0-0` を宣言。
+- 0.6.3 の手動適応で残った lint 負債を解消：`src/index.ts`・`src/client/index.ts`・
+  `src/pruner.ts` と 3 つのホスト spec の未使用インポート・変数の削除。
+
+## 0.6.4 - 2026-09-26
+
+### Fixed
+
+- クライアントのロケールバインダーを eager 化：ホストのロケール切替に設定 UI が
+  再マウントなしで追従する。
+- このバージョンは stash から公開され、どのブランチにもコミットされなかった；
+  compat/0.1.7 は 0.6.5 でレジストリ tarball とバイト一致する内容を復元した。
+
+>>>>>>> compat/0.1.7
 ## 0.5.4 - 2026-09-20
+
 
 ### Fixed（修正）
 

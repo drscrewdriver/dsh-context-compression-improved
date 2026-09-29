@@ -3,10 +3,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { AgentPreset } from '@deepseek-ai/dsh-agent-presets'
-import {
-  SettingsProvider,
-  type SettingsNamespace,
-} from './helpers/settings-provider-shim.ts'
+import { type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import { LegacySettingsProvider } from './helpers/legacy-settings/index.ts'
 import { afterEach, describe, expect, it } from 'vitest'
 import { apply } from '../src/index.ts'
 import type { OverlayableAgentPresets } from '../src/preset-overlay.ts'
@@ -25,7 +23,7 @@ afterEach(async () => {
   root = undefined
 })
 
-class MemorySettings extends SettingsProvider {
+class MemorySettings extends LegacySettingsProvider {
   readonly writable = true
   private readonly stored: Record<string, unknown> = {}
 

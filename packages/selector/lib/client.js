@@ -1483,6 +1483,7 @@ window.__ModuleLoader__.load({
 				zh,
 				en
 			});
+			const tNav = ctx.locale?.bind?.(NS) ?? ((key) => key);
 			const injected = () => {
 				const form = ctx.configForms.get(ENTRY_ID);
 				const readDoc = () => decodeSettings(form.getSnapshot().value?.settings);
@@ -1562,7 +1563,7 @@ window.__ModuleLoader__.load({
 					name: "settings.section",
 					id: "context-compression",
 					order: 17,
-					label: () => ctx.locale.bind(NS)("nav"),
+					label: () => tNav("nav"),
 					locale: NS,
 					inject: injected
 				}, ContextCompressionSettingsSection));

@@ -14,18 +14,14 @@ import CommandRuntime from '@deepseek-ai/dsh-commands'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
-import {
-  SettingsProvider,
-  type SettingsNamespace,
-} from './helpers/settings-provider-shim.ts'
+import { type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import { LegacySettingsProvider } from './helpers/legacy-settings/index.ts'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { afterEach, describe, expect, it } from 'vitest'
 import { apply } from '../src/index.ts'
-
-// 0.1.5 removed the settingsNamespace() wrapper; namespaces are validated at runtime.
 
 const CORDIS_ORIGINAL = Symbol.for('cordis.original')
 type Traceable = { [CORDIS_ORIGINAL]?: unknown }
@@ -40,7 +36,7 @@ afterEach(async () => {
   root = undefined
 })
 
-class MemorySettings extends SettingsProvider {
+class MemorySettings extends LegacySettingsProvider {
   readonly writable = true
 
   protected load(): Promise<Record<string, unknown>> {

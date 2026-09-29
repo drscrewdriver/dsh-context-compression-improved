@@ -22,10 +22,8 @@ import SessionStore, {
   SessionId,
   canonicalHeader,
 } from '@deepseek-ai/dsh-session'
-import {
-  SettingsProvider,
-  type SettingsNamespace,
-} from '../helpers/settings-provider-shim.ts'
+import { type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import { LegacySettingsProvider } from '../helpers/legacy-settings/index.ts'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
@@ -44,7 +42,7 @@ import {
 
 const MODEL = 'deepseek-v4-flash'
 
-class TestSettings extends SettingsProvider {
+class TestSettings extends LegacySettingsProvider {
   readonly writable = true
   private readonly stored: Record<string, unknown> = {}
 
