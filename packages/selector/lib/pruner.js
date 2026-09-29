@@ -5329,7 +5329,6 @@ var ToolResultPruner = class extends Service {
 	}
 	land(session, plan) {
 		const { candidate } = plan;
-		candidate.event.data.message;
 		const message = freezeMessage({
 			...candidate.event.data.message,
 			content: plan.content
