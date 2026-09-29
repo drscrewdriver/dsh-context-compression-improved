@@ -2,6 +2,7 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
+<<<<<<< HEAD
 ## 0.7.0-beta.1 - 2026-09-27
 
 ### Added
@@ -25,6 +26,53 @@ All notable changes use this file. The project follows semantic versioning after
   gate (settings are session-frozen, so "temporary" can only live in runtime
   state); dies with the process, never crosses sessions, and reports the
   override, observed settings flag, gate constants, and the last landed fold.
+=======
+## 0.6.5 - 2026-09-29
+
+### Fixed
+
+- Dev-dependency alignment to the Harness 0.1.7 line: 46 of the 48 `@deepseek-ai/dsh-*`
+  dev-dependencies moved from the precise `0.1.5-rc.2` pin to the precise `0.1.7-rc.2` pin,
+  and `pnpm-lock.yaml` was regenerated from a clean tree. Typecheck, build, test, lint, and
+  `verify:release` now run against the real 0.1.7-rc.2 baseline instead of validating the
+  0.1.7 adaptations against 0.1.5 inputs (a false green). Two packages have no 0.1.7-line
+  release at all and keep their install-time pinned values: `@deepseek-ai/dsh-agent-presets`
+  (`0.1.6-alpha.2`) and `@deepseek-ai/dsh-code-runtime` (`0.1.5-rc.3`). `react-dom` gained an
+  explicit `^18.2.0` dev-dependency so a fresh resolution cannot pair React-DOM 19 with
+  React 18 under the test suites.
+- The test-host settings seam was rebuilt against the real 0.1.7 host: `SettingsProvider`
+  no longer exists in `@deepseek-ai/dsh-settings` (replaced by the declarative
+  `SettingsForms`), while the plugin keeps the legacy `ctx.settings.get(ns)` read as a
+  host-shape fallback. The specs now mount a vendored copy of the 0.1.5-rc.2 provider
+  (`tests/helpers/legacy-settings/`) to exercise exactly that fallback, and the
+  legacy-namespace registrar narrows the service at the seam. The live DeepSeek harness test
+  registers the provider through the 0.1.7 adapter seam instead of the removed
+  self-contained `llm-deepseek` plugin.
+- Test adaptations surfaced by the real baseline: the compaction-engine fixtures pass
+  `headroomTokens: 0` (0.1.7-rc.2 defaults a 65536-token compaction headroom, which swallows
+  the fixtures' 1k-token probe windows), and the tool-result asset assertion follows the
+  first-class `role: 'tool'` message shape (no wrapping `tool-result` content block).
+- Release gates re-pinned to the official 0.1.7 release: `verify-release.mjs` and the packed
+  E2E now assert selector peers `>=0.1.7-rc.1 <0.2.0-0`, and the packed E2E's official-harness
+  clone asserts tag `dsh-v0.1.7-rc.2` (commit `477b4f42`, tree `e3e63253`).
+- `packages/selector/dsh.plugin.json` now carries the release version (0.6.5; every earlier
+  0.6.x shipped it frozen at 0.1.0) and declares the honest engine range
+  `>=0.1.7-rc.1 <0.2.0-0`.
+- Lint debt from the 0.6.3 manual adaptations cleared: unused imports/locals removed in
+  `src/index.ts`, `src/client/index.ts`, `src/pruner.ts`, and three host specs; the
+  standing-generation staging-leftover scan now scopes to the spec's own store so a
+  concurrently publishing spec cannot fail it.
+
+## 0.6.4 - 2026-09-26
+
+### Fixed
+
+- The client locale binder is eager: switching the host locale now re-renders the
+  compression settings UI without a remount.
+- Released from a stash and never committed to any branch (the working tree that published it
+  was lost); compat/0.1.7 restored the exact content in 0.6.5 and byte-verified it against
+  the registry tarball before continuing.
+>>>>>>> compat/0.1.7
 
 ## 0.5.4 - 2026-09-20
 

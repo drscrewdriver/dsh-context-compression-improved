@@ -69,6 +69,13 @@ function sameCustomPolicy(
 
 export function apply(ctx: ClientContext): void {
   ctx.locale.register(NS, { zh, en })
+  // Section label translator, captured EAGERLY: the settings shell evaluates
+  // `label()` during its own render; a lazy ctx.locale accessor inside the
+  // thunk would throw there if `locale` ever left this module's inject list
+  // (the search-index 0.5.3 family-tab incident). bind() returns a live
+  // binder, so locale switches are still followed.
+  const localeSvc = ctx.locale as { bind?: (n: string) => (key: string) => string } | undefined
+  const tNav = localeSvc?.bind?.(NS) ?? ((key: string) => key)
   const injected = (): CompressionSelectorInjected => {
     // 0.1.7: the compression document rides the selector row's entry config as
     // the volatile `settings` field. The form handle is fetched per factory
@@ -191,7 +198,7 @@ export function apply(ctx: ClientContext): void {
       name: 'settings.section',
       id: 'context-compression',
       order: 17,
-      label: () => ctx.locale.bind(NS)('nav'),
+      label: () => tNav('nav'),
       locale: NS,
       inject: injected,
     }, ContextCompressionSettingsSection))

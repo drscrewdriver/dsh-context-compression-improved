@@ -2,13 +2,54 @@
 
 > 完整历史（含上游 0.1.0 及更早版本）见 [CHANGELOG.md](CHANGELOG.md)。本文件只翻译本 fork 的新增条目。 · [English](CHANGELOG.md) · [日本語](CHANGELOG.ja.md) · [한국어](CHANGELOG.ko.md)
 
+<<<<<<< HEAD
 ## 0.7.0-beta.1 - 2026-09-27
 
 ### 新增
 
 - 回合末意图摘要（`intentSummary.enabled`，默认关）：增长门控通过（活跃表面 > 窗口 45% 且距上次折叠增长超 50K token）后，回合收尾阶段把"已消费增量"按语义角色 mask——读类工具结果经共享的 `classifyToolSource()`（另加 write 先行层）压缩为单行目标/规模记录，写类保留骨架头与逐字错误行——然后只花一次摘要写手 LLM 调用（todolist 锚定、JSON-only、fail-open）。折叠在下一压力回合经既有 plan/apply 机器落地为逐候选 `intent-summary` 块：首块携带 LLM 摘要段、读取记录行与逐字错误行，其余块携带各自 mask 行与 seq 区间溯源脚注。fold-once：已折叠 seq（及含 `INTENT_FOLD_MARKER` 的块）永不再进入候选。审计新增 `intent-summary-outcome` 记录，含保持率与摘要调用成本（credit 净额）。
 - `/ctx-summary off|on|status`：会话作用域临时禁用/恢复/查看状态（settings 是 session-frozen，"临时"只能活在运行时状态）；随进程消亡、不跨会话，status 报告覆盖、观测到的设置开关、门控常量与最近一次折叠。
+=======
+## 0.6.5 - 2026-09-29
+
+### Fixed
+
+- 开发依赖对齐 Harness 0.1.7 线：48 项 `@deepseek-ai/dsh-*` 开发依赖中的 46 项由精确钉版
+  `0.1.5-rc.2` 换为精确钉版 `0.1.7-rc.2`，`pnpm-lock.yaml` 清树重新生成。typecheck、build、
+  test、lint、`verify:release` 从此跑在真实的 0.1.7-rc.2 基线上，而不是用 0.1.5 输入校验
+  0.1.7 适配（假绿）。两个包从未发布 0.1.7 线版本，保留其安装期钉值：
+  `@deepseek-ai/dsh-agent-presets`（`0.1.6-alpha.2`）与 `@deepseek-ai/dsh-code-runtime`
+  （`0.1.5-rc.3`）。`react-dom` 新增显式 `^18.2.0` 开发依赖，避免全新解析把 React-DOM 19
+  与 React 18 混装进测试套件。
+- 测试宿主的 settings 接缝按真实 0.1.7 宿主重建：`@deepseek-ai/dsh-settings` 已删除
+  `SettingsProvider`（由声明式 `SettingsForms` 取代），而插件保留 legacy
+  `ctx.settings.get(ns)` 作为宿主形状回退。各 spec 现挂载 vendor 进仓的 0.1.5-rc.2 provider
+  原版副本（`tests/helpers/legacy-settings/`）来专门驱动这条回退路径，legacy 命名空间注册器
+  在接缝处收窄服务类型。真机 DeepSeek 套件改用 0.1.7 适配器接缝注册 provider，不再依赖已被
+  移除的 `llm-deepseek` 自包含插件。
+- 真实基线暴露的测试适配：compaction 引擎夹具显式传 `headroomTokens: 0`（0.1.7-rc.2 默认
+  65536 token 的 compaction headroom 会吞掉夹具的 1k token 探针窗口）；tool-result 资产断言
+  跟随一等 `role: 'tool'` 消息形状（不再有 `tool-result` 包裹内容块）。
+- 发布门禁重新钉到官方 0.1.7 发布物：`verify-release.mjs` 与打包 E2E 断言 selector peers
+  `>=0.1.7-rc.1 <0.2.0-0`；打包 E2E 的官方 harness 克隆断言 tag `dsh-v0.1.7-rc.2`
+  （commit `477b4f42`、tree `e3e63253`）。
+- `packages/selector/dsh.plugin.json` 首次携带发布版本（0.6.5；此前所有 0.6.x 都冻结在
+  0.1.0），并声明真实的引擎范围 `>=0.1.7-rc.1 <0.2.0-0`。
+- 清掉 0.6.3 两次手工适配遗留的 lint 债务：`src/index.ts`、`src/client/index.ts`、
+  `src/pruner.ts` 与三个 host spec 的未用导入/变量；standing-generation 的 staging 残留扫描
+  收窄到本 spec 自己的 store，避免并发发布的 spec 打爆断言。
+
+## 0.6.4 - 2026-09-26
+
+### Fixed
+
+- 客户端 locale 绑定器改为 eager：切换宿主语言后压缩设置 UI 无需重挂载即跟随重渲染。
+- 该版本从 stash 发布、未提交到任何分支（发布它的那棵工作树丢失）；compat/0.1.7 在 0.6.5
+  中恢复了与其注册表 tarball 逐字节核验一致的完整内容。
+
+>>>>>>> compat/0.1.7
 ## 0.5.4 - 2026-09-20
+
 
 ### Fixed
 
