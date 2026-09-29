@@ -2,6 +2,22 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
+## 0.8.0-beta.1 - 2026-09-30
+
+### Changed
+
+- Harness 0.2.0 compatibility line: all 23 `@deepseek-ai/dsh-*` peer ranges moved to
+  `>=0.2.0-rc.1 <0.2.1-0`, and `engines.dsh` follows in all three manifests (root,
+  selector package, plugin manifest). `publishConfig.tag` becomes `dsh-0.2.0`; the 0.1.7
+  line remains served from `dsh-0.1.7` (now `0.7.0-beta.1`), the 0.1.5/0.1.2 lines from
+  their own dist-tags.
+- 39 of the 41 pinned overrides and 46 of the 48 dev-dependencies moved to `0.2.0-rc.1`;
+  `@deepseek-ai/dsh-agent-presets` (`0.1.6-alpha.2`) and `@deepseek-ai/dsh-code-runtime`
+  (`0.1.5-rc.3`) keep their pins — neither package has any 0.2.0-line release.
+- Release gates re-targeted: the packed-install e2e harness pin now checks out the
+  official `dsh-v0.2.0-rc.1` tree (`4878cdab`), and the built-artifact contract test
+  asserts the `configForms` client slot (renamed from `settingsScope` on the 0.1.7 line).
+
 ## 0.6.5 - 2026-09-29
 
 ### Fixed

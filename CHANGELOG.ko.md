@@ -2,6 +2,21 @@
 
 > 전체 히스토리(업스트림 0.1.0 이전 포함)는 [CHANGELOG.md](CHANGELOG.md)를 참고하세요. 이 파일은 포크의 추가 항목만 번역한 것입니다. · [English](CHANGELOG.md) · [中文](CHANGELOG.zh.md) · [日本語](CHANGELOG.ja.md)
 
+## 0.8.0-beta.1 - 2026-09-30
+
+### 변경 사항
+
+- Harness 0.2.0 호환 라인 대응: `@deepseek-ai/dsh-*` peer 23건 모두를
+  `>=0.2.0-rc.1 <0.2.1-0`으로 이동하고 `engines.dsh`는 세 매니페스트(루트 / selector 패키지 /
+  플러그인 매니페스트)에서 동기화했습니다. `publishConfig.tag`는 `dsh-0.2.0`이 됩니다.
+  0.1.7 라인은 계속 `dsh-0.1.7`(현재 `0.7.0-beta.1`)으로 제공됩니다.
+- overrides 41건 중 39건과 devDependencies 48건 중 46건을 `0.2.0-rc.1`로 올렸습니다.
+  `@deepseek-ai/dsh-agent-presets`(`0.1.6-alpha.2`)와 `@deepseek-ai/dsh-code-runtime`
+  (`0.1.5-rc.3`)은 0.2.0 라인 릴리스가 없어 기존 핀을 유지합니다.
+- 릴리스 게이트 재정렬: packed-install e2e의 공식 클론 핀을 `dsh-v0.2.0-rc.1`(`4878cdab`)로
+  갱신하고, 빌드 아티팩트 계약 테스트는 `configForms` 클라이언트 슬롯을 검증합니다
+  (0.1.7 라인에서 `settingsScope`에서 개명).
+
 ## 0.6.5 - 2026-09-29
 
 ### Fixed

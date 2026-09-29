@@ -2,6 +2,21 @@
 
 > 完全な履歴（アップストリーム 0.1.0 以前を含む）は [CHANGELOG.md](CHANGELOG.md) を参照。このファイルはフォークの追加エントリーのみを翻訳したものです。 · [English](CHANGELOG.md) · [中文](CHANGELOG.zh.md) · [한국어](CHANGELOG.ko.md)
 
+## 0.8.0-beta.1 - 2026-09-30
+
+### 変更
+
+- Harness 0.2.0 互換ラインへの対応：`@deepseek-ai/dsh-*` peer 23 件すべてを
+  `>=0.2.0-rc.1 <0.2.1-0` に移行し、`engines.dsh` も 3 つのマニフェスト
+  （ルート / selector パッケージ / プラグインマニフェスト）で同期。`publishConfig.tag` は
+  `dsh-0.2.0` になります。0.1.7 系は引き続き `dsh-0.1.7`（現在は `0.7.0-beta.1`）で提供します。
+- overrides 41 件のうち 39 件と devDependencies 48 件のうち 46 件を `0.2.0-rc.1` に更新。
+  `@deepseek-ai/dsh-agent-presets`（`0.1.6-alpha.2`）と `@deepseek-ai/dsh-code-runtime`
+  （`0.1.5-rc.3`）は 0.2.0 系のリリースが存在しないため既定ピンを維持します。
+- リリースゲートを再調整：packed-install e2e の公式クローンピンを `dsh-v0.2.0-rc.1`
+  （`4878cdab`）に更新し、built 成果物の契約テストは `configForms` クライアントスロットを
+  検証します（0.1.7 系で `settingsScope` から改名）。
+
 ## 0.6.5 - 2026-09-29
 
 ### Fixed

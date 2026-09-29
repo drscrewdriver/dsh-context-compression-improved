@@ -37,12 +37,12 @@ describe('built Harness client artifact', () => {
     // Declare every consumed service: cordis holds apply until each one is
     // provided, which is the official client-plugin pattern on this 0.1.5 host
     // line (dsh-thinking-levels does the same). The earlier lazy alternative —
-    // resolving `locale` / `settingsScope` through ctx.get() inside apply —
+    // resolving `locale` / `configForms` through ctx.get() inside apply —
     // raced the settings client's activation; on a loss the apply
     // early-returned and EVERY settings entry (the standalone section, the
     // plugins-tab card, the item card) silently vanished. See the rationale
     // recorded in src/client/index.ts.
-    expect(exported.inject).toEqual(['slots', 'locale', 'settingsScope'])
+    expect(exported.inject).toEqual(['slots', 'locale', 'configForms'])
     const style = document.querySelector<HTMLStyleElement>(
       'style[data-plugin-css="dsh-context-compression-improved/CompressionProfileSelector.module.css"]',
     )

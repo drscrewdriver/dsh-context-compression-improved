@@ -150,7 +150,7 @@ for (const peer of [
   '@deepseek-ai/dsh-command-compact',
   '@deepseek-ai/dsh-compaction-basic',
 ]) {
-  if (selectorPackage.peerDependencies?.[peer] !== '>=0.1.7-rc.1 <0.2.0-0') {
+  if (selectorPackage.peerDependencies?.[peer] !== '>=0.2.0-rc.1 <0.2.1-0') {
     fail(`selector peer ${peer} is missing or outside the verified range`)
   }
 }
