@@ -37,7 +37,7 @@ import type {
 } from '../src/preset-overlay.ts'
 
 // 0.1.5 removed the settingsNamespace() wrapper; namespaces are validated at runtime.
-const nsBrand = (value: string): SettingsNamespace => value
+const nsBrand = (value: string): SettingsNamespace => value as unknown as SettingsNamespace
 
 let root: string | undefined
 let ctx: Context | undefined
