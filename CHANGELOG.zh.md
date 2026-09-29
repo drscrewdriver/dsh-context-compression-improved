@@ -2,6 +2,20 @@
 
 > 完整历史（含上游 0.1.0 及更早版本）见 [CHANGELOG.md](CHANGELOG.md)。本文件只翻译本 fork 的新增条目。 · [English](CHANGELOG.md) · [日本語](CHANGELOG.ja.md) · [한국어](CHANGELOG.ko.md)
 
+## 0.8.0-beta.1 - 2026-09-30
+
+### 变更
+
+- 适配 Harness 0.2.0 兼容线：全部 23 条 `@deepseek-ai/dsh-*` peer 范围迁至
+  `>=0.2.0-rc.1 <0.2.1-0`，`engines.dsh` 在三处清单（root、selector 包、插件清单）同步；
+  `publishConfig.tag` 变为 `dsh-0.2.0`。0.1.7 线继续由 `dsh-0.1.7`（现为 `0.7.0-beta.1`）服务，
+  0.1.5/0.1.2 线由各自 dist-tag 服务。
+- 41 条 overrides 中的 39 条与 48 条 devDependencies 中的 46 条升至 `0.2.0-rc.1`；
+  `@deepseek-ai/dsh-agent-presets`（`0.1.6-alpha.2`）与 `@deepseek-ai/dsh-code-runtime`
+  （`0.1.5-rc.3`）保留原钉版——两包没有任何 0.2.0 线发布。
+- 发布门禁重定向：packed-install e2e 的官方克隆钉点改为 `dsh-v0.2.0-rc.1`（`4878cdab`）；
+  built 产物契约测试断言 `configForms` 客户端槽位（0.1.7 线由 `settingsScope` 更名而来）。
+
 ## 0.6.5 - 2026-09-29
 
 ### Fixed
