@@ -439,7 +439,7 @@ function nativePruneContent(blocks, thresholdChars, headChars, tailChars, marker
 		const tailStart = Math.min(points.length, Math.max(0, removedEnd - blockStart));
 		const intersectsRemoved = blockStart < removedEnd && blockEnd > removedStart;
 		const headText = points.slice(0, headEnd).join("");
-		const insertion = intersectsRemoved && !markerInserted && typeof marker === "function" ? marker(1 + newlinesBefore + headText.split("\n").length - 1) : intersectsRemoved && !markerInserted ? marker : "";
+		const insertion = intersectsRemoved && !markerInserted && typeof marker === "function" ? marker(1 + newlinesBefore + headText.split("\n").length - 1) : intersectsRemoved && !markerInserted && typeof marker === "string" ? marker : "";
 		if (insertion !== "") markerInserted = true;
 		const text = points.slice(0, headEnd).join("") + insertion + points.slice(tailStart).join("");
 		if (text !== "") pruned.push({
@@ -1179,7 +1179,7 @@ function buildLocatorBlock(events, shadowedRange) {
 			const data = event.data;
 			const content = Array.isArray(data.content) ? data.content : data.message?.content;
 			if (!Array.isArray(content)) continue;
-			for (const block of content) if (block.type === "text") for (const path of extractSpillPaths(block.text)) spillFiles.add(path);
+			for (const block of content) if (block.type === "text" && typeof block.text === "string") for (const path of extractSpillPaths(block.text)) spillFiles.add(path);
 		}
 	}
 	if (spillFiles.size === 0 && touchedFiles.size === 0) return null;
@@ -5732,7 +5732,6 @@ var ToolResultPruner = class extends Service {
 	}
 	land(session, plan) {
 		const { candidate } = plan;
-		candidate.event.data.message;
 		const message = freezeMessage({
 			...candidate.event.data.message,
 			content: plan.content

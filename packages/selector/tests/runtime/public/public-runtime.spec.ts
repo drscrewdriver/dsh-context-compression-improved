@@ -276,7 +276,7 @@ function appendToolBatchTurn(
 
 // 0.1.5 removed the settingsNamespace() wrapper; namespaces are branded
 // strings validated at runtime by SettingsProvider.parse.
-const nsBrand = (value: string): SettingsNamespace => value as unknown as SettingsNamespace
+const nsBrand = (value: string): SettingsNamespace => value
 
 function stubAgent(ctx: Context, session: Session): Agent {
   return {
@@ -710,7 +710,8 @@ describe('standalone runtime on published Harness APIs', () => {
     }
     const originalGet = ctx.settings.get.bind(ctx.settings)
     vi.spyOn(ctx.settings, 'get').mockImplementation((ns: unknown) =>
-      ns === undefined || String(ns) === String(namespace) ? structuredClone(malformed) : originalGet(ns as never))
+      // eslint-disable-next-line @typescript-eslint/no-base-to-string -- namespace keys are scalars by contract
+      ns === undefined || String(ns) === String(namespace) ? structuredClone(malformed) : originalGet(ns))
     await ctx.plugin(ToolResultPruner, {
       profile: 'balanced',
       freshTriggerTokens: 10,
@@ -754,7 +755,8 @@ describe('standalone runtime on published Harness APIs', () => {
     // document and freeze the session losslessly instead.
     const originalGet = ctx.settings.get.bind(ctx.settings)
     vi.spyOn(ctx.settings, 'get').mockImplementation((ns: unknown) =>
-      ns === undefined || String(ns) === String(namespace) ? structuredClone(malformed) : originalGet(ns as never))
+      // eslint-disable-next-line @typescript-eslint/no-base-to-string -- namespace keys are scalars by contract
+      ns === undefined || String(ns) === String(namespace) ? structuredClone(malformed) : originalGet(ns))
     await ctx.plugin(ToolResultPruner, {
       profile: 'balanced',
       freshTriggerTokens: 10,
@@ -793,7 +795,8 @@ describe('standalone runtime on published Harness APIs', () => {
     }
     const originalGet = ctx.settings.get.bind(ctx.settings)
     vi.spyOn(ctx.settings, 'get').mockImplementation((ns: unknown) =>
-      ns === undefined || String(ns) === String(namespace) ? malformed : originalGet(ns as never))
+      // eslint-disable-next-line @typescript-eslint/no-base-to-string -- namespace keys are scalars by contract
+      ns === undefined || String(ns) === String(namespace) ? malformed : originalGet(ns))
     await ctx.plugin(ToolResultPruner, {
       profile: 'balanced',
       freshTriggerTokens: 10,

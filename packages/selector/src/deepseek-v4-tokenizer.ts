@@ -109,7 +109,7 @@ interface ArtifactCacheEntry {
 const registryCache = new Map<DeepSeekTokenizerArtifactOrigin, ArtifactCacheEntry>()
 
 function artifactForModel(modelId: string): TokenizerArtifact | undefined {
-  return ARTIFACTS.find(artifact => (artifact.origin.modelIds as readonly string[]).includes(modelId))
+  return ARTIFACTS.find(artifact => (artifact.origin.modelIds).includes(modelId))
 }
 
 /**

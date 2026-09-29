@@ -13,7 +13,7 @@ import type { OverlayableAgentPresets } from '../src/preset-overlay.ts'
 import { LegacyNamespaceRegistrar } from './helpers/legacy-namespace.ts'
 
 // 0.1.5 removed the settingsNamespace() wrapper; namespaces are validated at runtime.
-const nsBrand = (value: string): SettingsNamespace => value as unknown as SettingsNamespace
+const nsBrand = (value: string): SettingsNamespace => value
 
 let root: string | undefined
 let ctx: Context | undefined

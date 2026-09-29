@@ -820,7 +820,7 @@ export class ToolResultPruner extends Service {
     for (const seq of range.seqs) {
       const candidate = bySeq.get(seq)
       if (candidate === undefined) continue
-      const result = candidate.event.data.message as ToolResultMessage
+      const result = candidate.event.data.message
       const text = onlyTextBlock(result.content)?.text ?? ''
       const masked = maskCandidateForSummary(seq, candidate.call.name, candidate.call.arguments, text)
       records.push({ seq, role: masked.role, toolName: candidate.call.name, line: masked.record })
@@ -916,7 +916,7 @@ export class ToolResultPruner extends Service {
     let charsAfter = 0
     for (const seq of foldable) {
       const candidate = bySeq.get(seq)!
-      const result = candidate.event.data.message as ToolResultMessage
+      const result = candidate.event.data.message
       const block = onlyTextBlock(result.content)
       if (block === null) continue
       const text = renderIntentFoldBlock(pending, seq)
@@ -1564,7 +1564,7 @@ export class ToolResultPruner extends Service {
   ): PlannedReplacement | null {
     if (this.isRecoveryExempt(session, candidate)) return null
     if (candidate.characterPressure <= charsForTokens(policy.nativeTriggerTokens)) return null
-    const result = candidate.event.data.message as ToolResultMessage
+    const result = candidate.event.data.message
     if (onlyTextBlocks(result.content) === null) return null
     const sourceSeq = rootToolResultSeq(session, candidate.seq)
     // R9b site: the marker's retrieve hint starts at the event line right
@@ -1616,7 +1616,7 @@ export class ToolResultPruner extends Service {
     view: CompactionTokenView,
   ): PlannedReplacement | null {
     if (typeof candidate.event.surfaceOp === 'object') return null
-    const result = candidate.event.data.message as ToolResultMessage
+    const result = candidate.event.data.message
     const text = flattenPlainText(result.content)
     if (text === undefined) return null
     if (candidate.characterPressure <= charsForTokens(policy.freshTriggerTokens)) return null
@@ -1664,7 +1664,7 @@ export class ToolResultPruner extends Service {
     // pre-step coordinate filter prevents previously-kept originals from ever
     // being reconsidered after their first request.
     if (typeof candidate.event.surfaceOp === 'object') return null
-    const result = candidate.event.data.message as ToolResultMessage
+    const result = candidate.event.data.message
     if (candidate.characterPressure <= charsForTokens(policy.freshTriggerTokens)) return null
     const sourceSeq = candidate.seq
     const sourceRef = sourceRefFn(session, sourceSeq)
@@ -1742,7 +1742,7 @@ export class ToolResultPruner extends Service {
     // example one carrying an image) must never reach it. The character basis
     // no longer inherits the exact-tokenizer precondition that used to reject
     // this path implicitly, so the guard has to be explicit.
-    const redacted = candidate.event.data.message as ToolResultMessage
+    const redacted = candidate.event.data.message
     if (onlyTextBlocks(redacted.content) === null) return null
     const text = [
       '[Tool result reduced to satisfy the completed-step aggregate budget]',
@@ -1776,7 +1776,7 @@ export class ToolResultPruner extends Service {
     historyMode?: HistoryMode,
   ): PlannedReplacement | null {
     if (!isError(candidate)) return null
-    const result = candidate.event.data.message as ToolResultMessage
+    const result = candidate.event.data.message
     const blocks = onlyTextBlocks(result.content)
     if (blocks === null) return null
     const text = blocks.map(block => block.text).join('\n')
@@ -1834,7 +1834,7 @@ export class ToolResultPruner extends Service {
     const protectedSeqs = this.protectedHistoryCandidateSeqs(candidates, policy)
     const isUnsafe = (candidate: SnapshotCandidate): boolean => {
       if (this.isRecoveryExempt(session, candidate)) return true
-      const result = candidate.event.data.message as ToolResultMessage
+      const result = candidate.event.data.message
       const block = onlyTextBlock(result.content)
       // Fold-once: an already-folded intent block is never re-candidated.
       if (block?.text.includes(INTENT_FOLD_MARKER) === true) return true
@@ -1898,7 +1898,7 @@ export class ToolResultPruner extends Service {
       ? minReclaimChars
       : required
     for (const candidate of eligible) {
-      const result = candidate.event.data.message as ToolResultMessage
+      const result = candidate.event.data.message
       const block = onlyTextBlock(result.content)
       // TokenPilot-inspired R2: a read output whose file was later mutated is
       // superseded — its text can no longer match the file — so it takes the
@@ -2107,7 +2107,7 @@ export class ToolResultPruner extends Service {
         if (event?.type !== 'tool/result'
           || event.data.turn !== assistant.data.turn || event.data.step !== assistant.data.step
           || event.data.error !== undefined) return true
-        const block = event.data.message as ToolResultMessage
+        const block = event.data.message
         if (block.isError === true) return true
         // Images and other rich inner blocks stay fail-open: a TailTrim stub
         // would silently delete them from the active context.
@@ -2561,7 +2561,11 @@ export class ToolResultPruner extends Service {
       manifestEventType: 'compaction/summary',
       manifestSeq,
       reducer: 'llm-summary',
+      // Legacy manifest fields were written as free-form scalars; String() is
+      // the intentional best-effort coercion of whatever the host stored.
+      // eslint-disable-next-line @typescript-eslint/no-base-to-string
       provider: data.provider === undefined ? 'unknown' : String(data.provider),
+      // eslint-disable-next-line @typescript-eslint/no-base-to-string
       model: data.model === undefined ? 'unknown' : String(data.model),
       tokensBefore: typeof data.shadowedTokenCount === 'number' ? data.shadowedTokenCount : null,
       tokensAfter: null,

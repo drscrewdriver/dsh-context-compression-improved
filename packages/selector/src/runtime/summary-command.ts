@@ -60,6 +60,9 @@ export function formatSummaryStatus(sessionId: string): string {
 function sessionIdOf(agent: unknown): string {
   const session = (agent as { session?: { id?: unknown } } | undefined)?.session
   if (session === undefined || session.id === undefined || session.id === null) return ''
+  // Host session ids are strings in practice; String() keeps the legacy
+  // best-effort coercion for exotic host shapes.
+  // eslint-disable-next-line @typescript-eslint/no-base-to-string
   return String(session.id)
 }
 
@@ -99,6 +102,9 @@ export function registerSummaryCommand(ctx: Context): void {
           name: SUMMARY_COMMAND_NAME,
           description: 'Turn-tail intent summary: temporarily disable/resume or inspect status',
           ...(definitionId === undefined ? {} : { definitionId: definitionId('dsh-context-compression-improved/ctx-summary') }),
+          // The commands contract expects a promise-returning handler; the
+          // body is fully synchronous by design (all host reads are sync).
+          // eslint-disable-next-line @typescript-eslint/require-await
           handler: async (invocation) => {
             const rawInput = typeof invocation.rawInput === 'string' ? invocation.rawInput : ''
             const args = parseSummaryCommandArgs(rawInput)

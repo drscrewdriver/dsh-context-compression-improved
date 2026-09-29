@@ -87,7 +87,7 @@ function parseAutoCompactSettings(value: unknown): AutoCompactSettings {
   if (keys.length !== 1 || keys[0] !== 'thresholdPercent') {
     throw new TypeError(`Context-compression autoCompact: expected exactly "thresholdPercent", got "${keys.join('", "')}"`)
   }
-  const thresholdPercent = (value as Record<string, unknown>).thresholdPercent
+  const thresholdPercent = (value).thresholdPercent
   if (!isValidAutoCompactThresholdPercent(thresholdPercent)) {
     throw new TypeError(`Context-compression autoCompact.thresholdPercent (${String(thresholdPercent)}) must be an integer between ${String(AUTO_COMPACT_THRESHOLD_LIMITS.min)} and ${String(AUTO_COMPACT_THRESHOLD_LIMITS.max)}`)
   }
@@ -108,7 +108,7 @@ function parseCodeSkeletonSettings(value: unknown): CodeSkeletonSettings {
   if (keys.length !== 1 || keys[0] !== 'enabled') {
     throw new TypeError(`Context-compression codeSkeleton: expected exactly "enabled", got "${keys.join('", "')}"`)
   }
-  const enabled = (value as Record<string, unknown>).enabled
+  const enabled = (value).enabled
   if (typeof enabled !== 'boolean') {
     throw new TypeError('Context-compression codeSkeleton.enabled must be a boolean')
   }
@@ -129,7 +129,7 @@ function parseIntentSummarySettings(value: unknown): IntentSummarySettings {
   if (keys.length !== 1 || keys[0] !== 'enabled') {
     throw new TypeError(`Context-compression intentSummary: expected exactly "enabled", got "${keys.join('", "')}"`)
   }
-  const enabled = (value as Record<string, unknown>).enabled
+  const enabled = (value).enabled
   if (typeof enabled !== 'boolean') {
     throw new TypeError('Context-compression intentSummary.enabled must be a boolean')
   }
@@ -225,18 +225,18 @@ export function parsePresetOptionsSettings(value: unknown): PresetOptionsSetting
   if (value.summaryLocator !== undefined) result.summaryLocator = value.summaryLocator as boolean
   if (value.prefixStabilizer !== undefined) result.prefixStabilizer = value.prefixStabilizer as boolean
   if (value.readState !== undefined) result.readState = value.readState as boolean
-  if (estimatorMode !== undefined) result.estimatorMode = estimatorMode as '' | 'host' | 'direct'
+  if (estimatorMode !== undefined) result.estimatorMode = estimatorMode
   if (value.estimatorProvider !== undefined) result.estimatorProvider = value.estimatorProvider as string
   if (value.estimatorModel !== undefined) result.estimatorModel = value.estimatorModel as string
   if (value.estimatorBaseUrl !== undefined) result.estimatorBaseUrl = value.estimatorBaseUrl as string
   if (value.estimatorApiKey !== undefined) result.estimatorApiKey = value.estimatorApiKey as string
-  if (estimatorTimeoutMs !== undefined) result.estimatorTimeoutMs = estimatorTimeoutMs as number
-  if (advisorMode !== undefined) result.advisorMode = advisorMode as '' | 'host' | 'direct'
-  if (advisorTimeoutMs !== undefined) result.advisorTimeoutMs = advisorTimeoutMs as number
-  if (advisorRefreshTurns !== undefined) result.advisorRefreshTurns = advisorRefreshTurns as number
-  if (advisorScoreThreshold !== undefined) result.advisorScoreThreshold = advisorScoreThreshold as number
-  if (advisorSampleLimit !== undefined) result.advisorSampleLimit = advisorSampleLimit as number
-  if (advisorMinTokens !== undefined) result.advisorMinTokens = advisorMinTokens as number
+  if (estimatorTimeoutMs !== undefined) result.estimatorTimeoutMs = estimatorTimeoutMs
+  if (advisorMode !== undefined) result.advisorMode = advisorMode
+  if (advisorTimeoutMs !== undefined) result.advisorTimeoutMs = advisorTimeoutMs
+  if (advisorRefreshTurns !== undefined) result.advisorRefreshTurns = advisorRefreshTurns
+  if (advisorScoreThreshold !== undefined) result.advisorScoreThreshold = advisorScoreThreshold
+  if (advisorSampleLimit !== undefined) result.advisorSampleLimit = advisorSampleLimit
+  if (advisorMinTokens !== undefined) result.advisorMinTokens = advisorMinTokens
   return result
 }
 

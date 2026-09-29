@@ -575,6 +575,9 @@ function installAgentPresetsDecoration(
 /** Capture callable methods and whether each was inherited or owned. */
 function snapshotMethods(presets: OverlayableAgentPresets): MethodSnapshot[] {
   return (['resolve', 'mount', 'recompose', 'standingKeyFor'] as const).map((name) => {
+    // Capture is detached by design: every apply/restore site re-binds via
+    // Reflect.apply(..., presets, args), so this read never escapes its `this`.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     const original = presets[name]
     if (typeof original !== 'function') {
       throw new TypeError(`context-compression selector: AgentPresets.${name} is unavailable`)

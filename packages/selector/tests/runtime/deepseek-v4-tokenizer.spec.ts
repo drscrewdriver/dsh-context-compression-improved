@@ -84,13 +84,13 @@ describe('bundled DeepSeek tokenizer artifact registry', () => {
     const { mkdtemp, writeFile } = await import('node:fs/promises')
     const { tmpdir } = await import('node:os')
     const { createHash } = await import('node:crypto')
-    const { join } = await import('node:path')
-    const root = await mkdtemp(join(tmpdir(), 'dsh-tokenizer-json-corrupt-'))
+    const path = await import('node:path')
+    const root = await mkdtemp(path.join(tmpdir(), 'dsh-tokenizer-json-corrupt-'))
     try {
       const payload = 'this is definitely not json'
       const bytes = Buffer.from(payload, 'utf8')
-      await writeFile(join(root, 'tokenizer.json'), bytes)
-      await writeFile(join(root, 'tokenizer_config.json'), bytes)
+      await writeFile(path.join(root, 'tokenizer.json'), bytes)
+      await writeFile(path.join(root, 'tokenizer_config.json'), bytes)
       const sha256 = createHash('sha256').update(bytes).digest('hex')
       const integrity = {
         tokenizer: { bytes: bytes.byteLength, sha256 },

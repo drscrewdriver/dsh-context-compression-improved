@@ -153,10 +153,10 @@ describe('context compression browser contract', () => {
           getSnapshot: () => ({ ...snapshot(), value: { settings: value } }),
           subscribe: scope.subscribe,
           set: async (_field: string, doc: unknown) => {
-            const next = doc as unknown as Record<string, unknown>
+            const next = doc as Record<string, unknown>
             for (const key of Object.keys(next)) {
               if (JSON.stringify((value as unknown as Record<string, unknown>)[key]) !== JSON.stringify(next[key])) {
-                await scope.set(key, (next as Record<string, unknown>)[key])
+                await scope.set(key, (next)[key])
               }
             }
             return true
