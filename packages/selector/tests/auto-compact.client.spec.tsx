@@ -90,6 +90,7 @@ function mountAutoCompact(options: MountOptions = {}) {
       custom: structuredClone(DEFAULT_CUSTOM),
       autoCompact: { thresholdPercent: 80 },
       codeSkeleton: { enabled: false },
+      intentSummary: { enabled: false },
     },
     base: undefined,
     user: undefined,
@@ -153,7 +154,7 @@ describe('Auto Compact threshold controls', () => {
     cleanup()
     mountAutoCompact({
       settingsSection: true,
-      value: { profile: 'balanced', custom: structuredClone(DEFAULT_CUSTOM), autoCompact: { thresholdPercent: 73 }, codeSkeleton: { enabled: false } },
+      value: { profile: 'balanced', custom: structuredClone(DEFAULT_CUSTOM), autoCompact: { thresholdPercent: 73 }, codeSkeleton: { enabled: false }, intentSummary: { enabled: false } },
     })
     expect(screen.getByLabelText<HTMLInputElement>(INPUT_LABEL).value).toBe('73')
   })
