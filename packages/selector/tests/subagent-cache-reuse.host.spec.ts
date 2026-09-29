@@ -4,7 +4,8 @@ import { Context } from '@deepseek-ai/cordis'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { createUserMessage, type GenerateOptions } from '@deepseek-ai/dsh-llm'
-import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
+import { getOrCreateAnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
+import { DeepSeekAdapter, resolveAdapterOptions } from '@deepseek-ai/dsh-llm-deepseek'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import * as Fork from '@deepseek-ai/dsh-subagent-fork-in-process'
@@ -56,7 +57,22 @@ async function liveHarness(requests: Map<string, GenerateOptions[]>): Promise<Co
   await created.plugin(SubagentRuntime).await()
   await created.plugin(Fork).await()
   await created.plugin(Spawn).await()
-  await created.plugin(LlmDeepSeek).await()
+  // 0.1.7 dropped the llm-deepseek self-contained plugin: register the live
+  // provider the way the host does (registerDeepSeekProvider minus its
+  // settings-form policy, which no test harness mounts). The block stays
+  // gated on DEEPSEEK_API_KEY and the credential comes from the environment.
+  created.llm.registerAdapter(['deepseek-official'], new DeepSeekAdapter({
+    options: () => resolveAdapterOptions({}, undefined),
+    resolveAuth: async () => {
+      const apiKey = process.env.DEEPSEEK_API_KEY
+      if (apiKey === undefined || apiKey.length === 0) {
+        throw new Error('liveHarness: DEEPSEEK_API_KEY is not set')
+      }
+      return { headers: { authorization: `Bearer ${apiKey}` } }
+    },
+    resolveUserId: () => getOrCreateAnonymousUserId(),
+    prepareExtensions: () => Promise.resolve({ fields: {}, accept: () => Promise.resolve() }),
+  }))
   created.on('llm/stream', (options, next) => {
     const sessionId = String(options.sessionId)
     requests.set(sessionId, [...(requests.get(sessionId) ?? []), options])

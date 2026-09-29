@@ -44,25 +44,6 @@ const NS = 'context-compression'
 /** 0.1.7: the profile entry whose config carries the compression settings doc. */
 const ENTRY_ID = 'context-compression-improved-bundle'
 
-/** The configForms face this client consumes (structural; 0.1.7 ui-settings). */
-interface ConfigFormsFace {
-  get<T>(entryId: string): {
-    getSnapshot(): {
-      status: 'loading' | 'ready' | 'unavailable'
-      value: T | undefined
-      revision: number | undefined
-      writable: boolean
-      base: unknown
-      user: unknown
-      mode: 'host' | 'memory'
-    }
-    subscribe(listener: () => void): () => void
-    set(field: string, value: unknown): Promise<boolean>
-    unset(field: string): Promise<boolean>
-  }
-}
-
-
 function sameCustomPolicy(
   left: ContextCompressionSettings['custom'],
   right: ContextCompressionSettings['custom'],
