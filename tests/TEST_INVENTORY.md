@@ -5,7 +5,7 @@ legacy-test allowlist.
 
 ## Root suite
 
-- Runtime: `packages/runtime/tests/**/*.spec.ts` under the `runtime` project.
+- Runtime: `packages/selector/tests/runtime/**/*.spec.ts` under the `runtime` project.
 - Selector Host: `cache-prefix-audit.spec.ts` plus every `*.host.spec.ts` under
   the `selector-host` project.
 - Selector client: every `*.client.spec.ts` or `*.client.spec.tsx` under the
