@@ -1,6 +1,6 @@
 # dsh-context-compression-improved をインストールする
 
-> [English](installation.md) · [中文](installation.zh.md) · [日本語](installation.ja.md) · [한국어](installation.ko.md)
+> [English](installation.md) · [中文](installation.zh.md) · [日本語](installation.ja.md) · [한국어](installation.ko.md) · [Français](installation.fr.md) · [Deutsch](installation.de.md) · [Italiano](installation.it.md) · [Русский](installation.ru.md) · [Español](installation.es.md)
 
 このガイドではソースからフォークをインストールします。フォークは npm にも公開済みです（dist-tag
 `dsh-0.1.5`）。パッケージ名は意図的に上流と同一です（`dsh-context-compression-improved` の単一パッケージで、

@@ -2,7 +2,7 @@
 
 > [dsh-context-compression-selector](https://github.com/WilliamShi666/dsh-context-compression-selector)의 개선 포크——DeepSeek Harness용 감사 가능한 도구 결과 컨텍스트 압축 셀렉터에, 직교하는 **코드 스켈레톤 압축 게이트*를추가했습니다.
 
-[English](README.md) · [中文说明](README.zh.md) · [日本語](README.ja.md) · [변경 로그](CHANGELOG.ko.md) · [설치 가이드](docs/installation.ko.md)
+[English](README.md) · [中文说明](README.zh.md) · [日本語](README.ja.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Italiano](README.it.md) · [Русский](README.ru.md) · [Español](README.es.md) · [변경 로그](CHANGELOG.ko.md) · [설치 가이드](docs/installation.ko.md)
 
 > [!NOTE]
 > **이 포크가 업스트림 0.1.0에 추가한것**

@@ -1,6 +1,6 @@
 # Installing dsh-context-compression-improved
 
-> [English](installation.md) · [中文](installation.zh.md) · [日本語](installation.ja.md) · [한국어](installation.ko.md)
+> [English](installation.md) · [中文](installation.zh.md) · [日本語](installation.ja.md) · [한국어](installation.ko.md) · [Français](installation.fr.md) · [Deutsch](installation.de.md) · [Italiano](installation.it.md) · [Русский](installation.ru.md) · [Español](installation.es.md)
 
 This guide installs the fork from source. The fork is published to npm as
 `dsh-context-compression-improved` under the `dsh-0.1.5` dist-tag; the package name

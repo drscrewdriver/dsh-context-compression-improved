@@ -1,0 +1,98 @@
+# dsh-context-compression-improved
+
+> Un fork amélioré de [dsh-context-compression-selector](https://github.com/WilliamShi666/dsh-context-compression-selector) — un sélecteur auditable de compression du contexte des résultats d'outils pour DeepSeek Harness — qui ajoute une **porte de compression des squelettes de code** orthogonale.
+
+[English](README.md) · [中文说明](README.zh.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Deutsch](README.de.md) · [Italiano](README.it.md) · [Русский](README.ru.md) · [Español](README.es.md) · [Journal des modifications](CHANGELOG.fr.md) · [Guide d'installation](docs/installation.fr.md)
+
+> [!NOTE]
+> **Ce que ce fork ajoute par rapport à l'amont 0.1.0 :**
+>
+> - Une **porte de compression des squelettes de code** orthogonale (`codeSkeleton.enabled`, désactivée par défaut) : lors de la première exposition d'un résultat d'outil de code source frais devenu surdimensionné, un squelette des imports et des déclarations peut être conservé — corps elidés, lignes d'erreur préservées — avant que les réducteurs habituels ne s'exécutent.
+> - Un interrupteur pour cette porte dans la même section de réglages du sélecteur, indépendant de chaque profil de compression.
+> - Une base ESLint intégrée à la CI, une boucle TDD `test:watch`, et une documentation en anglais, chinois simplifié, japonais et coréen.
+
+> [!IMPORTANT]
+> Ce projet prend en charge **uniquement les modèles DeepSeek**. La mesure sans perte et la compression avec perte dépendent des tokenizers DeepSeek officiels fournis (`deepseek-v4-flash`, `deepseek-v4-pro`, `deepseek-v4-flash-vision-exp`). Tout le reste échoue en mode ouvert (fail-open) et conserve les résultats d'outils originaux. Consultez le [README amont](https://github.com/WilliamShi666/dsh-context-compression-selector#model-support-and-safety) pour le modèle de sécurité complet.
+
+## Qu'est-ce que c'est
+
+Les tâches d'agent de longue durée accumulent une grande quantité de sorties d'outils. Ce plugin communautaire ajoute des politiques sélectionnables et auditables pour réduire ce contexte de résultats d'outils sans modifier le cœur de DeepSeek Harness :
+
+- **Fresh** pré-comprime un segment de résultat d'outil devenu surdimensionné avant que le modèle ne le reçoive.
+- **Aggregate** pré-comprime à nouveau le contenu frais lorsque celui-ci dépasse encore son budget.
+- **History / micro-compact** remplace les anciens résultats d'outils éligibles tout en préservant le contexte de travail récent.
+- **TailTrim** est un chemin facultatif de réduction de fin, réservé au mode Custom.
+- **Native** préserve le rognage tête/milieu/queue à la manière du Harness comme un profil explicite.
+- **Squelette de code (nouveau, porte orthogonale)** — voir ci-dessous.
+
+Chaque décision est enregistrée : étape, réducteur, déclencheur, raison d'omission et nombres de tokens exacts lorsque disponibles.
+
+## Porte squelette de code (nouveau)
+
+Lorsque la porte est activée, un **résultat d'outil de code source frais** surdimensionné (par exemple un grand `read_file`) tente d'abord une réduction en squelette : les imports et les déclarations de types/fonctions/classes sont conservés, les corps de fonctions sont elidés avec un marqueur, et les lignes d'erreur à l'intérieur des corps elidés sont préservées. Si le squelette ne peut être produit ni vérifié, le résultat retombe sur l'élagage de tête d'origine — la porte ne peut jamais dégrader le contexte.
+
+Propriétés :
+
+- **Orthogonale** : indépendante du profil sélectionné (`balanced`, `savings`, `cache-strict`, `adaptive`, `custom`, `off`, `native`). Tous les profils bénéficient de la porte.
+- **Désactivée par défaut** : `codeSkeleton: { enabled: false }` jusqu'à ce que vous l'activiez.
+- **Subordonnée à la mesure** : exige le tokenizer DeepSeek exact ; sans lui, le plugin échoue en mode ouvert (fail-open).
+- **Figée par session** : comme tous les réglages du sélecteur, les changements n'affectent que les sessions nouvellement observées.
+- **Strictement analysée** : `codeSkeleton` doit être exactement `{ enabled: boolean }` ; les valeurs mal formées lèvent une erreur côté runtime et apparaissent comme illisibles dans l'interface navigateur.
+
+## Interface de réglages
+
+Choisissez un profil de compression, réglez le niveau de déclenchement de l'Auto Compact et activez la compression en squelette de code dans la même section de réglages. L'interrupteur enregistre à chaque modification et affiche l'état enregistré au rechargement.
+
+![Interface de réglages du Context Compression Selector](docs/assets/context-compression-selector-settings.png)
+
+## Installation
+
+**Recommandé : installer depuis npm.** Un dist-tag par ligne Harness — `dsh-0.2.0` pour la ligne 0.2.0 (cette branche), `dsh-0.1.7` pour la ligne 0.1.7, `dsh-0.1.5` pour la ligne 0.1.5, `dsh-0.1.2` pour la ligne 0.1.2.
+
+```sh
+dsh plugin --profile web add dsh-context-compression-improved@dsh-0.2.0
+# DSH 0.1.7 line:
+# dsh plugin --profile web add dsh-context-compression-improved@dsh-0.1.7
+# DSH 0.1.5 line:
+# dsh plugin --profile web add dsh-context-compression-improved@dsh-0.1.5
+# DSH 0.1.2 line:
+# dsh plugin --profile web add dsh-context-compression-improved@dsh-0.1.2
+dsh --profile web --dump-config
+```
+
+Depuis les sources (alternative — les noms de packages internes restent volontairement ceux de l'amont) :
+
+```sh
+git clone https://github.com/drscrewdriver/dsh-context-compression-improved.git
+cd dsh-context-compression-improved
+pnpm install --frozen-lockfile
+pnpm build
+```
+
+Packez ensuite le package sélecteur et ajoutez-le à un profil Harness — la procédure complète, vérification et désinstallation comprises, se trouve dans le [guide d'installation](docs/installation.md).
+
+## Développement
+
+```sh
+pnpm install --frozen-lockfile
+pnpm lint          # ESLint baseline (also enforced in CI)
+pnpm typecheck     # runtime + selector + tests tsc, plus the bundle step
+pnpm test          # full vitest suite
+pnpm test:watch    # TDD loop: write the failing regression first, then make it pass
+pnpm build
+pnpm verify:release
+```
+
+Les contributions suivent la discipline de l'amont : ajouter d'abord la régression qui échoue, garder chaque modification de production dans ce dépôt, et expliquer séparément les preuves « triggered », « enabled but skipped » et fail-open. Voir [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Compatibilité
+
+- Construit et testé contre la version officielle DeepSeek Harness `dsh-v0.2.0-rc.1` ; les peers déclarent `>=0.2.0-rc.1 <0.2.1-0` et le plugin n'utilise que les API publiques de plugin et de profil. Les lignes antérieures restent servies depuis leurs propres dist-tags (`dsh-0.1.7`, `dsh-0.1.5`, `dsh-0.1.2`).
+- Nécessite Node `^22.19.0 || >=24` et pnpm `11.7.0`.
+- Le plugin n'utilise que les API d'extension publiques du Harness et ne modifie pas le code du cœur du Harness. Projet communautaire non officiel, sans affiliation ni approbation de DeepSeek.
+
+## Crédits et licence
+
+- Projet amont et travaux antérieurs : [WilliamShi666/dsh-context-compression-selector](https://github.com/WilliamShi666/dsh-context-compression-selector) par WilliamShi666 (MIT).
+- Ajouts du fork (porte squelette de code, outillage, documentation localisée) : drscrewdriver.
+- MIT — voir [LICENSE](LICENSE) (mention de droits d'auteur amont conservée) et [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) pour la provenance des tokenizers fournis.
