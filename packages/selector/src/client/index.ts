@@ -11,6 +11,11 @@ import {
 import { DEFAULT_CUSTOM_COMPRESSION_POLICY } from '../profiles.ts'
 import { decodeSettings } from './decode.ts'
 import { en, zh } from './locales.ts'
+import { de } from './locales/de.ts'
+import { es } from './locales/es.ts'
+import { fr } from './locales/fr.ts'
+import { it } from './locales/it.ts'
+import { ru } from './locales/ru.ts'
 import { planPresetOptionsOps, presetOptionsOpsAccepted } from './preset-options.ts'
 import type { ScopeSnapshot, SettingsScope } from './scope-face.ts'
 
@@ -69,6 +74,28 @@ function sameCustomPolicy(
 
 export function apply(ctx: ClientContext): void {
   ctx.locale.register(NS, { zh, en })
+  // fr/de/it/ru/es are not host built-ins (`BuiltInLocaleId` is zh|en), so their
+  // dictionaries ride the single-locale untyped register overload, and each needs
+  // an `addLanguage` definition to become selectable — the catalog owns setLocale
+  // and the Language settings row, and a definition's fallback chain must end at
+  // English. Labels are self-described in their own language. One occupied locale
+  // must not sink activation, hence the per-language guard (same rationale as the
+  // slots.inject try/catch below).
+  const languages = [
+    { id: 'de', label: 'Deutsch', dict: de },
+    { id: 'es', label: 'Español', dict: es },
+    { id: 'fr', label: 'Français', dict: fr },
+    { id: 'it', label: 'Italiano', dict: it },
+    { id: 'ru', label: 'Русский', dict: ru },
+  ] as const
+  for (const language of languages) {
+    try {
+      ctx.locale.register(NS, language.id, language.dict)
+      ctx.locale.addLanguage({ id: language.id, label: language.label, fallback: 'en' })
+    } catch (error) {
+      console.warn(`[dsh-context-compression-improved] locale "${language.id}" registration failed:`, error)
+    }
+  }
   // Section label translator, captured EAGERLY: the settings shell evaluates
   // `label()` during its own render; a lazy ctx.locale accessor inside the
   // thunk would throw there if `locale` ever left this module's inject list
