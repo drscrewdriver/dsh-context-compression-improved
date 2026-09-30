@@ -2,7 +2,7 @@
 
 > [dsh-context-compression-selector](https://github.com/WilliamShi666/dsh-context-compression-selector) 的改进版 fork——面向 DeepSeek Harness 的可审计工具结果上下文压缩选择器，新增正交的**代码骨架压缩门*。
 
-[English](README.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [更新日志](CHANGELOG.zh.md) · [安装教程](docs/installation.zh.md)
+[English](README.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Italiano](README.it.md) · [Русский](README.ru.md) · [Español](README.es.md) · [更新日志](CHANGELOG.zh.md) · [安装教程](docs/installation.zh.md)
 
 > [!NOTE]
 > **本fork 在上游 0.1.0 之上新增：*

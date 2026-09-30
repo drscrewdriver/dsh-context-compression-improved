@@ -1,6 +1,6 @@
 # 安装 dsh-context-compression-improved
 
-> [English](installation.md) · [中文](installation.zh.md) · [日本語](installation.ja.md) · [한국어](installation.ko.md)
+> [English](installation.md) · [中文](installation.zh.md) · [日本語](installation.ja.md) · [한국어](installation.ko.md) · [Français](installation.fr.md) · [Deutsch](installation.de.md) · [Italiano](installation.it.md) · [Русский](installation.ru.md) · [Español](installation.es.md)
 
 本教程从源码安装 fork。fork 亦已发布到 npm，dist-tag 为 `dsh-0.1.5`；包名有意与上游保持一致：
 `dsh-context-compression-improved`（单一包 —— 原先独立发布的 runtime 包已并入其中）。

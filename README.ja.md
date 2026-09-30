@@ -2,7 +2,7 @@
 
 > [dsh-context-compression-selector](https://github.com/WilliamShi666/dsh-context-compression-selector) の改良フォーク——DeepSeek Harness 向けの監査可能なツール結果コンテキスト圧縮セレクターに、直交する**コードスケルトン圧縮ゲート**を追加しました。
 
-[English](README.md) · [中文说明](README.zh.md) · [한국어](README.ko.md) · [変更履歴](CHANGELOG.ja.md) · [インストールガイド](docs/installation.ja.md)
+[English](README.md) · [中文说明](README.zh.md) · [한국어](README.ko.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Italiano](README.it.md) · [Русский](README.ru.md) · [Español](README.es.md) · [変更履歴](CHANGELOG.ja.md) · [インストールガイド](docs/installation.ja.md)
 
 > [!NOTE]
 > **このフォークがアップストリーム 0.1.0 に追加したもの:**

@@ -2,7 +2,7 @@
 
 > An improved fork of [dsh-context-compression-selector](https://github.com/WilliamShi666/dsh-context-compression-selector) — an auditable tool-result context-compression selector for DeepSeek Harness — adding an orthogonal **code-skeleton compression gate**.
 
-[中文说明](README.zh.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Changelog](CHANGELOG.md) · [Installation guide](docs/installation.md)
+[中文说明](README.zh.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Italiano](README.it.md) · [Русский](README.ru.md) · [Español](README.es.md) · [Changelog](CHANGELOG.md) · [Installation guide](docs/installation.md)
 
 > [!NOTE]
 > **What this fork adds on top of upstream 0.1.0:**
