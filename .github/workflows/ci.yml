@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/backport-015-functional]
   pull_request:
 
 permissions:
