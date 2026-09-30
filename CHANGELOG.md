@@ -2,6 +2,12 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
+## Unreleased
+
+### Added
+
+- Japanese (`ja`) and Korean (`ko`) UI locale dictionaries, plus the fr/de/it/ru/es dictionaries ported from main — the selector settings section now speaks nine languages (zh / en / de / es / fr / it / ja / ko / ru). Dictionaries are type-checked against `ContextCompressionLocaleKey`; labels are self-described and fall back to English per key. Client-only, host-agnostic.
+
 ## 0.6.5 - 2026-09-29
 
 ### Fixed
