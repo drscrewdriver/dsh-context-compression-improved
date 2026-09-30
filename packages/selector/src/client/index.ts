@@ -15,6 +15,8 @@ import { de } from './locales/de.ts'
 import { es } from './locales/es.ts'
 import { fr } from './locales/fr.ts'
 import { it } from './locales/it.ts'
+import { ja } from './locales/ja.ts'
+import { ko } from './locales/ko.ts'
 import { ru } from './locales/ru.ts'
 import { planPresetOptionsOps, presetOptionsOpsAccepted } from './preset-options.ts'
 import type { ScopeSnapshot, SettingsScope } from './scope-face.ts'
@@ -74,18 +76,20 @@ function sameCustomPolicy(
 
 export function apply(ctx: ClientContext): void {
   ctx.locale.register(NS, { zh, en })
-  // fr/de/it/ru/es are not host built-ins (`BuiltInLocaleId` is zh|en), so their
-  // dictionaries ride the single-locale untyped register overload, and each needs
-  // an `addLanguage` definition to become selectable — the catalog owns setLocale
-  // and the Language settings row, and a definition's fallback chain must end at
-  // English. Labels are self-described in their own language. One occupied locale
-  // must not sink activation, hence the per-language guard (same rationale as the
-  // slots.inject try/catch below).
+  // de/es/fr/it/ja/ko/ru are not host built-ins (`BuiltInLocaleId` is zh|en), so
+  // their dictionaries ride the single-locale untyped register overload, and each
+  // needs an `addLanguage` definition to become selectable — the catalog owns
+  // setLocale and the Language settings row, and a definition's fallback chain
+  // must end at English. Labels are self-described in their own language. One
+  // occupied locale must not sink activation, hence the per-language guard (same
+  // rationale as the slots.inject try/catch below).
   const languages = [
     { id: 'de', label: 'Deutsch', dict: de },
     { id: 'es', label: 'Español', dict: es },
     { id: 'fr', label: 'Français', dict: fr },
     { id: 'it', label: 'Italiano', dict: it },
+    { id: 'ja', label: '日本語', dict: ja },
+    { id: 'ko', label: '한국어', dict: ko },
     { id: 'ru', label: 'Русский', dict: ru },
   ] as const
   for (const language of languages) {
