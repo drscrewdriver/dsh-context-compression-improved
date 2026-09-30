@@ -2,6 +2,16 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
+## Unreleased
+
+### Added
+
+- Japanese (`ja`) and Korean (`ko`) UI locale dictionaries, plus the fr/de/it/ru/es dictionaries ported from main — the selector settings section now speaks nine languages (zh / en / de / es / fr / it / ja / ko / ru). Host 0.1.5-rc.2 `dsh-client-locale` carries `addLanguage`, so the extras register via the untyped overload plus `addLanguage` (fallback `en`); labels are self-described, and one failed registration warns instead of sinking activation. Client-only, host-agnostic.
+
+### Fixed
+
+- Stale `package-contract` assertion: `engines.dsh` was narrowed to `>=0.1.5-rc.1 <0.1.6-0` by the 0.5.6 release, but the test still expected the wide `<0.2.0-0` range — the spec now matches the shipped manifest.
+
 ## 0.5.4 - 2026-09-20
 
 ### Fixed
