@@ -166,6 +166,17 @@ function coarseCollisionFixture(
 }
 
 /**
+ * Whole seconds as the filesystem observes them. Windows' utimes stores
+ * timestamps as unsigned 32-bit seconds, so deterministic identity stamps
+ * beyond 2106-02-07 (2^32 s) are observed there modulo 2^32 seconds; POSIX
+ * filesystems observe the full stamp range.
+ */
+function observableStampSeconds(stampMs: number): number {
+  const seconds = Math.floor(stampMs / 1000)
+  return process.platform === 'win32' ? seconds % 2 ** 32 : seconds
+}
+
+/**
  * Mount the full real stack, run `arrange`, capture the standing key and
  * generated file, run `act`, and assert the generation moved.
  */
@@ -322,8 +333,8 @@ describe('real AgentPresets standing generations with the overlay threshold', ()
     expect(firstStat.size).toBe(secondStat.size)
     expect(firstStat.mtimeMs % 1000).toBe(0)
     expect(secondStat.mtimeMs % 1000).toBe(0)
-    expect(firstStat.mtimeMs).toBe(Math.floor(standingStampMsAtWindow(collision.firstIdentity, 0) / 1000) * 1000)
-    expect(secondStat.mtimeMs).toBe(Math.floor(standingStampMsAtWindow(collision.secondIdentity, 1) / 1000) * 1000)
+    expect(firstStat.mtimeMs).toBe(observableStampSeconds(standingStampMsAtWindow(collision.firstIdentity, 0)) * 1000)
+    expect(secondStat.mtimeMs).toBe(observableStampSeconds(standingStampMsAtWindow(collision.secondIdentity, 1)) * 1000)
 
     await installation.dispose()
   })
@@ -441,7 +452,7 @@ describe('real AgentPresets standing generations with the overlay threshold', ()
       : undefined
     expect(identity).toBeDefined()
     expect(Math.floor(details.mtimeMs / 1000))
-      .toBe(Math.floor(standingStampMs(identity as string) / 1000))
+      .toBe(observableStampSeconds(standingStampMs(identity as string)))
     const observedSubSecond = details.mtimeMs % 1000
     const expectedSubSecond = standingStampMs(identity as string) % 1000
     expect(observedSubSecond === 0 || Math.abs(observedSubSecond - expectedSubSecond) < 1).toBe(true)

@@ -156,16 +156,29 @@ describe('plugin-owned preset overlay decorator', () => {
     await installation.dispose()
   })
 
-  it('uses owner-only files and starts a new generation after source content changes', async () => {
+  // chmod(2) is only observable on POSIX: libuv on Windows synthesizes stat
+  // mode bits (0o666) that never reflect the requested 0o700/0o600, so the
+  // strong permission assertions run there only.
+  it.skipIf(process.platform === 'win32')('uses owner-only files for generated compositions', async () => {
     const { root, standard } = await fixture()
     const presets = new FakeAgentPresets(new Map([['standard', standard]]))
     const installation = decorateAgentPresets(presets, { modules: MODULES, tempParent: root })
 
     const first = await presets.mount({}, 'standard')
-    const same = await presets.mount({}, 'standard')
-    expect(same.path).toBe(first.path)
+    expect((await presets.mount({}, 'standard')).path).toBe(first.path)
     expect((await stat(dirname(first.path))).mode & 0o777).toBe(0o700)
     expect((await stat(first.path)).mode & 0o777).toBe(0o600)
+
+    await installation.dispose()
+  })
+
+  it('starts a new generation after source content changes', async () => {
+    const { root, standard } = await fixture()
+    const presets = new FakeAgentPresets(new Map([['standard', standard]]))
+    const installation = decorateAgentPresets(presets, { modules: MODULES, tempParent: root })
+
+    const first = await presets.mount({}, 'standard')
+    expect((await presets.mount({}, 'standard')).path).toBe(first.path)
 
     await writeFile(standard.path, `${await readFile(standard.path, 'utf8')}\n- id: later\n  name: '/opt/preset/later.js'\n`)
     const changed = await presets.mount({}, 'standard')
