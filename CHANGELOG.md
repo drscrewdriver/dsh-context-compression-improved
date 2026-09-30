@@ -19,7 +19,9 @@ All notable changes use this file. The project follows semantic versioning after
 - The estimator catalog route was never registered since day one because `asWebServer` detached `register` from its service (D7).
 - The estimator section silently disappeared when a non-TokenPilot profile was active, with no hint about why or how to enable it (U1).
 
-## Unreleased
+## 0.2.4 — 2026-10-01
+
+> memorax-absorb backport line: R8-R13 runtime reductions, S1 sidechannel relevance, GF-1 read gutter, TokenPilot-inspired profile, byte-identical dedup, recovery exemption, auto-compact summary locator, residual-utility estimator, code-skeleton gate. Merge-back of `feat/backport-015-functional` into the 0.1.2 host line, plus win32 test-portability fixes.
 
 ### Added
 
@@ -31,7 +33,7 @@ All notable changes use this file. The project follows semantic versioning after
 - Read-state semantics: a historical read whose file was later mutated is `superseded` and takes the small whole-result placeholder; optional error/warn/info clustering of omitted lines is appended to historical placeholders.
 - Optional residual-utility estimator (three channels: off / Harness host model / direct OpenAI-compatible endpoint) with per-session exponential backoff, strict timeout, advisory-only verdicts consumed by the next pressure pass, and numeric-only `estimator-outcome` audits. The estimator card appears only while the new profile is selected; the API key is write-only in settings and never enters the frozen policy, audits, or logs.
 - New audit records: `summary-locator` and `estimator-outcome`; the rewrite record covers dedup via the `dedupe-pointer` reducer. Audit field allowlists are unchanged.
-- Simplified Chinese and English copy for the new profile and estimator card; unit and golden coverage under `packages/runtime/tests/tokenpilot/`.
+- Simplified Chinese and English copy for the new profile and estimator card; unit and golden coverage under `packages/selector/tests/runtime/tokenpilot/`.
 
 - Orthogonal code-skeleton compression gate (`codeSkeleton.enabled`, default off): the first exposure of an oversized fresh source-code tool result can keep an imports-and-declarations skeleton with bodies elided and error lines preserved, falling back to the original head pruning. The gate is independent of every profile and gated on exact tokenizer measurement.
 - Settings-UI toggle for the gate in the selector settings section, with Simplified Chinese and English copy.
