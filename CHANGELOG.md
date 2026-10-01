@@ -2,6 +2,22 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
+## 0.8.0-beta.6 - 2026-10-02
+
+### Added
+
+- **Session binding for the floating monitor**: a deliberately invisible `conversation.input.left`
+  seat captures the active session id (pm longtask precedent) — the panel now shows the bound
+  session's data and its override buttons act on that session instead of the default one.
+- **Context occupancy bar** in the panel: the turn-tail postflight observes live tokens vs the
+  auto-compact-derived window per session; the panel renders the occupancy percentage
+  (hot tint past 70%).
+
+### Fixed
+
+- Client specs that captured the settings face by `inject` presence now key off the
+  `settings.section` seat explicitly (the input-bar binder's `inject` is a session callback).
+
 ## 0.8.0-beta.5 - 2026-10-02
 
 ### Added
