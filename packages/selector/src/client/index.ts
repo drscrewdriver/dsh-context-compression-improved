@@ -19,6 +19,7 @@ import { ja } from './locales/ja.ts'
 import { ko } from './locales/ko.ts'
 import { ru } from './locales/ru.ts'
 import { planPresetOptionsOps, presetOptionsOpsAccepted } from './preset-options.ts'
+import { initMonitorFab } from './monitor-fab.ts'
 
 /**
  * Harness 0.1.5 mounts the web core's `slots` service on the client context
@@ -96,11 +97,41 @@ export function apply(ctx: ClientContext): void {
       console.warn(`[dsh-context-compression-improved] locale "${language.id}" registration failed:`, error)
     }
   }
+  // Section label translator, captured EAGERLY: the settings shell evaluates
+  // `label()` during its own render; a lazy ctx.locale accessor inside the
+  // thunk would throw there if `locale` ever left this module's inject list.
+  const localeSvc = ctx.locale as { bind?: (n: string) => (key: string) => string } | undefined
+  const tNav = localeSvc?.bind?.(NS) ?? ((key: string) => key)
+
+  // 浮动监控面板(FAB): body 级幂等单例。enabled 读取走 0.1.5 的 settingsScope
+  // 文档——注入工厂内再刷新读取闭包(bind 发生在 settings.section 工厂里)。
+  let readMonitorPanelEnabled = (): boolean => false
+  initMonitorFab({
+    t: tNav,
+    sessionIdOf: () => undefined, // v1: 全会话聚合(savings 卡同口径);会话级绑定待输入栏座位
+    enabledOf: () => readMonitorPanelEnabled(),
+    fetchSnapshot: async (sessionId) => {
+      const query = sessionId === undefined ? '' : `?sessionId=${encodeURIComponent(sessionId)}`
+      const response = await fetch(`/api/dsh-context-compression-improved/monitor${query}`, { headers: { 'cache-control': 'no-cache' } })
+      if (!response.ok) throw new Error(`monitor snapshot ${response.status}`)
+      return await response.json() as Parameters<typeof initMonitorFab>[0]['fetchSnapshot'] extends (...args: never[]) => Promise<infer T> ? T : never
+    },
+    applyOverride: async (sessionId, action) => {
+      const query = sessionId === undefined ? '' : `?sessionId=${encodeURIComponent(sessionId)}`
+      await fetch(`/api/dsh-context-compression-improved/monitor${query}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action }),
+      })
+    },
+  })
   const injected = (): CompressionSelectorInjected => {
     // Bind per factory call on the caller's fiber (0.1.5: activation must
     // never block on the settings transport; the scope disposer belongs to
     // the calling registration's lifecycle).
     const scope = ctx.settingsScope.bind<ContextCompressionSettings>({ namespace: NS, decode: decodeSettings })
+    readMonitorPanelEnabled = (): boolean =>
+      scope.getSnapshot().value?.monitorPanel?.enabled ?? false
     const writeAndConfirm = async (
       write: () => Promise<void>,
       accepts: (settings: ContextCompressionSettings) => boolean,
