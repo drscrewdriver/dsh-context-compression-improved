@@ -95,4 +95,14 @@ export const ja = {
   'custom.save': 'カスタムポリシーを保存',
   'custom.reset': 'カスタムポリシーをリセット',
   'custom.invalid': 'カスタムポリシーの値が不正です。',
+  'savings.title': '節約統計(このプロセス)',
+  'savings.netExact': '純節約(正確口径)',
+  'savings.netEstimated': '純節約(推定口径)',
+  'savings.gross': '総節約(圧縮確定時)',
+  'savings.offsets': '相殺(圧縮後に全文再読)',
+  'savings.empty': 'まだ圧縮がありません。最初の削減後に純節約が表示されます。',
+  'savings.basisExact': '正確',
+  'savings.basisEstimated': '推定',
+  'savings.basisNote': '口径は分列し混算しません:正確 = DeepSeek トークナイザー、推定 = chars/4。スケルトン後に全文を読むと負の節約として計上されます(純額はマイナスになり得ます)。',
+
 } satisfies Record<ContextCompressionLocaleKey, string>

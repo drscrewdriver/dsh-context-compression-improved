@@ -1,7 +1,7 @@
-import { l as DEFAULT_CONTEXT_COMPRESSION_SETTINGS, t as getAdvisorState } from "./advisor-state.js";
+import { T as getSavingsLedger, l as DEFAULT_CONTEXT_COMPRESSION_SETTINGS, t as getAdvisorState } from "./advisor-state.js";
 import z from "@deepseek-ai/schemastery";
-import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { chmod, mkdtemp, readFile, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
@@ -504,6 +504,7 @@ function restoreMethod(presets, snapshot) {
 //#region src/index.ts
 const ESTIMATOR_CATALOG_ROUTES = ["/endpoint/dsh-context-compression-improved/estimator-catalog", "/api/dsh-context-compression-improved/estimator-catalog"];
 const ADVISOR_REPORT_ROUTES = ["/endpoint/dsh-context-compression-improved/advisor-report", "/api/dsh-context-compression-improved/advisor-report"];
+const SAVINGS_ROUTES = ["/endpoint/dsh-context-compression-improved/savings", "/api/dsh-context-compression-improved/savings"];
 function sessionFor(readService, sessionId) {
 	const agents = readService("agents");
 	return typeof agents?.get === "function" ? agents.get(sessionId)?.session : void 0;
@@ -719,6 +720,74 @@ function registerEstimatorCatalogRoute(ctx) {
 	log("warn", "context-compression webServer not active yet — estimator catalog route pending: %s", ESTIMATOR_CATALOG_ROUTES.join(", "));
 }
 /**
+* Read-only savings snapshot route (`GET .../savings?sessionId=…`): gross saved,
+* offsets (negative savings — compressed content later re-read in full), and net,
+* with exact-tokenizer and chars/4 bases reported separately and never merged.
+* Registration mirrors the estimator-catalog route (webServer gate alone, dual
+* channels for both service arrival orders, single guarded registration).
+*/
+function registerSavingsRoute(ctx) {
+	const readService = (name) => {
+		try {
+			return ctx.get(name);
+		} catch {
+			return;
+		}
+	};
+	const log = (level, message, ...args) => {
+		console[level](message, ...args);
+	};
+	let registered = false;
+	const register = (webServer, channel) => {
+		if (registered) return;
+		const handler = (req, res) => {
+			const resTyped = res;
+			if (typeof resTyped?.writeHead !== "function" || typeof resTyped?.end !== "function") return;
+			let sessionId;
+			try {
+				const raw = new URL(String(req?.url ?? "/"), "http://localhost").searchParams.get("sessionId");
+				if (typeof raw === "string" && raw.length > 0 && raw.length <= 512) sessionId = raw;
+			} catch {}
+			const snapshot = getSavingsLedger().snapshot(sessionId);
+			resTyped.writeHead(200, {
+				"content-type": "application/json; charset=utf-8",
+				"cache-control": "no-cache"
+			});
+			resTyped.end(JSON.stringify({
+				ok: true,
+				...snapshot
+			}));
+		};
+		try {
+			const disposers = SAVINGS_ROUTES.map((path) => webServer.register({
+				kind: "exact",
+				path,
+				handler
+			})).filter((off) => typeof off === "function");
+			registered = true;
+			ctx.effect(() => () => {
+				for (const off of disposers) off();
+			}, "contextCompressionSelector.savings route");
+			log("info", "context-compression savings route registered (%s): %s", channel, SAVINGS_ROUTES.join(", "));
+		} catch (error) {
+			log("warn", "context-compression savings route registration failed (%s): %o", channel, error);
+		}
+	};
+	const active = asWebServer(readService("webServer"));
+	if (active !== void 0) {
+		register(active, "direct");
+		if (registered) return;
+	}
+	ctx.inject(["webServer"], (injected) => {
+		const webServer = asWebServer(injected.webServer);
+		if (webServer === void 0) {
+			log("warn", "context-compression webServer exposes no register() — savings route not registered");
+			return;
+		}
+		register(webServer, "inject");
+	});
+}
+/**
 * Resolve one possibly-volatile field: a live ref on 0.1.7+, a plain value
 * otherwise (0.1.7 hands `.volatile()` fields to `apply()` as live refs).
 */
@@ -741,6 +810,7 @@ const Config = z.object({
 function apply(ctx, config = {}) {
 	try {
 		if (config.estimatorCatalogRoute === true) registerEstimatorCatalogRoute(ctx);
+		registerSavingsRoute(ctx);
 		if (config.advisorReportRoute === true) registerAdvisorReportRoute(ctx);
 		if (config.presetOverlay !== true) return;
 		ctx.inject(["agentPresets"], (presetsCtx) => {

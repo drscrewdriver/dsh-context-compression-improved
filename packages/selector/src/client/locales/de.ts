@@ -95,4 +95,14 @@ export const de = {
   'custom.save': 'Eigene Strategie speichern',
   'custom.reset': 'Eigene Strategie zurücksetzen',
   'custom.invalid': 'Werte der eigenen Strategie sind ungültig.',
+  'savings.title': 'Einsparungen (dieser Prozess)',
+  'savings.netExact': 'Netto gespeichert (exakte Basis)',
+  'savings.netEstimated': 'Netto gespeichert (geschätzte Basis)',
+  'savings.gross': 'Brutto gespeichert (bei Veröffentlichung)',
+  'savings.offsets': 'Abschläge (komprimiert, später vollständig gelesen)',
+  'savings.empty': 'Noch keine Komprimierung — Nettoeinsparungen erscheinen nach der ersten Reduktion.',
+  'savings.basisExact': 'exakt',
+  'savings.basisEstimated': 'geschätzt',
+  'savings.basisNote': 'Basen werden getrennt ausgewiesen, nie gemischt: exakt = DeepSeek-Tokenizer; geschätzt = chars/4. Erst Skelett, dann Volltext zählt als negative Einsparung (Netto kann unter null fallen).',
+
 } satisfies Record<ContextCompressionLocaleKey, string>

@@ -18,6 +18,7 @@ import type { CompressionProfileSelectorProps } from './CompressionProfileSelect
 import { AutoCompactThresholdControls, CodeSkeletonControls } from './CompressionProfileControls.tsx'
 import { EstimatorControls, EstimatorInactiveNotice } from './EstimatorControls.tsx'
 import { CustomPolicyEditor, editableCustom } from './CustomPolicyEditor.tsx'
+import { SavingsCard } from './savings-card'
 
 /** Full-page Settings surface backed by the same durable selector state. */
 export function ContextCompressionSettingsSection(props: CompressionProfileSelectorProps) {
@@ -113,6 +114,7 @@ export function SettingsCompressionProfileControls({
           t={t}
         />
       )}
+      <SavingsCard t={t} />
       <div className={css.pricing}>{t('pricing.disclosure')}</div>
       {current !== 'custom' || draft === null || !selectorAvailable ? null : (
         <CustomPolicyEditor value={draft} disabled={busy || !state.writable} setValue={setDraft}

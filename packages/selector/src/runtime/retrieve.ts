@@ -19,6 +19,7 @@ import {
   type PublishedTailTrim,
 } from './tail-trim.ts'
 import { sessionEvents } from './session-events.ts'
+import { getSavingsLedger } from './savings.ts'
 
 export const name = 'context-compression-retrieve'
 export const inject = ['tools', 'systemPrompt']
@@ -94,6 +95,7 @@ export function installContextCompressionRetrieve(ctx: Context, config: Config =
         throw new Error('context_compression_retrieve: a compression reference may only read the caller\'s current session')
       }
       if (tailTrimRef !== null) {
+        const sessionId = String(exec.agent.id)
         return Promise.resolve(recoverTailTrim(
           exec.agent.session,
           args.ref,
@@ -102,7 +104,18 @@ export function installContextCompressionRetrieve(ctx: Context, config: Config =
           args.start_line,
           args.max_lines,
           { maxChars, maxScanChars, maxQueryChars },
-        ))
+        )).then((text: string) => {
+          // 节省统计:回读内容重新进入上下文 = 对该组原声称节省的抵消
+          // (chars/4 估算口径;retrieve 不持有精确 counter 身份,分列不混算)。
+          getSavingsLedger().recordOffset({
+            sessionId,
+            component: 'tailtrim-retrieve',
+            tokens: Math.ceil(codePointLength(text) / 4),
+            basis: 'characters',
+            note: `tailtrim/${tailTrimRef.manifestSeq} 回读`,
+          })
+          return text
+        })
       }
       const seq = Number(match?.[2])
       const event = sessionEvents(exec.agent.session)[seq]
@@ -140,7 +153,16 @@ export function installContextCompressionRetrieve(ctx: Context, config: Config =
         '--- original tool result ---',
       ].filter(Boolean).join('\n')
       const output = `${header}\n${selected.text}`
-      return Promise.resolve(boundCodePoints(output, maxChars))
+      const bounded = boundCodePoints(output, maxChars)
+      // 节省统计:retrieve 产物重新进入上下文 = 抵消(chars/4 估算口径)。
+      getSavingsLedger().recordOffset({
+        sessionId: String(exec.agent.id),
+        component: 'retrieve',
+        tokens: Math.ceil(codePointLength(bounded) / 4),
+        basis: 'characters',
+        note: `event/${String(seq)} 回读`,
+      })
+      return Promise.resolve(bounded)
     },
   }))
 }

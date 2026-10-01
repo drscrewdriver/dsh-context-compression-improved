@@ -1,4 +1,4 @@
-import { C as deepFreeze, S as assertNever, _ as resolveConfig, a as AUTO_COMPACT_THRESHOLD_LIMITS, b as DEFAULT_CUSTOM_COMPRESSION_POLICY, c as DEFAULTS, d as charsForTokens, f as charsToTokens, g as parseContextCompressionSettings, h as isValidAutoCompactThresholdPercent, i as recordScore, m as isCompressionProfile, n as invalidateOnTaskChange, o as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, p as codePointLength, r as recordRecertified, s as ContextCompressionSettingsSchema, t as getAdvisorState, u as PRUNE_MARKER, v as resolvePolicy, w as COMPRESSION_PROFILES, x as resolveCustomPolicy, y as CustomCompressionPolicySchema } from "./advisor-state.js";
+import { C as deepFreeze, S as assertNever, T as getSavingsLedger, _ as resolveConfig, a as AUTO_COMPACT_THRESHOLD_LIMITS, b as DEFAULT_CUSTOM_COMPRESSION_POLICY, c as DEFAULTS, d as charsForTokens, f as charsToTokens, g as parseContextCompressionSettings, h as isValidAutoCompactThresholdPercent, i as recordScore, m as isCompressionProfile, n as invalidateOnTaskChange, o as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, p as codePointLength, r as recordRecertified, s as ContextCompressionSettingsSchema, t as getAdvisorState, u as PRUNE_MARKER, v as resolvePolicy, w as COMPRESSION_PROFILES, x as resolveCustomPolicy, y as CustomCompressionPolicySchema } from "./advisor-state.js";
 import { a as validatePublishedTailTrim, i as tailTrimStub, n as tailTrimMessage, o as eventBySeq, r as tailTrimRef, s as sessionEvents, t as parseTailTrimRef } from "./tail-trim.js";
 import z from "@deepseek-ai/schemastery";
 import { createHash } from "node:crypto";
@@ -789,11 +789,23 @@ function installContextCompressionRetrieve(ctx, config = {}) {
 			const tailTrimRef = parseTailTrimRef(args.ref);
 			if (match === null && tailTrimRef === null) throw new Error("context_compression_retrieve: ref must be session://<session-id>/(event|tailtrim)/<seq>");
 			if ((match?.[1] ?? tailTrimRef?.sessionId) !== String(exec.agent.id)) throw new Error("context_compression_retrieve: a compression reference may only read the caller's current session");
-			if (tailTrimRef !== null) return Promise.resolve(recoverTailTrim(exec.agent.session, args.ref, tailTrimRef.manifestSeq, args.query, args.start_line, args.max_lines, {
-				maxChars,
-				maxScanChars,
-				maxQueryChars
-			}));
+			if (tailTrimRef !== null) {
+				const sessionId = String(exec.agent.id);
+				return Promise.resolve(recoverTailTrim(exec.agent.session, args.ref, tailTrimRef.manifestSeq, args.query, args.start_line, args.max_lines, {
+					maxChars,
+					maxScanChars,
+					maxQueryChars
+				})).then((text) => {
+					getSavingsLedger().recordOffset({
+						sessionId,
+						component: "tailtrim-retrieve",
+						tokens: Math.ceil(codePointLength$1(text) / 4),
+						basis: "characters",
+						note: `tailtrim/${tailTrimRef.manifestSeq} 回读`
+					});
+					return text;
+				});
+			}
 			const seq = Number(match?.[2]);
 			const event = sessionEvents(exec.agent.session)[seq];
 			if (event?.type !== "tool/result") throw new Error(`context_compression_retrieve: event ${String(seq)} is not a tool/result in the current session`);
@@ -805,7 +817,7 @@ function installContextCompressionRetrieve(ctx, config = {}) {
 			if (query !== void 0 && exceedsCodePointLimit(query, maxQueryChars)) throw new Error(`context_compression_retrieve: query must be at most ${String(maxQueryChars)} Unicode code points`);
 			const selected = query === void 0 || query === "" ? directSlice(lines, args.start_line ?? 1, maxLines, scan.complete, scannedLines.partialTail) : querySlice(lines, query, maxLines, scan.complete, scannedLines.partialTail);
 			const total = scan.complete ? String(lines.length) : `at least ${String(lines.length)}`;
-			const output = `${[
+			const bounded = boundCodePoints(`${[
 				`source: ${args.ref}`,
 				`tool_call_id: ${event.data.message.toolCallId}`,
 				`status: ${event.data.message.isError === true ? "error" : "completed"}`,
@@ -814,8 +826,15 @@ function installContextCompressionRetrieve(ctx, config = {}) {
 				selected.partialLine === void 0 ? "" : `note: line ${String(selected.partialLine)} is a partial prefix ending at the source scan limit`,
 				selected.omitted ? query === void 0 || query === "" ? "note: additional source lines were omitted" : "note: additional matching or neighboring lines were omitted" : "",
 				"--- original tool result ---"
-			].filter(Boolean).join("\n")}\n${selected.text}`;
-			return Promise.resolve(boundCodePoints(output, maxChars));
+			].filter(Boolean).join("\n")}\n${selected.text}`, maxChars);
+			getSavingsLedger().recordOffset({
+				sessionId: String(exec.agent.id),
+				component: "retrieve",
+				tokens: Math.ceil(codePointLength$1(bounded) / 4),
+				basis: "characters",
+				note: `event/${String(seq)} 回读`
+			});
+			return Promise.resolve(bounded);
 		}
 	}));
 }
@@ -3997,6 +4016,10 @@ function emitCompressionAudit(logger, record) {
 *
 * @module dsh-context-compression-improved-runtime
 */
+/** 节省统计配对键用原文(纯文本块才可配对;富内容返回 undefined)。 */
+function originalTextForSavings(candidate) {
+	return flattenPlainText(candidate.event.data.message.content);
+}
 /** Mixed deterministic selector behind the existing `ctx.toolResultPruner` seam. */
 var ToolResultPruner = class extends Service {
 	static inject = ["tokenMeter"];
@@ -4755,6 +4778,24 @@ var ToolResultPruner = class extends Service {
 			this.auditComponent(session, policy, "aggregate", "fresh", policy.aggregateEnabled ? "skipped" : "disabled", policy.aggregateEnabled ? "no-new-tool-result-candidates" : "profile-policy");
 			return emptyResult();
 		}
+		const ledger = getSavingsLedger();
+		const sid = String(session.id);
+		for (const candidate of candidates) {
+			const text = flattenPlainText(candidate.event.data.message.content);
+			if (text === void 0) continue;
+			ledger.noteFullText({
+				sessionId: sid,
+				seq: candidate.seq,
+				text,
+				measure: () => candidate.count.kind === "exact-tokenizer" && typeof candidate.count.tokens === "number" ? {
+					tokens: candidate.count.tokens,
+					basis: "exact-tokenizer"
+				} : {
+					tokens: Math.ceil(candidate.characterPressure / 4),
+					basis: "characters"
+				}
+			});
+		}
 		const plans = /* @__PURE__ */ new Map();
 		let freshPlanned = 0;
 		const dedupeEnabled = policy.presetOptions?.dedupeToolResults === true;
@@ -5249,6 +5290,16 @@ var ToolResultPruner = class extends Service {
 				tokenizerId: exact === true && exactSurface !== void 0 ? exactSurface.tokenizerId : "characters",
 				tokenizerRevision: exact === true && exactSurface !== void 0 ? exactSurface.tokenizerRevision : "chars-per-token-4.0"
 			});
+			const groupText = shadowedSeqs.map((seq) => sessionEvents(session)[seq]).filter((event) => event?.type === "tool/result").map((event) => flattenPlainText(event.data.message.content)).filter((text) => text !== void 0).join("\n");
+			if (groupText.length > 0) getSavingsLedger().recordSaving({
+				sessionId: String(session.id),
+				component: "tail-trim",
+				tokensBefore,
+				tokensAfter,
+				basis: exact ? "exact-tokenizer" : "characters",
+				sourceSeq: manifestSeq,
+				originalText: groupText
+			});
 			return;
 		}
 		this.auditComponent(session, policy, "tail-trim", "pressure", "skipped", "no-safe-eligible-tool-group", {
@@ -5378,6 +5429,16 @@ var ToolResultPruner = class extends Service {
 			tokenizerId: plan.tokenizerId,
 			tokenizerRevision: plan.tokenizerRevision,
 			...plan.elidedLines === void 0 ? {} : { elidedLines: plan.elidedLines }
+		});
+		const pairedOriginal = originalTextForSavings(candidate);
+		getSavingsLedger().recordSaving({
+			sessionId: String(session.id),
+			component: plan.component,
+			tokensBefore: plan.tokensBefore,
+			tokensAfter: plan.tokensAfter,
+			basis: plan.measurementBasis,
+			sourceSeq: plan.sourceSeq,
+			...pairedOriginal === void 0 ? {} : { originalText: pairedOriginal }
 		});
 		return {
 			originalSeq: candidate.seq,
