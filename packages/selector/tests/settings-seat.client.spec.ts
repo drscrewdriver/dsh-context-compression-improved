@@ -64,16 +64,17 @@ function collectRegistrations(
   return { declared, registrations }
 }
 
-describe('settings-seat contract (standalone settings.section only)', () => {
+describe('settings-seat contract (standalone settings.section + input-bar session binder)', () => {
   it('declares the services apply consumes (cordis waits; no lazy-get race)', () => {
     expect(inject).toEqual(['slots', 'locale', 'configForms'])
   })
 
-  it('injects exactly the settings.section seat and nothing else', () => {
+  it('injects exactly two seats: the settings.section panel + the input-bar session binder', () => {
     const { declared, registrations } = collectRegistrations()
-    expect(declared).toEqual(['settings.section'])
-    expect(registrations).toHaveLength(1)
+    expect(declared).toEqual(['settings.section', 'conversation.input.left'])
+    expect(registrations).toHaveLength(2)
     expect(registrations[0]!.slot).toBe('settings.section')
+    expect(registrations[1]!.slot).toBe('conversation.input.left')
   })
 
   it('no longer claims a shell.overlay float (the review panel it served is gone)', () => {
@@ -92,6 +93,17 @@ describe('settings-seat contract (standalone settings.section only)', () => {
     const face = (options['inject'] as () => Record<string, unknown>)()
     expect(Object.keys(face).sort()).toEqual(['hooks', 'saveAutoCompact', 'saveCodeSkeleton', 'saveCustom', 'saveIntentSummary', 'saveMonitorPanel', 'savePresetOptions', 'select', 'resetCustom'].sort())
     expect(component).toBe(ContextCompressionSettingsSection)
+  })
+
+  it('pins the input-bar binder: invisible component, inject captures the bare sessionId', () => {
+    const { registrations } = collectRegistrations()
+    const inputSeat = registrations[1]!
+    expect(inputSeat.options['id']).toBe('context-compression-session-bind')
+    expect(inputSeat.options['order']).toBe(170)
+    expect(typeof inputSeat.options['inject']).toBe('function')
+    const face = (inputSeat.options['inject'] as (sessionId: string) => Record<string, unknown>)('sess-42')
+    expect(face).toEqual({})
+    expect(inputSeat.component).toBeTypeOf('function')
   })
 
   it('never adds a Plugins-section card or tab alongside the standalone section', () => {
@@ -154,8 +166,8 @@ describe('settings-seat contract (standalone settings.section only)', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       const { declared } = collectRegistrations({ registerThrows: true })
-      // It tried the seat (so the degradation is "loud", not a silent no-op)…
-      expect(declared).toEqual(['settings.section'])
+      // It tried both seats (so the degradation is "loud", not a silent no-op)…
+      expect(declared).toEqual(['settings.section', 'conversation.input.left'])
       // …and the rejection never escaped apply().
       expect(warn).toHaveBeenCalled()
     } finally {

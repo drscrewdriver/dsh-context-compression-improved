@@ -3125,25 +3125,30 @@ window.__ModuleLoader__.load({
 					return false;
 				}
 			};
-			initMonitorFab({
-				t: tNav,
-				sessionIdOf: () => void 0,
-				enabledOf: () => readMonitorPanelEnabled(),
-				fetchSnapshot: async (sessionId) => {
-					const query = sessionId === void 0 ? "" : `?sessionId=${encodeURIComponent(sessionId)}`;
-					const response = await fetch(`/api/dsh-context-compression-improved/monitor${query}`, { headers: { "cache-control": "no-cache" } });
-					if (!response.ok) throw new Error(`monitor snapshot ${response.status}`);
-					return await response.json();
-				},
-				applyOverride: async (sessionId, action) => {
-					const query = sessionId === void 0 ? "" : `?sessionId=${encodeURIComponent(sessionId)}`;
-					await fetch(`/api/dsh-context-compression-improved/monitor${query}`, {
-						method: "POST",
-						headers: { "content-type": "application/json" },
-						body: JSON.stringify({ action })
-					});
-				}
-			});
+			let latestSessionId;
+			try {
+				initMonitorFab({
+					t: tNav,
+					sessionIdOf: () => latestSessionId,
+					enabledOf: () => readMonitorPanelEnabled(),
+					fetchSnapshot: async (sessionId) => {
+						const query = sessionId === void 0 ? "" : `?sessionId=${encodeURIComponent(sessionId)}`;
+						const response = await fetch(`/api/dsh-context-compression-improved/monitor${query}`, { headers: { "cache-control": "no-cache" } });
+						if (!response.ok) throw new Error(`monitor snapshot ${response.status}`);
+						return await response.json();
+					},
+					applyOverride: async (sessionId, action) => {
+						const query = sessionId === void 0 ? "" : `?sessionId=${encodeURIComponent(sessionId)}`;
+						await fetch(`/api/dsh-context-compression-improved/monitor${query}`, {
+							method: "POST",
+							headers: { "content-type": "application/json" },
+							body: JSON.stringify({ action })
+						});
+					}
+				});
+			} catch (error) {
+				console.warn("[dsh-context-compression-improved] 监控浮动球挂载失败(不影响设置分节):", error);
+			}
 			const injected = () => {
 				const form = ctx.configForms.get(ENTRY_ID);
 				const readDoc = () => decodeSettings(form.getSnapshot().value?.settings);
@@ -3232,6 +3237,19 @@ window.__ModuleLoader__.load({
 				}, ContextCompressionSettingsSection));
 			} catch (error) {
 				console.warn("[dsh-context-compression-improved] settings.section 注册失败(新宿主已收编):", error);
+			}
+			try {
+				ctx.slots.inject("conversation.input.left", () => ctx.slots.register({
+					name: "conversation.input.left",
+					id: "context-compression-session-bind",
+					order: 170,
+					inject: (sessionId) => {
+						latestSessionId = sessionId;
+						return {};
+					}
+				}, () => null));
+			} catch (error) {
+				console.warn("[dsh-context-compression-improved] conversation.input.left 注册失败(旧宿主无该槽,浮动面板保持聚合口径):", error);
 			}
 		}
 		//#endregion

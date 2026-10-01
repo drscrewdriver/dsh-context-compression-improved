@@ -119,9 +119,12 @@ export function apply(ctx: ClientContext): void {
       return false
     }
   }
-  initMonitorFab({
+  // 浮动面板会话绑定:跟随输入栏座位的 inject 回调(裸 sessionId,pm longtask 同款)。
+  let latestSessionId: string | undefined
+  try {
+    initMonitorFab({
     t: tNav,
-    sessionIdOf: () => undefined, // v1: 全会话聚合(savings 卡同口径);会话级绑定待输入栏座位
+    sessionIdOf: () => latestSessionId,
     enabledOf: () => readMonitorPanelEnabled(),
     fetchSnapshot: async (sessionId) => {
       const query = sessionId === undefined ? '' : `?sessionId=${encodeURIComponent(sessionId)}`
@@ -137,7 +140,10 @@ export function apply(ctx: ClientContext): void {
         body: JSON.stringify({ action }),
       })
     },
-  })
+    })
+  } catch (error) {
+    console.warn('[dsh-context-compression-improved] 监控浮动球挂载失败(不影响设置分节):', error)
+  }
   const injected = (): CompressionSelectorInjected => {
     // 0.1.7: the compression document rides the selector row's entry config as
     // the volatile `settings` field. The form handle is fetched per factory
@@ -276,6 +282,23 @@ export function apply(ctx: ClientContext): void {
     }, ContextCompressionSettingsSection))
   } catch (error) {
     console.warn('[dsh-context-compression-improved] settings.section 注册失败(新宿主已收编):', error)
+  }
+
+  // 输入栏左座(0.1.5+ 宿主):组件刻意空渲染——注册此座位只为接收宿主的
+  // sessionId 注入回调,供浮动监控面板绑定会话(pm longtask 同款)。旧宿主
+  // 未声明该槽时激活期会抛错,try/catch 守卫(同上双槽冗余先例)。
+  try {
+    ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
+      name: 'conversation.input.left',
+      id: 'context-compression-session-bind',
+      order: 170,
+      inject: (sessionId: string) => {
+        latestSessionId = sessionId
+        return {}
+      },
+    }, () => null))
+  } catch (error) {
+    console.warn('[dsh-context-compression-improved] conversation.input.left 注册失败(旧宿主无该槽,浮动面板保持聚合口径):', error)
   }
 }
 
