@@ -19,9 +19,9 @@ describe('standalone package contract', () => {
     expect(Object.keys(selector.peerDependencies ?? {})).not.toContain('dsh-context-compression-improved-runtime')
     expect(Object.keys(selector.peerDependencies ?? {})).not.toContain('@deepseek-ai/dsh-compaction-tool-result-pruner')
     expect(selector.peerDependencies?.['@deepseek-ai/dsh-compaction-basic'])
-      .toBe('>=0.1.5-rc.2 <0.2.0-0')
+      .toBe('>=0.1.2-rc.1 <0.1.3-0')
     expect(selector.peerDependencies?.['@deepseek-ai/dsh-command-compact'])
-      .toBe('>=0.1.5-rc.2 <0.2.0-0')
+      .toBe('>=0.1.2-rc.1 <0.1.3-0')
     expect(selector.publishConfig?.tag).toBe('latest')
     expect(existsSync(resolve(root, '../runtime/package.json'))).toBe(false)
   })
@@ -47,7 +47,7 @@ describe('standalone package contract', () => {
       '@deepseek-ai/dsh-client-ui-slots',
       '@deepseek-ai/dsh-client-ui-settings',
     ])
-    expect(rootManifest.engines?.dsh).toBe('>=0.1.5-rc.1 <0.1.6-0')
+    expect(rootManifest.engines?.dsh).toBe('>=0.1.2-rc.1 <0.1.3-0')
   })
 
   it('uses the community package in the one Bundle patch', () => {

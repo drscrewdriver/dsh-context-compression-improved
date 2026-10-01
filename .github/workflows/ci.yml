@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [compat/0.1.5]
+    branches: [compat/0.1.2]
   pull_request:
 
 permissions:
