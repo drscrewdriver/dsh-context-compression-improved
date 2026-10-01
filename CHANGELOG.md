@@ -2,7 +2,7 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
-## Unreleased
+## 0.5.7 - 2026-10-01
 
 ### Added
 
