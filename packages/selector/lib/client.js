@@ -1485,6 +1485,257 @@ window.__ModuleLoader__.load({
 			} : void 0;
 		}
 		//#endregion
+		//#region src/client/monitor-fab.ts
+		/**
+		* 压缩监控浮动球 + 面板(task: cci-monitor-fab;骨架整编自 pm 撤下的
+		* `longtask-fab.ts` — d29bcb1^, VANILLA DOM overlay 模式: FAB + 面板
+		* appendChild 到 document.body, position:fixed + JS 内联定位, Pointer Events
+		* 拖拽 + localStorage 持久化 + 视口夹紧)。
+		*
+		* cci 客户端纪律:
+		*  - body 级直挂 = 幂等单例,应用生命周期存续,不做 dispose(页面刷新自然回收);
+		*  - 回声环过滤:自有节点带 `dsh-cci-parasite` 类,不参与宿主面板探测;
+		*  - 数据面: `/api/.../monitor` 忙 2s / 闲 5s 自调度轮询(savings 卡同口径),
+		*    fetch 失败静默降级 + 陈旧标记——监控面板永不打扰主流程;
+		*  - 动作面: 仅会话覆盖(POST,复用 /ctx-summary 状态机),不做压缩执行。
+		*
+		* 显隐: `enabledOf()`(设置文档 monitorPanel.enabled)为总闸;总闸开才显示球;
+		* 净节省为负时「点亮」呼吸态(负节省警示)。v1 监控全会话聚合(savings 卡同
+		* 口径),覆盖作用于默认会话;会话级绑定待 cci 有输入栏座位后另行接线。
+		*/
+		const FAB_ID = "dsh-cci-monitor-fab";
+		const PANEL_ID = "dsh-cci-monitor-panel";
+		const STYLE_ID = "dsh-cci-monitor-style";
+		const PARASITE = "dsh-cci-parasite";
+		const POS_KEY = "dsh.cci.monitor.pos";
+		const num = (v) => typeof v === "number" && Number.isFinite(v) ? v : 0;
+		function initMonitorFab(deps) {
+			if (document.getElementById(FAB_ID) !== null) return;
+			const { t } = deps;
+			const style = document.createElement("style");
+			style.id = STYLE_ID;
+			style.textContent = `
+#${FAB_ID} { position: fixed; z-index: 9999; width: 42px; height: 42px; border-radius: 50%;
+  background: rgba(30,30,32,.72); backdrop-filter: blur(22px) saturate(180%);
+  border: 1px solid rgba(255,255,255,.14); box-shadow: 0 8px 24px rgba(0,0,0,.4);
+  color: #f5f5f7; font-size: 18px; line-height: 40px; text-align: center; cursor: grab;
+  touch-action: none; user-select: none; display: none; transition: transform .18s; }
+#${FAB_ID}:hover { transform: scale(1.08); }
+#${FAB_ID}.lit { display: block; box-shadow: 0 0 0 5px rgba(255,159,10,.28), 0 8px 24px rgba(0,0,0,.4);
+  animation: dsh-cci-mon-breathe 2.4s ease-in-out infinite; }
+@keyframes dsh-cci-mon-breathe { 0%,100% { box-shadow: 0 0 0 4px rgba(255,159,10,.18), 0 8px 24px rgba(0,0,0,.4); }
+  50% { box-shadow: 0 0 0 8px rgba(255,159,10,.32), 0 8px 24px rgba(0,0,0,.4); } }
+#${PANEL_ID} { position: fixed; z-index: 9998; width: 336px; border-radius: 14px;
+  background: rgba(28,28,30,.78); backdrop-filter: blur(26px) saturate(180%);
+  border: 1px solid rgba(255,255,255,.12); box-shadow: 0 14px 44px rgba(0,0,0,.55);
+  color: #f5f5f7; font-size: 12.5px; opacity: 0; pointer-events: none;
+  transform: translateY(10px) scale(.92); transform-origin: 88% 100%;
+  transition: opacity .22s cubic-bezier(.16,.8,.3,1.05), transform .22s cubic-bezier(.16,.8,.3,1.1); }
+#${PANEL_ID}.open { opacity: 1; pointer-events: auto; transform: none; }
+#${PANEL_ID} h4 { margin: 0; padding: 10px 14px 8px; font-size: 13px; cursor: grab;
+  touch-action: none; user-select: none; border-bottom: 1px solid rgba(255,255,255,.09); }
+#${PANEL_ID} .row { display: flex; align-items: center; gap: 8px; padding: 6px 14px; }
+#${PANEL_ID} .row.label { width: 108px; flex: none; color: rgba(245,245,247,.55); }
+#${PANEL_ID} .muted { color: rgba(245,245,247,.55); }
+#${PANEL_ID} .neg { color: #ff9f0a; }
+#${PANEL_ID} button { font: inherit; border-radius: 8px; border: 1px solid rgba(255,255,255,.18);
+  background: rgba(10,132,255,.85); color: #fff; padding: 4px 10px; cursor: pointer; }
+#${PANEL_ID} button.ghost { background: transparent; }
+#${PANEL_ID} button:disabled { opacity: .45; cursor: default; }
+#${PANEL_ID} .stale { padding: 4px 14px 8px; color: #ffd60a; display: none; }
+#${PANEL_ID} .stale.show { display: block; }
+#${PANEL_ID} .recent { max-height: 132px; overflow: auto; padding: 2px 14px 8px;
+  color: rgba(245,245,247,.8); white-space: pre-wrap; }
+`;
+			document.head.appendChild(style);
+			const fab = document.createElement("div");
+			fab.id = FAB_ID;
+			fab.className = PARASITE;
+			fab.textContent = "📉";
+			fab.title = t("monitor.fab.title");
+			const panel = document.createElement("div");
+			panel.id = PANEL_ID;
+			panel.className = PARASITE;
+			panel.hidden = true;
+			panel.innerHTML = `
+<h4>${t("monitor.panel.title")}</h4>
+<div class="row"><span class="label">${t("monitor.panel.net")}</span><span data-net>–</span></div>
+<div class="row"><span class="label">${t("monitor.panel.gross")}</span><span data-gross class="muted">–</span></div>
+<div class="row"><span class="label">${t("monitor.panel.offsets")}</span><span data-offsets class="muted">–</span></div>
+<div class="row"><span class="label">${t("monitor.panel.cacheHit")}</span><span data-cache class="muted">–</span></div>
+<div class="row"><span class="label">${t("monitor.panel.cost")}</span><span data-cost class="muted">–</span></div>
+<div class="row"><span class="label">${t("monitor.panel.intent")}</span><span data-intent class="muted">–</span></div>
+<div class="row"><span class="label">${t("monitor.panel.overrideHint")}</span>
+  <button data-overon>${t("monitor.panel.resume")}</button>
+  <button data-overoff class="ghost">${t("monitor.panel.disable")}</button></div>
+<div class="row muted" data-fold style="display:none"></div>
+<div class="stale" data-stale>${t("monitor.panel.stale")}</div>
+<div class="recent" data-recent></div>
+`;
+			document.body.append(fab, panel);
+			let pos;
+			try {
+				pos = JSON.parse(localStorage.getItem(POS_KEY) ?? "null") ?? {
+					x: Math.max(8, window.innerWidth - 66),
+					y: Math.max(8, Math.round(window.innerHeight * .6))
+				};
+			} catch {
+				pos = {
+					x: Math.max(8, window.innerWidth - 66),
+					y: Math.max(8, Math.round(window.innerHeight * .6))
+				};
+			}
+			const clamp = (p) => ({
+				x: Math.max(8, Math.min(window.innerWidth - 50, p.x)),
+				y: Math.max(8, Math.min(window.innerHeight - 50, p.y))
+			});
+			const place = () => {
+				pos = clamp(pos);
+				fab.style.left = `${pos.x}px`;
+				fab.style.top = `${pos.y}px`;
+			};
+			place();
+			window.addEventListener("resize", place);
+			const makeDrag = (el, key) => {
+				let active = false;
+				let moved = false;
+				let origin = {
+					x: 0,
+					y: 0
+				};
+				el.addEventListener("pointerdown", (e) => {
+					active = true;
+					moved = false;
+					origin = {
+						x: e.clientX,
+						y: e.clientY
+					};
+					el.setPointerCapture(e.pointerId);
+				});
+				el.addEventListener("pointermove", (e) => {
+					if (!active) return;
+					const next = clamp({
+						x: pos.x + e.clientX - origin.x,
+						y: pos.y + e.clientY - origin.y
+					});
+					if (Math.abs(next.x - pos.x) > 2 || Math.abs(next.y - pos.y) > 2) moved = true;
+					pos = key === "fab" ? next : pos;
+					if (key === "fab") place();
+				});
+				el.addEventListener("pointerup", () => {
+					active = false;
+					if (moved && key === "fab") try {
+						localStorage.setItem(POS_KEY, JSON.stringify(pos));
+					} catch {}
+				});
+				el.addEventListener("pointercancel", () => {
+					active = false;
+				});
+			};
+			let suppressClick = false;
+			makeDrag(fab, "fab");
+			let open = false;
+			fab.addEventListener("click", () => {
+				if (suppressClick) {
+					suppressClick = false;
+					return;
+				}
+				open = !open;
+				if (open) {
+					panel.hidden = false;
+					const px = Math.max(8, Math.min(window.innerWidth - 344, pos.x - 300));
+					const py = pos.y - 300 < 8 ? pos.y + 46 : Math.max(8, pos.y - 300);
+					panel.style.left = `${px}px`;
+					panel.style.top = `${py}px`;
+					panel.offsetHeight;
+					panel.classList.add("open");
+				} else {
+					panel.classList.remove("open");
+					setTimeout(() => {
+						panel.hidden = true;
+					}, 240);
+				}
+			});
+			makeDrag(panel.querySelector("h4"), "panel");
+			let stale = false;
+			let busyAction = false;
+			const fmtTokens = (n) => num(n).toLocaleString("en-US");
+			const render = (snap) => {
+				const net = num(snap.net?.exact) + num(snap.net?.estimated);
+				const netEl = panel.querySelector("[data-net]");
+				netEl.textContent = `${net >= 0 ? "" : ""}${fmtTokens(snap.net?.exact)}${num(snap.net?.estimated) > 0 ? ` (+${fmtTokens(snap.net?.estimated)} est)` : ""}`;
+				netEl.classList.toggle("neg", net < 0);
+				fab.classList.toggle("lit", net < 0);
+				panel.querySelector("[data-gross]").textContent = fmtTokens(snap.gross?.exact);
+				panel.querySelector("[data-offsets]").textContent = `-${fmtTokens(snap.offsets?.exact)}`;
+				const hit = snap.usage?.cacheHitRate;
+				panel.querySelector("[data-cache]").textContent = typeof hit === "number" ? `${Math.round(hit * 100)}%` : "–";
+				const pricing = snap.pricing;
+				panel.querySelector("[data-cost]").textContent = pricing?.actualCost === void 0 && pricing?.estimatedSavedCost === void 0 ? "–" : `${pricing?.actualCost ?? "–"} / -${pricing?.estimatedSavedCost ?? "–"} ${String(pricing?.currency ?? "")}`.trim();
+				const intentEl = panel.querySelector("[data-intent]");
+				const override = snap.intent?.override;
+				const observed = snap.intent?.observedEnabled;
+				intentEl.textContent = override === "on" || override === "off" ? `${t("monitor.panel.overridePrefix")} ${override === "on" ? t("monitor.panel.stateOn") : t("monitor.panel.stateOff")}` : observed === void 0 ? t("monitor.panel.gateUnknown") : observed ? t("monitor.panel.stateOn") : t("monitor.panel.stateOff");
+				const fold = snap.intent?.lastFold;
+				const foldEl = panel.querySelector("[data-fold]");
+				if (fold !== void 0 && fold !== null && typeof fold === "object") {
+					foldEl.style.display = "";
+					foldEl.textContent = `${t("monitor.panel.lastFold")} turn ${String(fold.turn ?? "–")}, seq ${String(fold.startSeq ?? "–")}..${String(fold.endSeq ?? "–")}`;
+				} else foldEl.style.display = "none";
+				const recent = Array.isArray(snap.recentOffsets) ? snap.recentOffsets.slice(0, 3) : [];
+				panel.querySelector("[data-recent]").textContent = recent.length === 0 ? t("savings.empty") : recent.map((entry) => {
+					const e = entry;
+					return `${String(e.component ?? "–")}: ${fmtTokens(e.tokens)}`;
+				}).join("\n");
+				for (const [selector, action] of [["[data-overon]", "on"], ["[data-overoff]", "off"]]) panel.querySelector(selector).disabled = busyAction || override === action;
+			};
+			const markStale = (isStale) => {
+				stale = isStale;
+				panel.querySelector("[data-stale]").classList.toggle("show", stale);
+			};
+			const tick = async () => {
+				const enabled = deps.enabledOf();
+				fab.style.display = enabled ? "block" : "none";
+				if (!enabled) {
+					if (open) {
+						open = false;
+						panel.classList.remove("open");
+						panel.hidden = true;
+					}
+					setTimeout(tick, 5e3);
+					return;
+				}
+				try {
+					const snap = await deps.fetchSnapshot(deps.sessionIdOf());
+					markStale(false);
+					render(snap);
+				} catch {
+					markStale(true);
+				}
+				setTimeout(tick, open ? 2e3 : 5e3);
+			};
+			setTimeout(tick, deps.initialDelayMs ?? 1500);
+			const wireOverride = (selector, action) => {
+				panel.querySelector(selector)?.addEventListener("click", async () => {
+					if (busyAction) return;
+					busyAction = true;
+					try {
+						await deps.applyOverride(deps.sessionIdOf(), action);
+						const sid = deps.sessionIdOf();
+						const snap = await deps.fetchSnapshot(sid);
+						markStale(false);
+						render(snap);
+					} catch {
+						markStale(true);
+					} finally {
+						busyAction = false;
+					}
+				});
+			};
+			wireOverride("[data-overon]", "on");
+			wireOverride("[data-overoff]", "off");
+		}
+		//#endregion
 		//#region src/client/locales.ts
 		/** Simplified Chinese copy for the context-compression selector. */
 		const zh = {
@@ -1555,6 +1806,22 @@ window.__ModuleLoader__.load({
 			"intentSummary.enabled": "回合末意图摘要",
 			"intentSummary.enabled.on": "开",
 			"intentSummary.enabled.off": "关（默认）",
+			"monitor.fab.title": "压缩监控",
+			"monitor.panel.title": "压缩监控",
+			"monitor.panel.net": "净节省",
+			"monitor.panel.gross": "毛节省",
+			"monitor.panel.offsets": "抵消",
+			"monitor.panel.cacheHit": "缓存命中率",
+			"monitor.panel.cost": "成本（实际 / 省估）",
+			"monitor.panel.intent": "意图摘要",
+			"monitor.panel.overrideHint": "会话覆盖",
+			"monitor.panel.resume": "恢复",
+			"monitor.panel.disable": "停用",
+			"monitor.panel.stateOn": "开",
+			"monitor.panel.stateOff": "关",
+			"monitor.panel.gateUnknown": "未评估",
+			"monitor.panel.lastFold": "最近折叠",
+			"monitor.panel.stale": "快照不可达——显示上次数据",
 			"monitorPanel.title": "压缩监控悬浮面板",
 			"monitorPanel.description": "开启后，输入区旁出现可拖拽的悬浮球，点开即监控当前压缩状态：净节省（精确口径）、缓存命中率、成本估算、回合末意图摘要门控与最近抵消；面板内可临时覆盖当前会话的意图摘要开关。账本为进程内口径（宿主重启归零）。",
 			"monitorPanel.enabled": "悬浮面板",
@@ -1675,6 +1942,22 @@ window.__ModuleLoader__.load({
 			"intentSummary.enabled": "Turn-tail intent summary",
 			"intentSummary.enabled.on": "On",
 			"intentSummary.enabled.off": "Off (default)",
+			"monitor.fab.title": "Compression monitor",
+			"monitor.panel.title": "Compression monitor",
+			"monitor.panel.net": "Net savings",
+			"monitor.panel.gross": "Gross savings",
+			"monitor.panel.offsets": "Offsets",
+			"monitor.panel.cacheHit": "Cache hit rate",
+			"monitor.panel.cost": "Cost (actual / saved est.)",
+			"monitor.panel.intent": "Intent summary",
+			"monitor.panel.overrideHint": "Session override",
+			"monitor.panel.resume": "Resume",
+			"monitor.panel.disable": "Disable",
+			"monitor.panel.stateOn": "on",
+			"monitor.panel.stateOff": "off",
+			"monitor.panel.gateUnknown": "not evaluated yet",
+			"monitor.panel.lastFold": "Last fold",
+			"monitor.panel.stale": "Snapshot unreachable — showing last data",
 			"monitorPanel.title": "Compression monitor panel",
 			"monitorPanel.description": "When on, a draggable floating bubble appears next to the input area — open it to watch live compression state: net savings (exact basis), cache hit rate, cost estimate, the turn-tail intent-summary gate and recent offsets. The panel can temporarily override the current session's intent-summary switch. The ledger is per-process (reset when the host restarts).",
 			"monitorPanel.enabled": "Monitor panel",
@@ -1797,6 +2080,22 @@ window.__ModuleLoader__.load({
 			"intentSummary.enabled": "Abschluss-Zusammenfassung",
 			"intentSummary.enabled.on": "Ein",
 			"intentSummary.enabled.off": "Aus (Standard)",
+			"monitor.fab.title": "Komprimierungs-Monitor",
+			"monitor.panel.title": "Komprimierungs-Monitor",
+			"monitor.panel.net": "Nettoeinsparung",
+			"monitor.panel.gross": "Bruttoeinsparung",
+			"monitor.panel.offsets": "Ausgleiche",
+			"monitor.panel.cacheHit": "Cache-Trefferquote",
+			"monitor.panel.cost": "Kosten (ist / gespart gesch.)",
+			"monitor.panel.intent": "Intent-Zusammenfassung",
+			"monitor.panel.overrideHint": "Sitzungs-Übersteuerung",
+			"monitor.panel.resume": "Fortsetzen",
+			"monitor.panel.disable": "Deaktivieren",
+			"monitor.panel.stateOn": "ein",
+			"monitor.panel.stateOff": "aus",
+			"monitor.panel.gateUnknown": "noch nicht bewertet",
+			"monitor.panel.lastFold": "Letzte Faltung",
+			"monitor.panel.stale": "Snapshot nicht erreichbar — letzte Daten",
 			"monitorPanel.title": "Komprimierungs-Monitorpanel",
 			"monitorPanel.description": "Aktiviert erscheint neben dem Eingabebereich eine ziehbare Schwebekugel — öffne sie, um den Live-Komprimierungszustand zu beobachten: Nettoeinsparung (exakte Basis), Cache-Trefferquote, Kostenschätzung, das Turn-Tail-Gate und letzte Ausgleiche. Das Panel kann den Intent-Zusammenfassungsschalter der aktuellen Sitzung temporär übersteuern. Das Konto ist prozesslokal (Reset bei Host-Neustart).",
 			"monitorPanel.enabled": "Monitorpanel",
@@ -1919,6 +2218,22 @@ window.__ModuleLoader__.load({
 			"intentSummary.enabled": "Resumen de intención al cierre",
 			"intentSummary.enabled.on": "Sí",
 			"intentSummary.enabled.off": "No (predeterminado)",
+			"monitor.fab.title": "Monitor de compresión",
+			"monitor.panel.title": "Monitor de compresión",
+			"monitor.panel.net": "Ahorro neto",
+			"monitor.panel.gross": "Ahorro bruto",
+			"monitor.panel.offsets": "Compensaciones",
+			"monitor.panel.cacheHit": "Tasa de acierto de caché",
+			"monitor.panel.cost": "Coste (real / ahorro est.)",
+			"monitor.panel.intent": "Resumen de intención",
+			"monitor.panel.overrideHint": "Invalidación de sesión",
+			"monitor.panel.resume": "Reanudar",
+			"monitor.panel.disable": "Desactivar",
+			"monitor.panel.stateOn": "sí",
+			"monitor.panel.stateOff": "no",
+			"monitor.panel.gateUnknown": "aún sin evaluar",
+			"monitor.panel.lastFold": "Último plegado",
+			"monitor.panel.stale": "Instantánea inalcanzable — se muestran los últimos datos",
 			"monitorPanel.title": "Panel de monitor de compresión",
 			"monitorPanel.description": "Al activarlo, junto al área de entrada aparece una burbuja flotante arrastrable — ábrela para observar el estado de compresión en vivo: ahorro neto (base exacta), tasa de acierto de caché, estimación de coste, la puerta de resumen de intención del turno y compensaciones recientes. El panel puede invalidar temporalmente el interruptor de resumen de intención de la sesión actual. El libro es por proceso (se reinicia al rearrancar el host).",
 			"monitorPanel.enabled": "Panel de monitor",
@@ -2041,6 +2356,22 @@ window.__ModuleLoader__.load({
 			"intentSummary.enabled": "Résumé d'intention en fin de tour",
 			"intentSummary.enabled.on": "Activé",
 			"intentSummary.enabled.off": "Désactivé (par défaut)",
+			"monitor.fab.title": "Monitor de compression",
+			"monitor.panel.title": "Monitor de compression",
+			"monitor.panel.net": "Économie nette",
+			"monitor.panel.gross": "Économie brute",
+			"monitor.panel.offsets": "Compensations",
+			"monitor.panel.cacheHit": "Taux de réussite du cache",
+			"monitor.panel.cost": "Coût (réel / écon. est.)",
+			"monitor.panel.intent": "Résumé d'intention",
+			"monitor.panel.overrideHint": "Priorité de session",
+			"monitor.panel.resume": "Reprendre",
+			"monitor.panel.disable": "Désactiver",
+			"monitor.panel.stateOn": "activé",
+			"monitor.panel.stateOff": "désactivé",
+			"monitor.panel.gateUnknown": "pas encore évalué",
+			"monitor.panel.lastFold": "Dernier pliage",
+			"monitor.panel.stale": "Instantané injoignable — dernières données",
 			"monitorPanel.title": "Panneau de monitorage de compression",
 			"monitorPanel.description": "Activé, une bulle flottante déplaçable apparaît près de la zone de saisie — ouvrez-la pour observer l'état de compression en direct : économie nette (base exacte), taux de réussite du cache, estimation de coût, la porte de résumé d'intention du tour et les compensations récentes. Le panneau peut contourner temporairement l'interrupteur de résumé d'intention de la session courante. Le registre est propre au processus (remis à zéro au redémarrage de l'hôte).",
 			"monitorPanel.enabled": "Panneau de monitorage",
@@ -2163,6 +2494,22 @@ window.__ModuleLoader__.load({
 			"intentSummary.enabled": "Riepilogo di intento a fine turno",
 			"intentSummary.enabled.on": "On",
 			"intentSummary.enabled.off": "Off (predefinito)",
+			"monitor.fab.title": "Monitor compressione",
+			"monitor.panel.title": "Monitor compressione",
+			"monitor.panel.net": "Risparmio netto",
+			"monitor.panel.gross": "Risparmio lordo",
+			"monitor.panel.offsets": "Compensazioni",
+			"monitor.panel.cacheHit": "Tasso di hit della cache",
+			"monitor.panel.cost": "Costo (effettivo / stimo)",
+			"monitor.panel.intent": "Riepilogo di intento",
+			"monitor.panel.overrideHint": "Override di sessione",
+			"monitor.panel.resume": "Riprendi",
+			"monitor.panel.disable": "Disattiva",
+			"monitor.panel.stateOn": "on",
+			"monitor.panel.stateOff": "off",
+			"monitor.panel.gateUnknown": "non ancora valutato",
+			"monitor.panel.lastFold": "Ultima piegatura",
+			"monitor.panel.stale": "Snapshot non raggiungibile — ultimi dati",
 			"monitorPanel.title": "Pannello di monitoraggio compressione",
 			"monitorPanel.description": "Quando attivo, accanto all'area di input appare una bolla flottante trascinabile — aprila per osservare lo stato di compressione in tempo reale: risparmio netto (base esatta), tasso di hit della cache, stima dei costi, la soglia del riepilogo di intento del turno e le compensazioni recenti. Il pannello può ignorare temporaneamente l'interruttore del riepilogo di intento della sessione corrente. Il registro è per processo (azzerato al riavvio dell'host).",
 			"monitorPanel.enabled": "Pannello di monitoraggio",
@@ -2285,6 +2632,22 @@ window.__ModuleLoader__.load({
 			"intentSummary.enabled": "ターン末尾インテント要約",
 			"intentSummary.enabled.on": "オン",
 			"intentSummary.enabled.off": "オフ（既定）",
+			"monitor.fab.title": "圧縮モニター",
+			"monitor.panel.title": "圧縮モニター",
+			"monitor.panel.net": "正味節約",
+			"monitor.panel.gross": "総節約",
+			"monitor.panel.offsets": "相殺",
+			"monitor.panel.cacheHit": "キャッシュ ヒット率",
+			"monitor.panel.cost": "コスト（実績 / 節約概算）",
+			"monitor.panel.intent": "インテント要約",
+			"monitor.panel.overrideHint": "セッション上書き",
+			"monitor.panel.resume": "再開",
+			"monitor.panel.disable": "停止",
+			"monitor.panel.stateOn": "オン",
+			"monitor.panel.stateOff": "オフ",
+			"monitor.panel.gateUnknown": "未評価",
+			"monitor.panel.lastFold": "最後の折り畳み",
+			"monitor.panel.stale": "スナップショット到達不能——前回データを表示",
 			"monitorPanel.title": "圧縮モニター パネル",
 			"monitorPanel.description": "有効にすると、入力欄のそばにドラッグできるフローティング バブルが現れます。開くとライブの圧縮状態を監視できます。正味節約（正確 basis）、キャッシュ ヒット率、コスト概算、ターン末尾インテント要約ゲート、最近の相殺。パネルから現セッションのインテント要約スイッチを一時的に上書きできます。台帳はプロセス単位（ホスト再起動でリセット）。",
 			"monitorPanel.enabled": "モニター パネル",
@@ -2407,6 +2770,22 @@ window.__ModuleLoader__.load({
 			"intentSummary.enabled": "턴 말머리 인텐트 요약",
 			"intentSummary.enabled.on": "켜기",
 			"intentSummary.enabled.off": "끄기(기본)",
+			"monitor.fab.title": "압축 모니터",
+			"monitor.panel.title": "압축 모니터",
+			"monitor.panel.net": "순 절감",
+			"monitor.panel.gross": "총 절감",
+			"monitor.panel.offsets": "상쇄",
+			"monitor.panel.cacheHit": "캐시 적중률",
+			"monitor.panel.cost": "비용 (실제 / 절감 추정)",
+			"monitor.panel.intent": "인텐트 요약",
+			"monitor.panel.overrideHint": "세션 재정의",
+			"monitor.panel.resume": "재개",
+			"monitor.panel.disable": "중지",
+			"monitor.panel.stateOn": "켬",
+			"monitor.panel.stateOff": "끔",
+			"monitor.panel.gateUnknown": "아직 평가 안 됨",
+			"monitor.panel.lastFold": "마지막 접기",
+			"monitor.panel.stale": "스냅샷 도달 불가——이전 데이터 표시",
 			"monitorPanel.title": "압축 모니터 패널",
 			"monitorPanel.description": "켜면 입력 영역 옆에 드래그 가능한 플로팅 버블이 나타납니다. 열면 라이브 압축 상태를 볼 수 있습니다. 순 절감(정확 기준), 캐시 적중률, 비용 추정, 턴 말머리 인텐트 요약 게이트, 최근 상쇄. 패널에서 현재 세션의 인텐트 요약 스위치를 임시로 전환할 수 있습니다. 장부는 프로세스 단위(호스트 재시작 시 초기화).",
 			"monitorPanel.enabled": "모니터 패널",
@@ -2529,6 +2908,22 @@ window.__ModuleLoader__.load({
 			"intentSummary.enabled": "Итог намерения в конце хода",
 			"intentSummary.enabled.on": "Вкл",
 			"intentSummary.enabled.off": "Выкл (по умолчанию)",
+			"monitor.fab.title": "Монитор сжатия",
+			"monitor.panel.title": "Монитор сжатия",
+			"monitor.panel.net": "Чистая экономия",
+			"monitor.panel.gross": "Валовая экономия",
+			"monitor.panel.offsets": "Компенсации",
+			"monitor.panel.cacheHit": "Процент попаданий кэша",
+			"monitor.panel.cost": "Стоимость (факт / эконом. оценка)",
+			"monitor.panel.intent": "Итог намерения",
+			"monitor.panel.overrideHint": "Приоритет сессии",
+			"monitor.panel.resume": "Возобновить",
+			"monitor.panel.disable": "Отключить",
+			"monitor.panel.stateOn": "вкл",
+			"monitor.panel.stateOff": "выкл",
+			"monitor.panel.gateUnknown": "ещё не оценено",
+			"monitor.panel.lastFold": "Последняя свёртка",
+			"monitor.panel.stale": "Снимок недоступен — показаны последние данные",
 			"monitorPanel.title": "Панель мониторинга сжатия",
 			"monitorPanel.description": "При включении рядом с областью ввода появляется перетаскиваемый плавающий шарик — откройте его, чтобы следить за состоянием сжатия в реальном времени: чистая экономия (точная база), процент попаданий кэша, оценка стоимости, шлюз итогов намерения хода и последние компенсации. Панель может временно переключить тумблер итогов намерения текущей сессии. Реестр живёт в процессе (обнуляется при перезапуске хоста).",
 			"monitorPanel.enabled": "Панель мониторинга",
@@ -2723,9 +3118,36 @@ window.__ModuleLoader__.load({
 				console.warn(`[dsh-context-compression-improved] locale "${language.id}" registration failed:`, error);
 			}
 			const tNav = ctx.locale?.bind?.(NS) ?? ((key) => key);
+			let readMonitorPanelEnabled = () => {
+				try {
+					return decodeSettings(ctx.configForms.get(ENTRY_ID).getSnapshot().value?.settings)?.monitorPanel?.enabled ?? false;
+				} catch {
+					return false;
+				}
+			};
+			initMonitorFab({
+				t: tNav,
+				sessionIdOf: () => void 0,
+				enabledOf: () => readMonitorPanelEnabled(),
+				fetchSnapshot: async (sessionId) => {
+					const query = sessionId === void 0 ? "" : `?sessionId=${encodeURIComponent(sessionId)}`;
+					const response = await fetch(`/api/dsh-context-compression-improved/monitor${query}`, { headers: { "cache-control": "no-cache" } });
+					if (!response.ok) throw new Error(`monitor snapshot ${response.status}`);
+					return await response.json();
+				},
+				applyOverride: async (sessionId, action) => {
+					const query = sessionId === void 0 ? "" : `?sessionId=${encodeURIComponent(sessionId)}`;
+					await fetch(`/api/dsh-context-compression-improved/monitor${query}`, {
+						method: "POST",
+						headers: { "content-type": "application/json" },
+						body: JSON.stringify({ action })
+					});
+				}
+			});
 			const injected = () => {
 				const form = ctx.configForms.get(ENTRY_ID);
 				const readDoc = () => decodeSettings(form.getSnapshot().value?.settings);
+				readMonitorPanelEnabled = () => decodeSettings(form.getSnapshot().value?.settings)?.monitorPanel?.enabled ?? false;
 				let projectedSource;
 				let projected = {
 					status: "loading",
