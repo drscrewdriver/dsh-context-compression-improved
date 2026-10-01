@@ -29,6 +29,8 @@ export interface CompressionSelectorInjected {
   resetCustom: () => Promise<void>
   saveAutoCompact: (thresholdPercent: number) => Promise<void>
   saveCodeSkeleton: (enabled: boolean) => Promise<void>
+  saveIntentSummary: (enabled: boolean) => Promise<void>
+  saveMonitorPanel: (enabled: boolean) => Promise<void>
   /** Patch of `presetOptions` members; an explicit `undefined` clears that field. */
   savePresetOptions: (options: import('./preset-options.ts').PresetOptionsPatch) => Promise<void>
 }
