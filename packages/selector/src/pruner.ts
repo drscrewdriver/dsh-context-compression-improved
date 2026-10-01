@@ -95,6 +95,12 @@ import {
   dedupePlaceholder,
   flattenPlainText,
 } from './runtime/tokenpilot/dedup.ts'
+import { getSavingsLedger } from './runtime/savings.ts'
+
+/** 节省统计配对键用原文(纯文本块才可配对;富内容返回 undefined)。 */
+function originalTextForSavings(candidate: SnapshotCandidate): string | undefined {
+  return flattenPlainText(candidate.event.data.message.content)
+}
 import {
   charsForTokens,
   charsToTokens,
@@ -1406,6 +1412,24 @@ export class ToolResultPruner extends Service {
         policy.aggregateEnabled ? 'no-new-tool-result-candidates' : 'profile-policy')
       return emptyResult()
     }
+    // 节省统计(负节省配对):新全文工具结果按 (session,seq) 一次性过账——
+    // 命中"此前压缩过的原文哈希"即记抵消。挂在压力门控之前:全文重读无论
+    // 本轮是否再次压缩,都使原声称的节省不再成立(先骨架后全文 = 负节省)。
+    const ledger = getSavingsLedger()
+    const sid = String(session.id)
+    for (const candidate of candidates) {
+      const text = flattenPlainText(candidate.event.data.message.content)
+      if (text === undefined) continue
+      ledger.noteFullText({
+        sessionId: sid,
+        seq: candidate.seq,
+        text,
+        measure: () =>
+          candidate.count.kind === 'exact-tokenizer' && typeof candidate.count.tokens === 'number'
+            ? { tokens: candidate.count.tokens, basis: 'exact-tokenizer' }
+            : { tokens: Math.ceil(candidate.characterPressure / 4), basis: 'characters' },
+      })
+    }
 
     const plans = new Map<number, PlannedReplacement>()
     let freshPlanned = 0
@@ -2208,6 +2232,25 @@ export class ToolResultPruner extends Service {
           ? exactSurface.tokenizerRevision
           : 'chars-per-token-4.0',
       })
+      // 节省统计:tail-trim 组的原文配对键(纯文本结果才登记,富内容跳过——
+      // 与 land() 同口径:只记已落盘、可配对者)。
+      const groupText = shadowedSeqs
+        .map(seq => sessionEvents(session)[seq])
+        .filter((event): event is SessionEvent<'tool/result'> => event?.type === 'tool/result')
+        .map(event => flattenPlainText(event.data.message.content))
+        .filter((text): text is string => text !== undefined)
+        .join('\n')
+      if (groupText.length > 0) {
+        getSavingsLedger().recordSaving({
+          sessionId: String(session.id),
+          component: 'tail-trim',
+          tokensBefore,
+          tokensAfter,
+          basis: exact ? 'exact-tokenizer' : 'characters',
+          sourceSeq: manifestSeq,
+          originalText: groupText,
+        })
+      }
       return
     }
     this.auditComponent(session, policy, 'tail-trim', 'pressure', 'skipped',
@@ -2360,6 +2403,18 @@ export class ToolResultPruner extends Service {
       // task_4c/G7 telemetry: original-event lines the reducer elided. Audit
       // record ONLY — the replacement content is untouched by this field.
       ...plan.elidedLines === undefined ? {} : { elidedLines: plan.elidedLines },
+    })
+    // 节省统计:已实现的削减才入账(tokensBefore−tokensAfter,审计同源同口径);
+    // 原文哈希登记,供后续全文重读/retrieve 抵消配对。
+    const pairedOriginal = originalTextForSavings(candidate)
+    getSavingsLedger().recordSaving({
+      sessionId: String(session.id),
+      component: plan.component,
+      tokensBefore: plan.tokensBefore,
+      tokensAfter: plan.tokensAfter,
+      basis: plan.measurementBasis,
+      sourceSeq: plan.sourceSeq,
+      ...(pairedOriginal === undefined ? {} : { originalText: pairedOriginal }),
     })
     return {
       originalSeq: candidate.seq,

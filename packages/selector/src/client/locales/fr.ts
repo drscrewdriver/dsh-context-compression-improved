@@ -100,4 +100,14 @@ export const fr = {
   'custom.save': 'Enregistrer la stratégie personnalisée',
   'custom.reset': 'Réinitialiser la stratégie personnalisée',
   'custom.invalid': 'Valeurs de la stratégie personnalisée invalides.',
+  'savings.title': 'Économies (ce processus)',
+  'savings.netExact': 'Économie nette (base exacte)',
+  'savings.netEstimated': 'Économie nette (base estimée)',
+  'savings.gross': 'Économie brute (à la publication)',
+  'savings.offsets': 'Compensations (contenu compressé puis relu intégralement)',
+  'savings.empty': 'Aucune compression pour l’instant — l’économie nette apparaît après la première réduction.',
+  'savings.basisExact': 'exacte',
+  'savings.basisEstimated': 'estimée',
+  'savings.basisNote': 'Les bases sont présentées séparément, jamais mélangées : exacte = tokenizer DeepSeek ; estimée = chars/4. Un squelette suivi d’une lecture complète compte comme économie négative (le net peut être négatif).',
+
 } satisfies Record<ContextCompressionLocaleKey, string>

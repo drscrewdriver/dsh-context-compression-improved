@@ -98,6 +98,17 @@ export const zh = {
   'custom.save': '保存 Custom 策略',
   'custom.reset': '重置 Custom 策略',
   'custom.invalid': 'Custom 策略参数无效。',
+  'savings.title': '节省统计(本进程)',
+  'savings.netExact': '净节省(精确口径)',
+  'savings.netEstimated': '净节省(估算口径)',
+  'savings.gross': '毛节省(压缩落盘时)',
+  'savings.offsets': '负节省(压缩后再读全文的抵消)',
+  'savings.empty': '尚无压缩记录——发生首次裁剪后这里会显示净节省。',
+  'savings.basisExact': '精确',
+  'savings.basisEstimated': '估算',
+  'savings.basisNote': '口径分列不混算:精确 = DeepSeek tokenizer;估算 = chars/4。先取骨架后取全文会计负节省(净额可能为负)。',
+
+
 } satisfies Record<string, string>
 
 /** Locale keys that every context-compression selector dictionary must provide. */
@@ -203,4 +214,13 @@ export const en = {
   'custom.save': 'Save Custom policy',
   'custom.reset': 'Reset Custom policy',
   'custom.invalid': 'Custom policy values are invalid.',
+  'savings.title': 'Savings (this process)',
+  'savings.netExact': 'Net saved (exact basis)',
+  'savings.netEstimated': 'Net saved (estimated basis)',
+  'savings.gross': 'Gross saved (at publish time)',
+  'savings.offsets': 'Offsets (compressed content re-read in full)',
+  'savings.empty': 'No compression yet — net savings appear after the first reduction lands.',
+  'savings.basisExact': 'exact',
+  'savings.basisEstimated': 'estimated',
+  'savings.basisNote': 'Bases are reported separately, never merged: exact = DeepSeek tokenizer; estimated = chars/4. A skeleton followed by a full read counts as negative savings (net can go below zero).',
 } satisfies Record<ContextCompressionLocaleKey, string>

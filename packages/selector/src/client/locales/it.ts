@@ -100,4 +100,14 @@ export const it = {
   'custom.save': 'Salva la politica personalizzata',
   'custom.reset': 'Reimposta la politica personalizzata',
   'custom.invalid': 'I valori della politica personalizzata non sono validi.',
+  'savings.title': 'Risparmi (questo processo)',
+  'savings.netExact': 'Risparmio netto (base esatta)',
+  'savings.netEstimated': 'Risparmio netto (base stimata)',
+  'savings.gross': 'Risparmio lordo (alla pubblicazione)',
+  'savings.offsets': 'Compensazioni (contenuto compresso e poi riletto per intero)',
+  'savings.empty': 'Nessuna compressione — il risparmio netto appare dopo la prima riduzione.',
+  'savings.basisExact': 'esatta',
+  'savings.basisEstimated': 'stimata',
+  'savings.basisNote': 'Le basi sono riportate separatamente, mai miste: esatta = tokenizer DeepSeek; stimata = chars/4. Uno scheletro seguito dalla lettura completa conta come risparmio negativo (il netto può scendere sotto zero).',
+
 } satisfies Record<ContextCompressionLocaleKey, string>
