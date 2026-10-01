@@ -500,6 +500,139 @@ function unpriced(reason) {
 		reason
 	};
 }
+const advisorStates = /* @__PURE__ */ new WeakMap();
+/**
+* The per-session advisor state, created on first touch.
+* @param session - the session to key the state on (by object identity).
+*/
+function getAdvisorState(session) {
+	let state = advisorStates.get(session);
+	if (state === void 0) {
+		state = {
+			todoVersion: void 0,
+			summary: void 0,
+			lastSummaryTurn: -1,
+			watermarkSeq: 0,
+			scores: /* @__PURE__ */ new Map(),
+			recertified: /* @__PURE__ */ new Map(),
+			failures: void 0,
+			inFlight: false,
+			lastDecay: void 0,
+			lastAdvice: void 0
+		};
+		advisorStates.set(session, state);
+	}
+	return state;
+}
+/**
+* Insert or refresh one score with LRU semantics: a re-touched seq moves to
+* the newest position, and the oldest entry is evicted once the map exceeds
+* {@link ADVISOR_SCORES_LIMIT}.
+*/
+function recordScore(state, seq, entry) {
+	state.scores.delete(seq);
+	state.scores.set(seq, entry);
+	if (state.scores.size > 64) {
+		const oldest = state.scores.keys().next();
+		if (oldest.done !== true) state.scores.delete(oldest.value);
+	}
+}
+/**
+* Mark one seq as LLM-recertified low relevance (a suggestion for later
+* history-aggressiveness decisions, consumed by nothing in this round).
+* Bounded at {@link ADVISOR_RECERTIFIED_LIMIT} with the same LRU eviction.
+*/
+function recordRecertified(state, seq, turn) {
+	state.recertified.delete(seq);
+	state.recertified.set(seq, turn);
+	if (state.recertified.size > 64) {
+		const oldest = state.recertified.keys().next();
+		if (oldest.done !== true) state.recertified.delete(oldest.value);
+	}
+}
+/**
+* Drop every cached artifact that depends on the task semantics: a changed
+* todo version invalidates the summary and makes all eligible candidates
+* rescore-worthy (the watermark alone would otherwise hide them).
+*/
+function invalidateOnTaskChange(state, todoVersion) {
+	if (state.todoVersion === todoVersion) return false;
+	state.todoVersion = todoVersion;
+	state.summary = void 0;
+	state.lastSummaryTurn = -1;
+	return true;
+}
+/**
+* `/ctx-summary off|on` overrides, keyed by session id (string). The command
+* handler only sees `invocation.agent.session.id`, not the pruner's Session
+* object, so these are id-keyed rather than WeakMap'd. Entries are two-char
+* strings per session and cleared whenever the override is lifted.
+*/
+const summaryOverrides = /* @__PURE__ */ new Map();
+/** Read the session's `/ctx-summary` override; `undefined` = default (settings-driven). */
+function getSummaryOverride(sessionId) {
+	return summaryOverrides.get(sessionId);
+}
+/** Set or clear (`undefined`) the session's `/ctx-summary` override. */
+function setSummaryOverride(sessionId, value) {
+	if (value === void 0) summaryOverrides.delete(sessionId);
+	else summaryOverrides.set(sessionId, value);
+}
+/** Last observed `intentSummary.enabled` for a session, for `/ctx-summary status`. */
+const lastObservedIntentEnabled = /* @__PURE__ */ new Map();
+/** Record the gate input the pass last evaluated for this session. */
+function observeIntentEnabled(sessionId, enabled) {
+	lastObservedIntentEnabled.set(sessionId, enabled);
+}
+/** The settings-side enabled flag last observed for the session, if any. */
+function getObservedIntentEnabled(sessionId) {
+	return lastObservedIntentEnabled.get(sessionId);
+}
+const lastIntentFolds = /* @__PURE__ */ new Map();
+/** Record a landed intent fold for the session (newest wins). */
+function recordIntentFold(sessionId, record) {
+	lastIntentFolds.set(sessionId, record);
+}
+/** The most recent landed intent fold for the session, if any. */
+function getLastIntentFold(sessionId) {
+	return lastIntentFolds.get(sessionId);
+}
+//#endregion
+//#region src/runtime/tokenpilot/intent-gate.ts
+/**
+* Turn-tail intent-summary growth gate (TokenPilot-inspired E2).
+*
+* Pure decision helper evaluated at the turn-boundary postflight: it decides
+* whether this turn may spend a summary-writer LLM call and stage a fold for
+* the next pressure round. The gate is deliberately conservative — every
+* unresolved input (unknown context window, non-finite counters) fails closed
+* toward "do not run", because a skipped fold is free while a wasted summary
+* call is not. Content safety is unaffected either way: fail-open semantics
+* live in the fold landing path, not here.
+*/
+/** Floor: the live surface must exceed this fraction of the context window. */
+const INTENT_GATE_FLOOR_FRACTION = .45;
+/** Growth: the live surface must have grown by more than this since the last landed fold. */
+const INTENT_GATE_GROWTH_TOKENS = 5e4;
+function isUsableNumber(value) {
+	return Number.isFinite(value) && value >= 0;
+}
+/** Same evaluation with the reason attached, for audits and `/ctx-summary status`. */
+function evaluateIntentGate(input) {
+	const snapshot = (decision, reason) => ({
+		...input,
+		decision,
+		reason
+	});
+	if (!input.enabled) return snapshot(false, "disabled");
+	if (input.override === "off") return snapshot(false, "override-off");
+	if (!isUsableNumber(input.liveTokens)) return snapshot(false, "below-floor");
+	if (input.contextWindow === void 0 || !isUsableNumber(input.contextWindow)) return snapshot(false, "no-window");
+	if (!(input.liveTokens > input.contextWindow * .45)) return snapshot(false, "below-floor");
+	if (!isUsableNumber(input.baselineTokens)) return snapshot(false, "below-growth");
+	if (!(input.liveTokens - input.baselineTokens > 5e4)) return snapshot(false, "below-growth");
+	return snapshot(true, "passed");
+}
 //#endregion
 //#region src/runtime/types.ts
 /** User-facing mixed strategy profile. */
@@ -1415,138 +1548,5 @@ function assertPositiveInteger(name, value) {
 function assertNonNegativeInteger(name, value) {
 	if (!Number.isSafeInteger(value) || value < 0) throw new Error(`ToolResultPruneConfig: ${name} (${String(value)}) must be a non-negative safe integer`);
 }
-const advisorStates = /* @__PURE__ */ new WeakMap();
-/**
-* The per-session advisor state, created on first touch.
-* @param session - the session to key the state on (by object identity).
-*/
-function getAdvisorState(session) {
-	let state = advisorStates.get(session);
-	if (state === void 0) {
-		state = {
-			todoVersion: void 0,
-			summary: void 0,
-			lastSummaryTurn: -1,
-			watermarkSeq: 0,
-			scores: /* @__PURE__ */ new Map(),
-			recertified: /* @__PURE__ */ new Map(),
-			failures: void 0,
-			inFlight: false,
-			lastDecay: void 0,
-			lastAdvice: void 0
-		};
-		advisorStates.set(session, state);
-	}
-	return state;
-}
-/**
-* Insert or refresh one score with LRU semantics: a re-touched seq moves to
-* the newest position, and the oldest entry is evicted once the map exceeds
-* {@link ADVISOR_SCORES_LIMIT}.
-*/
-function recordScore(state, seq, entry) {
-	state.scores.delete(seq);
-	state.scores.set(seq, entry);
-	if (state.scores.size > 64) {
-		const oldest = state.scores.keys().next();
-		if (oldest.done !== true) state.scores.delete(oldest.value);
-	}
-}
-/**
-* Mark one seq as LLM-recertified low relevance (a suggestion for later
-* history-aggressiveness decisions, consumed by nothing in this round).
-* Bounded at {@link ADVISOR_RECERTIFIED_LIMIT} with the same LRU eviction.
-*/
-function recordRecertified(state, seq, turn) {
-	state.recertified.delete(seq);
-	state.recertified.set(seq, turn);
-	if (state.recertified.size > 64) {
-		const oldest = state.recertified.keys().next();
-		if (oldest.done !== true) state.recertified.delete(oldest.value);
-	}
-}
-/**
-* Drop every cached artifact that depends on the task semantics: a changed
-* todo version invalidates the summary and makes all eligible candidates
-* rescore-worthy (the watermark alone would otherwise hide them).
-*/
-function invalidateOnTaskChange(state, todoVersion) {
-	if (state.todoVersion === todoVersion) return false;
-	state.todoVersion = todoVersion;
-	state.summary = void 0;
-	state.lastSummaryTurn = -1;
-	return true;
-}
-/**
-* `/ctx-summary off|on` overrides, keyed by session id (string). The command
-* handler only sees `invocation.agent.session.id`, not the pruner's Session
-* object, so these are id-keyed rather than WeakMap'd. Entries are two-char
-* strings per session and cleared whenever the override is lifted.
-*/
-const summaryOverrides = /* @__PURE__ */ new Map();
-/** Read the session's `/ctx-summary` override; `undefined` = default (settings-driven). */
-function getSummaryOverride(sessionId) {
-	return summaryOverrides.get(sessionId);
-}
-/** Set or clear (`undefined`) the session's `/ctx-summary` override. */
-function setSummaryOverride(sessionId, value) {
-	if (value === void 0) summaryOverrides.delete(sessionId);
-	else summaryOverrides.set(sessionId, value);
-}
-/** Last observed `intentSummary.enabled` for a session, for `/ctx-summary status`. */
-const lastObservedIntentEnabled = /* @__PURE__ */ new Map();
-/** Record the gate input the pass last evaluated for this session. */
-function observeIntentEnabled(sessionId, enabled) {
-	lastObservedIntentEnabled.set(sessionId, enabled);
-}
-/** The settings-side enabled flag last observed for the session, if any. */
-function getObservedIntentEnabled(sessionId) {
-	return lastObservedIntentEnabled.get(sessionId);
-}
-const lastIntentFolds = /* @__PURE__ */ new Map();
-/** Record a landed intent fold for the session (newest wins). */
-function recordIntentFold(sessionId, record) {
-	lastIntentFolds.set(sessionId, record);
-}
-/** The most recent landed intent fold for the session, if any. */
-function getLastIntentFold(sessionId) {
-	return lastIntentFolds.get(sessionId);
-}
 //#endregion
-//#region src/runtime/tokenpilot/intent-gate.ts
-/**
-* Turn-tail intent-summary growth gate (TokenPilot-inspired E2).
-*
-* Pure decision helper evaluated at the turn-boundary postflight: it decides
-* whether this turn may spend a summary-writer LLM call and stage a fold for
-* the next pressure round. The gate is deliberately conservative — every
-* unresolved input (unknown context window, non-finite counters) fails closed
-* toward "do not run", because a skipped fold is free while a wasted summary
-* call is not. Content safety is unaffected either way: fail-open semantics
-* live in the fold landing path, not here.
-*/
-/** Floor: the live surface must exceed this fraction of the context window. */
-const INTENT_GATE_FLOOR_FRACTION = .45;
-/** Growth: the live surface must have grown by more than this since the last landed fold. */
-const INTENT_GATE_GROWTH_TOKENS = 5e4;
-function isUsableNumber(value) {
-	return Number.isFinite(value) && value >= 0;
-}
-/** Same evaluation with the reason attached, for audits and `/ctx-summary status`. */
-function evaluateIntentGate(input) {
-	const snapshot = (decision, reason) => ({
-		...input,
-		decision,
-		reason
-	});
-	if (!input.enabled) return snapshot(false, "disabled");
-	if (input.override === "off") return snapshot(false, "override-off");
-	if (!isUsableNumber(input.liveTokens)) return snapshot(false, "below-floor");
-	if (input.contextWindow === void 0 || !isUsableNumber(input.contextWindow)) return snapshot(false, "no-window");
-	if (!(input.liveTokens > input.contextWindow * .45)) return snapshot(false, "below-floor");
-	if (!isUsableNumber(input.baselineTokens)) return snapshot(false, "below-growth");
-	if (!(input.liveTokens - input.baselineTokens > 5e4)) return snapshot(false, "below-growth");
-	return snapshot(true, "passed");
-}
-//#endregion
-export { resolveCustomPolicy as A, isCompressionProfile as C, resolvePolicy as D, resolveConfig as E, decimalRateNanoUnits as F, priceOfficialDeepSeekUsage as I, resolveOfficialDeepSeekPrice as L, deepFreeze as M, COMPRESSION_PROFILES as N, CustomCompressionPolicySchema as O, DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION as P, getSavingsLedger as R, codePointLength as S, parseContextCompressionSettings as T, DEFAULTS as _, getLastIntentFold as a, charsForTokens as b, invalidateOnTaskChange as c, recordRecertified as d, recordScore as f, ContextCompressionSettingsSchema as g, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as h, getAdvisorState as i, assertNever as j, DEFAULT_CUSTOM_COMPRESSION_POLICY as k, observeIntentEnabled as l, AUTO_COMPACT_THRESHOLD_LIMITS as m, INTENT_GATE_GROWTH_TOKENS as n, getObservedIntentEnabled as o, setSummaryOverride as p, evaluateIntentGate as r, getSummaryOverride as s, INTENT_GATE_FLOOR_FRACTION as t, recordIntentFold as u, DEFAULT_CONTEXT_COMPRESSION_SETTINGS as v, isValidAutoCompactThresholdPercent as w, charsToTokens as x, PRUNE_MARKER as y };
+export { recordIntentFold as A, evaluateIntentGate as C, getSummaryOverride as D, getObservedIntentEnabled as E, decimalRateNanoUnits as F, priceOfficialDeepSeekUsage as I, resolveOfficialDeepSeekPrice as L, recordScore as M, setSummaryOverride as N, invalidateOnTaskChange as O, DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION as P, getSavingsLedger as R, INTENT_GATE_GROWTH_TOKENS as S, getLastIntentFold as T, resolveCustomPolicy as _, DEFAULT_CONTEXT_COMPRESSION_SETTINGS as a, COMPRESSION_PROFILES as b, charsToTokens as c, isValidAutoCompactThresholdPercent as d, parseContextCompressionSettings as f, DEFAULT_CUSTOM_COMPRESSION_POLICY as g, CustomCompressionPolicySchema as h, DEFAULTS as i, recordRecertified as j, observeIntentEnabled as k, codePointLength as l, resolvePolicy as m, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as n, PRUNE_MARKER as o, resolveConfig as p, ContextCompressionSettingsSchema as r, charsForTokens as s, AUTO_COMPACT_THRESHOLD_LIMITS as t, isCompressionProfile as u, assertNever as v, getAdvisorState as w, INTENT_GATE_FLOOR_FRACTION as x, deepFreeze as y };
