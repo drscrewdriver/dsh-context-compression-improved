@@ -15,6 +15,8 @@ import { apply } from '../src/index.ts'
 
 const CATALOG_ROUTE = '/api/dsh-context-compression-improved/estimator-catalog'
 const LEGACY_ROUTE = '/endpoint/dsh-context-compression-improved/estimator-catalog'
+const SAVINGS_ROUTE = '/api/dsh-context-compression-improved/savings'
+const SAVINGS_LEGACY_ROUTE = '/endpoint/dsh-context-compression-improved/savings'
 
 interface RegisteredRoute {
   kind: string
@@ -104,7 +106,7 @@ describe('estimator catalog route registration', () => {
     apply(runtime, { estimatorCatalogRoute: true })
     await settle()
 
-    expect(routes.map(route => route.path)).toEqual([LEGACY_ROUTE, CATALOG_ROUTE])
+    expect(routes.map(route => route.path)).toEqual([LEGACY_ROUTE, CATALOG_ROUTE, SAVINGS_LEGACY_ROUTE, SAVINGS_ROUTE])
     expect(routes.every(route => route.kind === 'exact')).toBe(true)
   })
 
@@ -120,7 +122,7 @@ describe('estimator catalog route registration', () => {
     await mountWebServer(runtime, routes)
     await settle()
 
-    expect(routes.map(route => route.path)).toEqual([LEGACY_ROUTE, CATALOG_ROUTE])
+    expect(routes.map(route => route.path)).toEqual([LEGACY_ROUTE, CATALOG_ROUTE, SAVINGS_LEGACY_ROUTE, SAVINGS_ROUTE])
   })
 
   it('registers nothing twice when the estimator services arrive later', async () => {
@@ -174,7 +176,9 @@ describe('estimator catalog route registration', () => {
     expect(JSON.parse(String(response.body))).toMatchObject({ ok: true, providers: [] })
   })
 
-  it('registers no route when the row does not opt in', async () => {
+  it('without the estimator opt-in only the always-on savings snapshot route registers', async () => {
+    // savings 路由是有意常开的只读面(纯 token 聚合,无会话内容);estimator
+    // catalog 才是 opt-in 行。默认面 = 恰好两条 savings 前缀。
     const routes: RegisteredRoute[] = []
     const runtime = new Context()
     ctx = runtime
@@ -183,6 +187,6 @@ describe('estimator catalog route registration', () => {
     apply(runtime, { presetOverlay: false })
     await settle()
 
-    expect(routes).toHaveLength(0)
+    expect(routes.map(route => route.path)).toEqual([SAVINGS_LEGACY_ROUTE, SAVINGS_ROUTE])
   })
 })
