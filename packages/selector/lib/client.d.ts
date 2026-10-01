@@ -189,6 +189,11 @@ declare const zh: {
   'intentSummary.enabled': string;
   'intentSummary.enabled.on': string;
   'intentSummary.enabled.off': string;
+  'monitorPanel.title': string;
+  'monitorPanel.description': string;
+  'monitorPanel.enabled': string;
+  'monitorPanel.enabled.on': string;
+  'monitorPanel.enabled.off': string;
   'custom.title': string;
   'custom.settingsHint': string;
   'custom.sessionScope': string;
@@ -249,6 +254,7 @@ interface CompressionSelectorInjected {
   saveAutoCompact: (thresholdPercent: number) => Promise<void>;
   saveCodeSkeleton: (enabled: boolean) => Promise<void>;
   saveIntentSummary: (enabled: boolean) => Promise<void>;
+  saveMonitorPanel: (enabled: boolean) => Promise<void>;
   /** Patch of `presetOptions` members; an explicit `undefined` clears that field. */
   savePresetOptions: (options: PresetOptionsPatch) => Promise<void>;
 }
