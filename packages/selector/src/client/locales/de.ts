@@ -74,6 +74,7 @@ export const de = {
   'monitor.panel.net': 'Nettoeinsparung',
   'monitor.panel.gross': 'Bruttoeinsparung',
   'monitor.panel.offsets': 'Ausgleiche',
+  'monitor.panel.context': 'Kontextbelegung',
   'monitor.panel.cacheHit': 'Cache-Trefferquote',
   'monitor.panel.cost': 'Kosten (ist / gespart gesch.)',
   'monitor.panel.intent': 'Intent-Zusammenfassung',

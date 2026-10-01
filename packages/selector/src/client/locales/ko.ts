@@ -74,6 +74,7 @@ export const ko = {
   'monitor.panel.net': '순 절감',
   'monitor.panel.gross': '총 절감',
   'monitor.panel.offsets': '상쇄',
+  'monitor.panel.context': '컨텍스트 점유',
   'monitor.panel.cacheHit': '캐시 적중률',
   'monitor.panel.cost': '비용 (실제 / 절감 추정)',
   'monitor.panel.intent': '인텐트 요약',

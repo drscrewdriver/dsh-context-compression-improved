@@ -194,6 +194,7 @@ declare const zh: {
   'monitor.panel.net': string;
   'monitor.panel.gross': string;
   'monitor.panel.offsets': string;
+  'monitor.panel.context': string;
   'monitor.panel.cacheHit': string;
   'monitor.panel.cost': string;
   'monitor.panel.intent': string;
