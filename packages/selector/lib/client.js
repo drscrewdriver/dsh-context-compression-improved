@@ -1562,6 +1562,7 @@ window.__ModuleLoader__.load({
 <div class="row"><span class="label">${t("monitor.panel.net")}</span><span data-net>–</span></div>
 <div class="row"><span class="label">${t("monitor.panel.gross")}</span><span data-gross class="muted">–</span></div>
 <div class="row"><span class="label">${t("monitor.panel.offsets")}</span><span data-offsets class="muted">–</span></div>
+<div class="row"><span class="label">${t("monitor.panel.context")}</span><div class="bar"><i data-ctxbar></i></div><span data-ctxpct class="muted">–</span></div>
 <div class="row"><span class="label">${t("monitor.panel.cacheHit")}</span><span data-cache class="muted">–</span></div>
 <div class="row"><span class="label">${t("monitor.panel.cost")}</span><span data-cost class="muted">–</span></div>
 <div class="row"><span class="label">${t("monitor.panel.intent")}</span><span data-intent class="muted">–</span></div>
@@ -1668,6 +1669,17 @@ window.__ModuleLoader__.load({
 				fab.classList.toggle("lit", net < 0);
 				panel.querySelector("[data-gross]").textContent = fmtTokens(snap.gross?.exact);
 				panel.querySelector("[data-offsets]").textContent = `-${fmtTokens(snap.offsets?.exact)}`;
+				const ctxBar = panel.querySelector("[data-ctxbar]");
+				const ctxPct = panel.querySelector("[data-ctxpct]");
+				const ctxPctNum = typeof snap.context?.pct === "number" ? snap.context.pct : null;
+				if (ctxPctNum === null) {
+					ctxBar.style.width = "0%";
+					ctxPct.textContent = "–";
+				} else {
+					ctxBar.style.width = `${Math.min(100, Math.round(ctxPctNum * 100))}%`;
+					ctxBar.parentElement?.classList.toggle("hot", ctxPctNum >= .7);
+					ctxPct.textContent = `${Math.round(ctxPctNum * 100)}%`;
+				}
 				const hit = snap.usage?.cacheHitRate;
 				panel.querySelector("[data-cache]").textContent = typeof hit === "number" ? `${Math.round(hit * 100)}%` : "–";
 				const pricing = snap.pricing;
@@ -1811,6 +1823,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.net": "净节省",
 			"monitor.panel.gross": "毛节省",
 			"monitor.panel.offsets": "抵消",
+			"monitor.panel.context": "上下文占用",
 			"monitor.panel.cacheHit": "缓存命中率",
 			"monitor.panel.cost": "成本（实际 / 省估）",
 			"monitor.panel.intent": "意图摘要",
@@ -1947,6 +1960,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.net": "Net savings",
 			"monitor.panel.gross": "Gross savings",
 			"monitor.panel.offsets": "Offsets",
+			"monitor.panel.context": "Context occupancy",
 			"monitor.panel.cacheHit": "Cache hit rate",
 			"monitor.panel.cost": "Cost (actual / saved est.)",
 			"monitor.panel.intent": "Intent summary",
@@ -2085,6 +2099,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.net": "Nettoeinsparung",
 			"monitor.panel.gross": "Bruttoeinsparung",
 			"monitor.panel.offsets": "Ausgleiche",
+			"monitor.panel.context": "Kontextbelegung",
 			"monitor.panel.cacheHit": "Cache-Trefferquote",
 			"monitor.panel.cost": "Kosten (ist / gespart gesch.)",
 			"monitor.panel.intent": "Intent-Zusammenfassung",
@@ -2223,6 +2238,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.net": "Ahorro neto",
 			"monitor.panel.gross": "Ahorro bruto",
 			"monitor.panel.offsets": "Compensaciones",
+			"monitor.panel.context": "Ocupación del contexto",
 			"monitor.panel.cacheHit": "Tasa de acierto de caché",
 			"monitor.panel.cost": "Coste (real / ahorro est.)",
 			"monitor.panel.intent": "Resumen de intención",
@@ -2361,6 +2377,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.net": "Économie nette",
 			"monitor.panel.gross": "Économie brute",
 			"monitor.panel.offsets": "Compensations",
+			"monitor.panel.context": "Occupation du contexte",
 			"monitor.panel.cacheHit": "Taux de réussite du cache",
 			"monitor.panel.cost": "Coût (réel / écon. est.)",
 			"monitor.panel.intent": "Résumé d'intention",
@@ -2499,6 +2516,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.net": "Risparmio netto",
 			"monitor.panel.gross": "Risparmio lordo",
 			"monitor.panel.offsets": "Compensazioni",
+			"monitor.panel.context": "Occupazione del contesto",
 			"monitor.panel.cacheHit": "Tasso di hit della cache",
 			"monitor.panel.cost": "Costo (effettivo / stimo)",
 			"monitor.panel.intent": "Riepilogo di intento",
@@ -2637,6 +2655,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.net": "正味節約",
 			"monitor.panel.gross": "総節約",
 			"monitor.panel.offsets": "相殺",
+			"monitor.panel.context": "コンテキスト占有",
 			"monitor.panel.cacheHit": "キャッシュ ヒット率",
 			"monitor.panel.cost": "コスト（実績 / 節約概算）",
 			"monitor.panel.intent": "インテント要約",
@@ -2775,6 +2794,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.net": "순 절감",
 			"monitor.panel.gross": "총 절감",
 			"monitor.panel.offsets": "상쇄",
+			"monitor.panel.context": "컨텍스트 점유",
 			"monitor.panel.cacheHit": "캐시 적중률",
 			"monitor.panel.cost": "비용 (실제 / 절감 추정)",
 			"monitor.panel.intent": "인텐트 요약",
@@ -2913,6 +2933,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.net": "Чистая экономия",
 			"monitor.panel.gross": "Валовая экономия",
 			"monitor.panel.offsets": "Компенсации",
+			"monitor.panel.context": "Заполнение контекста",
 			"monitor.panel.cacheHit": "Процент попаданий кэша",
 			"monitor.panel.cost": "Стоимость (факт / эконом. оценка)",
 			"monitor.panel.intent": "Итог намерения",

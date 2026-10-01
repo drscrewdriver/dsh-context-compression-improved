@@ -1,4 +1,4 @@
-import { A as recordIntentFold, C as evaluateIntentGate, D as getSummaryOverride, F as decimalRateNanoUnits, I as priceOfficialDeepSeekUsage, L as resolveOfficialDeepSeekPrice, M as recordScore, O as invalidateOnTaskChange, P as DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION, R as getSavingsLedger, _ as resolveCustomPolicy, b as COMPRESSION_PROFILES, c as charsToTokens, d as isValidAutoCompactThresholdPercent, f as parseContextCompressionSettings, g as DEFAULT_CUSTOM_COMPRESSION_POLICY, h as CustomCompressionPolicySchema, i as DEFAULTS, j as recordRecertified, k as observeIntentEnabled, l as codePointLength, m as resolvePolicy, n as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, o as PRUNE_MARKER, p as resolveConfig, r as ContextCompressionSettingsSchema, s as charsForTokens, t as AUTO_COMPACT_THRESHOLD_LIMITS, u as isCompressionProfile, v as assertNever, w as getAdvisorState, y as deepFreeze } from "./config.js";
+import { B as decimalRateNanoUnits, F as recordIntentFold, H as resolveOfficialDeepSeekPrice, I as recordRecertified, L as recordScore, M as getSummaryOverride, N as invalidateOnTaskChange, O as evaluateIntentGate, P as observeIntentEnabled, T as observeContextUsage, U as getSavingsLedger, V as priceOfficialDeepSeekUsage, _ as resolveCustomPolicy, b as COMPRESSION_PROFILES, c as charsToTokens, d as isValidAutoCompactThresholdPercent, f as parseContextCompressionSettings, g as DEFAULT_CUSTOM_COMPRESSION_POLICY, h as CustomCompressionPolicySchema, i as DEFAULTS, k as getAdvisorState, l as codePointLength, m as resolvePolicy, n as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, o as PRUNE_MARKER, p as resolveConfig, r as ContextCompressionSettingsSchema, s as charsForTokens, t as AUTO_COMPACT_THRESHOLD_LIMITS, u as isCompressionProfile, v as assertNever, y as deepFreeze, z as DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION } from "./config.js";
 import { a as validatePublishedTailTrim, i as tailTrimStub, n as tailTrimMessage, o as eventBySeq, r as tailTrimRef, s as sessionEvents, t as parseTailTrimRef } from "./tail-trim.js";
 import z from "@deepseek-ai/schemastery";
 import { createHash } from "node:crypto";
@@ -4421,13 +4421,15 @@ var ToolResultPruner = class extends Service {
 		const view = measureForCompaction(this.ctx, session);
 		const thresholdPercent = settings.autoCompact.thresholdPercent;
 		const contextWindow = policy.autoCompactTokens !== void 0 && thresholdPercent > 0 ? Math.round(policy.autoCompactTokens / (thresholdPercent / 100)) : void 0;
-		if (!evaluateIntentGate({
+		const gate = evaluateIntentGate({
 			enabled: intentEnabled,
 			override,
 			liveTokens: view.totalTokens,
 			contextWindow,
 			baselineTokens: this.state.intentBaselines.get(session) ?? 0
-		}).decision) return;
+		});
+		observeContextUsage(sessionId, view.totalTokens, contextWindow);
+		if (!gate.decision) return;
 		const settingsPreset = settings.presetOptions;
 		if (settingsPreset === void 0) return;
 		if (settingsPreset.estimatorBaseUrl === void 0 || settingsPreset.estimatorBaseUrl.length === 0 || settingsPreset.estimatorModel === void 0 || settingsPreset.estimatorModel.length === 0) {
