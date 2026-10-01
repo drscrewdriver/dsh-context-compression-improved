@@ -31,7 +31,7 @@ import type {
   CompactionTokenView,
   ObservedPromptUsage,
 } from './runtime/measurement.ts'
-import { measureForCompaction } from './runtime/measurement.ts'
+import { measureForCompaction, officialRequestUsage } from './runtime/measurement.ts'
 import { eventBySeq, sessionEvents } from './runtime/session-events.ts'
 import { countExactCanonicalTextFields } from './runtime/token-count.ts'
 import type {} from '@deepseek-ai/dsh-tools'
@@ -264,6 +264,27 @@ export class ToolResultPruner extends Service {
       intentBaselines: new WeakMap(),
     }
 
+    // 会话结束汇总(dsh-token-optimizer monitor 模式的同款体验):输出该会话的
+    // 净节省/缓存命中率一行账。事件名探测式注册——老代际不发 session/disposed
+    // 时监听器静默闲置,不构成任何行为差异。
+    try {
+      ;(ctx as unknown as { on: (name: string, handler: (session: Session) => void) => unknown }).on(
+        'session/disposed',
+        (session) => {
+          try {
+            const line = getSavingsLedger().sessionSummaryLine(String(session.id))
+            if (line.includes('requests=0') === false || line.includes('net=0(exact)/0(est)') === false) {
+              ctx.logger.info('context-compression session savings (%s): %s', String(session.id), line)
+            }
+          } catch {
+            /* 汇总失败不影响 dispose */
+          }
+        },
+      )
+    } catch {
+      /* 宿主不支持该事件名:静默 */
+    }
+
     ctx.on('session/event', (session, event) => {
       this.scanForSeededNativeSummary(session)
       if (event.type === 'compaction/summary') {
@@ -375,7 +396,15 @@ export class ToolResultPruner extends Service {
     if (policy === undefined) return emptyResult()
     const profile = policy.profile
     const view = measureForCompaction(this.ctx, session)
-    if (stage === 'fresh') return this.decideFreshStep(session, options, policy, view)
+    if (stage === 'fresh') {
+      // 真实 usage 聚合(monitor 口径):官方 TokenMeter 的上一已完成请求,
+      // 每 fresh 边界入账一次;pressure pass 读到同一 baseline,不重复计。
+      const usage = officialRequestUsage(view)
+      if (usage !== undefined) {
+        getSavingsLedger().recordUsage(String(session.id), usage)
+      }
+      return this.decideFreshStep(session, options, policy, view)
+    }
     if (profile === 'off') return emptyResult()
 
     const landed: PrunedEntry[] = []

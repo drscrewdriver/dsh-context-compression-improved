@@ -111,6 +111,11 @@ declare const zh: {
   'savings.basisExact': string;
   'savings.basisEstimated': string;
   'savings.basisNote': string;
+  'savings.requests': string;
+  'savings.cacheHit': string;
+  'savings.actualCost': string;
+  'savings.savedMoney': string;
+  'savings.perSession': string;
 };
 /** Locale keys that every context-compression selector dictionary must provide. */
 type ContextCompressionLocaleKey = keyof typeof zh;
