@@ -75,6 +75,7 @@ export const de = {
   'monitor.panel.gross': 'Bruttoeinsparung',
   'monitor.panel.offsets': 'Ausgleiche',
   'monitor.panel.context': 'Kontextbelegung',
+  'monitor.panel.suggest': 'Kontextbelegung bei {pct}% — nahe der katastrophalen Vergessenszone; Komprimieren oder Kürzen des Verlaufs empfohlen',
   'monitor.panel.cacheHit': 'Cache-Trefferquote',
   'monitor.panel.cost': 'Kosten (ist / gespart gesch.)',
   'monitor.panel.intent': 'Intent-Zusammenfassung',

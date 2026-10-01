@@ -75,6 +75,7 @@ export const ja = {
   'monitor.panel.gross': '総節約',
   'monitor.panel.offsets': '相殺',
   'monitor.panel.context': 'コンテキスト占有',
+  'monitor.panel.suggest': 'コンテキスト占有が {pct}% に達しました——壊滅的忘却ゾーンに近づいています。圧縮または履歴の削減を推奨',
   'monitor.panel.cacheHit': 'キャッシュ ヒット率',
   'monitor.panel.cost': 'コスト（実績 / 節約概算）',
   'monitor.panel.intent': 'インテント要約',
