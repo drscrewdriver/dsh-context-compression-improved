@@ -2,6 +2,18 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
+## 0.8.0-beta.7 - 2026-10-02
+
+### Added
+
+- **灾难性遗忘区建议压缩**: the monitor snapshot carries a `suggestion` block — when
+  observed context occupancy reaches `MONITOR_SUGGEST_PCT` (0.7, deliberately one notch
+  below the host Auto Compact default of 80%) the floating bubble lights up (breathing
+  tint) and the panel shows a localized hint recommending compression or history trimming.
+- Context occupancy observation is decoupled from the intent-summary gate: every turn
+  records live tokens vs the auto-compact-derived window, so the occupancy bar and the
+  suggestion work even with intent summaries off (previously the bar stayed empty).
+
 ## 0.8.0-beta.6 - 2026-10-02
 
 ### Added
