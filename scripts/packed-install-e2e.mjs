@@ -416,7 +416,7 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
    * ui-slot packages) the web bundler supplies, and that stack is verified
    * from the built client libraries below.
    */
-  const HOST_PLANE_ENTRIES = ['index.js', 'pruner.js', 'intent-gate.js', 'tail-trim.js', 'invariant.js']
+  const HOST_PLANE_ENTRIES = ['index.js', 'pruner.js', 'config.js', 'tail-trim.js', 'invariant.js']
 
   /**
    * Bare package names the installed package's host-plane runtime files import.
