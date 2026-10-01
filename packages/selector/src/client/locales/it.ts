@@ -109,5 +109,10 @@ export const it = {
   'savings.basisExact': 'esatta',
   'savings.basisEstimated': 'stimata',
   'savings.basisNote': 'Le basi sono riportate separatamente, mai miste: esatta = tokenizer DeepSeek; stimata = chars/4. Uno scheletro seguito dalla lettura completa conta come risparmio negativo (il netto può scendere sotto zero).',
+  'savings.requests': 'Requêtes',
+  'savings.cacheHit': 'Taux de cache',
+  'savings.actualCost': 'Coût réel (tarifs officiels)',
+  'savings.savedMoney': 'Économie estimée (prix d’entrée)',
+  'savings.perSession': 'Session',
 
 } satisfies Record<ContextCompressionLocaleKey, string>
