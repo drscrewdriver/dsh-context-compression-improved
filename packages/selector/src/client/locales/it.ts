@@ -74,6 +74,7 @@ export const it = {
   'monitor.panel.net': 'Risparmio netto',
   'monitor.panel.gross': 'Risparmio lordo',
   'monitor.panel.offsets': 'Compensazioni',
+  'monitor.panel.context': 'Occupazione del contesto',
   'monitor.panel.cacheHit': 'Tasso di hit della cache',
   'monitor.panel.cost': 'Costo (effettivo / stimo)',
   'monitor.panel.intent': 'Riepilogo di intento',

@@ -634,6 +634,138 @@ function evaluateIntentGate(input) {
 	return snapshot(true, "passed");
 }
 //#endregion
+//#region src/runtime/monitor.ts
+/**
+* Savings snapshot plus the intent-summary control block. Ledger is
+* injectable so tests seed a private instance instead of the process
+* singleton.
+*/
+function buildMonitorSnapshot(sessionId, ledger = getSavingsLedger()) {
+	const scopeKey = sessionId ?? "";
+	const override = getSummaryOverride(scopeKey);
+	const observedContext = scopeKey.length > 0 ? getContextUsage(scopeKey) : latestObservedContextUsage();
+	const contextBlock = observedContext === void 0 ? void 0 : {
+		liveTokens: observedContext.liveTokens,
+		contextWindow: observedContext.contextWindow,
+		pct: observedContext.contextWindow !== void 0 && observedContext.contextWindow > 0 ? Math.round(observedContext.liveTokens / observedContext.contextWindow * 1e3) / 1e3 : null,
+		sessionId: observedContext.sessionId
+	};
+	return {
+		...ledger.snapshot(sessionId),
+		...contextBlock === void 0 ? {} : { context: contextBlock },
+		intent: {
+			override,
+			observedEnabled: getObservedIntentEnabled(scopeKey),
+			gate: {
+				floorFraction: INTENT_GATE_FLOOR_FRACTION,
+				growthTokens: INTENT_GATE_GROWTH_TOKENS
+			},
+			lastFold: getLastIntentFold(scopeKey)
+		},
+		sessionScope: sessionId ?? null
+	};
+}
+/** 每会话最近一次上下文占用观测;上限 64 会话,超出淘汰最旧。 */
+const contextUsageBySession = /* @__PURE__ */ new Map();
+const CONTEXT_USAGE_CAP = 64;
+/**
+* 由 pruner 的 turn-tail postflight 调用:记录该会话最近的 liveTokens/
+* contextWindow,供 monitor 快照的占用条消费。空会话 id 忽略。
+*/
+function observeContextUsage(sessionId, liveTokens, contextWindow) {
+	if (sessionId.length === 0 || !Number.isFinite(liveTokens)) return;
+	if (contextUsageBySession.size >= CONTEXT_USAGE_CAP) {
+		const oldest = contextUsageBySession.keys().next().value;
+		if (oldest !== void 0) contextUsageBySession.delete(oldest);
+	}
+	contextUsageBySession.set(sessionId, {
+		liveTokens,
+		contextWindow,
+		at: Date.now(),
+		seq: ++observeSeq
+	});
+}
+function getContextUsage(sessionId) {
+	const entry = contextUsageBySession.get(sessionId);
+	return entry === void 0 ? void 0 : {
+		liveTokens: entry.liveTokens,
+		contextWindow: entry.contextWindow,
+		sessionId
+	};
+}
+let observeSeq = 0;
+function latestObservedContextUsage() {
+	let latest;
+	for (const [sessionId, entry] of contextUsageBySession) if (latest === void 0 || entry.seq > latest.seq) latest = {
+		sessionId,
+		liveTokens: entry.liveTokens,
+		contextWindow: entry.contextWindow,
+		seq: entry.seq
+	};
+	return latest;
+}
+function isSessionOverrideAction(value) {
+	return value === "on" || value === "off" || value === "clear";
+}
+/**
+* Drive the `/ctx-summary` override state machine: `on`/`off` pin the
+* session, `clear` returns it to settings-driven. The resulting override is
+* handed back so the route can echo the post-action truth.
+*/
+function applySessionOverride(sessionId, action) {
+	setSummaryOverride(sessionId, action === "clear" ? void 0 : action);
+	return { override: getSummaryOverride(sessionId) };
+}
+/**
+* 金额估算(monitor 口径的 token/金额估算,结合官方牌价):
+*  - actualCost:本进程累计真实 usage 的官方牌价(exact/range);
+*  - estimatedSavedCost:净节省(精确口径)按 cache-miss 输入价折算——
+*    基线假设"这些 token 不压缩就要全价进上下文",标注估算。
+* 仅官方 deepseek-official 路由可解;第三方/未知模型 fail-closed 为 undefined。
+* (自入口迁入: savings 路由与 monitor 路由共享,避免 runtime → entry 回环。)
+*/
+function estimateSavingsPricing(readService, snapshot) {
+	if (snapshot.usage.requests === 0 && snapshot.net.exact === 0) return void 0;
+	const selection = readService("agentDefaultModel")?.currentSelection?.();
+	const provider = typeof selection?.provider === "string" ? selection.provider : "";
+	const modelId = typeof selection?.model === "string" ? selection.model : "";
+	if (provider !== "deepseek-official") return void 0;
+	const now = /* @__PURE__ */ new Date();
+	const startedAt = new Date(snapshot.startedAt);
+	const base = {
+		provider,
+		baseUrlClass: "official-public",
+		apiRoute: "chat-completions",
+		modelId,
+		currency: "USD",
+		startedAt,
+		completedAt: now.getTime() > startedAt.getTime() ? now : new Date(startedAt.getTime() + 1)
+	};
+	const actual = priceOfficialDeepSeekUsage({
+		...base,
+		usage: {
+			cacheReadTokens: Math.max(0, Math.round(snapshot.usage.cacheReadTokens)),
+			cacheMissTokens: Math.max(0, Math.round(snapshot.usage.inputTokens)),
+			outputTokens: Math.max(0, Math.round(snapshot.usage.outputTokens))
+		}
+	});
+	const saved = snapshot.net.exact > 0 ? priceOfficialDeepSeekUsage({
+		...base,
+		usage: {
+			cacheReadTokens: 0,
+			cacheMissTokens: Math.round(snapshot.net.exact),
+			outputTokens: 0
+		}
+	}) : void 0;
+	const decimalOf = (cost) => cost.kind === "exact" ? cost.decimal : cost.kind === "range" ? cost.minimum.decimal : void 0;
+	if (actual.kind === "unpriced" && (saved === void 0 || saved.kind === "unpriced")) return void 0;
+	return {
+		currency: "USD",
+		...actual.kind === "unpriced" ? {} : { actualCost: decimalOf(actual) },
+		...saved === void 0 || saved.kind === "unpriced" ? {} : { estimatedSavedCost: decimalOf(saved) }
+	};
+}
+//#endregion
 //#region src/runtime/types.ts
 /** User-facing mixed strategy profile. */
 const COMPRESSION_PROFILES = [
@@ -1566,4 +1698,4 @@ function assertNonNegativeInteger(name, value) {
 	if (!Number.isSafeInteger(value) || value < 0) throw new Error(`ToolResultPruneConfig: ${name} (${String(value)}) must be a non-negative safe integer`);
 }
 //#endregion
-export { recordIntentFold as A, evaluateIntentGate as C, getSummaryOverride as D, getObservedIntentEnabled as E, decimalRateNanoUnits as F, priceOfficialDeepSeekUsage as I, resolveOfficialDeepSeekPrice as L, recordScore as M, setSummaryOverride as N, invalidateOnTaskChange as O, DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION as P, getSavingsLedger as R, INTENT_GATE_GROWTH_TOKENS as S, getLastIntentFold as T, resolveCustomPolicy as _, DEFAULT_CONTEXT_COMPRESSION_SETTINGS as a, COMPRESSION_PROFILES as b, charsToTokens as c, isValidAutoCompactThresholdPercent as d, parseContextCompressionSettings as f, DEFAULT_CUSTOM_COMPRESSION_POLICY as g, CustomCompressionPolicySchema as h, DEFAULTS as i, recordRecertified as j, observeIntentEnabled as k, codePointLength as l, resolvePolicy as m, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as n, PRUNE_MARKER as o, resolveConfig as p, ContextCompressionSettingsSchema as r, charsForTokens as s, AUTO_COMPACT_THRESHOLD_LIMITS as t, isCompressionProfile as u, assertNever as v, getAdvisorState as w, INTENT_GATE_FLOOR_FRACTION as x, deepFreeze as y };
+export { getLastIntentFold as A, decimalRateNanoUnits as B, estimateSavingsPricing as C, INTENT_GATE_GROWTH_TOKENS as D, INTENT_GATE_FLOOR_FRACTION as E, recordIntentFold as F, resolveOfficialDeepSeekPrice as H, recordRecertified as I, recordScore as L, getSummaryOverride as M, invalidateOnTaskChange as N, evaluateIntentGate as O, observeIntentEnabled as P, setSummaryOverride as R, buildMonitorSnapshot as S, observeContextUsage as T, getSavingsLedger as U, priceOfficialDeepSeekUsage as V, resolveCustomPolicy as _, DEFAULT_CONTEXT_COMPRESSION_SETTINGS as a, COMPRESSION_PROFILES as b, charsToTokens as c, isValidAutoCompactThresholdPercent as d, parseContextCompressionSettings as f, DEFAULT_CUSTOM_COMPRESSION_POLICY as g, CustomCompressionPolicySchema as h, DEFAULTS as i, getObservedIntentEnabled as j, getAdvisorState as k, codePointLength as l, resolvePolicy as m, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as n, PRUNE_MARKER as o, resolveConfig as p, ContextCompressionSettingsSchema as r, charsForTokens as s, AUTO_COMPACT_THRESHOLD_LIMITS as t, isCompressionProfile as u, assertNever as v, isSessionOverrideAction as w, applySessionOverride as x, deepFreeze as y, DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION as z };

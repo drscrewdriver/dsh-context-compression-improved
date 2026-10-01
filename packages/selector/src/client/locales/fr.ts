@@ -74,6 +74,7 @@ export const fr = {
   'monitor.panel.net': 'Économie nette',
   'monitor.panel.gross': 'Économie brute',
   'monitor.panel.offsets': 'Compensations',
+  'monitor.panel.context': 'Occupation du contexte',
   'monitor.panel.cacheHit': 'Taux de réussite du cache',
   'monitor.panel.cost': 'Coût (réel / écon. est.)',
   'monitor.panel.intent': 'Résumé d\'intention',

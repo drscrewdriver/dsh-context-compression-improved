@@ -3,6 +3,7 @@ import { parseContextCompressionSettings, DEFAULT_CONTEXT_COMPRESSION_SETTINGS }
 import { SavingsLedger } from '../../src/runtime/savings.ts'
 import {
   applySessionOverride,
+  observeContextUsage,
   buildMonitorSnapshot,
   estimateSavingsPricing,
   isSessionOverrideAction,
@@ -234,3 +235,40 @@ describe('monitorPanel settings parsing (schema surface, mirrors intentSummary c
       .toThrow(/monitorPanel must be a plain object/)
   })
 })
+
+describe('context occupancy observation (task_6.2)', () => {
+  it('scoped snapshot carries the observed occupancy block', () => {
+    const sessionId = uniqueSession()
+    observeContextUsage(sessionId, 60_000, 128_000)
+    const snap = buildMonitorSnapshot(sessionId, new SavingsLedger())
+    expect(snap.context).toEqual({ liveTokens: 60_000, contextWindow: 128_000, pct: 0.469, sessionId })
+  })
+
+  it('aggregate snapshot carries the most recently observed session', () => {
+    const a = uniqueSession()
+    const b = uniqueSession()
+    observeContextUsage(a, 10_000, 100_000)
+    observeContextUsage(b, 90_000, 100_000)
+    const snap = buildMonitorSnapshot(undefined, new SavingsLedger())
+    expect(snap.context?.sessionId).toBe(b)
+    expect(snap.context?.pct).toBe(0.9)
+  })
+
+  it('no observation yet — context block absent', () => {
+    const snap = buildMonitorSnapshot(uniqueSession(), new SavingsLedger())
+    expect(snap.context).toBeUndefined()
+  })
+
+  it('observation cap keeps the newest 64 sessions', () => {
+    for (let i = 0; i < 70; i++) observeContextUsage(`cap-${i}`, i, 1000)
+    const snap = buildMonitorSnapshot('cap-69', new SavingsLedger())
+    expect(snap.context?.sessionId).toBe('cap-69')
+  })
+
+  it('empty session id and non-finite tokens are ignored', () => {
+    observeContextUsage('', 5, 100)
+    observeContextUsage('fin-check', Number.NaN, 100)
+    expect(buildMonitorSnapshot('fin-check', new SavingsLedger()).context).toBeUndefined()
+  })
+})
+
