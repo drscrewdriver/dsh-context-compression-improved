@@ -75,6 +75,7 @@ export const es = {
   'monitor.panel.gross': 'Ahorro bruto',
   'monitor.panel.offsets': 'Compensaciones',
   'monitor.panel.context': 'Ocupación del contexto',
+  'monitor.panel.suggest': 'La ocupación del contexto alcanzó el {pct} % — cerca de la zona de olvido catastrófico; se recomienda comprimir o recortar el historial',
   'monitor.panel.cacheHit': 'Tasa de acierto de caché',
   'monitor.panel.cost': 'Coste (real / ahorro est.)',
   'monitor.panel.intent': 'Resumen de intención',
