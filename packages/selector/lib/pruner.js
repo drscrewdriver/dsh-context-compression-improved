@@ -4284,6 +4284,9 @@ var ToolResultPruner = class extends Service {
 				this.auditFailure(agent.session, "fresh", "terminal-pass", error);
 				ctx.logger.warn("context-compression terminal pass failed open: %o", error);
 			}
+			try {
+				observeContextUsage(String(agent.session.id), measureForCompaction(this.ctx, agent.session).totalTokens, this.contextWindowForRequest(agent.session));
+			} catch {}
 			this.postflightEstimatorPass(agent.session, signal).catch(() => void 0);
 			this.postflightAdvisorPass(agent.session, turn, signal).catch(() => void 0);
 			this.postflightIntentFoldPass(agent.session, turn, signal).catch(() => void 0);

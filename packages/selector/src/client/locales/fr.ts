@@ -75,6 +75,7 @@ export const fr = {
   'monitor.panel.gross': 'Économie brute',
   'monitor.panel.offsets': 'Compensations',
   'monitor.panel.context': 'Occupation du contexte',
+  'monitor.panel.suggest': 'Occupation du contexte à {pct} % — zone de perte de contexte imminente ; pensez à lancer une compression ou à réduire les anciens échanges',
   'monitor.panel.cacheHit': 'Taux de réussite du cache',
   'monitor.panel.cost': 'Coût (réel / écon. est.)',
   'monitor.panel.intent': 'Résumé d\'intention',
