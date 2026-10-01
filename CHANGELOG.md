@@ -2,6 +2,13 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
+## 0.8.0-beta.4 - 2026-10-02
+
+### Added
+
+- **Turn-tail intent summary** (merged from the feat/intent-summary line): growth-gated turn-boundary postflight folds the consumed increment into per-candidate `intent-summary` blocks; `/ctx-summary off|on|status` gives a session-scoped override; the settings section now carries its own on/off card (nine languages) instead of relying on host forms.
+- `@deepseek-ai/dsh-commands` joins the installation-provided runtime set (the command registry import), and the release gates track the post-merge chunk graph (`lib/intent-gate.js`).
+
 ## 0.8.0-beta.3 - 2026-10-01
 
 ### Added

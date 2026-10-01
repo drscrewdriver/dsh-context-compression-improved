@@ -71,6 +71,11 @@ declare const zh: {
   'codeSkeleton.enabled': string;
   'codeSkeleton.enabled.on': string;
   'codeSkeleton.enabled.off': string;
+  'intentSummary.title': string;
+  'intentSummary.description': string;
+  'intentSummary.enabled': string;
+  'intentSummary.enabled.on': string;
+  'intentSummary.enabled.off': string;
   'custom.title': string;
   'custom.settingsHint': string;
   'custom.sessionScope': string;
@@ -159,6 +164,7 @@ interface CompressionSelectorInjected {
   resetCustom: () => Promise<void>;
   saveAutoCompact: (thresholdPercent: number) => Promise<void>;
   saveCodeSkeleton: (enabled: boolean) => Promise<void>;
+  saveIntentSummary: (enabled: boolean) => Promise<void>;
   /** Patch of `presetOptions` members; an explicit `undefined` clears that field. */
   savePresetOptions: (options: PresetOptionsPatch) => Promise<void>;
 }
