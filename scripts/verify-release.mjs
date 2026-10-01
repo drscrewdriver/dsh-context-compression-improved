@@ -49,7 +49,7 @@ const INSTALLATION_PROVIDED_RUNTIME = new Set([
 // stack (`react`, the ui-slot packages); its requires are reviewed from the
 // built artifact further down instead.
 const HOST_PLANE_ENTRIES = [
-  'lib/intent-gate.js',
+  'lib/config.js',
   'lib/index.js',
   'lib/invariant.js',
   'lib/pruner.js',
