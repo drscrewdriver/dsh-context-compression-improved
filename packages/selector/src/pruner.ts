@@ -97,6 +97,7 @@ import { computeIntentRange, INTENT_RANGE_MAX_CANDIDATES } from './runtime/token
 import { INTENT_FOLD_MARKER, renderIntentFoldBlock } from './runtime/tokenpilot/intent-fold.ts'
 import { buildIntentSummarySystemPrompt, buildIntentSummaryUserPrompt, parseIntentSummaryAnswer } from './runtime/tokenpilot/advisor-prompt.ts'
 import { getSummaryOverride, observeIntentEnabled, recordIntentFold } from './runtime/tokenpilot/advisor-state.ts'
+import { observeContextUsage } from './runtime/monitor.ts'
 
 import {
   DedupeTable,
@@ -821,6 +822,7 @@ export class ToolResultPruner extends Service {
       contextWindow,
       baselineTokens: this.state.intentBaselines.get(session) ?? 0,
     })
+    observeContextUsage(sessionId, view.totalTokens, contextWindow)
     if (!gate.decision) return
 
     const settingsPreset = settings.presetOptions
