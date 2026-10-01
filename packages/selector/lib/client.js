@@ -717,10 +717,45 @@ window.__ModuleLoader__.load({
 			});
 		}
 		/**
-		* The authoritative code-skeleton reducer gate for the context-compression
-		* section. Deliberately minimal — an on/off select plus its own save path —
-		* because the gate is orthogonal to every profile and carries no parameters.
+		* The turn-tail intent summary fold gate. Same deliberately minimal shape as
+		* the code-skeleton gate: an on/off select with its own save path; the fold
+		* itself is gated by the growth constants and the per-session /ctx-summary
+		* override, none of which belong in this card.
 		*/
+		function IntentSummaryControls({ value, disabled, save, settle, t }) {
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+				className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.autoCompact,
+				"aria-labelledby": "context-compression-intentsummary-title",
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
+						id: "context-compression-intentsummary-title",
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.autoCompactTitle,
+						children: t("intentSummary.title")
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.customNote,
+						children: t("intentSummary.description")
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.field,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("intentSummary.enabled") }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+							value: value ? "on" : "off",
+							disabled,
+							onChange: (event) => {
+								settle(() => save(event.currentTarget.value === "on"));
+							},
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+								value: "on",
+								children: t("intentSummary.enabled.on")
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+								value: "off",
+								children: t("intentSummary.enabled.off")
+							})]
+						})]
+					})
+				]
+			});
+		}
 		function CodeSkeletonControls({ value, disabled, save, settle, t }) {
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
 				className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.autoCompact,
@@ -1045,7 +1080,7 @@ window.__ModuleLoader__.load({
 		function ContextCompressionSettingsSection(props) {
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SettingsCompressionProfileControls, { ...props });
 		}
-		function SettingsCompressionProfileControls({ useCompression, select, saveCustom, resetCustom, saveAutoCompact, saveCodeSkeleton, savePresetOptions, t }) {
+		function SettingsCompressionProfileControls({ useCompression, select, saveCustom, resetCustom, saveAutoCompact, saveCodeSkeleton, saveIntentSummary, savePresetOptions, t }) {
 			const state = useCompression((snapshot) => snapshot);
 			const [saving, setSaving] = (0, react.useState)(false);
 			const [saveError, setSaveError] = (0, react.useState)(null);
@@ -1129,6 +1164,13 @@ window.__ModuleLoader__.load({
 						value: state.value?.codeSkeleton?.enabled ?? false,
 						disabled: busy || !state.writable || false,
 						save: saveCodeSkeleton,
+						settle,
+						t
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(IntentSummaryControls, {
+						value: state.value?.intentSummary?.enabled ?? false,
+						disabled: busy || !state.writable || false,
+						save: saveIntentSummary,
 						settle,
 						t
 					}),
@@ -1260,6 +1302,11 @@ window.__ModuleLoader__.load({
 			"codeSkeleton.enabled": "代码骨架压缩",
 			"codeSkeleton.enabled.on": "开",
 			"codeSkeleton.enabled.off": "关（默认）",
+			"intentSummary.title": "回合末意图摘要（转向尾部压缩）",
+			"intentSummary.description": "开启后，回合收尾阶段把本次消费的增量按语义角色折叠为意图摘要块：读类工具结果压成单行目标/规模记录，写类保留骨架头与逐字错误行，于下一次压力回合经既有折叠管线落地；仅当增长门控通过（活跃表面 >45% 且距上次折叠增长 >50K token）才触发。修改只影响新会话；当前会话可用 /ctx-summary off|on|status 临时覆盖。",
+			"intentSummary.enabled": "回合末意图摘要",
+			"intentSummary.enabled.on": "开",
+			"intentSummary.enabled.off": "关（默认）",
 			"custom.title": "Custom 策略",
 			"custom.settingsHint": "具体参数请前往“设置 > 上下文压缩选择器”中编辑。",
 			"custom.sessionScope": "保存后的修改会在当前压缩运行时随后首次观察某个 Session 时生效；已被该运行时观察的 Session 继续使用其冻结策略。",
@@ -1356,6 +1403,11 @@ window.__ModuleLoader__.load({
 			"codeSkeleton.enabled": "Code skeleton compression",
 			"codeSkeleton.enabled.on": "On",
 			"codeSkeleton.enabled.off": "Off (default)",
+			"intentSummary.title": "Turn-tail intent summary",
+			"intentSummary.description": "When on, the turn-boundary postflight folds the consumed increment into intent-summary blocks by semantic role: read-class tool results become one-line target/scale records and write-class keep skeleton heads plus verbatim error lines, landing on the next pressure round through the ordinary fold pipeline. Only fires when the growth gate passes (live surface >45% and >50K tokens grown since the last fold). Applies to new sessions; override the current one with /ctx-summary off|on|status.",
+			"intentSummary.enabled": "Turn-tail intent summary",
+			"intentSummary.enabled.on": "On",
+			"intentSummary.enabled.off": "Off (default)",
 			"custom.title": "Custom policy",
 			"custom.settingsHint": "Edit detailed parameters in Settings > Context compression selector.",
 			"custom.sessionScope": "Saved changes apply when the current compression runtime next observes a Session for the first time. A Session already observed by that runtime keeps its frozen policy.",
@@ -1454,6 +1506,11 @@ window.__ModuleLoader__.load({
 			"codeSkeleton.enabled": "Code-Skelettkomprimierung",
 			"codeSkeleton.enabled.on": "Ein",
 			"codeSkeleton.enabled.off": "Aus (Standard)",
+			"intentSummary.title": "Abschluss-Zusammenfassung (Turn-Tail)",
+			"intentSummary.description": "Aktiviert faltet der Turn-Abschluss den verbrauchten Zuwachs nach semantischen Rollen zu Intent-Zusammenfassungsblöcken: Lese-Tool-Ergebnisse werden zu Einzeilern mit Ziel/Umfang, die Schreibklasse behält Skelettköpfe plus wörtliche Fehlerzeilen; die Landung erfolgt in der nächsten Druckrunde über die gewöhnliche Falt-Pipeline. Zündet nur, wenn die Wachstumsschwelle passiert ist (live Oberfläche >45 % und >50K Token seit der letzten Faltung). Gilt für neue Sitzungen; die aktuelle lässt sich mit /ctx-summary off|on|status übersteuern.",
+			"intentSummary.enabled": "Abschluss-Zusammenfassung",
+			"intentSummary.enabled.on": "Ein",
+			"intentSummary.enabled.off": "Aus (Standard)",
 			"custom.title": "Eigene Strategie",
 			"custom.settingsHint": "Detaillierte Parameter unter Einstellungen > Kontextkomprimierung wählen bearbeiten.",
 			"custom.sessionScope": "Gespeicherte Änderungen greifen, wenn die aktuelle Compression-Runtime eine Sitzung zum ersten Mal beobachtet. Eine von dieser Runtime bereits beobachtete Sitzung behält ihre eingefrorene Strategie.",
@@ -1552,6 +1609,11 @@ window.__ModuleLoader__.load({
 			"codeSkeleton.enabled": "Compresión de esqueleto del código",
 			"codeSkeleton.enabled.on": "Activado",
 			"codeSkeleton.enabled.off": "Desactivado (predeterminado)",
+			"intentSummary.title": "Resumen de intención al cierre del turno",
+			"intentSummary.description": "Al activarlo, el postflight de cierre de turno pliega el incremento consumido en bloques de resumen de intención por rol semántico: los resultados de herramientas de lectura se convierten en registros de una línea con objetivo/escala y los de escritura conservan la cabecera de esqueleto más las líneas de error textuales; aterriza en la siguiente ronda de presión por el conducto de plegado normal. Solo se dispara si se supera la puerta de crecimiento (superficie activa >45 % y >50K tokens desde el último plegado). Aplica a sesiones nuevas; la actual se gobierna con /ctx-summary off|on|status.",
+			"intentSummary.enabled": "Resumen de intención al cierre",
+			"intentSummary.enabled.on": "Sí",
+			"intentSummary.enabled.off": "No (predeterminado)",
 			"custom.title": "Política personalizada",
 			"custom.settingsHint": "Edita los parámetros detallados en Ajustes > Selector de compresión de contexto.",
 			"custom.sessionScope": "Los cambios guardados se aplican cuando el runtime de compresión actual observa una Session por primera vez. Una Session ya observada por ese runtime conserva su política congelada.",
@@ -1650,6 +1712,11 @@ window.__ModuleLoader__.load({
 			"codeSkeleton.enabled": "Compression du code en squelette",
 			"codeSkeleton.enabled.on": "Activé",
 			"codeSkeleton.enabled.off": "Désactivé (par défaut)",
+			"intentSummary.title": "Résumé d'intention en fin de tour",
+			"intentSummary.description": "Activé, le postflight de fin de tour plie l'incrément consommé en blocs de résumé d'intention par rôle sémantique : les résultats d'outils de lecture deviennent des enregistrements une-ligne objectif/échelle, les écrits gardent la tête de squelette plus les lignes d'erreur verbatim ; l'atterrissage se fait au prochain tour de pression via le pipeline de pliage habituel. Ne se déclenche que si la porte de croissance passe (surface active >45 % et >50K tokens depuis le dernier pliage). S'applique aux nouvelles sessions ; la session courante se pilote avec /ctx-summary off|on|status.",
+			"intentSummary.enabled": "Résumé d'intention en fin de tour",
+			"intentSummary.enabled.on": "Activé",
+			"intentSummary.enabled.off": "Désactivé (par défaut)",
 			"custom.title": "Stratégie personnalisée",
 			"custom.settingsHint": "Modifiez les paramètres détaillés dans Réglages > Sélecteur de compression du contexte.",
 			"custom.sessionScope": "Les changements enregistrés s’appliquent quand le runtime de compression actuel observe une Session pour la première fois. Une Session déjà observée par ce runtime garde sa stratégie figée.",
@@ -1748,6 +1815,11 @@ window.__ModuleLoader__.load({
 			"codeSkeleton.enabled": "Compressione a scheletro del codice",
 			"codeSkeleton.enabled.on": "Attivato",
 			"codeSkeleton.enabled.off": "Disattivato (predefinito)",
+			"intentSummary.title": "Riepilogo di intento a fine turno",
+			"intentSummary.description": "Quando attivo, il postflight di fine turno piega l'incremento consumato in blocchi di riepilogo di intento per ruolo semantico: i risultati degli strumenti di lettura diventano record a riga singola obiettivo/scala, quelli di scrittura mantengono la testa dello scheletro più le righe di errore testuali; atterra al prossimo round di pressione tramite la pipeline di piegatura ordinaria. Si attiva solo se la soglia di crescita passa (superficie attiva >45% e >50K token dall'ultima piegatura). Vale per le nuove sessioni; quella corrente si governa con /ctx-summary off|on|status.",
+			"intentSummary.enabled": "Riepilogo di intento a fine turno",
+			"intentSummary.enabled.on": "On",
+			"intentSummary.enabled.off": "Disattivato (predefinito)",
 			"custom.title": "Politica personalizzata",
 			"custom.settingsHint": "Modifica i parametri dettagliati in Impostazioni > Selettore di compressione del contesto.",
 			"custom.sessionScope": "Le modifiche salvate si applicano quando l’attuale runtime di compressione osserva una Sessione per la prima volta. Una Sessione già osservata da quel runtime mantiene la sua politica congelata.",
@@ -1846,6 +1918,11 @@ window.__ModuleLoader__.load({
 			"codeSkeleton.enabled": "コードスケルトン圧縮",
 			"codeSkeleton.enabled.on": "オン",
 			"codeSkeleton.enabled.off": "オフ(既定)",
+			"intentSummary.title": "ターン末尾インテント要約",
+			"intentSummary.description": "有効にすると、ターン境界のポストフライトが消費済み増分を意味役割ごとにインテント要約ブロックへ折り畳みます。読み系ツール結果は目標/規模の 1 行レコードに、書き系は骨格ヘッダーと逐語エラー行を保持し、次の圧力ラウンドで通常の折り畳みパイプラインを通じて着地します。成長ゲート（ライブ表面 >45%、前回の折り畳みから >50K トークン増）を通過したときだけ発火します。変更は新セッションに適用され、現セッションは /ctx-summary off|on|status で上書きできます。",
+			"intentSummary.enabled": "ターン末尾インテント要約",
+			"intentSummary.enabled.on": "オン",
+			"intentSummary.enabled.off": "オフ(既定)",
 			"custom.title": "カスタムポリシー",
 			"custom.settingsHint": "詳細パラメーターは「設定 > コンテキスト圧縮セレクター」で編集してください。",
 			"custom.sessionScope": "保存した変更は、現在の圧縮ランタイムが次に Session を初めて観測したときに適用されます。そのランタイムに既に観測された Session は凍結済みポリシーを使い続けます。",
@@ -1944,6 +2021,11 @@ window.__ModuleLoader__.load({
 			"codeSkeleton.enabled": "코드 스켈레톤 압축",
 			"codeSkeleton.enabled.on": "켬",
 			"codeSkeleton.enabled.off": "끔(기본값)",
+			"intentSummary.title": "턴 말머리 인텐트 요약",
+			"intentSummary.description": "켜면 턴 경계 포스트플라이트가 소비된 증분을 의미 역할별 인텐트 요약 블록으로 접습니다. 읽기 도구 결과는 목표/규모 한 줄 레코드가 되고 쓰기는 골격 헤더와 원문 오류 줄을 유지하며, 다음 압력 라운드에서 기존 접기 파이프라인을 통해 착지합니다. 성장 게이트(라이브 표면 >45%, 마지막 접기 이후 >50K 토큰 증가)를 통과할 때만 발동합니다. 새 세션에 적용되며, 현재 세션은 /ctx-summary off|on|status 로 임시 전환할 수 있습니다.",
+			"intentSummary.enabled": "턴 말머리 인텐트 요약",
+			"intentSummary.enabled.on": "켜기",
+			"intentSummary.enabled.off": "끔(기본값)",
 			"custom.title": "커스텀 정책",
 			"custom.settingsHint": "세부 파라미터는 「설정 > 컨텍스트 압축 셀렉터」에서 편집하세요.",
 			"custom.sessionScope": "저장된 변경 사항은 현재 압축 런타임이 Session을 처음 관측하는 시점에 적용됩니다. 해당 런타임이 이미 관측한 Session은 동결된 정책을 계속 사용합니다.",
@@ -2042,6 +2124,11 @@ window.__ModuleLoader__.load({
 			"codeSkeleton.enabled": "Скелетное сжатие кода",
 			"codeSkeleton.enabled.on": "Вкл",
 			"codeSkeleton.enabled.off": "Выкл (по умолчанию)",
+			"intentSummary.title": "Итог намерения в конце хода",
+			"intentSummary.description": "При включении постфлайт на границе хода сворачивает потреблённый прирост в блоки итогов намерения по семантическим ролям: результаты читающих инструментов становятся однострочными записями цель/масштаб, пишущие сохраняют заголовок скелета и дословные строки ошибок; приземляется в следующем раунде давления через обычный конвейер свёртки. Срабатывает только при прохождении шлюза роста (активная поверхность >45% и >50K токенов с последней свёртки). Действует на новые сессии; текущую можно переключить командой /ctx-summary off|on|status.",
+			"intentSummary.enabled": "Итог намерения в конце хода",
+			"intentSummary.enabled.on": "Вкл",
+			"intentSummary.enabled.off": "Выкл (по умолчанию)",
 			"custom.title": "Пользовательская стратегия",
 			"custom.settingsHint": "Подробные параметры — в «Настройки > Выбор сжатия контекста».",
 			"custom.sessionScope": "Сохранённые изменения применяются, когда текущий runtime сжатия впервые наблюдает Session. Session, уже наблюдаемая этим runtime, сохраняет свою замороженную стратегию.",
@@ -2232,6 +2319,7 @@ window.__ModuleLoader__.load({
 					resetCustom: () => writeAndConfirm(() => scope.set("custom", structuredClone(DEFAULT_CUSTOM_COMPRESSION_POLICY)), (settings) => isCustomCompressionPolicy(settings.custom) && sameCustomPolicy(settings.custom, DEFAULT_CUSTOM_COMPRESSION_POLICY)),
 					saveAutoCompact: (thresholdPercent) => writeAndConfirm(() => scope.set("autoCompact", { thresholdPercent }), (settings) => settings.autoCompact.thresholdPercent === thresholdPercent),
 					saveCodeSkeleton: (enabled) => writeAndConfirm(() => scope.set("codeSkeleton", { enabled }), (settings) => settings.codeSkeleton.enabled === enabled),
+					saveIntentSummary: (enabled) => writeAndConfirm(() => scope.set("intentSummary", { enabled }), (settings) => settings.intentSummary.enabled === enabled),
 					savePresetOptions: (options) => {
 						const ops = planPresetOptionsOps(scope.getSnapshot().value?.presetOptions, options);
 						if (ops.length === 0) return Promise.resolve();

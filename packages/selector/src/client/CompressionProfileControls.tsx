@@ -205,6 +205,40 @@ interface CodeSkeletonControlsProps {
  * section. Deliberately minimal — an on/off select plus its own save path —
  * because the gate is orthogonal to every profile and carries no parameters.
  */
+interface IntentSummaryControlsProps {
+  value: boolean
+  disabled: boolean
+  save: (enabled: boolean) => Promise<void>
+  settle: (operation: () => Promise<void>) => void
+  t: (key: ContextCompressionLocaleKey) => string
+}
+
+/**
+ * The turn-tail intent summary fold gate. Same deliberately minimal shape as
+ * the code-skeleton gate: an on/off select with its own save path; the fold
+ * itself is gated by the growth constants and the per-session /ctx-summary
+ * override, none of which belong in this card.
+ */
+export function IntentSummaryControls({ value, disabled, save, settle, t }: IntentSummaryControlsProps) {
+  return (
+    <section className={css.autoCompact} aria-labelledby="context-compression-intentsummary-title">
+      <h3 id="context-compression-intentsummary-title" className={css.autoCompactTitle}>{t('intentSummary.title')}</h3>
+      <p className={css.customNote}>{t('intentSummary.description')}</p>
+      <label className={css.field}>
+        <span>{t('intentSummary.enabled')}</span>
+        <select
+          value={value ? 'on' : 'off'}
+          disabled={disabled}
+          onChange={(event) => { settle(() => save(event.currentTarget.value === 'on')) }}
+        >
+          <option value="on">{t('intentSummary.enabled.on')}</option>
+          <option value="off">{t('intentSummary.enabled.off')}</option>
+        </select>
+      </label>
+    </section>
+  )
+}
+
 export function CodeSkeletonControls({ value, disabled, save, settle, t }: CodeSkeletonControlsProps) {
   return (
     <section className={css.autoCompact} aria-labelledby="context-compression-codeskeleton-title">
