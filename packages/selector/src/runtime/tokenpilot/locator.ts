@@ -105,8 +105,8 @@ export function buildLocatorBlock(
       const data = event.data as { content?: unknown, message?: { content?: unknown } }
       const content = Array.isArray(data.content) ? data.content : data.message?.content
       if (!Array.isArray(content)) continue
-      for (const block of content) {
-        if (block.type === 'text') {
+      for (const block of content as Array<{ type?: unknown, text?: unknown }>) {
+        if (block.type === 'text' && typeof block.text === 'string') {
           for (const path of extractSpillPaths(block.text)) spillFiles.add(path)
         }
       }

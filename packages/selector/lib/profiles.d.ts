@@ -68,6 +68,13 @@ interface AutoCompactSettings {
 interface CodeSkeletonSettings {
   enabled: boolean;
 }
+/**
+ * Orthogonal turn-tail intent-summary gate, mirrored browser-safe from the
+ * runtime: independent of every profile, default off.
+ */
+interface IntentSummarySettings {
+  enabled: boolean;
+}
 /** Browser-safe mirror of the runtime presetOptions section. */
 interface PresetOptionsSettings {
   readonly dedupeToolResults?: boolean;
@@ -98,6 +105,8 @@ interface ContextCompressionSettings {
   autoCompact: AutoCompactSettings;
   /** Code-skeleton reducer gate captured independently of `profile`. */
   codeSkeleton: CodeSkeletonSettings;
+  /** Turn-tail intent-summary gate captured independently of `profile`. */
+  intentSummary: IntentSummarySettings;
   /** Optional tokenpilot-inspired sub-capability overrides (presence-validated only). */
   presetOptions?: PresetOptionsSettings;
 }

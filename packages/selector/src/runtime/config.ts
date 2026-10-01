@@ -5,6 +5,7 @@ import type {
   AutoCompactSettings,
   CodeSkeletonSettings,
   CompressionPolicy,
+  IntentSummarySettings,
   CompressionProfile,
   CustomCompressionPolicy,
   PresetOptions,
@@ -86,7 +87,7 @@ function parseAutoCompactSettings(value: unknown): AutoCompactSettings {
   if (keys.length !== 1 || keys[0] !== 'thresholdPercent') {
     throw new TypeError(`Context-compression autoCompact: expected exactly "thresholdPercent", got "${keys.join('", "')}"`)
   }
-  const thresholdPercent = (value as Record<string, unknown>).thresholdPercent
+  const thresholdPercent = (value).thresholdPercent
   if (!isValidAutoCompactThresholdPercent(thresholdPercent)) {
     throw new TypeError(`Context-compression autoCompact.thresholdPercent (${String(thresholdPercent)}) must be an integer between ${String(AUTO_COMPACT_THRESHOLD_LIMITS.min)} and ${String(AUTO_COMPACT_THRESHOLD_LIMITS.max)}`)
   }
@@ -107,9 +108,30 @@ function parseCodeSkeletonSettings(value: unknown): CodeSkeletonSettings {
   if (keys.length !== 1 || keys[0] !== 'enabled') {
     throw new TypeError(`Context-compression codeSkeleton: expected exactly "enabled", got "${keys.join('", "')}"`)
   }
-  const enabled = (value as Record<string, unknown>).enabled
+  const enabled = (value).enabled
   if (typeof enabled !== 'boolean') {
     throw new TypeError('Context-compression codeSkeleton.enabled must be a boolean')
+  }
+  return { enabled }
+}
+
+/**
+ * Strictly parse the persisted intentSummary section. Mirrors the codeSkeleton
+ * section semantics: absent inherits the lossless `false` default, while a
+ * present-but-invalid section is an explicitly invalid document.
+ */
+function parseIntentSummarySettings(value: unknown): IntentSummarySettings {
+  if (value === undefined) return { enabled: false }
+  if (!isPlainRecord(value)) {
+    throw new TypeError('Context-compression intentSummary must be a plain object')
+  }
+  const keys = Object.keys(value)
+  if (keys.length !== 1 || keys[0] !== 'enabled') {
+    throw new TypeError(`Context-compression intentSummary: expected exactly "enabled", got "${keys.join('", "')}"`)
+  }
+  const enabled = (value).enabled
+  if (typeof enabled !== 'boolean') {
+    throw new TypeError('Context-compression intentSummary.enabled must be a boolean')
   }
   return { enabled }
 }
@@ -203,18 +225,18 @@ export function parsePresetOptionsSettings(value: unknown): PresetOptionsSetting
   if (value.summaryLocator !== undefined) result.summaryLocator = value.summaryLocator as boolean
   if (value.prefixStabilizer !== undefined) result.prefixStabilizer = value.prefixStabilizer as boolean
   if (value.readState !== undefined) result.readState = value.readState as boolean
-  if (estimatorMode !== undefined) result.estimatorMode = estimatorMode as '' | 'host' | 'direct'
+  if (estimatorMode !== undefined) result.estimatorMode = estimatorMode
   if (value.estimatorProvider !== undefined) result.estimatorProvider = value.estimatorProvider as string
   if (value.estimatorModel !== undefined) result.estimatorModel = value.estimatorModel as string
   if (value.estimatorBaseUrl !== undefined) result.estimatorBaseUrl = value.estimatorBaseUrl as string
   if (value.estimatorApiKey !== undefined) result.estimatorApiKey = value.estimatorApiKey as string
-  if (estimatorTimeoutMs !== undefined) result.estimatorTimeoutMs = estimatorTimeoutMs as number
-  if (advisorMode !== undefined) result.advisorMode = advisorMode as '' | 'host' | 'direct'
-  if (advisorTimeoutMs !== undefined) result.advisorTimeoutMs = advisorTimeoutMs as number
-  if (advisorRefreshTurns !== undefined) result.advisorRefreshTurns = advisorRefreshTurns as number
-  if (advisorScoreThreshold !== undefined) result.advisorScoreThreshold = advisorScoreThreshold as number
-  if (advisorSampleLimit !== undefined) result.advisorSampleLimit = advisorSampleLimit as number
-  if (advisorMinTokens !== undefined) result.advisorMinTokens = advisorMinTokens as number
+  if (estimatorTimeoutMs !== undefined) result.estimatorTimeoutMs = estimatorTimeoutMs
+  if (advisorMode !== undefined) result.advisorMode = advisorMode
+  if (advisorTimeoutMs !== undefined) result.advisorTimeoutMs = advisorTimeoutMs
+  if (advisorRefreshTurns !== undefined) result.advisorRefreshTurns = advisorRefreshTurns
+  if (advisorScoreThreshold !== undefined) result.advisorScoreThreshold = advisorScoreThreshold
+  if (advisorSampleLimit !== undefined) result.advisorSampleLimit = advisorSampleLimit
+  if (advisorMinTokens !== undefined) result.advisorMinTokens = advisorMinTokens
   return result
 }
 
@@ -253,6 +275,7 @@ export const DEFAULT_CONTEXT_COMPRESSION_SETTINGS: ContextCompressionSettings = 
   custom: structuredClone(DEFAULT_CUSTOM_COMPRESSION_POLICY),
   autoCompact: { thresholdPercent: AUTO_COMPACT_THRESHOLD_LIMITS.default },
   codeSkeleton: { enabled: false },
+  intentSummary: { enabled: false },
 }
 
 /**
@@ -290,7 +313,7 @@ export const ContextCompressionSettingsSchema: z<ContextCompressionSettings> = z
     // remain valid and inherit their defaults; the sections themselves stay
     // strictly shaped.
     const unknown = Object.keys(candidate).find(key =>
-      key !== 'profile' && key !== 'custom' && key !== 'autoCompact' && key !== 'codeSkeleton' && key !== 'presetOptions')
+      key !== 'profile' && key !== 'custom' && key !== 'autoCompact' && key !== 'codeSkeleton' && key !== 'intentSummary' && key !== 'presetOptions')
     if (unknown !== undefined) {
       throw new TypeError(`Context-compression settings: unknown key "${unknown}"`)
     }
@@ -302,11 +325,13 @@ export const ContextCompressionSettingsSchema: z<ContextCompressionSettings> = z
     assertPresentSection(candidate, 'custom', isUsableCustomDocument)
     const autoCompact = parseAutoCompactSettings(candidate.autoCompact)
     const codeSkeleton = parseCodeSkeletonSettings(candidate.codeSkeleton)
+    const intentSummary = parseIntentSummarySettings(candidate.intentSummary)
     const presetOptions = parsePresetOptionsSettings(candidate.presetOptions)
     return {
       ...contextCompressionSettingsInputSchema(candidate),
       autoCompact,
       codeSkeleton,
+      intentSummary,
       ...presetOptions === undefined ? {} : { presetOptions },
     }
   },

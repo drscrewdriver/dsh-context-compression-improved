@@ -17,6 +17,8 @@ describe('built Harness client artifact', () => {
     }
     Object.defineProperty(window, '__ModuleLoader__', { configurable: true, value: moduleLoader })
 
+    // The smoke evaluates the built IIFE bundle the same way a browser page would.
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
     expect(() => Function(code)()).not.toThrow()
     expect(registration?.id).toBe('dsh-context-compression-improved')
 

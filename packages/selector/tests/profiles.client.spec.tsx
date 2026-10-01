@@ -146,6 +146,7 @@ function renderReady(
       custom: structuredClone(DEFAULT_CUSTOM),
       autoCompact: { thresholdPercent: 80 },
       codeSkeleton: { enabled: false },
+      intentSummary: { enabled: false },
     },
     base: undefined,
     user: undefined,
@@ -329,7 +330,7 @@ describe('context compression profiles', () => {
     const saveCustom = vi.fn(() => Promise.resolve())
     const resetCustom = vi.fn(() => Promise.resolve())
     renderReady(vi.fn(() => Promise.resolve()), true, key => COPY[key] ?? key, {
-      value: { profile: 'custom', custom, autoCompact: { thresholdPercent: 80 }, codeSkeleton: { enabled: false } },
+      value: { profile: 'custom', custom, autoCompact: { thresholdPercent: 80 }, codeSkeleton: { enabled: false }, intentSummary: { enabled: false } },
       saveCustom,
       resetCustom,
       settingsSection: true,
@@ -364,6 +365,7 @@ describe('context compression profiles', () => {
         profile: 'custom',
         autoCompact: { thresholdPercent: 80 },
         codeSkeleton: { enabled: false },
+        intentSummary: { enabled: false },
         custom: {
           version: 1,
           unit: 'context-percent',
@@ -410,7 +412,7 @@ describe('context compression profiles', () => {
 
   it('keeps Custom parameters out of the compact sidebar surface', () => {
     renderReady(vi.fn(() => Promise.resolve()), true, key => COPY[key] ?? key, {
-      value: { profile: 'custom', custom: structuredClone(DEFAULT_CUSTOM), autoCompact: { thresholdPercent: 80 }, codeSkeleton: { enabled: false } },
+      value: { profile: 'custom', custom: structuredClone(DEFAULT_CUSTOM), autoCompact: { thresholdPercent: 80 }, codeSkeleton: { enabled: false }, intentSummary: { enabled: false } },
     })
 
     expect(screen.queryByRole('heading', { name: 'Custom policy' })).toBeNull()

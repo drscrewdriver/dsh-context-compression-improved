@@ -33,7 +33,7 @@ describe('autoCompact settings validation', () => {
       const settings = parseContextCompressionSettings({
         ...structuredClone(BASE_SETTINGS),
         autoCompact: { thresholdPercent },
-      } as never)
+      })
       expect(settings.autoCompact.thresholdPercent).toBe(thresholdPercent)
     }
   })
@@ -65,7 +65,7 @@ describe('autoCompact settings validation', () => {
       ...structuredClone(BASE_SETTINGS),
       autoCompact: { thresholdPercent: 80 },
       unrelated: true,
-    } as never)).toThrow(/unknown key/u)
+    })).toThrow(/unknown key/u)
   })
 
   it('publishes one shared validation contract for UI, persistence, and runtime', () => {
@@ -488,7 +488,7 @@ describe('codeSkeleton settings validation', () => {
       const settings = parseContextCompressionSettings({
         ...structuredClone(BASE_SETTINGS),
         codeSkeleton: { enabled },
-      } as never)
+      })
       expect(settings.codeSkeleton).toEqual({ enabled })
     }
   })

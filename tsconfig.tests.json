@@ -10,6 +10,8 @@
     "packages/selector/tests/**/*.ts",
     "packages/selector/tests/**/*.tsx",
     "vitest.config.ts",
-    "vitest.built.config.ts"
+    "vitest.built.config.ts",
+    "packages/selector/tsdown.config.ts",
+    "packages/selector/tsdown.client.config.ts"
   ]
 }

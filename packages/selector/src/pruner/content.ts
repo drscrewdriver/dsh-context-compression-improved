@@ -156,7 +156,7 @@ function nativePruneContent(
     const headText = points.slice(0, headEnd).join('')
     const insertion = intersectsRemoved && !markerInserted && typeof marker === 'function'
       ? marker(1 + newlinesBefore + headText.split('\n').length - 1)
-      : intersectsRemoved && !markerInserted ? marker : ''
+      : intersectsRemoved && !markerInserted && typeof marker === 'string' ? marker : ''
     if (insertion !== '') markerInserted = true
     const text = points.slice(0, headEnd).join('') + insertion + points.slice(tailStart).join('')
     if (text !== '') pruned.push({ ...block, text })

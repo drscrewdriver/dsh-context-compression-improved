@@ -71,6 +71,8 @@ class NativeSummaryAdapter extends LlmAdapter {
     })
   }
 
+  // Async generator shape is required by the llm service contract; no await needed.
+  // eslint-disable-next-line @typescript-eslint/require-await
   async * stream(options) {
     options.signal?.throwIfAborted()
     const text = this.responses.shift()

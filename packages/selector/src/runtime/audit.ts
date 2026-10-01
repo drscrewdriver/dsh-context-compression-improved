@@ -205,6 +205,22 @@ export interface AdvisorOutcomeAuditRecord extends CompressionAuditBase {
   readonly latencyMs: number
 }
 
+/** One turn-tail intent-summary pass: gate decision, ask outcome, or landing. Numeric metadata only. */
+export interface IntentSummaryOutcomeAuditRecord extends CompressionAuditBase {
+  readonly kind: 'intent-summary-outcome'
+  readonly ok: boolean
+  /** Aligned decision/reason code (gate reason, 'parse-failed', 'landed', 'expired'...). */
+  readonly reason: string
+  readonly turnIndex?: number
+  /** Folded candidate count when a range was selected or landed. */
+  readonly foldedCount?: number
+  /** Aggregate retention ratio of the landed batch (charsAfter / charsBefore). */
+  readonly retentionRatio?: number
+  /** Characters spent on the summary-writer call itself (credit accounting). */
+  readonly summaryCallChars?: number
+  readonly latencyMs?: number
+}
+
 /**
  * One advisory benefit-model label for a batch that LANDED. The retired review
  * gate used these bands to withhold a batch; a reduction must never block
@@ -247,6 +263,7 @@ export type CompressionAuditRecord =
   | SummaryLocatorAuditRecord
   | EstimatorOutcomeAuditRecord
   | AdvisorOutcomeAuditRecord
+  | IntentSummaryOutcomeAuditRecord
   | ReductionAdviceAuditRecord
 
 /** Minimal logger method consumed by the audit publisher. */

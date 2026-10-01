@@ -109,6 +109,14 @@ export interface CodeSkeletonSettings {
 }
 
 /**
+ * Orthogonal turn-tail intent-summary gate, mirrored browser-safe from the
+ * runtime: independent of every profile, default off.
+ */
+export interface IntentSummarySettings {
+  enabled: boolean
+}
+
+/**
  * Decode the persisted codeSkeleton section with exactly the runtime schema's
  * strictness: absent means the lossless off default; present values must be a
  * plain object carrying only a boolean `enabled`. Anything else is invalid,
@@ -119,7 +127,17 @@ export function decodeCodeSkeletonSettings(value: unknown): CodeSkeletonSettings
   if (!isPlainRecord(value)) return undefined
   const keys = Object.keys(value)
   if (keys.length !== 1 || keys[0] !== 'enabled') return undefined
-  const enabled = (value as Record<string, unknown>).enabled
+  const enabled = (value).enabled
+  return typeof enabled === 'boolean' ? { enabled } : undefined
+}
+
+/** Browser-safe mirror of the runtime intentSummary section (absent inherits off). */
+export function decodeIntentSummarySettings(value: unknown): IntentSummarySettings | undefined {
+  if (value === undefined) return { enabled: false }
+  if (!isPlainRecord(value)) return undefined
+  const keys = Object.keys(value)
+  if (keys.length !== 1 || keys[0] !== 'enabled') return undefined
+  const enabled = (value).enabled
   return typeof enabled === 'boolean' ? { enabled } : undefined
 }
 
@@ -221,18 +239,18 @@ export function decodePresetOptionsSettings(value: unknown): PresetOptionsSettin
   if (value.summaryLocator !== undefined) decoded.summaryLocator = value.summaryLocator as boolean
   if (value.prefixStabilizer !== undefined) decoded.prefixStabilizer = value.prefixStabilizer as boolean
   if (value.readState !== undefined) decoded.readState = value.readState as boolean
-  if (estimatorMode !== undefined) decoded.estimatorMode = estimatorMode as '' | 'host' | 'direct'
+  if (estimatorMode !== undefined) decoded.estimatorMode = estimatorMode
   if (value.estimatorProvider !== undefined) decoded.estimatorProvider = value.estimatorProvider as string
   if (value.estimatorModel !== undefined) decoded.estimatorModel = value.estimatorModel as string
   if (value.estimatorBaseUrl !== undefined) decoded.estimatorBaseUrl = value.estimatorBaseUrl as string
   if (value.estimatorApiKey !== undefined) decoded.estimatorApiKey = value.estimatorApiKey as string
-  if (estimatorTimeoutMs !== undefined) decoded.estimatorTimeoutMs = estimatorTimeoutMs as number
-  if (advisorMode !== undefined) decoded.advisorMode = advisorMode as '' | 'host' | 'direct'
-  if (advisorTimeoutMs !== undefined) decoded.advisorTimeoutMs = advisorTimeoutMs as number
-  if (advisorRefreshTurns !== undefined) decoded.advisorRefreshTurns = advisorRefreshTurns as number
-  if (advisorScoreThreshold !== undefined) decoded.advisorScoreThreshold = advisorScoreThreshold as number
-  if (advisorSampleLimit !== undefined) decoded.advisorSampleLimit = advisorSampleLimit as number
-  if (advisorMinTokens !== undefined) decoded.advisorMinTokens = advisorMinTokens as number
+  if (estimatorTimeoutMs !== undefined) decoded.estimatorTimeoutMs = estimatorTimeoutMs
+  if (advisorMode !== undefined) decoded.advisorMode = advisorMode
+  if (advisorTimeoutMs !== undefined) decoded.advisorTimeoutMs = advisorTimeoutMs
+  if (advisorRefreshTurns !== undefined) decoded.advisorRefreshTurns = advisorRefreshTurns
+  if (advisorScoreThreshold !== undefined) decoded.advisorScoreThreshold = advisorScoreThreshold
+  if (advisorSampleLimit !== undefined) decoded.advisorSampleLimit = advisorSampleLimit
+  if (advisorMinTokens !== undefined) decoded.advisorMinTokens = advisorMinTokens
   return decoded
 }
 
@@ -273,7 +291,7 @@ export function decodeAutoCompactSettings(value: unknown): AutoCompactSettings |
   if (!isPlainRecord(value)) return undefined
   const keys = Object.keys(value)
   if (keys.length !== 1 || keys[0] !== 'thresholdPercent') return undefined
-  const thresholdPercent = (value as Record<string, unknown>).thresholdPercent
+  const thresholdPercent = (value).thresholdPercent
   return isValidAutoCompactThresholdPercent(thresholdPercent)
     ? { thresholdPercent }
     : undefined
@@ -289,6 +307,8 @@ export interface ContextCompressionSettings {
   autoCompact: AutoCompactSettings
   /** Code-skeleton reducer gate captured independently of `profile`. */
   codeSkeleton: CodeSkeletonSettings
+  /** Turn-tail intent-summary gate captured independently of `profile`. */
+  intentSummary: IntentSummarySettings
   /** Optional tokenpilot-inspired sub-capability overrides (presence-validated only). */
   presetOptions?: PresetOptionsSettings
 }
