@@ -20,6 +20,9 @@ interface SavingsSnapshot {
   net: { exact: number; estimated: number }
   perComponent: Array<{ component: string; tokens: number; basis: string; kind: string }>
   recentOffsets: Array<{ component: string; tokens: number; basis: string; at: string; note?: string }>
+  usage?: { requests: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; cacheHitRate: number | null }
+  perSession?: Array<{ sessionId: string; net: { exact: number; estimated: number }; requests: number; cacheHitRate: number | null }>
+  pricing?: { currency: string; actualCost?: string; estimatedSavedCost?: string }
 }
 
 export interface SavingsCardProps {
@@ -90,6 +93,44 @@ export function SavingsCard({ t }: SavingsCardProps) {
           {hasExact ? `−${fmt(snap.offsets.exact)}` : ''}{hasExact && hasEstimated ? ' · ' : ''}{hasEstimated ? `−${fmt(snap.offsets.estimated)}` : ''}
         </span>
       </div>
+      {snap.usage !== undefined && snap.usage.requests > 0 ? (
+        <>
+          <div className={css.savingsRow}>
+            <span className={css.savingsMuted}>{t('savings.requests')}</span>
+            <span className={css.savingsMuted}>{fmt(snap.usage.requests)}</span>
+          </div>
+          <div className={css.savingsRow}>
+            <span className={css.savingsMuted}>{t('savings.cacheHit')}</span>
+            <span className={css.savingsMuted}>
+              {snap.usage.cacheHitRate === null ? '–' : `${Math.round(snap.usage.cacheHitRate * 100)}%`}
+            </span>
+          </div>
+          {snap.pricing?.actualCost !== undefined ? (
+            <div className={css.savingsRow}>
+              <span className={css.savingsMuted}>{t('savings.actualCost')}</span>
+              <span className={css.savingsMuted}>{snap.pricing.currency} {snap.pricing.actualCost}</span>
+            </div>
+          ) : null}
+          {snap.pricing?.estimatedSavedCost !== undefined ? (
+            <div className={css.savingsRow}>
+              <span className={css.savingsMuted}>{t('savings.savedMoney')}</span>
+              <span className={css.savingsMuted}>{snap.pricing.currency} {snap.pricing.estimatedSavedCost}</span>
+            </div>
+          ) : null}
+        </>
+      ) : null}
+      {snap.perSession !== undefined && snap.perSession.length > 1 ? (
+        <div className={css.savingsBreakdown}>
+          {snap.perSession.slice(0, 5).map(row => (
+            <div key={row.sessionId} className={css.savingsRow}>
+              <span className={css.savingsMuted}>
+                {t('savings.perSession')} · {row.sessionId.slice(0, 8)}…{row.requests > 0 ? ` · ${t('savings.cacheHit')} ${row.cacheHitRate === null ? '–' : `${Math.round(row.cacheHitRate * 100)}%`}` : ''}
+              </span>
+              <span className={css.savingsMuted}>{fmt(row.net.exact)}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
       {snap.perComponent.length > 0 ? (
         <div className={css.savingsBreakdown}>
           {snap.perComponent.slice(0, 6).map((row) => (

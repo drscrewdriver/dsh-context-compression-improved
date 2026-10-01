@@ -104,5 +104,10 @@ export const es = {
   'savings.basisExact': 'exacta',
   'savings.basisEstimated': 'estimada',
   'savings.basisNote': 'Las bases se informan por separado, nunca mezcladas: exacta = tokenizador DeepSeek; estimada = chars/4. Esqueleto seguido de lectura completa cuenta como ahorro negativo (el neto puede ser negativo).',
+  'savings.requests': 'Anfragen',
+  'savings.cacheHit': 'Cache-Trefferquote',
+  'savings.actualCost': 'Tatsächliche Kosten (offizielle Preise)',
+  'savings.savedMoney': 'Geschätzte Einsparung (Eingabepreis)',
+  'savings.perSession': 'Sitzung',
 
 } satisfies Record<ContextCompressionLocaleKey, string>
