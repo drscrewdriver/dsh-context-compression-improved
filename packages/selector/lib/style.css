@@ -306,3 +306,45 @@
   margin: 8px 0 0;
   font-size: 12px;
 }
+
+._3-mAqa_savingsCard {
+  border: 1px solid #ffffff1a;
+  border-radius: 8px;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  display: flex;
+}
+
+._3-mAqa_savingsRow {
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  display: flex;
+}
+
+._3-mAqa_savingsNetPositive strong {
+  color: #30d158;
+}
+
+._3-mAqa_savingsNetNegative strong {
+  color: #ff9f0a;
+}
+
+._3-mAqa_savingsMuted {
+  opacity: .66;
+  font-size: .92em;
+}
+
+._3-mAqa_savingsBreakdown {
+  border-top: 1px solid #ffffff14;
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+._3-mAqa_savingsNote {
+  opacity: .5;
+  margin-top: 4px;
+  font-size: .85em;
+}

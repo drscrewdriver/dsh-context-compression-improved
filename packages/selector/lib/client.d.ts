@@ -102,6 +102,15 @@ declare const zh: {
   'custom.save': string;
   'custom.reset': string;
   'custom.invalid': string;
+  'savings.title': string;
+  'savings.netExact': string;
+  'savings.netEstimated': string;
+  'savings.gross': string;
+  'savings.offsets': string;
+  'savings.empty': string;
+  'savings.basisExact': string;
+  'savings.basisEstimated': string;
+  'savings.basisNote': string;
 };
 /** Locale keys that every context-compression selector dictionary must provide. */
 type ContextCompressionLocaleKey = keyof typeof zh;

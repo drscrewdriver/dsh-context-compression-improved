@@ -95,4 +95,14 @@ export const ko = {
   'custom.save': '커스텀 정책 저장',
   'custom.reset': '커스텀 정책 초기화',
   'custom.invalid': '커스텀 정책 값이 올바르지 않습니다.',
+  'savings.title': '절감 통계(이 프로세스)',
+  'savings.netExact': '순 절감(정확 기준)',
+  'savings.netEstimated': '순 절감(추정 기준)',
+  'savings.gross': '총 절감(게시 시점)',
+  'savings.offsets': '상쇄(압축 후 전체 재판돈)',
+  'savings.empty': '아직 압축이 없습니다. 첫 번째 축소 후 순 절감이 표시됩니다.',
+  'savings.basisExact': '정확',
+  'savings.basisEstimated': '추정',
+  'savings.basisNote': '기준은 분리 표기하며 혼합하지 않습니다: 정확 = DeepSeek 토크나이저, 추정 = chars/4. 스켈레톤 후 전체 판독은 음의 절감으로 계산됩니다(순액은 마이너스 가능).',
+
 } satisfies Record<ContextCompressionLocaleKey, string>
