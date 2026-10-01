@@ -76,6 +76,142 @@ async function buildEstimatorCatalog(deps) {
 	};
 }
 //#endregion
+//#region src/runtime/tokenpilot/advisor-state.ts
+/**
+* `/ctx-summary off|on` overrides, keyed by session id (string). The command
+* handler only sees `invocation.agent.session.id`, not the pruner's Session
+* object, so these are id-keyed rather than WeakMap'd. Entries are two-char
+* strings per session and cleared whenever the override is lifted.
+*/
+const summaryOverrides = /* @__PURE__ */ new Map();
+/** Read the session's `/ctx-summary` override; `undefined` = default (settings-driven). */
+function getSummaryOverride(sessionId) {
+	return summaryOverrides.get(sessionId);
+}
+/** Set or clear (`undefined`) the session's `/ctx-summary` override. */
+function setSummaryOverride(sessionId, value) {
+	if (value === void 0) summaryOverrides.delete(sessionId);
+	else summaryOverrides.set(sessionId, value);
+}
+/** Last observed `intentSummary.enabled` for a session, for `/ctx-summary status`. */
+const lastObservedIntentEnabled = /* @__PURE__ */ new Map();
+/** The settings-side enabled flag last observed for the session, if any. */
+function getObservedIntentEnabled(sessionId) {
+	return lastObservedIntentEnabled.get(sessionId);
+}
+const lastIntentFolds = /* @__PURE__ */ new Map();
+/** The most recent landed intent fold for the session, if any. */
+function getLastIntentFold(sessionId) {
+	return lastIntentFolds.get(sessionId);
+}
+//#endregion
+//#region src/runtime/tokenpilot/intent-gate.ts
+/**
+* Turn-tail intent-summary growth gate (TokenPilot-inspired E2).
+*
+* Pure decision helper evaluated at the turn-boundary postflight: it decides
+* whether this turn may spend a summary-writer LLM call and stage a fold for
+* the next pressure round. The gate is deliberately conservative — every
+* unresolved input (unknown context window, non-finite counters) fails closed
+* toward "do not run", because a skipped fold is free while a wasted summary
+* call is not. Content safety is unaffected either way: fail-open semantics
+* live in the fold landing path, not here.
+*/
+/** Floor: the live surface must exceed this fraction of the context window. */
+const INTENT_GATE_FLOOR_FRACTION = .45;
+/** Growth: the live surface must have grown by more than this since the last landed fold. */
+const INTENT_GATE_GROWTH_TOKENS = 5e4;
+//#endregion
+//#region src/runtime/summary-command.ts
+const SUMMARY_COMMAND_NAME = "ctx-summary";
+const USAGE = "Usage: /ctx-summary off|on|status";
+/** Parse the raw argument string; `undefined` = unrecognized (usage error). */
+function parseSummaryCommandArgs(rawInput) {
+	const token = rawInput.trim().toLowerCase();
+	if (token === "off" || token === "on" || token === "status") return token;
+}
+function describeFold(sessionId) {
+	const fold = getLastIntentFold(sessionId);
+	if (fold === void 0) return "none";
+	return `turn ${fold.turn}, seq ${fold.startSeq}..${fold.endSeq}`;
+}
+/** Human-facing status line; observability only, never a decision input. */
+function formatSummaryStatus(sessionId) {
+	const override = getSummaryOverride(sessionId);
+	const enabled = getObservedIntentEnabled(sessionId);
+	const enabledText = enabled === void 0 ? "unknown (gate not evaluated yet)" : enabled ? "yes" : "no";
+	return [
+		`ctx-summary status:`,
+		`  override: ${override ?? "default (settings-driven)"}`,
+		`  intentSummary enabled (settings): ${enabledText}`,
+		`  gate: floor >${Math.round(INTENT_GATE_FLOOR_FRACTION * 100)}% of window AND growth >${INTENT_GATE_GROWTH_TOKENS} tokens since last fold`,
+		`  last fold: ${describeFold(sessionId)}`
+	].join("\n");
+}
+/** Resolve the invoking agent's session id (`''` when the host exposes none). */
+function sessionIdOf(agent) {
+	const session = agent?.session;
+	if (session === void 0 || session.id === void 0 || session.id === null) return "";
+	return String(session.id);
+}
+/** Best-effort `CommandDefinitionId` brand; `undefined` on stripped hosts (registered without it). */
+async function loadCommandDefinitionId() {
+	try {
+		return (await import("@deepseek-ai/dsh-commands")).CommandDefinitionId;
+	} catch {
+		return;
+	}
+}
+/**
+* Mount `/ctx-summary` for every composed human-command adapter. Never
+* throws: the command is a convenience surface, and a host without the
+* commands service (or with an incompatible registry shape) simply runs
+* without it.
+*/
+function registerSummaryCommand(ctx) {
+	ctx.inject(["commands"], (injected) => {
+		const commands = injected.commands;
+		if (commands === void 0 || typeof commands.register !== "function") return;
+		(async () => {
+			try {
+				const definitionId = await loadCommandDefinitionId();
+				await commands.register({
+					name: SUMMARY_COMMAND_NAME,
+					description: "Turn-tail intent summary: temporarily disable/resume or inspect status",
+					...definitionId === void 0 ? {} : { definitionId: definitionId("dsh-context-compression-improved/ctx-summary") },
+					handler: async (invocation) => {
+						const args = parseSummaryCommandArgs(typeof invocation.rawInput === "string" ? invocation.rawInput : "");
+						if (args === void 0) return {
+							kind: "error",
+							text: USAGE
+						};
+						const sessionId = sessionIdOf(invocation.agent);
+						if (args === "status") {
+							if (sessionId === "") return {
+								kind: "error",
+								text: "ctx-summary: no session is attached to this invocation"
+							};
+							return {
+								kind: "success",
+								text: formatSummaryStatus(sessionId)
+							};
+						}
+						if (sessionId === "") return {
+							kind: "error",
+							text: "ctx-summary: no session is attached to this invocation"
+						};
+						setSummaryOverride(sessionId, args);
+						return {
+							kind: "success",
+							text: args === "off" ? "ctx-summary: turn-tail intent summary paused for this session (until process restart or `/ctx-summary on`)" : "ctx-summary: turn-tail intent summary resumed for this session (numeric gates still apply)"
+						};
+					}
+				});
+			} catch {}
+		})();
+	});
+}
+//#endregion
 //#region src/preset-overlay.ts
 /** Plugin-owned, reversible compression overlays for native agent presets. */
 /**
@@ -624,6 +760,7 @@ function apply(ctx, config = {}) {
 			acquireSettingsRegistration(settingsCtx);
 		});
 		if (config.estimatorCatalogRoute === true) registerEstimatorCatalogRoute(ctx);
+		registerSummaryCommand(ctx);
 		if (config.presetOverlay !== true) return;
 		ctx.inject(["agentPresets"], (presetsCtx) => {
 			const installation = decorateAgentPresets(presetsCtx.agentPresets, {
