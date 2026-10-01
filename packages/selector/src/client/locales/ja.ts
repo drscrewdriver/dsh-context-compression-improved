@@ -74,6 +74,7 @@ export const ja = {
   'monitor.panel.net': '正味節約',
   'monitor.panel.gross': '総節約',
   'monitor.panel.offsets': '相殺',
+  'monitor.panel.context': 'コンテキスト占有',
   'monitor.panel.cacheHit': 'キャッシュ ヒット率',
   'monitor.panel.cost': 'コスト（実績 / 節約概算）',
   'monitor.panel.intent': 'インテント要約',
