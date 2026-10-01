@@ -37,6 +37,13 @@ import {
 } from './tokenpilot/advisor-state.ts'
 import { INTENT_GATE_FLOOR_FRACTION, INTENT_GATE_GROWTH_TOKENS } from './tokenpilot/intent-gate.ts'
 
+/**
+ * 灾难性遗忘区建议阈值:占用达到该比例即建议压缩/裁剪(DeepSeek 等长上下文
+ * 模型在高占用段对早期内容的召回显著退化)。有意低于宿主 Auto Compact 阈值
+ * (默认 80%)——提前一档给出人工干预窗口。
+ */
+export const MONITOR_SUGGEST_PCT = 0.7
+
 export interface MonitorIntentBlock {
   /** Session-scoped override; absent = settings-driven. */
   override: 'on' | 'off' | undefined
@@ -54,10 +61,19 @@ export interface MonitorContextBlock {
   sessionId: string
 }
 
+export interface MonitorSuggestionBlock {
+  /** 占用达到建议阈值——客户端点亮悬浮球并展示提示行。 */
+  suggest: boolean
+  thresholdPct: number
+  occupancyPct: number | null
+}
+
 export type MonitorSnapshot = SavingsSnapshot & {
   intent: MonitorIntentBlock
   /** Latest observed context occupancy; undefined until the pruner observes a turn. */
   context?: MonitorContextBlock
+  /** 灾难性遗忘区建议;未观测前 absent。 */
+  suggestion?: MonitorSuggestionBlock
   /** The session the snapshot was filtered to; `null` = all-sessions aggregate. */
   sessionScope: string | null
 }
@@ -86,9 +102,17 @@ export function buildMonitorSnapshot(
           : null,
         sessionId: observedContext.sessionId,
       }
+  const suggestion = contextBlock === undefined || contextBlock.pct === null
+    ? undefined
+    : {
+        suggest: contextBlock.pct >= MONITOR_SUGGEST_PCT,
+        thresholdPct: MONITOR_SUGGEST_PCT,
+        occupancyPct: contextBlock.pct,
+      }
   return {
     ...ledger.snapshot(sessionId),
     ...(contextBlock === undefined ? {} : { context: contextBlock }),
+    ...(suggestion === undefined ? {} : { suggestion }),
     intent: {
       override,
       observedEnabled: getObservedIntentEnabled(scopeKey),

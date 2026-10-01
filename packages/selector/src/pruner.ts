@@ -337,6 +337,15 @@ export class ToolResultPruner extends Service {
         this.auditFailure(agent.session, 'fresh', 'terminal-pass', error)
         ctx.logger.warn('context-compression terminal pass failed open: %o', error)
       }
+      // 压缩监控观测:每回合无条件记录上下文占用——面板占用条与
+      // 灾难性遗忘区建议的数据源,与 intentSummary 门控解耦(门关也可观测)。
+      try {
+        observeContextUsage(
+          String(agent.session.id),
+          measureForCompaction(this.ctx, agent.session).totalTokens,
+          this.contextWindowForRequest(agent.session),
+        )
+      } catch { /* 观测失败静默:面板显示陈旧/空态 */ }
       // TokenPilot-inspired E1: advisory estimator pass, strictly off the
       // synchronous chain. Verdicts only feed the next pressure pass.
       void this.postflightEstimatorPass(agent.session, signal).catch(() => undefined)
@@ -804,7 +813,6 @@ export class ToolResultPruner extends Service {
       contextWindow,
       baselineTokens: this.state.intentBaselines.get(session) ?? 0,
     })
-    observeContextUsage(sessionId, view.totalTokens, contextWindow)
     if (!gate.decision) return
 
     const settingsPreset = settings.presetOptions
