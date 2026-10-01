@@ -528,6 +528,15 @@ function codePointLength(text) {
 	for (const _point of text) length++;
 	return length;
 }
+/** Express one token-named policy gate on the character basis. */
+function charsForTokens(tokens) {
+	return tokens * 4;
+}
+/** Derive the telemetry-only token figure from a character measurement. */
+function charsToTokens(chars) {
+	if (!Number.isFinite(chars) || chars <= 0) return 0;
+	return Math.max(1, Math.round(chars / 4));
+}
 /**
 * Test whether a settings value names a supported compression profile.
 * @param value - untrusted settings value.
@@ -844,4 +853,4 @@ function assertNonNegativeInteger(name, value) {
 	if (!Number.isSafeInteger(value) || value < 0) throw new Error(`ToolResultPruneConfig: ${name} (${String(value)}) must be a non-negative safe integer`);
 }
 //#endregion
-export { COMPRESSION_PROFILES as _, PRUNE_MARKER as a, isValidAutoCompactThresholdPercent as c, resolvePolicy as d, CustomCompressionPolicySchema as f, deepFreeze as g, assertNever as h, DEFAULTS as i, parseContextCompressionSettings as l, resolveCustomPolicy as m, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as n, codePointLength as o, DEFAULT_CUSTOM_COMPRESSION_POLICY as p, ContextCompressionSettingsSchema as r, isCompressionProfile as s, AUTO_COMPACT_THRESHOLD_LIMITS as t, resolveConfig as u };
+export { assertNever as _, PRUNE_MARKER as a, codePointLength as c, parseContextCompressionSettings as d, resolveConfig as f, resolveCustomPolicy as g, DEFAULT_CUSTOM_COMPRESSION_POLICY as h, DEFAULTS as i, isCompressionProfile as l, CustomCompressionPolicySchema as m, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as n, charsForTokens as o, resolvePolicy as p, ContextCompressionSettingsSchema as r, charsToTokens as s, AUTO_COMPACT_THRESHOLD_LIMITS as t, isValidAutoCompactThresholdPercent as u, deepFreeze as v, COMPRESSION_PROFILES as y };
