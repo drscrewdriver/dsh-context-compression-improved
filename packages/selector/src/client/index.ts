@@ -10,6 +10,7 @@ import {
 } from './CompressionProfileSelector.tsx'
 import { DEFAULT_CUSTOM_COMPRESSION_POLICY } from '../profiles.ts'
 import { decodeSettings } from './decode.ts'
+import { initMonitorFab } from './monitor-fab.ts'
 import { en, zh } from './locales.ts'
 import { de } from './locales/de.ts'
 import { es } from './locales/es.ts'
@@ -96,6 +97,45 @@ export function apply(ctx: ClientContext): void {
       console.warn(`[dsh-context-compression-improved] locale "${language.id}" registration failed:`, error)
     }
   }
+  // Section label translator, captured EAGERLY: the settings shell evaluates
+  // `label()` during its own render; a lazy ctx.locale accessor inside the
+  // thunk would throw there if `locale` ever left this module's inject list
+  // (the search-index 0.5.3 family-tab incident). bind() returns a live
+  // binder, so locale switches are still followed.
+  const localeSvc = ctx.locale as { bind?: (n: string) => (key: string) => string } | undefined
+  const tNav = localeSvc?.bind?.(NS) ?? ((key: string) => key)
+
+  // 浮动监控面板(FAB): body 级幂等单例。enabled 读取走设置文档——0.1.2 宿主没有
+  // configForms 的 volatile settings,沿用 settingsScope.bind 的共享镜像快照;
+  // bind 一次挂在 apply 的插件纤维上,FAB 轮询只读快照、不重复绑定。
+  const fabScope = ctx.settingsScope.bind<ContextCompressionSettings>({ namespace: NS, decode: decodeSettings })
+  const readMonitorPanelEnabled = (): boolean => {
+    try {
+      const snap = fabScope.getSnapshot()
+      return snap.status === 'ready' ? (snap.value?.monitorPanel?.enabled ?? false) : false
+    } catch {
+      return false
+    }
+  }
+  initMonitorFab({
+    t: tNav,
+    sessionIdOf: () => undefined, // v1: 全会话聚合(savings 卡同口径);会话级绑定待输入栏座位
+    enabledOf: () => readMonitorPanelEnabled(),
+    fetchSnapshot: async (sessionId) => {
+      const query = sessionId === undefined ? '' : `?sessionId=${encodeURIComponent(sessionId)}`
+      const response = await fetch(`/api/dsh-context-compression-improved/monitor${query}`, { headers: { 'cache-control': 'no-cache' } })
+      if (!response.ok) throw new Error(`monitor snapshot ${response.status}`)
+      return await response.json() as Parameters<typeof initMonitorFab>[0]['fetchSnapshot'] extends (...args: never[]) => Promise<infer T> ? T : never
+    },
+    applyOverride: async (sessionId, action) => {
+      const query = sessionId === undefined ? '' : `?sessionId=${encodeURIComponent(sessionId)}`
+      await fetch(`/api/dsh-context-compression-improved/monitor${query}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action }),
+      })
+    },
+  })
   const injected = (): CompressionSelectorInjected => {
     // Bind per factory call on the caller's fiber (0.1.5: activation must
     // never block on the settings transport; the scope disposer belongs to
