@@ -8,7 +8,13 @@ import {
 } from '@deepseek-ai/dsh-settings'
 import { buildEstimatorCatalog, type EstimatorCatalogDeps } from './estimator-catalog.ts'
 import { getSavingsLedger } from './runtime/savings.ts'
-import { priceOfficialDeepSeekUsage } from './runtime/deepseek-official-pricing.ts'
+import {
+  applySessionOverride,
+  buildMonitorSnapshot,
+  estimateSavingsPricing,
+  isSessionOverrideAction,
+  type AgentDefaultModelLike,
+} from './runtime/monitor.ts'
 import {
   CONTEXT_COMPRESSION_SETTINGS_NAMESPACE,
   ContextCompressionSettingsSchema,
@@ -48,6 +54,11 @@ const ADVISOR_REPORT_ROUTES = [
 const SAVINGS_ROUTES = [
   '/endpoint/dsh-context-compression-improved/savings',
   '/api/dsh-context-compression-improved/savings',
+] as const
+
+const MONITOR_ROUTES = [
+  '/endpoint/dsh-context-compression-improved/monitor',
+  '/api/dsh-context-compression-improved/monitor',
 ] as const
 
 /** Minimal face of the agents service: session id → agent (carrying the session). */
@@ -188,11 +199,6 @@ interface WebServerLike {
 }
 
 /** The estimator-side service the catalog handler enriches its response with. */
-interface AgentDefaultModelLike {
-  /** Current host model-group selection, when the service exposes one. */
-  currentSelection?: () => { provider?: unknown, model?: unknown } | undefined
-}
-
 function asWebServer(value: unknown): WebServerLike | undefined {
   if (typeof value !== 'object' || value === null) return undefined
   const candidate = value as { register?: unknown }
@@ -316,60 +322,6 @@ interface SharedSettingsRegistration {
 }
 
 /**
- * 金额估算(monitor 口径的 token/金额估算,结合官方牌价):
- *  - actualCost:本进程累计真实 usage 的官方牌价(exact/range);
- *  - estimatedSavedCost:净节省(精确口径)按 cache-miss 输入价折算——
- *    基线假设"这些 token 不压缩就要全价进上下文",标注估算。
- * 仅官方 deepseek-official 路由可解;第三方/未知模型 fail-closed 为 undefined。
- */
-function estimateSavingsPricing(readService: (name: string) => unknown, snapshot: {
-  startedAt: string
-  net: { exact: number; estimated: number }
-  usage: { requests: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number }
-}): { currency: string; actualCost?: string | undefined; estimatedSavedCost?: string | undefined } | undefined {
-  if (snapshot.usage.requests === 0 && snapshot.net.exact === 0) return undefined
-  const defaults = readService('agentDefaultModel') as AgentDefaultModelLike | undefined
-  const selection = defaults?.currentSelection?.()
-  const provider = typeof selection?.provider === 'string' ? selection.provider : ''
-  const modelId = typeof selection?.model === 'string' ? selection.model : ''
-  if (provider !== 'deepseek-official') return undefined
-  const now = new Date()
-  const startedAt = new Date(snapshot.startedAt)
-  const completedAt = now.getTime() > startedAt.getTime() ? now : new Date(startedAt.getTime() + 1)
-  const base = {
-    provider,
-    baseUrlClass: 'official-public',
-    apiRoute: 'chat-completions',
-    modelId,
-    currency: 'USD',
-    startedAt,
-    completedAt,
-  } as const
-  const actual = priceOfficialDeepSeekUsage({
-    ...base,
-    usage: {
-      cacheReadTokens: Math.max(0, Math.round(snapshot.usage.cacheReadTokens)),
-      cacheMissTokens: Math.max(0, Math.round(snapshot.usage.inputTokens)),
-      outputTokens: Math.max(0, Math.round(snapshot.usage.outputTokens)),
-    },
-  })
-  const saved = snapshot.net.exact > 0
-    ? priceOfficialDeepSeekUsage({
-      ...base,
-      usage: { cacheReadTokens: 0, cacheMissTokens: Math.round(snapshot.net.exact), outputTokens: 0 },
-    })
-    : undefined
-  const decimalOf = (cost: typeof actual): string | undefined =>
-    cost.kind === 'exact' ? cost.decimal : cost.kind === 'range' ? cost.minimum.decimal : undefined
-  if (actual.kind === 'unpriced' && (saved === undefined || saved.kind === 'unpriced')) return undefined
-  return {
-    currency: 'USD',
-    ...(actual.kind === 'unpriced' ? {} : { actualCost: decimalOf(actual) }),
-    ...(saved === undefined || saved.kind === 'unpriced' ? {} : { estimatedSavedCost: decimalOf(saved) }),
-  }
-}
-
-/**
  * Read-only savings snapshot route (`GET .../savings?sessionId=…`): gross saved,
  * offsets (negative savings — compressed content later re-read in full), and net,
  * with exact-tokenizer and chars/4 bases reported separately and never merged.
@@ -447,6 +399,119 @@ interface SettingsOwner {
   readonly settings: SettingsService
 }
 
+/**
+ * Floating-panel monitor route (`GET|POST .../monitor?sessionId=…`):
+ *  - GET → the monitor snapshot (savings aggregate + intent control block +
+ *    pricing) — the payload shape the panel polls;
+ *  - POST → session override action (`{"action":"on"|"off"|"clear"}`),
+ *    driving the exact state machine `/ctx-summary` drives.
+ * Registration mirrors the savings route (webServer gate alone, dual channels,
+ * single guarded registration); the handler branches on `req.method` because
+ * the registration surface is method-agnostic.
+ */
+/** Exported for the runtime monitor spec; the entry owns all webServer wiring. */
+export function registerMonitorRoute(ctx: Context): void {
+  const readService = (name: string): unknown => {
+    try {
+      return (ctx as unknown as { get: (service: string) => unknown }).get(name)
+    } catch {
+      return undefined
+    }
+  }
+  const log = (level: 'info' | 'warn', message: string, ...args: unknown[]): void => {
+    console[level](message, ...args)
+  }
+
+  let registered = false
+  const register = (webServer: WebServerLike, channel: 'direct' | 'inject'): void => {
+    if (registered) return
+    const handler = (req: unknown, res: unknown): void => {
+      const resTyped = res as {
+        writeHead: (code: number, headers?: Record<string, string>) => void
+        end: (body?: string) => void
+      }
+      if (typeof resTyped?.writeHead !== 'function' || typeof resTyped?.end !== 'function') return
+      let sessionId: string | undefined
+      try {
+        const url = new URL(String((req as { url?: string })?.url ?? '/'), 'http://localhost')
+        const raw = url.searchParams.get('sessionId')
+        if (typeof raw === 'string' && raw.length > 0 && raw.length <= 512) sessionId = raw
+      } catch {
+        /* 无法解析的查询串 = 全会话聚合 */
+      }
+      const method = String((req as { method?: string })?.method ?? 'GET').toUpperCase()
+      if (method === 'POST') {
+        const chunks: Buffer[] = []
+        let size = 0
+        let done = false
+        const respond = (status: number, body: Record<string, unknown>): void => {
+          if (done) return
+          done = true
+          resTyped.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-cache' })
+          resTyped.end(JSON.stringify(body))
+        }
+        const reqTyped = req as { on?: (event: string, cb: (chunk?: Buffer) => void) => void }
+        if (typeof reqTyped?.on !== 'function') {
+          respond(400, { ok: false, error: 'unreadable request body' })
+          return
+        }
+        reqTyped.on('data', (chunk?: Buffer) => {
+          size += chunk?.length ?? 0
+          if (size <= 4096) chunks.push(Buffer.from(chunk ?? new Uint8Array()))
+        })
+        reqTyped.on('end', () => {
+          let action: unknown
+          try {
+            action = (JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as { action?: unknown }).action
+          } catch {
+            respond(400, { ok: false, error: 'monitor override action must be JSON' })
+            return
+          }
+          if (!isSessionOverrideAction(action)) {
+            respond(400, { ok: false, error: 'monitor override action must be "on" | "off" | "clear"' })
+            return
+          }
+          const { override } = applySessionOverride(sessionId ?? '', action)
+          respond(200, { ok: true, override: override ?? null, sessionScope: sessionId ?? null })
+        })
+        return
+      }
+      const snapshot = buildMonitorSnapshot(sessionId)
+      const pricing = estimateSavingsPricing(readService, snapshot)
+      resTyped.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-cache' })
+      resTyped.end(JSON.stringify({ ok: true, ...snapshot, ...(pricing === undefined ? {} : { pricing }) }))
+    }
+    try {
+      const disposers = MONITOR_ROUTES
+        .map(path => webServer.register({ kind: 'exact', path, handler }))
+        .filter((off): off is () => void => typeof off === 'function')
+      registered = true
+      ctx.effect(
+        () => () => { for (const off of disposers) off() },
+        'contextCompressionSelector.monitor route',
+      )
+      log('info', 'context-compression monitor route registered (%s): %s', channel, MONITOR_ROUTES.join(', '))
+    } catch (error) {
+      log('warn', 'context-compression monitor route registration failed (%s): %o', channel, error)
+    }
+  }
+
+  const active = asWebServer(readService('webServer'))
+  if (active !== undefined) {
+    register(active, 'direct')
+    if (registered) return
+  }
+
+  ctx.inject(['webServer'], (injected) => {
+    const webServer = asWebServer((injected as { webServer?: unknown }).webServer)
+    if (webServer === undefined) {
+      log('warn', 'context-compression webServer exposes no register() — monitor route not registered')
+      return
+    }
+      register(webServer, 'inject')
+  })
+}
+
 /** Symbol properties reach the shared service target through Cordis proxies. */
 const SHARED_SETTINGS = Symbol.for(
   'dsh-context-compression-improved/settings-registration',
@@ -507,6 +572,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     if (config.estimatorCatalogRoute === true) registerEstimatorCatalogRoute(ctx)
     // 节省统计路由:只读快照,无 opt-in 门槛(无敏感数据,纯 token 计数)。
     registerSavingsRoute(ctx)
+    registerMonitorRoute(ctx)
 
     // Advisory advisor: read-only decay/score/advice report (opt-in).
     if (config.advisorReportRoute === true) registerAdvisorReportRoute(ctx)
