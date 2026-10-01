@@ -6,6 +6,11 @@ All notable changes use this file. The project follows semantic versioning after
 
 ### Added
 
+- **Savings statistics with honest accounting** (inspired by the dsh-token-optimizer concept): every published reduction now lands in a per-process ledger (`runtime/savings.ts`) keyed by the rewrite audit's own `tokensBefore − tokensAfter` — realized savings only, never the theoretical maximum. **Negative savings are paired, not ignored**: the original text of each reduction is SHA-256 registered, and when the model later re-reads that content in full (a new tool result whose hash matches, or a `context_compression_retrieve` return), the re-read tokens are booked as an offset against the earlier claim — skeleton-then-full-read nets negative, exactly as it should. Exact-tokenizer and chars/4 bases are aggregated separately and never merged into one number.
+- Surfaces: read-only `GET /{endpoint,api}/dsh-context-compression-improved/savings` snapshot route (always-on, aggregates only — no session content), and a savings card in the settings section (net/gross/offsets, per-component breakdown, recent offsets) in all nine UI languages.
+
+### Added
+
 - Japanese (`ja`) and Korean (`ko`) UI locale dictionaries, plus the fr/de/it/ru/es dictionaries ported from main — the selector settings section now speaks nine languages (zh / en / de / es / fr / it / ja / ko / ru). Host 0.1.5-rc.2 `dsh-client-locale` carries `addLanguage`, so the extras register via the untyped overload plus `addLanguage` (fallback `en`); labels are self-described, and one failed registration warns instead of sinking activation. Client-only, host-agnostic.
 
 ### Fixed

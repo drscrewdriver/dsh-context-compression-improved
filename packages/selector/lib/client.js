@@ -294,7 +294,7 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region \0dsh-context-compression-css:466eb745356d-CompressionProfileSelector.module.css.mjs
-		const css = ".rLocJG_settingsSection{max-width:720px;color:var(--dsw-alias-label-primary);flex-direction:column;gap:12px;display:flex}.rLocJG_settingsTitle{color:var(--dsw-alias-label-primary);margin:0;font-size:16px;font-weight:500;line-height:24px}.rLocJG_settingsDescription{color:var(--dsw-alias-label-tertiary);margin:0;font-size:14px;line-height:22px}.rLocJG_root{width:100%}.rLocJG_profileGrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;display:grid}.rLocJG_profileCard{border:1px solid var(--dsw-alias-border-l2);min-height:112px;color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left;background:0 0;border-radius:10px;flex-direction:column;gap:8px;padding:14px;display:flex}.rLocJG_profileCard:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.rLocJG_profileCard[aria-pressed=true]{border-color:var(--dsw-alias-label-primary)}.rLocJG_profileCard:active:not(:disabled){transform:scale(.99)}.rLocJG_profileCard:disabled{cursor:default;opacity:.6}.rLocJG_profileCard:focus-visible{outline-offset:2px;outline:2px solid}.rLocJG_profileCardTop{align-items:center;gap:8px;display:flex}.rLocJG_profileCardTitle{font-size:14px;font-weight:500;line-height:20px}.rLocJG_profileCurrent{background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-base);border-radius:999px;padding:1px 6px;font-size:10px;line-height:14px}.rLocJG_profileCardDetail{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}.rLocJG_button{border:1px solid var(--dsw-alias-border-l2);width:100%;min-height:34px;color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left;background:0 0;border-radius:10px;align-items:center;gap:8px;padding:6px 8px;display:flex}.rLocJG_button:hover{background:var(--dsw-alias-interactive-bg-hover)}.rLocJG_button:disabled{cursor:default;opacity:.6}.rLocJG_copy{flex:1;min-width:0}.rLocJG_label{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:14px}.rLocJG_value{text-overflow:ellipsis;white-space:nowrap;font-size:13px;line-height:17px;overflow:hidden}.rLocJG_chevron{color:var(--dsw-alias-label-secondary);flex:none}.rLocJG_menuCopy{flex-direction:column;gap:2px;min-width:220px;display:flex}.rLocJG_menuTitle{font-size:13px;line-height:17px}.rLocJG_menuDetail{white-space:normal;max-width:290px;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:15px}.rLocJG_error{color:var(--dsw-alias-state-error-primary);padding:4px 8px 0;font-size:11px;line-height:15px}.rLocJG_unavailable{color:var(--dsw-alias-label-tertiary);padding:4px 8px 0;font-size:11px;line-height:15px}.rLocJG_settingsHint{color:var(--dsw-alias-label-secondary);padding:4px 8px 0;font-size:11px;line-height:15px}.rLocJG_pricing{color:var(--dsw-alias-label-tertiary);padding:4px 8px 0;font-size:11px;line-height:15px}.rLocJG_custom{border-top:1px solid var(--dsw-alias-border-l2);margin-top:16px;padding:16px 0 0}.rLocJG_customTitle{margin:0 0 6px;font-size:13px;line-height:17px}.rLocJG_customNote{color:var(--dsw-alias-label-tertiary);margin:4px 0;font-size:11px;line-height:15px}.rLocJG_stage{border:0;border-top:1px solid var(--dsw-alias-border-l2);margin:12px 0 0;padding:12px 0 0}.rLocJG_stageToggle{align-items:center;gap:6px;font-size:12px;line-height:16px;display:inline-flex}.rLocJG_fieldGrid{grid-template-columns:1fr;gap:8px;display:grid}.rLocJG_field{min-width:0;color:var(--dsw-alias-label-secondary);flex-direction:column;gap:4px;margin-top:8px;font-size:11px;line-height:15px;display:flex}.rLocJG_field input,.rLocJG_field select{box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);width:100%;min-width:0;min-height:30px;color:var(--dsw-alias-label-primary);border-radius:7px;padding:4px 6px}.rLocJG_field input:focus-visible,.rLocJG_field select:focus-visible,.rLocJG_actions button:focus-visible{outline-offset:2px;outline:2px solid}.rLocJG_actions{flex-wrap:wrap;gap:8px;margin-top:10px;display:flex}.rLocJG_actions button{border:1px solid var(--dsw-alias-border-l2);min-height:30px;color:var(--dsw-alias-label-primary);background:0 0;border-radius:7px;padding:4px 8px}.rLocJG_actions button:active:not(:disabled){transform:scale(.98)}.rLocJG_actions button:disabled{opacity:.6}@media (width<=560px){.rLocJG_profileGrid{grid-template-columns:1fr}}.rLocJG_autoCompact{border:1px solid #80808059;border-radius:8px;margin-top:24px;padding:16px}.rLocJG_autoCompactTitle{margin:0 0 8px;font-size:15px;font-weight:600}.rLocJG_autoCompactRisk{opacity:.9;margin:8px 0 0;font-size:12px}";
+		const css = ".rLocJG_settingsSection{max-width:720px;color:var(--dsw-alias-label-primary);flex-direction:column;gap:12px;display:flex}.rLocJG_settingsTitle{color:var(--dsw-alias-label-primary);margin:0;font-size:16px;font-weight:500;line-height:24px}.rLocJG_settingsDescription{color:var(--dsw-alias-label-tertiary);margin:0;font-size:14px;line-height:22px}.rLocJG_root{width:100%}.rLocJG_profileGrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;display:grid}.rLocJG_profileCard{border:1px solid var(--dsw-alias-border-l2);min-height:112px;color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left;background:0 0;border-radius:10px;flex-direction:column;gap:8px;padding:14px;display:flex}.rLocJG_profileCard:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.rLocJG_profileCard[aria-pressed=true]{border-color:var(--dsw-alias-label-primary)}.rLocJG_profileCard:active:not(:disabled){transform:scale(.99)}.rLocJG_profileCard:disabled{cursor:default;opacity:.6}.rLocJG_profileCard:focus-visible{outline-offset:2px;outline:2px solid}.rLocJG_profileCardTop{align-items:center;gap:8px;display:flex}.rLocJG_profileCardTitle{font-size:14px;font-weight:500;line-height:20px}.rLocJG_profileCurrent{background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-base);border-radius:999px;padding:1px 6px;font-size:10px;line-height:14px}.rLocJG_profileCardDetail{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}.rLocJG_button{border:1px solid var(--dsw-alias-border-l2);width:100%;min-height:34px;color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left;background:0 0;border-radius:10px;align-items:center;gap:8px;padding:6px 8px;display:flex}.rLocJG_button:hover{background:var(--dsw-alias-interactive-bg-hover)}.rLocJG_button:disabled{cursor:default;opacity:.6}.rLocJG_copy{flex:1;min-width:0}.rLocJG_label{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:14px}.rLocJG_value{text-overflow:ellipsis;white-space:nowrap;font-size:13px;line-height:17px;overflow:hidden}.rLocJG_chevron{color:var(--dsw-alias-label-secondary);flex:none}.rLocJG_menuCopy{flex-direction:column;gap:2px;min-width:220px;display:flex}.rLocJG_menuTitle{font-size:13px;line-height:17px}.rLocJG_menuDetail{white-space:normal;max-width:290px;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:15px}.rLocJG_error{color:var(--dsw-alias-state-error-primary);padding:4px 8px 0;font-size:11px;line-height:15px}.rLocJG_unavailable{color:var(--dsw-alias-label-tertiary);padding:4px 8px 0;font-size:11px;line-height:15px}.rLocJG_settingsHint{color:var(--dsw-alias-label-secondary);padding:4px 8px 0;font-size:11px;line-height:15px}.rLocJG_pricing{color:var(--dsw-alias-label-tertiary);padding:4px 8px 0;font-size:11px;line-height:15px}.rLocJG_custom{border-top:1px solid var(--dsw-alias-border-l2);margin-top:16px;padding:16px 0 0}.rLocJG_customTitle{margin:0 0 6px;font-size:13px;line-height:17px}.rLocJG_customNote{color:var(--dsw-alias-label-tertiary);margin:4px 0;font-size:11px;line-height:15px}.rLocJG_stage{border:0;border-top:1px solid var(--dsw-alias-border-l2);margin:12px 0 0;padding:12px 0 0}.rLocJG_stageToggle{align-items:center;gap:6px;font-size:12px;line-height:16px;display:inline-flex}.rLocJG_fieldGrid{grid-template-columns:1fr;gap:8px;display:grid}.rLocJG_field{min-width:0;color:var(--dsw-alias-label-secondary);flex-direction:column;gap:4px;margin-top:8px;font-size:11px;line-height:15px;display:flex}.rLocJG_field input,.rLocJG_field select{box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);width:100%;min-width:0;min-height:30px;color:var(--dsw-alias-label-primary);border-radius:7px;padding:4px 6px}.rLocJG_field input:focus-visible,.rLocJG_field select:focus-visible,.rLocJG_actions button:focus-visible{outline-offset:2px;outline:2px solid}.rLocJG_actions{flex-wrap:wrap;gap:8px;margin-top:10px;display:flex}.rLocJG_actions button{border:1px solid var(--dsw-alias-border-l2);min-height:30px;color:var(--dsw-alias-label-primary);background:0 0;border-radius:7px;padding:4px 8px}.rLocJG_actions button:active:not(:disabled){transform:scale(.98)}.rLocJG_actions button:disabled{opacity:.6}@media (width<=560px){.rLocJG_profileGrid{grid-template-columns:1fr}}.rLocJG_autoCompact{border:1px solid #80808059;border-radius:8px;margin-top:24px;padding:16px}.rLocJG_autoCompactTitle{margin:0 0 8px;font-size:15px;font-weight:600}.rLocJG_autoCompactRisk{opacity:.9;margin:8px 0 0;font-size:12px}.rLocJG_savingsCard{border:1px solid #ffffff1a;border-radius:8px;flex-direction:column;gap:4px;margin-top:14px;padding:10px 12px;display:flex}.rLocJG_savingsRow{justify-content:space-between;align-items:baseline;gap:12px;display:flex}.rLocJG_savingsNetPositive strong{color:#30d158}.rLocJG_savingsNetNegative strong{color:#ff9f0a}.rLocJG_savingsMuted{opacity:.66;font-size:.92em}.rLocJG_savingsBreakdown{border-top:1px solid #ffffff14;margin-top:4px;padding-top:4px}.rLocJG_savingsNote{opacity:.5;margin-top:4px;font-size:.85em}";
 		const tagId = "dsh-context-compression-improved/CompressionProfileSelector.module.css";
 		if (typeof document !== "undefined" && document.querySelector(`style[data-plugin-css="${tagId}"]`) === null) {
 			const tag = document.createElement("style");
@@ -329,6 +329,13 @@ window.__ModuleLoader__.load({
 			"profileCurrent": "rLocJG_profileCurrent",
 			"profileGrid": "rLocJG_profileGrid",
 			"root": "rLocJG_root",
+			"savingsBreakdown": "rLocJG_savingsBreakdown",
+			"savingsCard": "rLocJG_savingsCard",
+			"savingsMuted": "rLocJG_savingsMuted",
+			"savingsNetNegative": "rLocJG_savingsNetNegative",
+			"savingsNetPositive": "rLocJG_savingsNetPositive",
+			"savingsNote": "rLocJG_savingsNote",
+			"savingsRow": "rLocJG_savingsRow",
 			"settingsDescription": "rLocJG_settingsDescription",
 			"settingsHint": "rLocJG_settingsHint",
 			"settingsSection": "rLocJG_settingsSection",
@@ -1068,6 +1075,120 @@ window.__ModuleLoader__.load({
 			});
 		}
 		//#endregion
+		//#region src/client/savings-card.tsx
+		/**
+		* 节省统计卡片(设置分节内,只读):净/毛/抵消 + 分项条。
+		* 数据源 = `/api/.../savings` 只读快照路由(忙 2s / 闲 5s 自调度轮询,
+		* 失败静默——统计卡片永不打扰设置页主功能)。
+		*
+		* @module dsh-context-compression-improved/client/savings-card
+		*/
+		const SAVINGS_ROUTE = "/api/dsh-context-compression-improved/savings";
+		function fmt(n) {
+			return n.toLocaleString("en-US");
+		}
+		/** 节省统计卡片:口径分列(精确 tokenizer vs chars/4 估算),永不混算。 */
+		function SavingsCard({ t }) {
+			const [snap, setSnap] = (0, react.useState)(null);
+			const stopped = (0, react.useRef)(false);
+			(0, react.useEffect)(() => {
+				stopped.current = false;
+				const tick = async () => {
+					try {
+						const response = await fetch(SAVINGS_ROUTE, { headers: { "cache-control": "no-cache" } });
+						if (response.ok) {
+							const data = await response.json();
+							if (data?.startedAt !== void 0 && !stopped.current) setSnap(data);
+						}
+					} catch {}
+					if (!stopped.current) setTimeout(tick, 5e3);
+				};
+				tick();
+				return () => {
+					stopped.current = true;
+				};
+			}, []);
+			if (snap === null || snap.gross.exact + snap.gross.estimated === 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.pricing,
+				children: t("savings.empty")
+			});
+			const hasExact = snap.gross.exact > 0 || snap.offsets.exact > 0;
+			const hasEstimated = snap.gross.estimated > 0 || snap.offsets.estimated > 0;
+			const netTone = snap.net.exact + snap.net.estimated >= 0 ? _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsNetPositive : _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsNetNegative;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: `${_dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsCard}`,
+				"data-testid": "savings-card",
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsRow,
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("savings.title") })
+					}),
+					hasExact ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: `${_dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsRow} ${netTone}`,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("savings.netExact") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: fmt(snap.net.exact) })]
+					}) : null,
+					hasEstimated ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsRow,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("savings.netEstimated") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: fmt(snap.net.estimated) })]
+					}) : null,
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsRow,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
+							children: t("savings.gross")
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
+							children: [
+								hasExact ? `✓ ${fmt(snap.gross.exact)}` : "",
+								hasExact && hasEstimated ? " · " : "",
+								hasEstimated ? `≈ ${fmt(snap.gross.estimated)}` : ""
+							]
+						})]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsRow,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
+							children: t("savings.offsets")
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
+							children: [
+								hasExact ? `−${fmt(snap.offsets.exact)}` : "",
+								hasExact && hasEstimated ? " · " : "",
+								hasEstimated ? `−${fmt(snap.offsets.estimated)}` : ""
+							]
+						})]
+					}),
+					snap.perComponent.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsBreakdown,
+						children: snap.perComponent.slice(0, 6).map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsRow,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
+								children: [
+									row.kind === "offset" ? "−" : "+",
+									" ",
+									row.component,
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("small", { children: [
+										" (",
+										row.basis === "exact-tokenizer" ? t("savings.basisExact") : t("savings.basisEstimated"),
+										")"
+									] })
+								]
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
+								children: fmt(row.tokens)
+							})]
+						}, `${row.kind}:${row.component}:${row.basis}`))
+					}) : null,
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsNote,
+						children: t("savings.basisNote")
+					})
+				]
+			});
+		}
+		//#endregion
 		//#region src/client/settings-section.tsx
 		/**
 		* Full-page Settings surface backed by the same durable selector state.
@@ -1184,6 +1305,7 @@ window.__ModuleLoader__.load({
 						settle,
 						t
 					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(SavingsCard, { t }),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.pricing,
 						children: t("pricing.disclosure")
@@ -1337,7 +1459,16 @@ window.__ModuleLoader__.load({
 			"custom.tailTrim.warning": "TailTrim 只在精确 tokenizer 可用时，把一个完整、已结束且非错误的纯工具组替换为可恢复引用；它与 History 共用近期工具调用数、工具结果尾窗和最小回收参数。它会改写已发送前缀，可能降低缓存命中。",
 			"custom.save": "保存 Custom 策略",
 			"custom.reset": "重置 Custom 策略",
-			"custom.invalid": "Custom 策略参数无效。"
+			"custom.invalid": "Custom 策略参数无效。",
+			"savings.title": "节省统计(本进程)",
+			"savings.netExact": "净节省(精确口径)",
+			"savings.netEstimated": "净节省(估算口径)",
+			"savings.gross": "毛节省(压缩落盘时)",
+			"savings.offsets": "负节省(压缩后再读全文的抵消)",
+			"savings.empty": "尚无压缩记录——发生首次裁剪后这里会显示净节省。",
+			"savings.basisExact": "精确",
+			"savings.basisEstimated": "估算",
+			"savings.basisNote": "口径分列不混算:精确 = DeepSeek tokenizer;估算 = chars/4。先取骨架后取全文会计负节省(净额可能为负)。"
 		};
 		/** English copy matching every simplified Chinese selector key. */
 		const en = {
@@ -1438,7 +1569,16 @@ window.__ModuleLoader__.load({
 			"custom.tailTrim.warning": "TailTrim requires the exact tokenizer and replaces at most one complete, finished, non-error tool-only group with a recoverable reference. It shares Protected recent tool calls, Protected recent tool-result tail, and Minimum reclaim with History. It rewrites a sent prefix and may reduce cache hits.",
 			"custom.save": "Save Custom policy",
 			"custom.reset": "Reset Custom policy",
-			"custom.invalid": "Custom policy values are invalid."
+			"custom.invalid": "Custom policy values are invalid.",
+			"savings.title": "Savings (this process)",
+			"savings.netExact": "Net saved (exact basis)",
+			"savings.netEstimated": "Net saved (estimated basis)",
+			"savings.gross": "Gross saved (at publish time)",
+			"savings.offsets": "Offsets (compressed content re-read in full)",
+			"savings.empty": "No compression yet — net savings appear after the first reduction lands.",
+			"savings.basisExact": "exact",
+			"savings.basisEstimated": "estimated",
+			"savings.basisNote": "Bases are reported separately, never merged: exact = DeepSeek tokenizer; estimated = chars/4. A skeleton followed by a full read counts as negative savings (net can go below zero)."
 		};
 		//#endregion
 		//#region src/client/locales/de.ts
@@ -1541,7 +1681,16 @@ window.__ModuleLoader__.load({
 			"custom.tailTrim.warning": "TailTrim erfordert den exakten Tokenizer und ersetzt höchstens eine vollständige, abgeschlossene, fehlerfreie Gruppe nur aus Tools durch eine wiederherstellbare Referenz. Es teilt sich mit History die geschützten letzten Tool-Aufrufe, das geschützte neue Ende der Tool-Ergebnisse und die Mindest-Freigabe. Es schreibt ein gesendetes Präfix um und kann Cache-Treffer verringern.",
 			"custom.save": "Eigene Strategie speichern",
 			"custom.reset": "Eigene Strategie zurücksetzen",
-			"custom.invalid": "Werte der eigenen Strategie sind ungültig."
+			"custom.invalid": "Werte der eigenen Strategie sind ungültig.",
+			"savings.title": "Einsparungen (dieser Prozess)",
+			"savings.netExact": "Netto gespeichert (exakte Basis)",
+			"savings.netEstimated": "Netto gespeichert (geschätzte Basis)",
+			"savings.gross": "Brutto gespeichert (bei Veröffentlichung)",
+			"savings.offsets": "Abschläge (komprimiert, später vollständig gelesen)",
+			"savings.empty": "Noch keine Komprimierung — Nettoeinsparungen erscheinen nach der ersten Reduktion.",
+			"savings.basisExact": "exakt",
+			"savings.basisEstimated": "geschätzt",
+			"savings.basisNote": "Basen werden getrennt ausgewiesen, nie gemischt: exakt = DeepSeek-Tokenizer; geschätzt = chars/4. Erst Skelett, dann Volltext zählt als negative Einsparung (Netto kann unter null fallen)."
 		};
 		//#endregion
 		//#region src/client/locales/es.ts
@@ -1644,7 +1793,16 @@ window.__ModuleLoader__.load({
 			"custom.tailTrim.warning": "TailTrim requiere el tokenizador exacto y sustituye como máximo un grupo completo, terminado y sin errores compuesto solo por herramientas por una referencia recuperable. Comparte con History las llamadas a herramientas recientes protegidas, la cola reciente de resultados de herramientas protegida y la recuperación mínima. Reescribe un prefijo enviado y puede reducir los aciertos de caché.",
 			"custom.save": "Guardar la política personalizada",
 			"custom.reset": "Restablecer la política personalizada",
-			"custom.invalid": "Los valores de la política personalizada no son válidos."
+			"custom.invalid": "Los valores de la política personalizada no son válidos.",
+			"savings.title": "Ahorro (este proceso)",
+			"savings.netExact": "Ahorro neto (base exacta)",
+			"savings.netEstimated": "Ahorro neto (base estimada)",
+			"savings.gross": "Ahorro bruto (al publicar)",
+			"savings.offsets": "Compensaciones (contenido comprimido y luego releído completo)",
+			"savings.empty": "Aún sin compresión: el ahorro neto aparece tras la primera reducción.",
+			"savings.basisExact": "exacta",
+			"savings.basisEstimated": "estimada",
+			"savings.basisNote": "Las bases se informan por separado, nunca mezcladas: exacta = tokenizador DeepSeek; estimada = chars/4. Esqueleto seguido de lectura completa cuenta como ahorro negativo (el neto puede ser negativo)."
 		};
 		//#endregion
 		//#region src/client/locales/fr.ts
@@ -1747,7 +1905,16 @@ window.__ModuleLoader__.load({
 			"custom.tailTrim.warning": "TailTrim exige le tokenizer exact et remplace au plus un groupe complet, terminé et sans erreur, composé uniquement d’outils, par une référence récupérable. Il partage avec History les appels d’outils récents protégés, la fin récente des résultats d’outils protégée et la récupération minimale. Il réécrit un préfixe envoyé et peut réduire les hits de cache.",
 			"custom.save": "Enregistrer la stratégie personnalisée",
 			"custom.reset": "Réinitialiser la stratégie personnalisée",
-			"custom.invalid": "Valeurs de la stratégie personnalisée invalides."
+			"custom.invalid": "Valeurs de la stratégie personnalisée invalides.",
+			"savings.title": "Économies (ce processus)",
+			"savings.netExact": "Économie nette (base exacte)",
+			"savings.netEstimated": "Économie nette (base estimée)",
+			"savings.gross": "Économie brute (à la publication)",
+			"savings.offsets": "Compensations (contenu compressé puis relu intégralement)",
+			"savings.empty": "Aucune compression pour l’instant — l’économie nette apparaît après la première réduction.",
+			"savings.basisExact": "exacte",
+			"savings.basisEstimated": "estimée",
+			"savings.basisNote": "Les bases sont présentées séparément, jamais mélangées : exacte = tokenizer DeepSeek ; estimée = chars/4. Un squelette suivi d’une lecture complète compte comme économie négative (le net peut être négatif)."
 		};
 		//#endregion
 		//#region src/client/locales/it.ts
@@ -1850,7 +2017,16 @@ window.__ModuleLoader__.load({
 			"custom.tailTrim.warning": "TailTrim richiede il tokenizer esatto e sostituisce al massimo un gruppo completo, concluso e senza errori composto solo da tool con un riferimento recuperabile. Condivide con History le chiamate ai tool recenti protette, la coda recente dei risultati dei tool protetta e il recupero minimo. Riscrive un prefisso inviato e può ridurre i hit della cache.",
 			"custom.save": "Salva la politica personalizzata",
 			"custom.reset": "Reimposta la politica personalizzata",
-			"custom.invalid": "I valori della politica personalizzata non sono validi."
+			"custom.invalid": "I valori della politica personalizzata non sono validi.",
+			"savings.title": "Risparmi (questo processo)",
+			"savings.netExact": "Risparmio netto (base esatta)",
+			"savings.netEstimated": "Risparmio netto (base stimata)",
+			"savings.gross": "Risparmio lordo (alla pubblicazione)",
+			"savings.offsets": "Compensazioni (contenuto compresso e poi riletto per intero)",
+			"savings.empty": "Nessuna compressione — il risparmio netto appare dopo la prima riduzione.",
+			"savings.basisExact": "esatta",
+			"savings.basisEstimated": "stimata",
+			"savings.basisNote": "Le basi sono riportate separatamente, mai miste: esatta = tokenizer DeepSeek; stimata = chars/4. Uno scheletro seguito dalla lettura completa conta come risparmio negativo (il netto può scendere sotto zero)."
 		};
 		//#endregion
 		//#region src/client/locales/ja.ts
@@ -1953,7 +2129,16 @@ window.__ModuleLoader__.load({
 			"custom.tailTrim.warning": "TailTrim は正確なトークナイザーが必要で、完全で終了済みかつエラーでないツールのみのグループを 1 つだけ回復可能な参照へ置き換えます。History と「保護する直近ツール呼び出し数」「保護するツール結果テール」「最小回収量」を共有します。送信済みプレフィックスを書き換えるため、キャッシュ命中が下がる可能性があります。",
 			"custom.save": "カスタムポリシーを保存",
 			"custom.reset": "カスタムポリシーをリセット",
-			"custom.invalid": "カスタムポリシーの値が不正です。"
+			"custom.invalid": "カスタムポリシーの値が不正です。",
+			"savings.title": "節約統計(このプロセス)",
+			"savings.netExact": "純節約(正確口径)",
+			"savings.netEstimated": "純節約(推定口径)",
+			"savings.gross": "総節約(圧縮確定時)",
+			"savings.offsets": "相殺(圧縮後に全文再読)",
+			"savings.empty": "まだ圧縮がありません。最初の削減後に純節約が表示されます。",
+			"savings.basisExact": "正確",
+			"savings.basisEstimated": "推定",
+			"savings.basisNote": "口径は分列し混算しません:正確 = DeepSeek トークナイザー、推定 = chars/4。スケルトン後に全文を読むと負の節約として計上されます(純額はマイナスになり得ます)。"
 		};
 		//#endregion
 		//#region src/client/locales/ko.ts
@@ -2056,7 +2241,16 @@ window.__ModuleLoader__.load({
 			"custom.tailTrim.warning": "TailTrim은 정확한 토크나이저를 필요로 하며, 완결되고 오류 없는 도구 전용 그룹 하나를 복구 가능한 참조로 대체합니다. History와 「보호하는 최근 도구 호출 수」「보호하는 도구 결과 테일」「최소 회수량」을 공유합니다. 전송 접두사를 재작성하므로 캐시 적중이 낮아질 수 있습니다.",
 			"custom.save": "커스텀 정책 저장",
 			"custom.reset": "커스텀 정책 초기화",
-			"custom.invalid": "커스텀 정책 값이 올바르지 않습니다."
+			"custom.invalid": "커스텀 정책 값이 올바르지 않습니다.",
+			"savings.title": "절감 통계(이 프로세스)",
+			"savings.netExact": "순 절감(정확 기준)",
+			"savings.netEstimated": "순 절감(추정 기준)",
+			"savings.gross": "총 절감(게시 시점)",
+			"savings.offsets": "상쇄(압축 후 전체 재판돈)",
+			"savings.empty": "아직 압축이 없습니다. 첫 번째 축소 후 순 절감이 표시됩니다.",
+			"savings.basisExact": "정확",
+			"savings.basisEstimated": "추정",
+			"savings.basisNote": "기준은 분리 표기하며 혼합하지 않습니다: 정확 = DeepSeek 토크나이저, 추정 = chars/4. 스켈레톤 후 전체 판독은 음의 절감으로 계산됩니다(순액은 마이너스 가능)."
 		};
 		//#endregion
 		//#region src/client/locales/ru.ts
@@ -2159,7 +2353,16 @@ window.__ModuleLoader__.load({
 			"custom.tailTrim.warning": "TailTrim требует точный токенизатор и заменяет максимум одну полную, завершённую, без ошибок группу только из инструментов на восстанавливаемую ссылку. Он использует общие с History защищённые недавние вызовы инструментов, защищённый недавний хвост результатов инструментов и минимальное освобождение. Он переписывает отправленный префикс и может снизить попадания в кэш.",
 			"custom.save": "Сохранить пользовательскую стратегию",
 			"custom.reset": "Сбросить пользовательскую стратегию",
-			"custom.invalid": "Значения пользовательской стратегии недопустимы."
+			"custom.invalid": "Значения пользовательской стратегии недопустимы.",
+			"savings.title": "Экономия (этот процесс)",
+			"savings.netExact": "Чистая экономия (точная база)",
+			"savings.netEstimated": "Чистая экономия (оценочная база)",
+			"savings.gross": "Валовая экономия (при публикации)",
+			"savings.offsets": "Компенсации (сжатый контент затем прочитан полностью)",
+			"savings.empty": "Сжатия пока не было — чистая экономия появится после первого сокращения.",
+			"savings.basisExact": "точно",
+			"savings.basisEstimated": "оценка",
+			"savings.basisNote": "Базы приводятся раздельно и не смешиваются: точно = токенизатор DeepSeek; оценка = chars/4. Скелет с последующим полным чтением учитывается как отрицательная экономия (чистая может уйти в минус)."
 		};
 		//#endregion
 		//#region src/client/preset-options.ts
