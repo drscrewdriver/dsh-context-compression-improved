@@ -81,3 +81,40 @@ describe('savings ledger(诚实口径)', () => {
     expect(savingsHash('a')).not.toBe(savingsHash('b'))
   })
 })
+
+describe('savings ledger(usage 聚合与分桶,monitor 口径)', () => {
+  let ledger: SavingsLedger
+  beforeEach(() => {
+    ledger = new SavingsLedger()
+  })
+
+  it('aggregates official usage per session and computes cache hit rate', () => {
+    ledger.recordUsage('s1', { inputTokens: 100, outputTokens: 500, cacheReadTokens: 9_000, cacheWriteTokens: 400 })
+    ledger.recordUsage('s1', { inputTokens: 200, outputTokens: 300, cacheReadTokens: 8_000, cacheWriteTokens: 500 })
+    const snap = ledger.snapshot('s1')
+    expect(snap.usage.requests).toBe(2)
+    expect(snap.usage.inputTokens).toBe(300)
+    expect(snap.usage.cacheReadTokens).toBe(17_000)
+    expect(snap.usage.cacheHitRate).toBeCloseTo(17_000 / 18_200, 3)
+  })
+
+  it('buckets sessions by net savings; per-session list only in global snapshot', () => {
+    ledger.recordUsage('s1', { inputTokens: 10, outputTokens: 1, cacheReadTokens: 90, cacheWriteTokens: 0 })
+    ledger.recordUsage('s2', { inputTokens: 10, outputTokens: 1, cacheReadTokens: 10, cacheWriteTokens: 0 })
+    ledger.recordSaving({ sessionId: 's2', component: 'fresh', tokensBefore: 500, tokensAfter: 100, basis: 'exact-tokenizer', sourceSeq: 1 })
+    const global = ledger.snapshot()
+    expect(global.perSession).toHaveLength(2)
+    expect(global.perSession[0]!.sessionId).toBe('s2')
+    expect(global.perSession[0]!.cacheHitRate).toBe(0.5)
+    const single = ledger.snapshot('s1')
+    expect(single.perSession).toHaveLength(0)
+  })
+
+  it('sessionSummaryLine renders one-line account for dispose log', () => {
+    ledger.recordUsage('s1', { inputTokens: 100, outputTokens: 10, cacheReadTokens: 900, cacheWriteTokens: 0 })
+    ledger.recordSaving({ sessionId: 's1', component: 'fresh', tokensBefore: 400, tokensAfter: 100, basis: 'exact-tokenizer', sourceSeq: 2 })
+    const line = ledger.sessionSummaryLine('s1')
+    expect(line).toContain('net=300(exact)/0(est)')
+    expect(line).toContain('cacheHit=90%')
+  })
+})

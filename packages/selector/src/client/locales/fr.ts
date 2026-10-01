@@ -104,5 +104,10 @@ export const fr = {
   'savings.basisExact': 'exacte',
   'savings.basisEstimated': 'estimée',
   'savings.basisNote': 'Les bases sont présentées séparément, jamais mélangées : exacte = tokenizer DeepSeek ; estimée = chars/4. Un squelette suivi d’une lecture complète compte comme économie négative (le net peut être négatif).',
+  'savings.requests': 'Solicitudes',
+  'savings.cacheHit': 'Tasa de aciertos de caché',
+  'savings.actualCost': 'Coste real (precios oficiales)',
+  'savings.savedMoney': 'Ahorro estimado (precio de entrada)',
+  'savings.perSession': 'Sesión',
 
 } satisfies Record<ContextCompressionLocaleKey, string>

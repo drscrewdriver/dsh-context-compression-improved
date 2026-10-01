@@ -1115,6 +1115,75 @@ window.__ModuleLoader__.load({
 							]
 						})]
 					}),
+					snap.usage !== void 0 && snap.usage.requests > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsRow,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
+								children: t("savings.requests")
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
+								children: fmt(snap.usage.requests)
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsRow,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
+								children: t("savings.cacheHit")
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
+								children: snap.usage.cacheHitRate === null ? "–" : `${Math.round(snap.usage.cacheHitRate * 100)}%`
+							})]
+						}),
+						snap.pricing?.actualCost !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsRow,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
+								children: t("savings.actualCost")
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
+								children: [
+									snap.pricing.currency,
+									" ",
+									snap.pricing.actualCost
+								]
+							})]
+						}) : null,
+						snap.pricing?.estimatedSavedCost !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsRow,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
+								children: t("savings.savedMoney")
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
+								children: [
+									snap.pricing.currency,
+									" ",
+									snap.pricing.estimatedSavedCost
+								]
+							})]
+						}) : null
+					] }) : null,
+					snap.perSession !== void 0 && snap.perSession.length > 1 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsBreakdown,
+						children: snap.perSession.slice(0, 5).map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsRow,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
+								children: [
+									t("savings.perSession"),
+									" · ",
+									row.sessionId.slice(0, 8),
+									"…",
+									row.requests > 0 ? ` · ${t("savings.cacheHit")} ${row.cacheHitRate === null ? "–" : `${Math.round(row.cacheHitRate * 100)}%`}` : ""
+								]
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
+								children: fmt(row.net.exact)
+							})]
+						}, row.sessionId))
+					}) : null,
 					snap.perComponent.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsBreakdown,
 						children: snap.perComponent.slice(0, 6).map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -1410,7 +1479,12 @@ window.__ModuleLoader__.load({
 			"savings.empty": "尚无压缩记录——发生首次裁剪后这里会显示净节省。",
 			"savings.basisExact": "精确",
 			"savings.basisEstimated": "估算",
-			"savings.basisNote": "口径分列不混算:精确 = DeepSeek tokenizer;估算 = chars/4。先取骨架后取全文会计负节省(净额可能为负)。"
+			"savings.basisNote": "口径分列不混算:精确 = DeepSeek tokenizer;估算 = chars/4。先取骨架后取全文会计负节省(净额可能为负)。",
+			"savings.requests": "请求轮次",
+			"savings.cacheHit": "缓存命中率",
+			"savings.actualCost": "实际成本(官方牌价)",
+			"savings.savedMoney": "估算节省金额(按输入价)",
+			"savings.perSession": "会话"
 		};
 		/** English copy matching every simplified Chinese selector key. */
 		const en = {
@@ -1515,7 +1589,12 @@ window.__ModuleLoader__.load({
 			"savings.empty": "No compression yet — net savings appear after the first reduction lands.",
 			"savings.basisExact": "exact",
 			"savings.basisEstimated": "estimated",
-			"savings.basisNote": "Bases are reported separately, never merged: exact = DeepSeek tokenizer; estimated = chars/4. A skeleton followed by a full read counts as negative savings (net can go below zero)."
+			"savings.basisNote": "Bases are reported separately, never merged: exact = DeepSeek tokenizer; estimated = chars/4. A skeleton followed by a full read counts as negative savings (net can go below zero).",
+			"savings.requests": "Requests",
+			"savings.cacheHit": "Cache hit rate",
+			"savings.actualCost": "Actual cost (official prices)",
+			"savings.savedMoney": "Estimated saved cost (input price)",
+			"savings.perSession": "Session"
 		};
 		//#endregion
 		//#region src/client/locales/de.ts
@@ -1622,7 +1701,12 @@ window.__ModuleLoader__.load({
 			"savings.empty": "Noch keine Komprimierung — Nettoeinsparungen erscheinen nach der ersten Reduktion.",
 			"savings.basisExact": "exakt",
 			"savings.basisEstimated": "geschätzt",
-			"savings.basisNote": "Basen werden getrennt ausgewiesen, nie gemischt: exakt = DeepSeek-Tokenizer; geschätzt = chars/4. Erst Skelett, dann Volltext zählt als negative Einsparung (Netto kann unter null fallen)."
+			"savings.basisNote": "Basen werden getrennt ausgewiesen, nie gemischt: exakt = DeepSeek-Tokenizer; geschätzt = chars/4. Erst Skelett, dann Volltext zählt als negative Einsparung (Netto kann unter null fallen).",
+			"savings.requests": "Requests",
+			"savings.cacheHit": "Cache hit rate",
+			"savings.actualCost": "Actual cost (official prices)",
+			"savings.savedMoney": "Estimated saved cost (input price)",
+			"savings.perSession": "Session"
 		};
 		//#endregion
 		//#region src/client/locales/es.ts
@@ -1729,7 +1813,12 @@ window.__ModuleLoader__.load({
 			"savings.empty": "Aún sin compresión: el ahorro neto aparece tras la primera reducción.",
 			"savings.basisExact": "exacta",
 			"savings.basisEstimated": "estimada",
-			"savings.basisNote": "Las bases se informan por separado, nunca mezcladas: exacta = tokenizador DeepSeek; estimada = chars/4. Esqueleto seguido de lectura completa cuenta como ahorro negativo (el neto puede ser negativo)."
+			"savings.basisNote": "Las bases se informan por separado, nunca mezcladas: exacta = tokenizador DeepSeek; estimada = chars/4. Esqueleto seguido de lectura completa cuenta como ahorro negativo (el neto puede ser negativo).",
+			"savings.requests": "Anfragen",
+			"savings.cacheHit": "Cache-Trefferquote",
+			"savings.actualCost": "Tatsächliche Kosten (offizielle Preise)",
+			"savings.savedMoney": "Geschätzte Einsparung (Eingabepreis)",
+			"savings.perSession": "Sitzung"
 		};
 		//#endregion
 		//#region src/client/locales/fr.ts
@@ -1836,7 +1925,12 @@ window.__ModuleLoader__.load({
 			"savings.empty": "Aucune compression pour l’instant — l’économie nette apparaît après la première réduction.",
 			"savings.basisExact": "exacte",
 			"savings.basisEstimated": "estimée",
-			"savings.basisNote": "Les bases sont présentées séparément, jamais mélangées : exacte = tokenizer DeepSeek ; estimée = chars/4. Un squelette suivi d’une lecture complète compte comme économie négative (le net peut être négatif)."
+			"savings.basisNote": "Les bases sont présentées séparément, jamais mélangées : exacte = tokenizer DeepSeek ; estimée = chars/4. Un squelette suivi d’une lecture complète compte comme économie négative (le net peut être négatif).",
+			"savings.requests": "Solicitudes",
+			"savings.cacheHit": "Tasa de aciertos de caché",
+			"savings.actualCost": "Coste real (precios oficiales)",
+			"savings.savedMoney": "Ahorro estimado (precio de entrada)",
+			"savings.perSession": "Sesión"
 		};
 		//#endregion
 		//#region src/client/locales/it.ts
@@ -1943,7 +2037,12 @@ window.__ModuleLoader__.load({
 			"savings.empty": "Nessuna compressione — il risparmio netto appare dopo la prima riduzione.",
 			"savings.basisExact": "esatta",
 			"savings.basisEstimated": "stimata",
-			"savings.basisNote": "Le basi sono riportate separatamente, mai miste: esatta = tokenizer DeepSeek; stimata = chars/4. Uno scheletro seguito dalla lettura completa conta come risparmio negativo (il netto può scendere sotto zero)."
+			"savings.basisNote": "Le basi sono riportate separatamente, mai miste: esatta = tokenizer DeepSeek; stimata = chars/4. Uno scheletro seguito dalla lettura completa conta come risparmio negativo (il netto può scendere sotto zero).",
+			"savings.requests": "Requêtes",
+			"savings.cacheHit": "Taux de cache",
+			"savings.actualCost": "Coût réel (tarifs officiels)",
+			"savings.savedMoney": "Économie estimée (prix d’entrée)",
+			"savings.perSession": "Session"
 		};
 		//#endregion
 		//#region src/client/locales/ja.ts
@@ -2050,7 +2149,12 @@ window.__ModuleLoader__.load({
 			"savings.empty": "まだ圧縮がありません。最初の削減後に純節約が表示されます。",
 			"savings.basisExact": "正確",
 			"savings.basisEstimated": "推定",
-			"savings.basisNote": "口径は分列し混算しません:正確 = DeepSeek トークナイザー、推定 = chars/4。スケルトン後に全文を読むと負の節約として計上されます(純額はマイナスになり得ます)。"
+			"savings.basisNote": "口径は分列し混算しません:正確 = DeepSeek トークナイザー、推定 = chars/4。スケルトン後に全文を読むと負の節約として計上されます(純額はマイナスになり得ます)。",
+			"savings.requests": "Richieste",
+			"savings.cacheHit": "Tasso di cache",
+			"savings.actualCost": "Costo reale (prezzi ufficiali)",
+			"savings.savedMoney": "Risparmio stimato (prezzo di input)",
+			"savings.perSession": "Sessione"
 		};
 		//#endregion
 		//#region src/client/locales/ko.ts
@@ -2157,7 +2261,12 @@ window.__ModuleLoader__.load({
 			"savings.empty": "아직 압축이 없습니다. 첫 번째 축소 후 순 절감이 표시됩니다.",
 			"savings.basisExact": "정확",
 			"savings.basisEstimated": "추정",
-			"savings.basisNote": "기준은 분리 표기하며 혼합하지 않습니다: 정확 = DeepSeek 토크나이저, 추정 = chars/4. 스켈레톤 후 전체 판독은 음의 절감으로 계산됩니다(순액은 마이너스 가능)."
+			"savings.basisNote": "기준은 분리 표기하며 혼합하지 않습니다: 정확 = DeepSeek 토크나이저, 추정 = chars/4. 스켈레톤 후 전체 판독은 음의 절감으로 계산됩니다(순액은 마이너스 가능).",
+			"savings.requests": "リクエスト数",
+			"savings.cacheHit": "キャッシュ ヒット率",
+			"savings.actualCost": "実際コスト(公式価格)",
+			"savings.savedMoney": "推定節約額(入力価格)",
+			"savings.perSession": "セッション"
 		};
 		//#endregion
 		//#region src/client/locales/ru.ts
@@ -2264,7 +2373,12 @@ window.__ModuleLoader__.load({
 			"savings.empty": "Сжатия пока не было — чистая экономия появится после первого сокращения.",
 			"savings.basisExact": "точно",
 			"savings.basisEstimated": "оценка",
-			"savings.basisNote": "Базы приводятся раздельно и не смешиваются: точно = токенизатор DeepSeek; оценка = chars/4. Скелет с последующим полным чтением учитывается как отрицательная экономия (чистая может уйти в минус)."
+			"savings.basisNote": "Базы приводятся раздельно и не смешиваются: точно = токенизатор DeepSeek; оценка = chars/4. Скелет с последующим полным чтением учитывается как отрицательная экономия (чистая может уйти в минус).",
+			"savings.requests": "요청 수",
+			"savings.cacheHit": "캐시 적중률",
+			"savings.actualCost": "실제 비용(공식 가격)",
+			"savings.savedMoney": "추정 절감액(입력 가격)",
+			"savings.perSession": "세션"
 		};
 		//#endregion
 		//#region src/client/preset-options.ts

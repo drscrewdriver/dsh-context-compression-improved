@@ -102,6 +102,11 @@ export const zh = {
   'savings.basisExact': '精确',
   'savings.basisEstimated': '估算',
   'savings.basisNote': '口径分列不混算:精确 = DeepSeek tokenizer;估算 = chars/4。先取骨架后取全文会计负节省(净额可能为负)。',
+  'savings.requests': '请求轮次',
+  'savings.cacheHit': '缓存命中率',
+  'savings.actualCost': '实际成本(官方牌价)',
+  'savings.savedMoney': '估算节省金额(按输入价)',
+  'savings.perSession': '会话',
 
 
 } satisfies Record<string, string>
@@ -213,4 +218,9 @@ export const en = {
   'savings.basisExact': 'exact',
   'savings.basisEstimated': 'estimated',
   'savings.basisNote': 'Bases are reported separately, never merged: exact = DeepSeek tokenizer; estimated = chars/4. A skeleton followed by a full read counts as negative savings (net can go below zero).',
+  'savings.requests': 'Requests',
+  'savings.cacheHit': 'Cache hit rate',
+  'savings.actualCost': 'Actual cost (official prices)',
+  'savings.savedMoney': 'Estimated saved cost (input price)',
+  'savings.perSession': 'Session',
 } satisfies Record<ContextCompressionLocaleKey, string>
