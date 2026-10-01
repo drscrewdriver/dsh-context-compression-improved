@@ -1,4 +1,4 @@
-import { I as priceOfficialDeepSeekUsage, R as getSavingsLedger, a as getLastIntentFold, i as getAdvisorState, n as INTENT_GATE_GROWTH_TOKENS, o as getObservedIntentEnabled, p as setSummaryOverride, s as getSummaryOverride, t as INTENT_GATE_FLOOR_FRACTION, v as DEFAULT_CONTEXT_COMPRESSION_SETTINGS } from "./intent-gate.js";
+import { D as getSummaryOverride, E as getObservedIntentEnabled, I as priceOfficialDeepSeekUsage, N as setSummaryOverride, R as getSavingsLedger, S as INTENT_GATE_GROWTH_TOKENS, T as getLastIntentFold, a as DEFAULT_CONTEXT_COMPRESSION_SETTINGS, w as getAdvisorState, x as INTENT_GATE_FLOOR_FRACTION } from "./config.js";
 import z from "@deepseek-ai/schemastery";
 import { createHash } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -72,6 +72,90 @@ async function buildEstimatorCatalog(deps) {
 			};
 		})),
 		...selection === void 0 ? {} : { selection }
+	};
+}
+//#endregion
+//#region src/runtime/monitor.ts
+/**
+* Savings snapshot plus the intent-summary control block. Ledger is
+* injectable so tests seed a private instance instead of the process
+* singleton.
+*/
+function buildMonitorSnapshot(sessionId, ledger = getSavingsLedger()) {
+	const override = getSummaryOverride(sessionId ?? "");
+	return {
+		...ledger.snapshot(sessionId),
+		intent: {
+			override,
+			observedEnabled: getObservedIntentEnabled(sessionId ?? ""),
+			gate: {
+				floorFraction: INTENT_GATE_FLOOR_FRACTION,
+				growthTokens: INTENT_GATE_GROWTH_TOKENS
+			},
+			lastFold: getLastIntentFold(sessionId ?? "")
+		},
+		sessionScope: sessionId ?? null
+	};
+}
+function isSessionOverrideAction(value) {
+	return value === "on" || value === "off" || value === "clear";
+}
+/**
+* Drive the `/ctx-summary` override state machine: `on`/`off` pin the
+* session, `clear` returns it to settings-driven. The resulting override is
+* handed back so the route can echo the post-action truth.
+*/
+function applySessionOverride(sessionId, action) {
+	setSummaryOverride(sessionId, action === "clear" ? void 0 : action);
+	return { override: getSummaryOverride(sessionId) };
+}
+/**
+* 金额估算(monitor 口径的 token/金额估算,结合官方牌价):
+*  - actualCost:本进程累计真实 usage 的官方牌价(exact/range);
+*  - estimatedSavedCost:净节省(精确口径)按 cache-miss 输入价折算——
+*    基线假设"这些 token 不压缩就要全价进上下文",标注估算。
+* 仅官方 deepseek-official 路由可解;第三方/未知模型 fail-closed 为 undefined。
+* (自入口迁入: savings 路由与 monitor 路由共享,避免 runtime → entry 回环。)
+*/
+function estimateSavingsPricing(readService, snapshot) {
+	if (snapshot.usage.requests === 0 && snapshot.net.exact === 0) return void 0;
+	const selection = readService("agentDefaultModel")?.currentSelection?.();
+	const provider = typeof selection?.provider === "string" ? selection.provider : "";
+	const modelId = typeof selection?.model === "string" ? selection.model : "";
+	if (provider !== "deepseek-official") return void 0;
+	const now = /* @__PURE__ */ new Date();
+	const startedAt = new Date(snapshot.startedAt);
+	const base = {
+		provider,
+		baseUrlClass: "official-public",
+		apiRoute: "chat-completions",
+		modelId,
+		currency: "USD",
+		startedAt,
+		completedAt: now.getTime() > startedAt.getTime() ? now : new Date(startedAt.getTime() + 1)
+	};
+	const actual = priceOfficialDeepSeekUsage({
+		...base,
+		usage: {
+			cacheReadTokens: Math.max(0, Math.round(snapshot.usage.cacheReadTokens)),
+			cacheMissTokens: Math.max(0, Math.round(snapshot.usage.inputTokens)),
+			outputTokens: Math.max(0, Math.round(snapshot.usage.outputTokens))
+		}
+	});
+	const saved = snapshot.net.exact > 0 ? priceOfficialDeepSeekUsage({
+		...base,
+		usage: {
+			cacheReadTokens: 0,
+			cacheMissTokens: Math.round(snapshot.net.exact),
+			outputTokens: 0
+		}
+	}) : void 0;
+	const decimalOf = (cost) => cost.kind === "exact" ? cost.decimal : cost.kind === "range" ? cost.minimum.decimal : void 0;
+	if (actual.kind === "unpriced" && (saved === void 0 || saved.kind === "unpriced")) return void 0;
+	return {
+		currency: "USD",
+		...actual.kind === "unpriced" ? {} : { actualCost: decimalOf(actual) },
+		...saved === void 0 || saved.kind === "unpriced" ? {} : { estimatedSavedCost: decimalOf(saved) }
 	};
 }
 //#endregion
@@ -595,6 +679,7 @@ function restoreMethod(presets, snapshot) {
 const ESTIMATOR_CATALOG_ROUTES = ["/endpoint/dsh-context-compression-improved/estimator-catalog", "/api/dsh-context-compression-improved/estimator-catalog"];
 const ADVISOR_REPORT_ROUTES = ["/endpoint/dsh-context-compression-improved/advisor-report", "/api/dsh-context-compression-improved/advisor-report"];
 const SAVINGS_ROUTES = ["/endpoint/dsh-context-compression-improved/savings", "/api/dsh-context-compression-improved/savings"];
+const MONITOR_ROUTES = ["/endpoint/dsh-context-compression-improved/monitor", "/api/dsh-context-compression-improved/monitor"];
 function sessionFor(readService, sessionId) {
 	const agents = readService("agents");
 	return typeof agents?.get === "function" ? agents.get(sessionId)?.session : void 0;
@@ -717,6 +802,7 @@ function registerAdvisorReportRoute(ctx) {
 * never reasons to withhold the route.
 */
 const ESTIMATOR_CATALOG_ROUTE_DEPS = ["webServer"];
+/** The estimator-side service the catalog handler enriches its response with. */
 function asWebServer(value) {
 	if (typeof value !== "object" || value === null) return void 0;
 	return typeof value.register === "function" ? value : void 0;
@@ -810,54 +896,6 @@ function registerEstimatorCatalogRoute(ctx) {
 	log("warn", "context-compression webServer not active yet — estimator catalog route pending: %s", ESTIMATOR_CATALOG_ROUTES.join(", "));
 }
 /**
-* 金额估算(monitor 口径的 token/金额估算,结合官方牌价):
-*  - actualCost:本进程累计真实 usage 的官方牌价(exact/range);
-*  - estimatedSavedCost:净节省(精确口径)按 cache-miss 输入价折算——
-*    基线假设"这些 token 不压缩就要全价进上下文",标注估算。
-* 仅官方 deepseek-official 路由可解;第三方/未知模型 fail-closed 为 undefined。
-*/
-function estimateSavingsPricing(readService, snapshot) {
-	if (snapshot.usage.requests === 0 && snapshot.net.exact === 0) return void 0;
-	const selection = readService("agentDefaultModel")?.currentSelection?.();
-	const provider = typeof selection?.provider === "string" ? selection.provider : "";
-	const modelId = typeof selection?.model === "string" ? selection.model : "";
-	if (provider !== "deepseek-official") return void 0;
-	const now = /* @__PURE__ */ new Date();
-	const startedAt = new Date(snapshot.startedAt);
-	const base = {
-		provider,
-		baseUrlClass: "official-public",
-		apiRoute: "chat-completions",
-		modelId,
-		currency: "USD",
-		startedAt,
-		completedAt: now.getTime() > startedAt.getTime() ? now : new Date(startedAt.getTime() + 1)
-	};
-	const actual = priceOfficialDeepSeekUsage({
-		...base,
-		usage: {
-			cacheReadTokens: Math.max(0, Math.round(snapshot.usage.cacheReadTokens)),
-			cacheMissTokens: Math.max(0, Math.round(snapshot.usage.inputTokens)),
-			outputTokens: Math.max(0, Math.round(snapshot.usage.outputTokens))
-		}
-	});
-	const saved = snapshot.net.exact > 0 ? priceOfficialDeepSeekUsage({
-		...base,
-		usage: {
-			cacheReadTokens: 0,
-			cacheMissTokens: Math.round(snapshot.net.exact),
-			outputTokens: 0
-		}
-	}) : void 0;
-	const decimalOf = (cost) => cost.kind === "exact" ? cost.decimal : cost.kind === "range" ? cost.minimum.decimal : void 0;
-	if (actual.kind === "unpriced" && (saved === void 0 || saved.kind === "unpriced")) return void 0;
-	return {
-		currency: "USD",
-		...actual.kind === "unpriced" ? {} : { actualCost: decimalOf(actual) },
-		...saved === void 0 || saved.kind === "unpriced" ? {} : { estimatedSavedCost: decimalOf(saved) }
-	};
-}
-/**
 * Read-only savings snapshot route (`GET .../savings?sessionId=…`): gross saved,
 * offsets (negative savings — compressed content later re-read in full), and net,
 * with exact-tokenizer and chars/4 bases reported separately and never merged.
@@ -928,6 +966,132 @@ function registerSavingsRoute(ctx) {
 	});
 }
 /**
+* Floating-panel monitor route (`GET|POST .../monitor?sessionId=…`):
+*  - GET → the monitor snapshot (savings aggregate + intent control block +
+*    pricing) — the payload shape the panel polls;
+*  - POST → session override action (`{"action":"on"|"off"|"clear"}`),
+*    driving the exact state machine `/ctx-summary` drives.
+* Registration mirrors the savings route (webServer gate alone, dual channels,
+* single guarded registration); the handler branches on `req.method` because
+* the registration surface is method-agnostic.
+*/
+/** Exported for the runtime monitor spec; the entry owns all webServer wiring. */
+function registerMonitorRoute(ctx) {
+	const readService = (name) => {
+		try {
+			return ctx.get(name);
+		} catch {
+			return;
+		}
+	};
+	const log = (level, message, ...args) => {
+		console[level](message, ...args);
+	};
+	let registered = false;
+	const register = (webServer, channel) => {
+		if (registered) return;
+		const handler = (req, res) => {
+			const resTyped = res;
+			if (typeof resTyped?.writeHead !== "function" || typeof resTyped?.end !== "function") return;
+			let sessionId;
+			try {
+				const raw = new URL(String(req?.url ?? "/"), "http://localhost").searchParams.get("sessionId");
+				if (typeof raw === "string" && raw.length > 0 && raw.length <= 512) sessionId = raw;
+			} catch {}
+			if (String(req?.method ?? "GET").toUpperCase() === "POST") {
+				const chunks = [];
+				let size = 0;
+				let done = false;
+				const respond = (status, body) => {
+					if (done) return;
+					done = true;
+					resTyped.writeHead(status, {
+						"content-type": "application/json; charset=utf-8",
+						"cache-control": "no-cache"
+					});
+					resTyped.end(JSON.stringify(body));
+				};
+				const reqTyped = req;
+				if (typeof reqTyped?.on !== "function") {
+					respond(400, {
+						ok: false,
+						error: "unreadable request body"
+					});
+					return;
+				}
+				reqTyped.on("data", (chunk) => {
+					size += chunk?.length ?? 0;
+					if (size <= 4096) chunks.push(Buffer.from(chunk ?? /* @__PURE__ */ new Uint8Array()));
+				});
+				reqTyped.on("end", () => {
+					let action;
+					try {
+						action = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}").action;
+					} catch {
+						respond(400, {
+							ok: false,
+							error: "monitor override action must be JSON"
+						});
+						return;
+					}
+					if (!isSessionOverrideAction(action)) {
+						respond(400, {
+							ok: false,
+							error: "monitor override action must be \"on\" | \"off\" | \"clear\""
+						});
+						return;
+					}
+					const { override } = applySessionOverride(sessionId ?? "", action);
+					respond(200, {
+						ok: true,
+						override: override ?? null,
+						sessionScope: sessionId ?? null
+					});
+				});
+				return;
+			}
+			const snapshot = buildMonitorSnapshot(sessionId);
+			const pricing = estimateSavingsPricing(readService, snapshot);
+			resTyped.writeHead(200, {
+				"content-type": "application/json; charset=utf-8",
+				"cache-control": "no-cache"
+			});
+			resTyped.end(JSON.stringify({
+				ok: true,
+				...snapshot,
+				...pricing === void 0 ? {} : { pricing }
+			}));
+		};
+		try {
+			const disposers = MONITOR_ROUTES.map((path) => webServer.register({
+				kind: "exact",
+				path,
+				handler
+			})).filter((off) => typeof off === "function");
+			registered = true;
+			ctx.effect(() => () => {
+				for (const off of disposers) off();
+			}, "contextCompressionSelector.monitor route");
+			log("info", "context-compression monitor route registered (%s): %s", channel, MONITOR_ROUTES.join(", "));
+		} catch (error) {
+			log("warn", "context-compression monitor route registration failed (%s): %o", channel, error);
+		}
+	};
+	const active = asWebServer(readService("webServer"));
+	if (active !== void 0) {
+		register(active, "direct");
+		if (registered) return;
+	}
+	ctx.inject(["webServer"], (injected) => {
+		const webServer = asWebServer(injected.webServer);
+		if (webServer === void 0) {
+			log("warn", "context-compression webServer exposes no register() — monitor route not registered");
+			return;
+		}
+		register(webServer, "inject");
+	});
+}
+/**
 * Resolve one possibly-volatile field: a live ref on 0.1.7+, a plain value
 * otherwise (0.1.7 hands `.volatile()` fields to `apply()` as live refs).
 */
@@ -951,6 +1115,7 @@ function apply(ctx, config = {}) {
 	try {
 		if (config.estimatorCatalogRoute === true) registerEstimatorCatalogRoute(ctx);
 		registerSavingsRoute(ctx);
+		registerMonitorRoute(ctx);
 		if (config.advisorReportRoute === true) registerAdvisorReportRoute(ctx);
 		registerSummaryCommand(ctx);
 		if (config.presetOverlay !== true) return;
@@ -983,4 +1148,4 @@ function resolveAutoCompactThresholdPercent(config, presetsCtx) {
 	}
 }
 //#endregion
-export { Config, apply };
+export { Config, apply, registerMonitorRoute };

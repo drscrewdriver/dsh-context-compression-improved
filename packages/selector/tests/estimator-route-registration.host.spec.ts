@@ -17,6 +17,8 @@ const CATALOG_ROUTE = '/api/dsh-context-compression-improved/estimator-catalog'
 const LEGACY_ROUTE = '/endpoint/dsh-context-compression-improved/estimator-catalog'
 const SAVINGS_ROUTE = '/api/dsh-context-compression-improved/savings'
 const SAVINGS_LEGACY_ROUTE = '/endpoint/dsh-context-compression-improved/savings'
+const MONITOR_ROUTE = '/api/dsh-context-compression-improved/monitor'
+const MONITOR_LEGACY_ROUTE = '/endpoint/dsh-context-compression-improved/monitor'
 
 interface RegisteredRoute {
   kind: string
@@ -106,7 +108,7 @@ describe('estimator catalog route registration', () => {
     apply(runtime, { estimatorCatalogRoute: true })
     await settle()
 
-    expect(routes.map(route => route.path)).toEqual([LEGACY_ROUTE, CATALOG_ROUTE, SAVINGS_LEGACY_ROUTE, SAVINGS_ROUTE])
+    expect(routes.map(route => route.path)).toEqual([LEGACY_ROUTE, CATALOG_ROUTE, SAVINGS_LEGACY_ROUTE, SAVINGS_ROUTE, MONITOR_LEGACY_ROUTE, MONITOR_ROUTE])
     expect(routes.every(route => route.kind === 'exact')).toBe(true)
   })
 
@@ -122,7 +124,7 @@ describe('estimator catalog route registration', () => {
     await mountWebServer(runtime, routes)
     await settle()
 
-    expect(routes.map(route => route.path)).toEqual([LEGACY_ROUTE, CATALOG_ROUTE, SAVINGS_LEGACY_ROUTE, SAVINGS_ROUTE])
+    expect(routes.map(route => route.path)).toEqual([LEGACY_ROUTE, CATALOG_ROUTE, SAVINGS_LEGACY_ROUTE, SAVINGS_ROUTE, MONITOR_LEGACY_ROUTE, MONITOR_ROUTE])
   })
 
   it('registers nothing twice when the estimator services arrive later', async () => {
@@ -176,9 +178,9 @@ describe('estimator catalog route registration', () => {
     expect(JSON.parse(String(response.body))).toMatchObject({ ok: true, providers: [] })
   })
 
-  it('without the estimator opt-in only the always-on savings snapshot route registers', async () => {
-    // savings 路由是有意常开的只读面(纯 token 聚合,无会话内容);estimator
-    // catalog 才是 opt-in 行。默认面 = 恰好两条 savings 前缀。
+  it('without the estimator opt-in only the always-on read routes register (savings + monitor)', async () => {
+    // savings 与 monitor 路由是有意常开的只读面(纯 token 聚合与折叠状态,无会话内容);estimator
+    // catalog 才是 opt-in 行。默认面 = 恰好两条 savings 前缀 + 两条 monitor 前缀。
     const routes: RegisteredRoute[] = []
     const runtime = new Context()
     ctx = runtime
@@ -187,6 +189,6 @@ describe('estimator catalog route registration', () => {
     apply(runtime, { presetOverlay: false })
     await settle()
 
-    expect(routes.map(route => route.path)).toEqual([SAVINGS_LEGACY_ROUTE, SAVINGS_ROUTE])
+    expect(routes.map(route => route.path)).toEqual([SAVINGS_LEGACY_ROUTE, SAVINGS_ROUTE, MONITOR_LEGACY_ROUTE, MONITOR_ROUTE])
   })
 })
