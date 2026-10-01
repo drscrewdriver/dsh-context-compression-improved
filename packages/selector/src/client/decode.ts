@@ -6,6 +6,7 @@ import {
   decodeAutoCompactSettings,
   decodeCodeSkeletonSettings,
   decodeIntentSummarySettings,
+  decodeMonitorPanelSettings,
   decodePresetOptionsSettings,
   isCustomCompressionPolicy,
   isPlainRecord,
@@ -26,7 +27,7 @@ import {
 export function decodeSettings(value: unknown): ContextCompressionSettings | undefined {
   if (!isPlainRecord(value)) return undefined
   const keys = Object.keys(value)
-  if (keys.some(key => key !== 'profile' && key !== 'custom' && key !== 'autoCompact' && key !== 'codeSkeleton' && key !== 'intentSummary' && key !== 'presetOptions')) {
+  if (keys.some(key => key !== 'profile' && key !== 'custom' && key !== 'autoCompact' && key !== 'codeSkeleton' && key !== 'intentSummary' && key !== 'monitorPanel' && key !== 'presetOptions')) {
     return undefined
   }
   const profile = (value as { profile?: unknown }).profile
@@ -34,6 +35,7 @@ export function decodeSettings(value: unknown): ContextCompressionSettings | und
   const autoCompact = decodeAutoCompactSettings((value as { autoCompact?: unknown }).autoCompact)
   const codeSkeleton = decodeCodeSkeletonSettings((value as { codeSkeleton?: unknown }).codeSkeleton)
   const intentSummary = decodeIntentSummarySettings((value as { intentSummary?: unknown }).intentSummary)
+  const monitorPanel = decodeMonitorPanelSettings((value as { monitorPanel?: unknown }).monitorPanel)
   const presetOptions = decodePresetOptionsSettings((value as { presetOptions?: unknown }).presetOptions)
   return typeof profile === 'string'
     && (COMPRESSION_PROFILES as readonly string[]).includes(profile)
@@ -41,12 +43,14 @@ export function decodeSettings(value: unknown): ContextCompressionSettings | und
     && autoCompact !== undefined
     && codeSkeleton !== undefined
     && intentSummary !== undefined
+    && monitorPanel !== undefined
     ? {
         profile: profile as CompressionProfile,
         custom: canonicalizeCustomPolicy(custom),
         autoCompact,
         codeSkeleton,
         intentSummary,
+        ...monitorPanel === undefined ? {} : { monitorPanel },
         ...presetOptions === undefined ? {} : { presetOptions },
       }
     : undefined

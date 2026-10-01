@@ -1022,6 +1022,20 @@ function parseIntentSummarySettings(value) {
 	return { enabled };
 }
 /**
+* Strictly parse the persisted monitorPanel section. Mirrors the intentSummary
+* section semantics: absent inherits the hidden default, while a
+* present-but-invalid section is an explicitly invalid document.
+*/
+function parseMonitorPanelSettings(value) {
+	if (value === void 0) return { enabled: false };
+	if (!isPlainRecord(value)) throw new TypeError("Context-compression monitorPanel must be a plain object");
+	const keys = Object.keys(value);
+	if (keys.length !== 1 || keys[0] !== "enabled") throw new TypeError(`Context-compression monitorPanel: expected exactly "enabled", got "${keys.join("\", \"")}"`);
+	const enabled = value.enabled;
+	if (typeof enabled !== "boolean") throw new TypeError("Context-compression monitorPanel.enabled must be a boolean");
+	return { enabled };
+}
+/**
 * Parse the optional tokenpilot-inspired preset sub-capability section. Absent
 * inherits the preset defaults; present-but-invalid is rejected, mirroring the
 * codeSkeleton section semantics.
@@ -1129,7 +1143,8 @@ const DEFAULT_CONTEXT_COMPRESSION_SETTINGS = {
 	custom: structuredClone(DEFAULT_CUSTOM_COMPRESSION_POLICY),
 	autoCompact: { thresholdPercent: AUTO_COMPACT_THRESHOLD_LIMITS.default },
 	codeSkeleton: { enabled: false },
-	intentSummary: { enabled: false }
+	intentSummary: { enabled: false },
+	monitorPanel: { enabled: false }
 };
 /**
 * Parse one settings document with the persisted-section semantics: `undefined`
@@ -1147,19 +1162,21 @@ const ContextCompressionSettingsSchema = z.transform(z.any().required(), (value)
 	if (!isPlainRecord(value)) throw new TypeError("Context-compression settings must be a plain object");
 	assertPlainDataTree(value);
 	const candidate = structuredClone(value);
-	const unknown = Object.keys(candidate).find((key) => key !== "profile" && key !== "custom" && key !== "autoCompact" && key !== "codeSkeleton" && key !== "intentSummary" && key !== "presetOptions");
+	const unknown = Object.keys(candidate).find((key) => key !== "profile" && key !== "custom" && key !== "autoCompact" && key !== "codeSkeleton" && key !== "intentSummary" && key !== "monitorPanel" && key !== "presetOptions");
 	if (unknown !== void 0) throw new TypeError(`Context-compression settings: unknown key "${unknown}"`);
 	assertPresentSection(candidate, "profile", isSupportedProfile);
 	assertPresentSection(candidate, "custom", isUsableCustomDocument);
 	const autoCompact = parseAutoCompactSettings(candidate.autoCompact);
 	const codeSkeleton = parseCodeSkeletonSettings(candidate.codeSkeleton);
 	const intentSummary = parseIntentSummarySettings(candidate.intentSummary);
+	const monitorPanel = parseMonitorPanelSettings(candidate.monitorPanel);
 	const presetOptions = parsePresetOptionsSettings(candidate.presetOptions);
 	return {
 		...contextCompressionSettingsInputSchema(candidate),
 		autoCompact,
 		codeSkeleton,
 		intentSummary,
+		monitorPanel,
 		...presetOptions === void 0 ? {} : { presetOptions }
 	};
 }).default(DEFAULT_CONTEXT_COMPRESSION_SETTINGS);

@@ -143,6 +143,10 @@ interface CodeSkeletonSettings {
 interface IntentSummarySettings {
   enabled: boolean;
 }
+/** Floating compression-monitor panel (FAB); visibility switch. */
+interface MonitorPanelSettings {
+  enabled: boolean;
+}
 /**
  * Persisted sub-capability overrides for the `tokenpilot-inspired` preset.
  * Absent fields inherit the preset defaults; the section is only meaningful
@@ -184,6 +188,8 @@ interface ContextCompressionSettings {
   codeSkeleton: CodeSkeletonSettings;
   /** Turn-tail intent-summary gate snapped independently of `profile`. */
   intentSummary: IntentSummarySettings;
+  /** Floating compression-monitor panel (FAB); absent inherits hidden. */
+  monitorPanel?: MonitorPanelSettings;
   /** Optional tokenpilot-inspired sub-capability overrides; absent inherits preset defaults. */
   presetOptions?: PresetOptionsSettings;
 }

@@ -239,6 +239,39 @@ export function IntentSummaryControls({ value, disabled, save, settle, t }: Inte
   )
 }
 
+interface MonitorPanelControlsProps {
+  value: boolean
+  disabled: boolean
+  save: (enabled: boolean) => Promise<void>
+  settle: (operation: () => Promise<void>) => void
+  t: (key: ContextCompressionLocaleKey) => string
+}
+
+/**
+ * Visibility switch of the floating compression-monitor panel (FAB). The
+ * panel itself is a body-level overlay driven by the monitor route; this card
+ * only decides whether it mounts.
+ */
+export function MonitorPanelControls({ value, disabled, save, settle, t }: MonitorPanelControlsProps) {
+  return (
+    <section className={css.autoCompact} aria-labelledby="context-compression-monitorpanel-title">
+      <h3 id="context-compression-monitorpanel-title" className={css.autoCompactTitle}>{t('monitorPanel.title')}</h3>
+      <p className={css.customNote}>{t('monitorPanel.description')}</p>
+      <label className={css.field}>
+        <span>{t('monitorPanel.enabled')}</span>
+        <select
+          value={value ? 'on' : 'off'}
+          disabled={disabled}
+          onChange={(event) => { settle(() => save(event.currentTarget.value === 'on')) }}
+        >
+          <option value="on">{t('monitorPanel.enabled.on')}</option>
+          <option value="off">{t('monitorPanel.enabled.off')}</option>
+        </select>
+      </label>
+    </section>
+  )
+}
+
 export function CodeSkeletonControls({ value, disabled, save, settle, t }: CodeSkeletonControlsProps) {
   return (
     <section className={css.autoCompact} aria-labelledby="context-compression-codeskeleton-title">

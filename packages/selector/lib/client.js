@@ -69,6 +69,15 @@ window.__ModuleLoader__.load({
 			const enabled = value.enabled;
 			return typeof enabled === "boolean" ? { enabled } : void 0;
 		}
+		/** Browser-safe mirror of the runtime monitorPanel section (absent inherits hidden). */
+		function decodeMonitorPanelSettings(value) {
+			if (value === void 0) return { enabled: false };
+			if (!isPlainRecord(value)) return void 0;
+			const keys = Object.keys(value);
+			if (keys.length !== 1 || keys[0] !== "enabled") return void 0;
+			const enabled = value.enabled;
+			return typeof enabled === "boolean" ? { enabled } : void 0;
+		}
 		/**
 		* Browser mirror of the runtime presetOptions section: absent inherits the
 		* preset defaults (decodes to `undefined`); present values must be a plain
@@ -763,6 +772,45 @@ window.__ModuleLoader__.load({
 				]
 			});
 		}
+		/**
+		* Visibility switch of the floating compression-monitor panel (FAB). The
+		* panel itself is a body-level overlay driven by the monitor route; this card
+		* only decides whether it mounts.
+		*/
+		function MonitorPanelControls({ value, disabled, save, settle, t }) {
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+				className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.autoCompact,
+				"aria-labelledby": "context-compression-monitorpanel-title",
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
+						id: "context-compression-monitorpanel-title",
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.autoCompactTitle,
+						children: t("monitorPanel.title")
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.customNote,
+						children: t("monitorPanel.description")
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.field,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("monitorPanel.enabled") }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+							value: value ? "on" : "off",
+							disabled,
+							onChange: (event) => {
+								settle(() => save(event.currentTarget.value === "on"));
+							},
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+								value: "on",
+								children: t("monitorPanel.enabled.on")
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+								value: "off",
+								children: t("monitorPanel.enabled.off")
+							})]
+						})]
+					})
+				]
+			});
+		}
 		function CodeSkeletonControls({ value, disabled, save, settle, t }) {
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
 				className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.autoCompact,
@@ -1270,7 +1318,7 @@ window.__ModuleLoader__.load({
 		function ContextCompressionSettingsSection(props) {
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SettingsCompressionProfileControls, { ...props });
 		}
-		function SettingsCompressionProfileControls({ useCompression, select, saveCustom, resetCustom, saveAutoCompact, saveCodeSkeleton, saveIntentSummary, savePresetOptions, t }) {
+		function SettingsCompressionProfileControls({ useCompression, select, saveCustom, resetCustom, saveAutoCompact, saveCodeSkeleton, saveIntentSummary, saveMonitorPanel, savePresetOptions, t }) {
 			const state = useCompression((snapshot) => snapshot);
 			const [saving, setSaving] = (0, react.useState)(false);
 			const [saveError, setSaveError] = (0, react.useState)(null);
@@ -1364,6 +1412,13 @@ window.__ModuleLoader__.load({
 						settle,
 						t
 					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(MonitorPanelControls, {
+						value: state.value?.monitorPanel?.enabled ?? false,
+						disabled: busy || !state.writable || false,
+						save: saveMonitorPanel,
+						settle,
+						t
+					}),
 					current !== "tokenpilot-inspired" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(EstimatorInactiveNotice, {
 						profile: t(`profile.${current}`),
 						t
@@ -1411,19 +1466,21 @@ window.__ModuleLoader__.load({
 		*/
 		function decodeSettings(value) {
 			if (!isPlainRecord(value)) return void 0;
-			if (Object.keys(value).some((key) => key !== "profile" && key !== "custom" && key !== "autoCompact" && key !== "codeSkeleton" && key !== "intentSummary" && key !== "presetOptions")) return;
+			if (Object.keys(value).some((key) => key !== "profile" && key !== "custom" && key !== "autoCompact" && key !== "codeSkeleton" && key !== "intentSummary" && key !== "monitorPanel" && key !== "presetOptions")) return;
 			const profile = value.profile;
 			const custom = value.custom;
 			const autoCompact = decodeAutoCompactSettings(value.autoCompact);
 			const codeSkeleton = decodeCodeSkeletonSettings(value.codeSkeleton);
 			const intentSummary = decodeIntentSummarySettings(value.intentSummary);
+			const monitorPanel = decodeMonitorPanelSettings(value.monitorPanel);
 			const presetOptions = decodePresetOptionsSettings(value.presetOptions);
-			return typeof profile === "string" && COMPRESSION_PROFILES.includes(profile) && isCustomCompressionPolicy(custom) && autoCompact !== void 0 && codeSkeleton !== void 0 && intentSummary !== void 0 ? {
+			return typeof profile === "string" && COMPRESSION_PROFILES.includes(profile) && isCustomCompressionPolicy(custom) && autoCompact !== void 0 && codeSkeleton !== void 0 && intentSummary !== void 0 && monitorPanel !== void 0 ? {
 				profile,
 				custom: canonicalizeCustomPolicy(custom),
 				autoCompact,
 				codeSkeleton,
 				intentSummary,
+				...monitorPanel === void 0 ? {} : { monitorPanel },
 				...presetOptions === void 0 ? {} : { presetOptions }
 			} : void 0;
 		}
@@ -1498,6 +1555,11 @@ window.__ModuleLoader__.load({
 			"intentSummary.enabled": "回合末意图摘要",
 			"intentSummary.enabled.on": "开",
 			"intentSummary.enabled.off": "关（默认）",
+			"monitorPanel.title": "压缩监控悬浮面板",
+			"monitorPanel.description": "开启后，输入区旁出现可拖拽的悬浮球，点开即监控当前压缩状态：净节省（精确口径）、缓存命中率、成本估算、回合末意图摘要门控与最近抵消；面板内可临时覆盖当前会话的意图摘要开关。账本为进程内口径（宿主重启归零）。",
+			"monitorPanel.enabled": "悬浮面板",
+			"monitorPanel.enabled.on": "开",
+			"monitorPanel.enabled.off": "关（默认）",
 			"custom.title": "Custom 策略",
 			"custom.settingsHint": "具体参数请前往“设置 > 上下文压缩选择器”中编辑。",
 			"custom.sessionScope": "保存后的修改会在当前压缩运行时随后首次观察某个 Session 时生效；已被该运行时观察的 Session 继续使用其冻结策略。",
@@ -1613,6 +1675,11 @@ window.__ModuleLoader__.load({
 			"intentSummary.enabled": "Turn-tail intent summary",
 			"intentSummary.enabled.on": "On",
 			"intentSummary.enabled.off": "Off (default)",
+			"monitorPanel.title": "Compression monitor panel",
+			"monitorPanel.description": "When on, a draggable floating bubble appears next to the input area — open it to watch live compression state: net savings (exact basis), cache hit rate, cost estimate, the turn-tail intent-summary gate and recent offsets. The panel can temporarily override the current session's intent-summary switch. The ledger is per-process (reset when the host restarts).",
+			"monitorPanel.enabled": "Monitor panel",
+			"monitorPanel.enabled.on": "On",
+			"monitorPanel.enabled.off": "Off (default)",
 			"custom.title": "Custom policy",
 			"custom.settingsHint": "Edit detailed parameters in Settings > Context compression selector.",
 			"custom.sessionScope": "Saved changes apply when the current compression runtime next observes a Session for the first time. A Session already observed by that runtime keeps its frozen policy.",
@@ -1730,6 +1797,11 @@ window.__ModuleLoader__.load({
 			"intentSummary.enabled": "Abschluss-Zusammenfassung",
 			"intentSummary.enabled.on": "Ein",
 			"intentSummary.enabled.off": "Aus (Standard)",
+			"monitorPanel.title": "Komprimierungs-Monitorpanel",
+			"monitorPanel.description": "Aktiviert erscheint neben dem Eingabebereich eine ziehbare Schwebekugel — öffne sie, um den Live-Komprimierungszustand zu beobachten: Nettoeinsparung (exakte Basis), Cache-Trefferquote, Kostenschätzung, das Turn-Tail-Gate und letzte Ausgleiche. Das Panel kann den Intent-Zusammenfassungsschalter der aktuellen Sitzung temporär übersteuern. Das Konto ist prozesslokal (Reset bei Host-Neustart).",
+			"monitorPanel.enabled": "Monitorpanel",
+			"monitorPanel.enabled.on": "Ein",
+			"monitorPanel.enabled.off": "Aus (Standard)",
 			"custom.title": "Eigene Strategie",
 			"custom.settingsHint": "Detaillierte Parameter unter Einstellungen > Kontextkomprimierung wählen bearbeiten.",
 			"custom.sessionScope": "Gespeicherte Änderungen greifen, wenn die aktuelle Compression-Runtime eine Sitzung zum ersten Mal beobachtet. Eine von dieser Runtime bereits beobachtete Sitzung behält ihre eingefrorene Strategie.",
@@ -1847,6 +1919,11 @@ window.__ModuleLoader__.load({
 			"intentSummary.enabled": "Resumen de intención al cierre",
 			"intentSummary.enabled.on": "Sí",
 			"intentSummary.enabled.off": "No (predeterminado)",
+			"monitorPanel.title": "Panel de monitor de compresión",
+			"monitorPanel.description": "Al activarlo, junto al área de entrada aparece una burbuja flotante arrastrable — ábrela para observar el estado de compresión en vivo: ahorro neto (base exacta), tasa de acierto de caché, estimación de coste, la puerta de resumen de intención del turno y compensaciones recientes. El panel puede invalidar temporalmente el interruptor de resumen de intención de la sesión actual. El libro es por proceso (se reinicia al rearrancar el host).",
+			"monitorPanel.enabled": "Panel de monitor",
+			"monitorPanel.enabled.on": "Sí",
+			"monitorPanel.enabled.off": "No (predeterminado)",
 			"custom.title": "Política personalizada",
 			"custom.settingsHint": "Edita los parámetros detallados en Ajustes > Selector de compresión de contexto.",
 			"custom.sessionScope": "Los cambios guardados se aplican cuando el runtime de compresión actual observa una Session por primera vez. Una Session ya observada por ese runtime conserva su política congelada.",
@@ -1964,6 +2041,11 @@ window.__ModuleLoader__.load({
 			"intentSummary.enabled": "Résumé d'intention en fin de tour",
 			"intentSummary.enabled.on": "Activé",
 			"intentSummary.enabled.off": "Désactivé (par défaut)",
+			"monitorPanel.title": "Panneau de monitorage de compression",
+			"monitorPanel.description": "Activé, une bulle flottante déplaçable apparaît près de la zone de saisie — ouvrez-la pour observer l'état de compression en direct : économie nette (base exacte), taux de réussite du cache, estimation de coût, la porte de résumé d'intention du tour et les compensations récentes. Le panneau peut contourner temporairement l'interrupteur de résumé d'intention de la session courante. Le registre est propre au processus (remis à zéro au redémarrage de l'hôte).",
+			"monitorPanel.enabled": "Panneau de monitorage",
+			"monitorPanel.enabled.on": "Activé",
+			"monitorPanel.enabled.off": "Désactivé (par défaut)",
 			"custom.title": "Stratégie personnalisée",
 			"custom.settingsHint": "Modifiez les paramètres détaillés dans Réglages > Sélecteur de compression du contexte.",
 			"custom.sessionScope": "Les changements enregistrés s’appliquent quand le runtime de compression actuel observe une Session pour la première fois. Une Session déjà observée par ce runtime garde sa stratégie figée.",
@@ -2081,6 +2163,11 @@ window.__ModuleLoader__.load({
 			"intentSummary.enabled": "Riepilogo di intento a fine turno",
 			"intentSummary.enabled.on": "On",
 			"intentSummary.enabled.off": "Off (predefinito)",
+			"monitorPanel.title": "Pannello di monitoraggio compressione",
+			"monitorPanel.description": "Quando attivo, accanto all'area di input appare una bolla flottante trascinabile — aprila per osservare lo stato di compressione in tempo reale: risparmio netto (base esatta), tasso di hit della cache, stima dei costi, la soglia del riepilogo di intento del turno e le compensazioni recenti. Il pannello può ignorare temporaneamente l'interruttore del riepilogo di intento della sessione corrente. Il registro è per processo (azzerato al riavvio dell'host).",
+			"monitorPanel.enabled": "Pannello di monitoraggio",
+			"monitorPanel.enabled.on": "On",
+			"monitorPanel.enabled.off": "Off (predefinito)",
 			"custom.title": "Politica personalizzata",
 			"custom.settingsHint": "Modifica i parametri dettagliati in Impostazioni > Selettore di compressione del contesto.",
 			"custom.sessionScope": "Le modifiche salvate si applicano quando l’attuale runtime di compressione osserva una Sessione per la prima volta. Una Sessione già osservata da quel runtime mantiene la sua politica congelata.",
@@ -2198,6 +2285,11 @@ window.__ModuleLoader__.load({
 			"intentSummary.enabled": "ターン末尾インテント要約",
 			"intentSummary.enabled.on": "オン",
 			"intentSummary.enabled.off": "オフ（既定）",
+			"monitorPanel.title": "圧縮モニター パネル",
+			"monitorPanel.description": "有効にすると、入力欄のそばにドラッグできるフローティング バブルが現れます。開くとライブの圧縮状態を監視できます。正味節約（正確 basis）、キャッシュ ヒット率、コスト概算、ターン末尾インテント要約ゲート、最近の相殺。パネルから現セッションのインテント要約スイッチを一時的に上書きできます。台帳はプロセス単位（ホスト再起動でリセット）。",
+			"monitorPanel.enabled": "モニター パネル",
+			"monitorPanel.enabled.on": "オン",
+			"monitorPanel.enabled.off": "オフ（既定）",
 			"custom.title": "カスタムポリシー",
 			"custom.settingsHint": "詳細パラメーターは「設定 > コンテキスト圧縮セレクター」で編集してください。",
 			"custom.sessionScope": "保存した変更は、現在の圧縮ランタイムが次に Session を初めて観測したときに適用されます。そのランタイムに既に観測された Session は凍結済みポリシーを使い続けます。",
@@ -2315,6 +2407,11 @@ window.__ModuleLoader__.load({
 			"intentSummary.enabled": "턴 말머리 인텐트 요약",
 			"intentSummary.enabled.on": "켜기",
 			"intentSummary.enabled.off": "끄기(기본)",
+			"monitorPanel.title": "압축 모니터 패널",
+			"monitorPanel.description": "켜면 입력 영역 옆에 드래그 가능한 플로팅 버블이 나타납니다. 열면 라이브 압축 상태를 볼 수 있습니다. 순 절감(정확 기준), 캐시 적중률, 비용 추정, 턴 말머리 인텐트 요약 게이트, 최근 상쇄. 패널에서 현재 세션의 인텐트 요약 스위치를 임시로 전환할 수 있습니다. 장부는 프로세스 단위(호스트 재시작 시 초기화).",
+			"monitorPanel.enabled": "모니터 패널",
+			"monitorPanel.enabled.on": "켜기",
+			"monitorPanel.enabled.off": "끄기(기본)",
 			"custom.title": "커스텀 정책",
 			"custom.settingsHint": "세부 파라미터는 「설정 > 컨텍스트 압축 셀렉터」에서 편집하세요.",
 			"custom.sessionScope": "저장된 변경 사항은 현재 압축 런타임이 Session을 처음 관측하는 시점에 적용됩니다. 해당 런타임이 이미 관측한 Session은 동결된 정책을 계속 사용합니다.",
@@ -2432,6 +2529,11 @@ window.__ModuleLoader__.load({
 			"intentSummary.enabled": "Итог намерения в конце хода",
 			"intentSummary.enabled.on": "Вкл",
 			"intentSummary.enabled.off": "Выкл (по умолчанию)",
+			"monitorPanel.title": "Панель мониторинга сжатия",
+			"monitorPanel.description": "При включении рядом с областью ввода появляется перетаскиваемый плавающий шарик — откройте его, чтобы следить за состоянием сжатия в реальном времени: чистая экономия (точная база), процент попаданий кэша, оценка стоимости, шлюз итогов намерения хода и последние компенсации. Панель может временно переключить тумблер итогов намерения текущей сессии. Реестр живёт в процессе (обнуляется при перезапуске хоста).",
+			"monitorPanel.enabled": "Панель мониторинга",
+			"monitorPanel.enabled.on": "Вкл",
+			"monitorPanel.enabled.off": "Выкл (по умолчанию)",
 			"custom.title": "Пользовательская стратегия",
 			"custom.settingsHint": "Подробные параметры — в «Настройки > Выбор сжатия контекста».",
 			"custom.sessionScope": "Сохранённые изменения применяются, когда текущий runtime сжатия впервые наблюдает Session. Session, уже наблюдаемая этим runtime, сохраняет свою замороженную стратегию.",
@@ -2689,6 +2791,7 @@ window.__ModuleLoader__.load({
 					saveAutoCompact: (thresholdPercent) => writeAndConfirm(() => scope.set("autoCompact", { thresholdPercent }), (settings) => settings.autoCompact.thresholdPercent === thresholdPercent),
 					saveCodeSkeleton: (enabled) => writeAndConfirm(() => scope.set("codeSkeleton", { enabled }), (settings) => settings.codeSkeleton.enabled === enabled),
 					saveIntentSummary: (enabled) => writeAndConfirm(() => scope.set("intentSummary", { enabled }), (settings) => settings.intentSummary.enabled === enabled),
+					saveMonitorPanel: (enabled) => writeAndConfirm(() => scope.set("monitorPanel", { enabled }), (settings) => settings.monitorPanel?.enabled === enabled),
 					savePresetOptions: (options) => {
 						const ops = planPresetOptionsOps(scope.getSnapshot().value?.presetOptions, options);
 						if (ops.length === 0) return Promise.resolve();
