@@ -116,6 +116,11 @@ export interface IntentSummarySettings {
   enabled: boolean
 }
 
+/** Floating compression-monitor panel (FAB); visibility switch. */
+export interface MonitorPanelSettings {
+  enabled: boolean
+}
+
 /**
  * Decode the persisted codeSkeleton section with exactly the runtime schema's
  * strictness: absent means the lossless off default; present values must be a
@@ -138,6 +143,16 @@ export function decodeIntentSummarySettings(value: unknown): IntentSummarySettin
   const keys = Object.keys(value)
   if (keys.length !== 1 || keys[0] !== 'enabled') return undefined
   const enabled = (value).enabled
+  return typeof enabled === 'boolean' ? { enabled } : undefined
+}
+
+/** Browser-safe mirror of the runtime monitorPanel section (absent inherits hidden). */
+export function decodeMonitorPanelSettings(value: unknown): MonitorPanelSettings | undefined {
+  if (value === undefined) return { enabled: false }
+  if (!isPlainRecord(value)) return undefined
+  const keys = Object.keys(value)
+  if (keys.length !== 1 || keys[0] !== 'enabled') return undefined
+  const enabled = (value as Record<string, unknown>).enabled
   return typeof enabled === 'boolean' ? { enabled } : undefined
 }
 
@@ -309,6 +324,8 @@ export interface ContextCompressionSettings {
   codeSkeleton: CodeSkeletonSettings
   /** Turn-tail intent-summary gate captured independently of `profile`. */
   intentSummary: IntentSummarySettings
+  /** Floating compression-monitor panel (FAB); absent inherits hidden. */
+  monitorPanel?: MonitorPanelSettings
   /** Optional tokenpilot-inspired sub-capability overrides (presence-validated only). */
   presetOptions?: PresetOptionsSettings
 }

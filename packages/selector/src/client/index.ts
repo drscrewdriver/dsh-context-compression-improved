@@ -206,6 +206,14 @@ export function apply(ctx: ClientContext): void {
         () => scope.set('codeSkeleton', { enabled }),
         settings => settings.codeSkeleton.enabled === enabled,
       ),
+      saveIntentSummary: enabled => writeAndConfirm(
+        () => scope.set('intentSummary', { enabled }),
+        settings => settings.intentSummary.enabled === enabled,
+      ),
+      saveMonitorPanel: enabled => writeAndConfirm(
+        () => scope.set('monitorPanel', { enabled }),
+        settings => settings.monitorPanel.enabled === enabled,
+      ),
       savePresetOptions: options => {
         // Path-addressed so one field write cannot delete its siblings: the
         // previous whole-section set erased estimatorMode (and every other

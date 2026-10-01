@@ -192,6 +192,73 @@ export function AutoCompactThresholdControls({ value, disabled, save, settle, t 
   )
 }
 
+interface IntentSummaryControlsProps {
+  value: boolean
+  disabled: boolean
+  save: (enabled: boolean) => Promise<void>
+  settle: (operation: () => Promise<void>) => void
+  t: (key: ContextCompressionLocaleKey) => string
+}
+
+/**
+ * The turn-tail intent summary fold gate. Same deliberately minimal shape as
+ * the code-skeleton gate: an on/off select with its own save path; the fold
+ * itself is gated by the growth constants and the per-session /ctx-summary
+ * override, none of which belong in this card.
+ */
+export function IntentSummaryControls({ value, disabled, save, settle, t }: IntentSummaryControlsProps) {
+  return (
+    <section className={css.autoCompact} aria-labelledby="context-compression-intentsummary-title">
+      <h3 id="context-compression-intentsummary-title" className={css.autoCompactTitle}>{t('intentSummary.title')}</h3>
+      <p className={css.customNote}>{t('intentSummary.description')}</p>
+      <label className={css.field}>
+        <span>{t('intentSummary.enabled')}</span>
+        <select
+          value={value ? 'on' : 'off'}
+          disabled={disabled}
+          onChange={(event) => { settle(() => save(event.currentTarget.value === 'on')) }}
+        >
+          <option value="on">{t('intentSummary.enabled.on')}</option>
+          <option value="off">{t('intentSummary.enabled.off')}</option>
+        </select>
+      </label>
+    </section>
+  )
+}
+
+interface MonitorPanelControlsProps {
+  value: boolean
+  disabled: boolean
+  save: (enabled: boolean) => Promise<void>
+  settle: (operation: () => Promise<void>) => void
+  t: (key: ContextCompressionLocaleKey) => string
+}
+
+/**
+ * Visibility switch of the floating compression-monitor panel (FAB). The
+ * panel itself is a body-level overlay driven by the monitor route; this card
+ * only decides whether it mounts.
+ */
+export function MonitorPanelControls({ value, disabled, save, settle, t }: MonitorPanelControlsProps) {
+  return (
+    <section className={css.autoCompact} aria-labelledby="context-compression-monitorpanel-title">
+      <h3 id="context-compression-monitorpanel-title" className={css.autoCompactTitle}>{t('monitorPanel.title')}</h3>
+      <p className={css.customNote}>{t('monitorPanel.description')}</p>
+      <label className={css.field}>
+        <span>{t('monitorPanel.enabled')}</span>
+        <select
+          value={value ? 'on' : 'off'}
+          disabled={disabled}
+          onChange={(event) => { settle(() => save(event.currentTarget.value === 'on')) }}
+        >
+          <option value="on">{t('monitorPanel.enabled.on')}</option>
+          <option value="off">{t('monitorPanel.enabled.off')}</option>
+        </select>
+      </label>
+    </section>
+  )
+}
+
 interface CodeSkeletonControlsProps {
   value: boolean
   disabled: boolean

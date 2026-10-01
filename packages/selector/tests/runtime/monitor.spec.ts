@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { parseContextCompressionSettings, DEFAULT_CONTEXT_COMPRESSION_SETTINGS } from '../../src/runtime/config.ts'
 import { SavingsLedger } from '../../src/runtime/savings.ts'
 import {
   applySessionOverride,
@@ -193,5 +194,43 @@ describe('monitor route (GET snapshot / POST override)', () => {
     handler(fakeReq(PATH, 'POST', 'not-json'), res)
     expect(captured.status).toBe(400)
     expect(captured.body.ok).toBe(false)
+  })
+})
+
+describe('monitorPanel settings parsing (schema surface, mirrors intentSummary cases)', () => {
+  const base = {
+    profile: 'balanced' as const,
+    custom: structuredClone(DEFAULT_CONTEXT_COMPRESSION_SETTINGS.custom),
+  }
+
+  it('defaults to hidden', () => {
+    expect(DEFAULT_CONTEXT_COMPRESSION_SETTINGS.monitorPanel).toEqual({ enabled: false })
+  })
+
+  it('absent section inherits the default', () => {
+    const parsed = parseContextCompressionSettings({ ...base, autoCompact: { thresholdPercent: 80 } })
+    expect(parsed.monitorPanel).toEqual({ enabled: false })
+  })
+
+  it('accepts exactly { enabled: boolean }', () => {
+    const parsed = parseContextCompressionSettings({ ...base, monitorPanel: { enabled: true } })
+    expect(parsed.monitorPanel).toEqual({ enabled: true })
+  })
+
+  it('rejects extra keys (present-but-invalid is never silently defaulted)', () => {
+    expect(() => parseContextCompressionSettings({
+      ...base, monitorPanel: { enabled: true, position: 'left' },
+    })).toThrow(/expected exactly "enabled"/)
+  })
+
+  it('rejects non-boolean enabled', () => {
+    expect(() => parseContextCompressionSettings({
+      ...base, monitorPanel: { enabled: 'yes' },
+    })).toThrow(/monitorPanel\.enabled must be a boolean/)
+  })
+
+  it('rejects non-object section', () => {
+    expect(() => parseContextCompressionSettings({ ...base, monitorPanel: 'yes' }))
+      .toThrow(/monitorPanel must be a plain object/)
   })
 })
