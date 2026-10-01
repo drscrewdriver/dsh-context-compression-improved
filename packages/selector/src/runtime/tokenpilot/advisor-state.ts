@@ -147,3 +147,58 @@ export function invalidateOnTaskChange(state: AdvisorState, todoVersion: string)
   state.lastSummaryTurn = -1
   return true
 }
+
+// ─────────── Turn-tail intent summary: session-scoped overrides and records ───────────
+
+/**
+ * `/ctx-summary off|on` overrides, keyed by session id (string). The command
+ * handler only sees `invocation.agent.session.id`, not the pruner's Session
+ * object, so these are id-keyed rather than WeakMap'd. Entries are two-char
+ * strings per session and cleared whenever the override is lifted.
+ */
+const summaryOverrides = new Map<string, 'on' | 'off'>()
+
+/** Read the session's `/ctx-summary` override; `undefined` = default (settings-driven). */
+export function getSummaryOverride(sessionId: string): 'on' | 'off' | undefined {
+  return summaryOverrides.get(sessionId)
+}
+
+/** Set or clear (`undefined`) the session's `/ctx-summary` override. */
+export function setSummaryOverride(sessionId: string, value: 'on' | 'off' | undefined): void {
+  if (value === undefined) summaryOverrides.delete(sessionId)
+  else summaryOverrides.set(sessionId, value)
+}
+
+/** Last observed `intentSummary.enabled` for a session, for `/ctx-summary status`. */
+const lastObservedIntentEnabled = new Map<string, boolean>()
+
+/** Record the gate input the pass last evaluated for this session. */
+export function observeIntentEnabled(sessionId: string, enabled: boolean): void {
+  lastObservedIntentEnabled.set(sessionId, enabled)
+}
+
+/** The settings-side enabled flag last observed for the session, if any. */
+export function getObservedIntentEnabled(sessionId: string): boolean | undefined {
+  return lastObservedIntentEnabled.get(sessionId)
+}
+
+/** One landed intent fold, kept for `/ctx-summary status` (one per session). */
+export interface IntentFoldRecord {
+  readonly turn: number
+  readonly startSeq: number
+  readonly endSeq: number
+  readonly liveTokensBefore: number
+  readonly at: number
+}
+
+const lastIntentFolds = new Map<string, IntentFoldRecord>()
+
+/** Record a landed intent fold for the session (newest wins). */
+export function recordIntentFold(sessionId: string, record: IntentFoldRecord): void {
+  lastIntentFolds.set(sessionId, record)
+}
+
+/** The most recent landed intent fold for the session, if any. */
+export function getLastIntentFold(sessionId: string): IntentFoldRecord | undefined {
+  return lastIntentFolds.get(sessionId)
+}

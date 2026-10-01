@@ -5,7 +5,6 @@ import { useSyncExternalStore } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ContextCompressionSettingsSection,
-  type CompressionProfileSelectorProps,
   type ContextCompressionSettings,
 } from '../src/client/CompressionProfileSelector.tsx'
 import { en } from '../src/client/locales.ts'
@@ -99,6 +98,7 @@ function mountEstimator(
       custom: structuredClone(DEFAULT_CUSTOM),
       autoCompact: { thresholdPercent: 80 },
       codeSkeleton: { enabled: false },
+      intentSummary: { enabled: false },
       presetOptions: presetOptions ?? {},
     },
     base: undefined,
@@ -123,7 +123,7 @@ function mountEstimator(
     saveCodeSkeleton: vi.fn(() => Promise.resolve()),
     savePresetOptions,
     t,
-  } as unknown as CompressionProfileSelectorProps)} />)
+  })} />)
   return { savePresetOptions }
 }
 

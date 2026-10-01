@@ -373,6 +373,20 @@ function parseCodeSkeletonSettings(value) {
 	return { enabled };
 }
 /**
+* Strictly parse the persisted intentSummary section. Mirrors the codeSkeleton
+* section semantics: absent inherits the lossless `false` default, while a
+* present-but-invalid section is an explicitly invalid document.
+*/
+function parseIntentSummarySettings(value) {
+	if (value === void 0) return { enabled: false };
+	if (!isPlainRecord(value)) throw new TypeError("Context-compression intentSummary must be a plain object");
+	const keys = Object.keys(value);
+	if (keys.length !== 1 || keys[0] !== "enabled") throw new TypeError(`Context-compression intentSummary: expected exactly "enabled", got "${keys.join("\", \"")}"`);
+	const enabled = value.enabled;
+	if (typeof enabled !== "boolean") throw new TypeError("Context-compression intentSummary.enabled must be a boolean");
+	return { enabled };
+}
+/**
 * Parse the optional tokenpilot-inspired preset sub-capability section. Absent
 * inherits the preset defaults; present-but-invalid is rejected, mirroring the
 * codeSkeleton section semantics.
@@ -479,7 +493,8 @@ const DEFAULT_CONTEXT_COMPRESSION_SETTINGS = {
 	profile: "balanced",
 	custom: structuredClone(DEFAULT_CUSTOM_COMPRESSION_POLICY),
 	autoCompact: { thresholdPercent: AUTO_COMPACT_THRESHOLD_LIMITS.default },
-	codeSkeleton: { enabled: false }
+	codeSkeleton: { enabled: false },
+	intentSummary: { enabled: false }
 };
 /**
 * Parse one settings document with the persisted-section semantics: `undefined`
@@ -497,17 +512,19 @@ const ContextCompressionSettingsSchema = z.transform(z.any().required(), (value)
 	if (!isPlainRecord(value)) throw new TypeError("Context-compression settings must be a plain object");
 	assertPlainDataTree(value);
 	const candidate = structuredClone(value);
-	const unknown = Object.keys(candidate).find((key) => key !== "profile" && key !== "custom" && key !== "autoCompact" && key !== "codeSkeleton" && key !== "presetOptions");
+	const unknown = Object.keys(candidate).find((key) => key !== "profile" && key !== "custom" && key !== "autoCompact" && key !== "codeSkeleton" && key !== "intentSummary" && key !== "presetOptions");
 	if (unknown !== void 0) throw new TypeError(`Context-compression settings: unknown key "${unknown}"`);
 	assertPresentSection(candidate, "profile", isSupportedProfile);
 	assertPresentSection(candidate, "custom", isUsableCustomDocument);
 	const autoCompact = parseAutoCompactSettings(candidate.autoCompact);
 	const codeSkeleton = parseCodeSkeletonSettings(candidate.codeSkeleton);
+	const intentSummary = parseIntentSummarySettings(candidate.intentSummary);
 	const presetOptions = parsePresetOptionsSettings(candidate.presetOptions);
 	return {
 		...contextCompressionSettingsInputSchema(candidate),
 		autoCompact,
 		codeSkeleton,
+		intentSummary,
 		...presetOptions === void 0 ? {} : { presetOptions }
 	};
 }).default(DEFAULT_CONTEXT_COMPRESSION_SETTINGS);
@@ -958,5 +975,76 @@ function invalidateOnTaskChange(state, todoVersion) {
 	state.lastSummaryTurn = -1;
 	return true;
 }
+/**
+* `/ctx-summary off|on` overrides, keyed by session id (string). The command
+* handler only sees `invocation.agent.session.id`, not the pruner's Session
+* object, so these are id-keyed rather than WeakMap'd. Entries are two-char
+* strings per session and cleared whenever the override is lifted.
+*/
+const summaryOverrides = /* @__PURE__ */ new Map();
+/** Read the session's `/ctx-summary` override; `undefined` = default (settings-driven). */
+function getSummaryOverride(sessionId) {
+	return summaryOverrides.get(sessionId);
+}
+/** Set or clear (`undefined`) the session's `/ctx-summary` override. */
+function setSummaryOverride(sessionId, value) {
+	if (value === void 0) summaryOverrides.delete(sessionId);
+	else summaryOverrides.set(sessionId, value);
+}
+/** Last observed `intentSummary.enabled` for a session, for `/ctx-summary status`. */
+const lastObservedIntentEnabled = /* @__PURE__ */ new Map();
+/** Record the gate input the pass last evaluated for this session. */
+function observeIntentEnabled(sessionId, enabled) {
+	lastObservedIntentEnabled.set(sessionId, enabled);
+}
+/** The settings-side enabled flag last observed for the session, if any. */
+function getObservedIntentEnabled(sessionId) {
+	return lastObservedIntentEnabled.get(sessionId);
+}
+const lastIntentFolds = /* @__PURE__ */ new Map();
+/** Record a landed intent fold for the session (newest wins). */
+function recordIntentFold(sessionId, record) {
+	lastIntentFolds.set(sessionId, record);
+}
+/** The most recent landed intent fold for the session, if any. */
+function getLastIntentFold(sessionId) {
+	return lastIntentFolds.get(sessionId);
+}
 //#endregion
-export { deepFreeze as C, assertNever as S, resolveConfig as _, AUTO_COMPACT_THRESHOLD_LIMITS as a, DEFAULT_CUSTOM_COMPRESSION_POLICY as b, DEFAULTS as c, charsForTokens as d, charsToTokens as f, parseContextCompressionSettings as g, isValidAutoCompactThresholdPercent as h, recordScore as i, DEFAULT_CONTEXT_COMPRESSION_SETTINGS as l, isCompressionProfile as m, invalidateOnTaskChange as n, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as o, codePointLength as p, recordRecertified as r, ContextCompressionSettingsSchema as s, getAdvisorState as t, PRUNE_MARKER as u, resolvePolicy as v, COMPRESSION_PROFILES as w, resolveCustomPolicy as x, CustomCompressionPolicySchema as y };
+//#region src/runtime/tokenpilot/intent-gate.ts
+/**
+* Turn-tail intent-summary growth gate (TokenPilot-inspired E2).
+*
+* Pure decision helper evaluated at the turn-boundary postflight: it decides
+* whether this turn may spend a summary-writer LLM call and stage a fold for
+* the next pressure round. The gate is deliberately conservative — every
+* unresolved input (unknown context window, non-finite counters) fails closed
+* toward "do not run", because a skipped fold is free while a wasted summary
+* call is not. Content safety is unaffected either way: fail-open semantics
+* live in the fold landing path, not here.
+*/
+/** Floor: the live surface must exceed this fraction of the context window. */
+const INTENT_GATE_FLOOR_FRACTION = .45;
+/** Growth: the live surface must have grown by more than this since the last landed fold. */
+const INTENT_GATE_GROWTH_TOKENS = 5e4;
+function isUsableNumber(value) {
+	return Number.isFinite(value) && value >= 0;
+}
+/** Same evaluation with the reason attached, for audits and `/ctx-summary status`. */
+function evaluateIntentGate(input) {
+	const snapshot = (decision, reason) => ({
+		...input,
+		decision,
+		reason
+	});
+	if (!input.enabled) return snapshot(false, "disabled");
+	if (input.override === "off") return snapshot(false, "override-off");
+	if (!isUsableNumber(input.liveTokens)) return snapshot(false, "below-floor");
+	if (input.contextWindow === void 0 || !isUsableNumber(input.contextWindow)) return snapshot(false, "no-window");
+	if (!(input.liveTokens > input.contextWindow * .45)) return snapshot(false, "below-floor");
+	if (!isUsableNumber(input.baselineTokens)) return snapshot(false, "below-growth");
+	if (!(input.liveTokens - input.baselineTokens > 5e4)) return snapshot(false, "below-growth");
+	return snapshot(true, "passed");
+}
+//#endregion
+export { resolveCustomPolicy as A, isCompressionProfile as C, resolvePolicy as D, resolveConfig as E, deepFreeze as M, COMPRESSION_PROFILES as N, CustomCompressionPolicySchema as O, codePointLength as S, parseContextCompressionSettings as T, DEFAULTS as _, getLastIntentFold as a, charsForTokens as b, invalidateOnTaskChange as c, recordRecertified as d, recordScore as f, ContextCompressionSettingsSchema as g, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as h, getAdvisorState as i, assertNever as j, DEFAULT_CUSTOM_COMPRESSION_POLICY as k, observeIntentEnabled as l, AUTO_COMPACT_THRESHOLD_LIMITS as m, INTENT_GATE_GROWTH_TOKENS as n, getObservedIntentEnabled as o, setSummaryOverride as p, evaluateIntentGate as r, getSummaryOverride as s, INTENT_GATE_FLOOR_FRACTION as t, recordIntentFold as u, DEFAULT_CONTEXT_COMPRESSION_SETTINGS as v, isValidAutoCompactThresholdPercent as w, charsToTokens as x, PRUNE_MARKER as y };

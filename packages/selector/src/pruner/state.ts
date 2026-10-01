@@ -9,6 +9,7 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import type { DedupeTable } from '../runtime/tokenpilot/dedup.ts'
 import type { EstimatorFailures } from '../runtime/tokenpilot/estimator.ts'
 import type { SideChannel } from '../runtime/tokenpilot/sidechannel.ts'
+import type { PendingIntentFold } from '../runtime/tokenpilot/intent-fold.ts'
 import type {
   ContextCompressionSettings,
   ResolvedConfig,
@@ -47,4 +48,10 @@ export interface PrunerState {
   readonly estimatorRemainingTurns: WeakMap<Session, number>
   /** Per-session advisor side channel, constructed once with the advisor overrides. */
   readonly advisorChannels: WeakMap<Session, SideChannel>
+  /** Staged intent fold awaiting the next pressure round (at most one per session). */
+  readonly pendingIntentFolds: WeakMap<Session, PendingIntentFold>
+  /** Landed intent-fold seqs: fold-once, never reconsidered by any later stage. */
+  readonly intentFoldedSeqs: WeakMap<Session, Set<number>>
+  /** Live-surface tokens when the last intent fold landed (growth-gate baseline). */
+  readonly intentBaselines: WeakMap<Session, number>
 }

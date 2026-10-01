@@ -2,6 +2,12 @@
 
 > 전체 히스토리(업스트림 0.1.0 이전 포함)는 [CHANGELOG.md](CHANGELOG.md)를 참고하세요. 이 파일은 포크의 추가 항목만 번역한 것입니다. · [English](CHANGELOG.md) · [中文](CHANGELOG.zh.md) · [日本語](CHANGELOG.ja.md)
 
+## 0.7.0-beta.1 - 2026-09-27
+
+### 추가
+
+- 턴 말머리 인텐트 요약(`intentSummary.enabled`, 기본 꺼짐): 성장 게이트(라이브 표면이 창의 45% 초과, 마지막 폴드 대비 50K 토큰 초과 증가)를 통과하면 턴 경계 포스트플라이트가 "소비된 증분"을 의미론적 역할로 마스킹합니다——read 계열 도구 결과는 공유 `classifyToolSource()`(write 레이어 추가)를 통해 1줄 대상/규모 레코드로, write 계열은 스켈레톤 헤드와 축자적 오류 행을 유지——한 번의 요약 작성기 LLM 호출만 소비합니다(todolist 앵커, JSON 전용, fail-open). 폴드는 다음 압력 라운드에서 기존 plan/apply 메커니즘을 통해 후보별 `intent-summary` 블록으로 착지하며, 첫 블록이 요약·읽기 레코드·축자적 오류 행을, 나머지는 마스크 행과 seq 범위 출처 각주를 담습니다. fold-once: 접힌 seq(`INTENT_FOLD_MARKER` 포함 블록)는 다시 후보가 되지 않습니다. 감사에 `intent-summary-outcome`(보존율 및 요약 호출 비용 크레딧) 추가.
+- `/ctx-summary off|on|status`: 세션 범위의 임시 비활성화/재개/상태 조회(설정은 세션 고정이므로 "임시"는 런타임 상태로만 가능). 프로세스와 함께 소멸하며 세션을 cross하지 않습니다.
 ## 0.6.5 - 2026-09-29
 
 ### Fixed

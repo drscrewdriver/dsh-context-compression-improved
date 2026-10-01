@@ -709,6 +709,7 @@ describe('standalone runtime on published Harness APIs', () => {
     const legacySettings = ctx.settings as unknown as LegacySettingsProvider
     const originalGet = legacySettings.get.bind(legacySettings)
     vi.spyOn(legacySettings, 'get').mockImplementation((ns: unknown) =>
+      // eslint-disable-next-line @typescript-eslint/no-base-to-string -- namespace keys are scalars by contract
       ns === undefined || String(ns) === String(namespace) ? structuredClone(malformed) : originalGet(ns as never))
     await ctx.plugin(ToolResultPruner, {
       profile: 'balanced',
@@ -754,6 +755,7 @@ describe('standalone runtime on published Harness APIs', () => {
     const legacySettings = ctx.settings as unknown as LegacySettingsProvider
     const originalGet = legacySettings.get.bind(legacySettings)
     vi.spyOn(legacySettings, 'get').mockImplementation((ns: unknown) =>
+      // eslint-disable-next-line @typescript-eslint/no-base-to-string -- namespace keys are scalars by contract
       ns === undefined || String(ns) === String(namespace) ? structuredClone(malformed) : originalGet(ns as never))
     await ctx.plugin(ToolResultPruner, {
       profile: 'balanced',
@@ -794,6 +796,7 @@ describe('standalone runtime on published Harness APIs', () => {
     const legacySettings = ctx.settings as unknown as LegacySettingsProvider
     const originalGet = legacySettings.get.bind(legacySettings)
     vi.spyOn(legacySettings, 'get').mockImplementation((ns: unknown) =>
+      // eslint-disable-next-line @typescript-eslint/no-base-to-string -- namespace keys are scalars by contract
       ns === undefined || String(ns) === String(namespace) ? malformed : originalGet(ns as never))
     await ctx.plugin(ToolResultPruner, {
       profile: 'balanced',
@@ -2630,6 +2633,8 @@ describe('standalone runtime on published Harness APIs', () => {
     expect(result.pruned).toHaveLength(0)
     expect(rewrites(audit.records()).some(record =>
       record.sessionId === String(session.id) && record.component === 'tail-trim')).toBe(false)
+    // 0.1.7-rc.2: the tool/result message's own `content` IS the result block
+    // set — there is no wrapping `tool-result` block anymore (see pruner land).
     expect(sessionEvents(session).some(event =>
       event.type === 'tool/result'
       && event.data.message.content.some(block => block.type === 'image'))).toBe(true)

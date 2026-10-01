@@ -25,7 +25,7 @@ interface FormStub {
 
 function createFormStub(initial: ContextCompressionSettings, commit = true): FormStub {
   let revision = 1
-  let value: Record<string, unknown> = { settings: structuredClone(initial) as unknown as Record<string, unknown> }
+  let value: Record<string, unknown> = { settings: structuredClone(initial) }
   const commits: Record<string, unknown>[] = []
   const refused: Record<string, unknown>[] = []
   const listeners = new Set<() => void>()
@@ -36,7 +36,7 @@ function createFormStub(initial: ContextCompressionSettings, commit = true): For
     form: {
       getSnapshot: () => ({
         status: 'ready' as const,
-        value: value as unknown as Record<string, unknown>,
+        value: value,
         revision,
         writable: true,
         base: undefined,
@@ -52,15 +52,15 @@ function createFormStub(initial: ContextCompressionSettings, commit = true): For
           refused.push(doc as Record<string, unknown>)
           return Promise.resolve(false)
         }
-        value = { settings: structuredClone(doc) as unknown as Record<string, unknown> }
+        value = { settings: structuredClone(doc) }
         revision += 1
-        commits.push({ settings: structuredClone(doc) as unknown as Record<string, unknown> })
+        commits.push({ settings: structuredClone(doc) })
         for (const listener of listeners) listener()
         return Promise.resolve(true)
       },
       unset: () => Promise.resolve(false),
     },
-  } as FormStub & { form: Record<string, unknown> }
+  }
 }
 
 const DEFAULT_CUSTOM = {
@@ -90,6 +90,7 @@ function bindInjected(
     custom: structuredClone(DEFAULT_CUSTOM),
     autoCompact: { thresholdPercent: 80 },
     codeSkeleton: { enabled: false },
+    intentSummary: { enabled: false },
     ...(presetOptions === undefined ? {} : { presetOptions }),
   }
   const stub = createFormStub(settings, commit)

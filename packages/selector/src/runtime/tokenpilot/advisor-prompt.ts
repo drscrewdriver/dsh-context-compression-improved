@@ -69,7 +69,7 @@ export function buildAdvisorScoringUserPrompt(
 }
 
 /** Pull the first balanced JSON object out of a possibly chatty answer. */
-function firstJsonObject(text: string): Record<string, unknown> | undefined {
+export function firstJsonObject(text: string): Record<string, unknown> | undefined {
   const start = text.indexOf('{')
   if (start < 0) return undefined
   let depth = 0
@@ -185,4 +185,49 @@ export function parseAdvisorScores(
     scores.set(seq, { seq, score, ...(reason !== undefined ? { reason } : {}) })
   }
   return scores.size > 0 ? scores : undefined
+}
+
+/** Hard character cap for one intent-summary answer (summary segment only). */
+export const INTENT_SUMMARY_CHAR_CAP = 1_600
+
+/**
+ * Intent-summary writer prompts (task_2.3). Input records are already
+ * semantic-role-masked by intent-input-mask.ts: read-class candidates are
+ * one-line "read X" records, keep-class candidates carry skeleton heads and
+ * VERBATIM error lines. The model writes ONLY the summary segment — it never
+ * revoices error lines, and its answer must stay inside the char cap.
+ */
+export function buildIntentSummarySystemPrompt(): string {
+  return [
+    'You write one concise intent summary of folded tool results for a coding agent session.',
+    'Input: the session task (todolist) and per-tool slimmed records (read lines, or skeleton heads with verbatim error lines).',
+    `Write ONLY what the agent DID and LEARNED in this span, as flowing prose under ${INTENT_SUMMARY_CHAR_CAP} characters.`,
+    'Mention which files/areas were consulted and what changed, so a later turn can continue without the originals.',
+    'Never invent files, commands, or outcomes absent from the records. Never revoice error lines; they are preserved verbatim elsewhere.',
+    'Answer with ONLY one JSON object: {"summary":"<prose>"}. Never add commentary.',
+  ].join(' ')
+}
+
+export function buildIntentSummaryUserPrompt(
+  taskText: string,
+  records: readonly string[],
+  tailText: string,
+): string {
+  const nl = String.fromCharCode(10)
+  const lines = [
+    `task: ${taskText.replace(/\s+/gu, ' ').slice(0, 600)}`,
+    records.length > 0 ? `records:${nl}${records.join(nl)}` : 'records: (none)',
+    tailText.trim().length > 0 ? `recent tail:${nl}${tailText.trim().slice(0, 1_200)}` : 'recent tail: (none)',
+  ]
+  return lines.join(nl + nl)
+}
+
+/** Fail-open parse of one intent-summary answer; `undefined` on any malformed shape. */
+export function parseIntentSummaryAnswer(text: string): { readonly summary: string } | undefined {
+  const parsed = firstJsonObject(text)
+  if (parsed === undefined) return undefined
+  const summary = parsed.summary
+  if (typeof summary !== 'string' || summary.trim().length === 0) return undefined
+  if (summary.length > INTENT_SUMMARY_CHAR_CAP * 2) return undefined
+  return { summary: summary.trim().slice(0, INTENT_SUMMARY_CHAR_CAP) }
 }

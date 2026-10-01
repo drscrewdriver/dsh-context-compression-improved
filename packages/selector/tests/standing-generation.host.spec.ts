@@ -423,42 +423,22 @@ describe('real AgentPresets standing generations with the overlay threshold', ()
     expect(files.length).toBeGreaterThanOrEqual(3)
     const buckets = await Promise.all(files.map(async file => Math.floor((await stat(file.path)).mtimeMs / 1000)))
     expect(new Set(buckets).size).toBe(buckets.length)
-    // No staging leftovers survive a publish. A spec file running in parallel
-    // disposes its own store while this scan runs, so a vanished directory means
-    // "no leftovers to find" rather than a failure (mirrors overlayFiles).
-    // No staging leftovers survive a publish. Scan only this test's own store,
-    // identified by its latest source marker: a concurrently running spec's
-    // store may legitimately hold .tmp staging while this scan runs, and a
-    // vanished directory means "no leftovers to find" (mirrors overlayFiles).
-    const storeDirs = await Promise.all(
-      (await readdir(tmpdir(), { withFileTypes: true }))
-        .filter(entry => entry.isDirectory() && entry.name.startsWith('dsh-context-compression-presets-'))
-        .map(async entry => {
-          const directory = join(tmpdir(), entry.name)
-          try {
-            return { directory, entries: await readdir(directory) }
-          } catch {
-            return { directory: '', entries: [] as string[] }
-          }
-        }),
-    )
-    const ownStores: string[] = []
-    await Promise.all(storeDirs.map(async ({ directory, entries }) => {
-      if (directory === '') return
-      for (const name of entries) {
-        if (!name.startsWith('standard-') || !name.endsWith('.agent.cordis.yml')) continue
-        try {
-          const rendered = await readFile(join(directory, name), 'utf8')
-          if (rendered.includes('marker-00000wil.mjs')) {
-            ownStores.push(directory)
-            return
-          }
-        } catch { /* a concurrent spec disposed its store mid-scan */ }
+    // No staging leftovers survive a publish. Scope the scan to the store
+    // directories this test's own overlays were published into: the shared
+    // tmpdir also holds stores from concurrent spec files mid-publish and from
+    // earlier crashed runs, whose stale `.tmp` entries say nothing about this
+    // publish (a vanished directory still means "no leftovers to find").
+    const ownStoreDirs = [...new Set(files.map(file => dirname(file.path)))]
+    const leftovers: string[] = []
+    for (const directory of ownStoreDirs) {
+      let children: string[]
+      try {
+        children = await readdir(directory)
+      } catch {
+        continue
       }
-    }))
-    const leftovers = (await Promise.all(ownStores.map(directory => readdir(directory))))
-      .flat()
-      .filter(name => name.endsWith('.tmp'))
+      leftovers.push(...children.filter(name => name.endsWith('.tmp')))
+    }
     expect(leftovers).toEqual([])
 
     await bundle.dispose()

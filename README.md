@@ -7,6 +7,7 @@
 > [!NOTE]
 > **What this fork adds on top of upstream 0.1.0:**
 >
+> - A **turn-tail intent summary** (`intentSummary.enabled`, default off): when the growth gate passes (>45% of the window, >50K tokens grown since the last fold), consumed-increment tool results are masked to semantic-role records (read-class → one-line target/scale records; write-class keep skeleton + verbatim error lines), one LLM writer call produces the summary segment, and the fold lands on the next pressure round as per-candidate blocks with seq provenance. Fold-once, fail-open, with retention-ratio and call-cost audits. Session-scoped `/ctx-summary off|on|status` pauses/resumes it without touching settings.
 > - An orthogonal **code-skeleton compression gate** (`codeSkeleton.enabled`, default off): the first exposure of an oversized fresh source-code tool result can keep a skeleton of imports and declarations — bodies elided, error lines kept — before the regular reducers run.
 > - A settings toggle for that gate in the same selector settings section, independent of every compression profile.
 > - An ESLint baseline wired into CI, a `test:watch` TDD loop, and documentation in English, Simplified Chinese, Japanese, and Korean.
