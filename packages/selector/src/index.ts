@@ -3,6 +3,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { buildEstimatorCatalog, type EstimatorCatalogDeps } from './estimator-catalog.ts'
+import { getSavingsLedger } from './runtime/savings.ts'
 import type { ContextCompressionSettings } from './profiles.ts'
 import {
   CONTEXT_COMPRESSION_SETTINGS_NAMESPACE,
@@ -35,6 +36,12 @@ const ESTIMATOR_CATALOG_ROUTES = [
 const ADVISOR_REPORT_ROUTES = [
   '/endpoint/dsh-context-compression-improved/advisor-report',
   '/api/dsh-context-compression-improved/advisor-report',
+] as const
+
+// Savings stats: one read-only snapshot route, dual prefixed like the others.
+const SAVINGS_ROUTES = [
+  '/endpoint/dsh-context-compression-improved/savings',
+  '/api/dsh-context-compression-improved/savings',
 ] as const
 
 /** Minimal face of the agents service: session id → agent (carrying the session). */
@@ -292,6 +299,77 @@ function registerEstimatorCatalogRoute(ctx: Context): void {
 }
 
 /**
+ * Read-only savings snapshot route (`GET .../savings?sessionId=…`): gross saved,
+ * offsets (negative savings — compressed content later re-read in full), and net,
+ * with exact-tokenizer and chars/4 bases reported separately and never merged.
+ * Registration mirrors the estimator-catalog route (webServer gate alone, dual
+ * channels for both service arrival orders, single guarded registration).
+ */
+function registerSavingsRoute(ctx: Context): void {
+  const readService = (name: string): unknown => {
+    try {
+      return (ctx as unknown as { get: (service: string) => unknown }).get(name)
+    } catch {
+      return undefined
+    }
+  }
+  const log = (level: 'info' | 'warn', message: string, ...args: unknown[]): void => {
+    console[level](message, ...args)
+  }
+
+  let registered = false
+  const register = (webServer: WebServerLike, channel: 'direct' | 'inject'): void => {
+    if (registered) return
+    const handler = (req: unknown, res: unknown): void => {
+      const resTyped = res as {
+        writeHead: (code: number, headers?: Record<string, string>) => void
+        end: (body?: string) => void
+      }
+      if (typeof resTyped?.writeHead !== 'function' || typeof resTyped?.end !== 'function') return
+      let sessionId: string | undefined
+      try {
+        const url = new URL(String((req as { url?: string })?.url ?? '/'), 'http://localhost')
+        const raw = url.searchParams.get('sessionId')
+        if (typeof raw === 'string' && raw.length > 0 && raw.length <= 512) sessionId = raw
+      } catch {
+        /* 无法解析的查询串 = 全会话聚合 */
+      }
+      const snapshot = getSavingsLedger().snapshot(sessionId)
+      resTyped.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-cache' })
+      resTyped.end(JSON.stringify({ ok: true, ...snapshot }))
+    }
+    try {
+      const disposers = SAVINGS_ROUTES
+        .map(path => webServer.register({ kind: 'exact', path, handler }))
+        .filter((off): off is () => void => typeof off === 'function')
+      registered = true
+      ctx.effect(
+        () => () => { for (const off of disposers) off() },
+        'contextCompressionSelector.savings route',
+      )
+      log('info', 'context-compression savings route registered (%s): %s', channel, SAVINGS_ROUTES.join(', '))
+    } catch (error) {
+      log('warn', 'context-compression savings route registration failed (%s): %o', channel, error)
+    }
+  }
+
+  const active = asWebServer(readService('webServer'))
+  if (active !== undefined) {
+    register(active, 'direct')
+    if (registered) return
+  }
+
+  ctx.inject(['webServer'], (injected) => {
+    const webServer = asWebServer((injected as { webServer?: unknown }).webServer)
+    if (webServer === undefined) {
+      log('warn', 'context-compression webServer exposes no register() — savings route not registered')
+      return
+    }
+    register(webServer, 'inject')
+  })
+}
+
+/**
  * Resolve one possibly-volatile field: a live ref on 0.1.7+, a plain value
  * otherwise (0.1.7 hands `.volatile()` fields to `apply()` as live refs).
  */
@@ -363,6 +441,8 @@ export function apply(ctx: Context, config: Config = {}): void {
     // top-level plugin fiber, not inside the isolated `toolResultPruner`
     // service, because the route is host-wide rather than per-pruner-instance.
     if (config.estimatorCatalogRoute === true) registerEstimatorCatalogRoute(ctx)
+    // 节省统计路由:只读快照,无 opt-in 门槛(无敏感数据,纯 token 计数)。
+    registerSavingsRoute(ctx)
 
     // Advisory advisor: read-only decay/score/advice report (opt-in).
     if (config.advisorReportRoute === true) registerAdvisorReportRoute(ctx)

@@ -168,3 +168,32 @@
   font-size: 12px;
   opacity: 0.9;
 }
+
+.savingsCard {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.savingsRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.savingsNetPositive strong { color: #30d158; }
+.savingsNetNegative strong { color: #ff9f0a; }
+.savingsMuted { opacity: 0.66; font-size: 0.92em; }
+
+.savingsBreakdown {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+.savingsNote { opacity: 0.5; font-size: 0.85em; margin-top: 4px; }

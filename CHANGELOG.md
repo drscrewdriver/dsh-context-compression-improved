@@ -2,6 +2,13 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
+## Unreleased
+
+### Added
+
+- **Savings statistics with honest accounting** (inspired by the dsh-token-optimizer concept): every published reduction now lands in a per-process ledger (`runtime/savings.ts`) keyed by the rewrite audit's own `tokensBefore − tokensAfter` — realized savings only, never the theoretical maximum. **Negative savings are paired, not ignored**: the original text of each reduction is SHA-256 registered, and when the model later re-reads that content in full (a new tool result whose hash matches, or a `context_compression_retrieve` return), the re-read tokens are booked as an offset against the earlier claim — skeleton-then-full-read nets negative, exactly as it should. Exact-tokenizer and chars/4 bases are aggregated separately and never merged into one number.
+- Surfaces: read-only `GET /{endpoint,api}/dsh-context-compression-improved/savings` snapshot route (always-on, aggregates only — no session content), and a savings card in the settings section (net/gross/offsets, per-component breakdown, recent offsets) in all nine UI languages.
+
 ## 0.8.0-beta.2 - 2026-10-01
 
 ### Added
