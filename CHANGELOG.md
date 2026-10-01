@@ -2,6 +2,19 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
+## 0.8.0-beta.5 - 2026-10-02
+
+### Added
+
+- **Compression monitor floating panel (FAB)**: a draggable bubble beside the input area
+  (visibility switch in the settings section, default off) that polls a new
+  `GET /{endpoint,api}/.../monitor` snapshot — net/gross savings, cache hit rate, cost
+  estimate, and the turn-tail intent-summary gate state — with session override buttons
+  driving the same state machine as `/ctx-summary`. Skeleton adapted from the withdrawn
+  pm longtask FAB (d29bcb1); negative net savings light the bubble.
+- The savings pricing helper moved to `runtime/monitor.ts` (shared by the savings and
+  monitor routes; no behavior change).
+
 ## 0.8.0-beta.4 - 2026-10-02
 
 ### Added
