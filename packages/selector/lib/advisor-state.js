@@ -25,7 +25,55 @@ var SavingsLedger = class {
 	entries = /* @__PURE__ */ new Map();
 	registry = /* @__PURE__ */ new Map();
 	seenFullText = /* @__PURE__ */ new Set();
+	usage = /* @__PURE__ */ new Map();
 	startedAt = Date.now();
+	/**
+	* 累计一次官方 usage(request-boundary 读取上一已完成请求;末次请求在
+	* dispose 汇总前未入账属可接受低估)。usage 字段缺省按 0 计。
+	*/
+	recordUsage(sessionId, usage) {
+		let total = this.usage.get(sessionId);
+		if (total === void 0) {
+			total = {
+				requests: 0,
+				inputTokens: 0,
+				outputTokens: 0,
+				cacheReadTokens: 0,
+				cacheWriteTokens: 0
+			};
+			this.usage.set(sessionId, total);
+		}
+		total.requests += 1;
+		total.inputTokens += positiveOrZero(usage.inputTokens);
+		total.outputTokens += positiveOrZero(usage.outputTokens);
+		total.cacheReadTokens += positiveOrZero(usage.cacheReadTokens);
+		total.cacheWriteTokens += positiveOrZero(usage.cacheWriteTokens);
+	}
+	totalsFor(scope) {
+		const sum = {
+			requests: 0,
+			inputTokens: 0,
+			outputTokens: 0,
+			cacheReadTokens: 0,
+			cacheWriteTokens: 0
+		};
+		for (const sid of scope) {
+			const t = this.usage.get(sid);
+			if (t === void 0) continue;
+			sum.requests += t.requests;
+			sum.inputTokens += t.inputTokens;
+			sum.outputTokens += t.outputTokens;
+			sum.cacheReadTokens += t.cacheReadTokens;
+			sum.cacheWriteTokens += t.cacheWriteTokens;
+		}
+		return sum;
+	}
+	/** 单行会话汇总(session/disposed 日志用)。 */
+	sessionSummaryLine(sessionId) {
+		const snap = this.snapshot(sessionId);
+		const hit = snap.usage.cacheHitRate;
+		return `net=${snap.net.exact}(exact)/${snap.net.estimated}(est) gross=${snap.gross.exact}/${snap.gross.estimated} offsets=${snap.offsets.exact}/${snap.offsets.estimated} requests=${snap.usage.requests} cacheHit=${hit === null ? "–" : `${Math.round(hit * 100)}%`}`;
+	}
 	/** 记录一次已落盘的压缩节省(land 成功后调用;tokensRemoved ≤ 0 忽略)。 */
 	recordSaving(input) {
 		const removed = input.tokensBefore - input.tokensAfter;
@@ -137,6 +185,18 @@ var SavingsLedger = class {
 			else agg.tokens += entry.tokens;
 		}
 		recentOffsets.sort((a, b) => b.at - a.at);
+		const usageTotals = this.totalsFor(scope);
+		const perSession = sessionId === void 0 ? [.../* @__PURE__ */ new Set([...this.entries.keys(), ...this.usage.keys()])].map((sid) => {
+			const s = this.snapshot(sid);
+			return {
+				sessionId: sid,
+				gross: s.gross,
+				offsets: s.offsets,
+				net: s.net,
+				requests: s.usage.requests,
+				cacheHitRate: s.usage.cacheHitRate
+			};
+		}).sort((a, b) => b.net.exact - a.net.exact || b.net.estimated - a.net.estimated).slice(0, 8) : [];
 		return {
 			startedAt: new Date(this.startedAt).toISOString(),
 			sessions: sessionId === void 0 ? this.entries.size : this.entries.has(sessionId) ? 1 : 0,
@@ -159,7 +219,12 @@ var SavingsLedger = class {
 				basis: e.basis,
 				at: new Date(e.at).toISOString(),
 				...e.note === void 0 ? {} : { note: e.note }
-			}))
+			})),
+			usage: {
+				...usageTotals,
+				cacheHitRate: cacheHitRateOf(usageTotals)
+			},
+			perSession
 		};
 	}
 	/** 测试与停机清理。 */
@@ -167,17 +232,273 @@ var SavingsLedger = class {
 		this.entries.clear();
 		this.registry.clear();
 		this.seenFullText.clear();
+		this.usage.clear();
 		this.startedAt = Date.now();
 	}
 };
+function cacheHitRateOf(t) {
+	const denom = t.inputTokens + t.cacheReadTokens + t.cacheWriteTokens;
+	return denom <= 0 ? null : Math.round(t.cacheReadTokens / denom * 1e3) / 1e3;
+}
 /** 原文配对哈希(规整行尾与首尾空白——同一文件两次读取的 innocuous 差异不配错)。 */
 function savingsHash(text) {
 	return createHash("sha256").update(text.replace(/\r\n?/g, "\n").replace(/[ \t]+\n/g, "\n").replace(/(^\s+)|(\s+$)/g, ""), "utf8").digest("hex");
+}
+function positiveOrZero(v) {
+	return typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.round(v) : 0;
 }
 const singleton = new SavingsLedger();
 /** 模块级单例:pruner 与 retrieve 分处两文件,共享同一本账。 */
 function getSavingsLedger() {
 	return singleton;
+}
+//#endregion
+//#region src/runtime/deepseek-official-pricing.ts
+/** Checked-in DeepSeek official prices and fixed-point provider-usage accounting. */
+const DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION = "deepseek-official-2026-08-25";
+/** Wall-clock time at which the checked-in official price pages were verified. */
+const DEEPSEEK_OFFICIAL_PRICE_CHECKED_AT = "2026-08-25T00:10:20+08:00";
+const PRICES = Object.freeze({
+	"deepseek-v4-flash": modelPrices("DeepSeek-V4-Flash-0731", [
+		"0.007",
+		"0.22",
+		"0.66"
+	], [
+		"0.014",
+		"0.44",
+		"1.32"
+	], [
+		"0.05",
+		"1.5",
+		"4.5"
+	], [
+		"0.10",
+		"3.0",
+		"9.0"
+	]),
+	"deepseek-v4-pro": modelPrices("DeepSeek-V4-Pro-0813", [
+		"0.022",
+		"0.66",
+		"1.98"
+	], [
+		"0.044",
+		"1.32",
+		"3.96"
+	], [
+		"0.15",
+		"4.5",
+		"13.5"
+	], [
+		"0.30",
+		"9.0",
+		"27.0"
+	]),
+	"deepseek-v4-flash-vision-exp": modelPrices("DeepSeek-V4-Flash-Vision-Exp", [
+		"0.007",
+		"0.22",
+		"0.66"
+	], [
+		"0.014",
+		"0.44",
+		"1.32"
+	], [
+		"0.05",
+		"1.5",
+		"4.5"
+	], [
+		"0.10",
+		"3.0",
+		"9.0"
+	])
+});
+const PEAK_RULE = "Asia/Shanghai Mon-Fri 09:00-12:00,14:00-18:00";
+const USD_SOURCE = "https://api-docs.deepseek.com/quick_start/pricing/";
+const CNY_SOURCE = "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/";
+/**
+* Resolve one immutable official price record; aliases and compatible gateways fail closed.
+* @param input - exact provider, endpoint, route, model, currency, and timestamp applicability.
+* @returns An immutable price record or an explicit unpriced reason.
+*/
+function resolveOfficialDeepSeekPrice(input) {
+	if (input.provider !== "deepseek-official") return unpriced("unknown provider route");
+	if (input.baseUrlClass !== "official-public") return unpriced("unknown base-url applicability");
+	if (input.apiRoute !== "chat-completions" && input.apiRoute !== "responses") return unpriced("unknown API route");
+	if (!isOfficialModel(input.modelId)) return unpriced("unknown model id");
+	if (input.currency !== "USD" && input.currency !== "CNY") return unpriced("unknown currency");
+	const band = priceBandAt(input.at);
+	if (band === void 0) return unpriced("invalid price timestamp");
+	const model = PRICES[input.modelId];
+	const [inputCacheHit, inputCacheMiss, output] = model[input.currency][band];
+	return {
+		kind: "priced",
+		record: Object.freeze({
+			catalogVersion: DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION,
+			checkedAt: DEEPSEEK_OFFICIAL_PRICE_CHECKED_AT,
+			provider: "deepseek-official",
+			baseUrlClass: "official-public",
+			apiRoute: input.apiRoute,
+			modelId: input.modelId,
+			modelVersion: model.version,
+			currency: input.currency,
+			unitTokens: 1e6,
+			band,
+			inputCacheHit,
+			inputCacheMiss,
+			output,
+			sourceUrl: input.currency === "USD" ? USD_SOURCE : CNY_SOURCE,
+			sourceLocale: input.currency === "USD" ? "en" : "zh-CN",
+			peakRule: PEAK_RULE
+		})
+	};
+}
+/**
+* Classify a timestamp under the published Beijing peak schedule.
+* @param at - absolute request time to interpret in Asia/Shanghai.
+* @returns Peak/off-peak, or undefined for an invalid timestamp.
+*/
+function priceBandAt(at) {
+	if (!Number.isFinite(at.getTime())) return void 0;
+	const parts = new Intl.DateTimeFormat("en-US", {
+		timeZone: "Asia/Shanghai",
+		weekday: "short",
+		hour: "2-digit",
+		minute: "2-digit",
+		second: "2-digit",
+		hourCycle: "h23"
+	}).formatToParts(at);
+	const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+	const weekday = values.weekday;
+	const hour = Number(values.hour);
+	const minute = Number(values.minute);
+	const second = Number(values.second);
+	if (weekday === void 0 || !Number.isInteger(hour) || !Number.isInteger(minute) || !Number.isInteger(second)) return void 0;
+	const workday = weekday !== "Sat" && weekday !== "Sun";
+	const seconds = hour * 3600 + minute * 60 + second;
+	return workday && (seconds >= 32400 && seconds < 43200 || seconds >= 50400 && seconds < 64800) ? "peak" : "off-peak";
+}
+/**
+* Price one completed request, returning a range when it spans a published band boundary.
+* @param input - exact applicability, request interval, and complete disjoint usage buckets.
+* @returns Fixed-point exact/range cost or an explicit unpriced reason.
+*/
+function priceOfficialDeepSeekUsage(input) {
+	for (const [name, value] of Object.entries(input.usage)) if (!Number.isSafeInteger(value) || value < 0) return unpriced(`invalid ${name}`);
+	if (input.completedAt.getTime() < input.startedAt.getTime()) return unpriced("completion timestamp precedes request start");
+	const start = resolveOfficialDeepSeekPrice({
+		...input,
+		at: input.startedAt
+	});
+	if (start.kind === "unpriced") return start;
+	const end = resolveOfficialDeepSeekPrice({
+		...input,
+		at: input.completedAt
+	});
+	if (end.kind === "unpriced") return end;
+	const startAmount = amountFor(start.record, input.usage);
+	if (startAmount === void 0) return unpriced("invalid decimal price record");
+	const crossesBoundary = spansPublishedPriceBoundary(input.startedAt, input.completedAt);
+	if (start.record.band === end.record.band && !crossesBoundary) return {
+		kind: "exact",
+		currency: start.record.currency,
+		band: start.record.band,
+		...startAmount
+	};
+	const comparisonRecord = start.record.band === end.record.band ? priceRecordInBand(start.record, start.record.band === "peak" ? "off-peak" : "peak") : end.record;
+	const endAmount = amountFor(comparisonRecord, input.usage);
+	if (endAmount === void 0) return unpriced("invalid decimal price record");
+	const startFemto = BigInt(startAmount.femtoUnits);
+	const endFemto = BigInt(endAmount.femtoUnits);
+	return {
+		kind: "range",
+		currency: start.record.currency,
+		bands: [start.record.band, comparisonRecord.band],
+		minimum: startFemto <= endFemto ? startAmount : endAmount,
+		maximum: startFemto <= endFemto ? endAmount : startAmount
+	};
+}
+/** Detect any published UTC band boundary, even when both endpoints share a band. */
+function spansPublishedPriceBoundary(startedAt, completedAt) {
+	const start = startedAt.getTime();
+	const end = completedAt.getTime();
+	if (end <= start) return false;
+	const dayMs = 864e5;
+	if (end - start >= 7 * dayMs) return true;
+	const firstDay = Math.floor(start / dayMs) * dayMs;
+	for (let day = firstDay; day <= end; day += dayMs) {
+		const weekday = new Date(day).getUTCDay();
+		if (weekday === 0 || weekday === 6) continue;
+		for (const hour of [
+			1,
+			4,
+			6,
+			10
+		]) {
+			const boundary = day + hour * 60 * 60 * 1e3;
+			if (boundary > start && boundary <= end) return true;
+		}
+	}
+	return false;
+}
+function priceRecordInBand(record, band) {
+	const [inputCacheHit, inputCacheMiss, output] = PRICES[record.modelId][record.currency][band];
+	return Object.freeze({
+		...record,
+		band,
+		inputCacheHit,
+		inputCacheMiss,
+		output
+	});
+}
+/**
+* Parse a non-negative decimal rate into nano-currency units, without Number arithmetic.
+* @param value - canonical non-negative decimal with at most nine fractional digits.
+* @returns Integer nano-units, or undefined when the decimal is invalid.
+*/
+function decimalRateNanoUnits(value) {
+	const match = /^(0|[1-9]\d*)(?:\.(\d{1,9}))?$/u.exec(value);
+	if (match === null) return void 0;
+	const whole = match[1] ?? "0";
+	const fraction = (match[2] ?? "").padEnd(9, "0");
+	return BigInt(whole) * 1000000000n + BigInt(fraction || "0");
+}
+function amountFor(record, usage) {
+	const hit = decimalRateNanoUnits(record.inputCacheHit);
+	const miss = decimalRateNanoUnits(record.inputCacheMiss);
+	const output = decimalRateNanoUnits(record.output);
+	if (hit === void 0 || miss === void 0 || output === void 0) return void 0;
+	const femtoUnits = BigInt(usage.cacheReadTokens) * hit + BigInt(usage.cacheMissTokens) * miss + BigInt(usage.outputTokens) * output;
+	return {
+		femtoUnits: femtoUnits.toString(),
+		decimal: formatFemto(femtoUnits)
+	};
+}
+function formatFemto(value) {
+	const digits = value.toString().padStart(16, "0");
+	const whole = digits.slice(0, -15);
+	const fraction = digits.slice(-15).replace(/0+$/u, "");
+	return fraction.length === 0 ? whole : `${whole}.${fraction}`;
+}
+function modelPrices(version, usdOffPeak, usdPeak, cnyOffPeak, cnyPeak) {
+	return Object.freeze({
+		version,
+		USD: Object.freeze({
+			"off-peak": usdOffPeak,
+			peak: usdPeak
+		}),
+		CNY: Object.freeze({
+			"off-peak": cnyOffPeak,
+			peak: cnyPeak
+		})
+	});
+}
+function isOfficialModel(value) {
+	return Object.prototype.hasOwnProperty.call(PRICES, value);
+}
+function unpriced(reason) {
+	return {
+		kind: "unpriced",
+		reason
+	};
 }
 //#endregion
 //#region src/runtime/types.ts
@@ -1140,4 +1461,4 @@ function invalidateOnTaskChange(state, todoVersion) {
 	return true;
 }
 //#endregion
-export { deepFreeze as C, assertNever as S, getSavingsLedger as T, resolveConfig as _, AUTO_COMPACT_THRESHOLD_LIMITS as a, DEFAULT_CUSTOM_COMPRESSION_POLICY as b, DEFAULTS as c, charsForTokens as d, charsToTokens as f, parseContextCompressionSettings as g, isValidAutoCompactThresholdPercent as h, recordScore as i, DEFAULT_CONTEXT_COMPRESSION_SETTINGS as l, isCompressionProfile as m, invalidateOnTaskChange as n, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as o, codePointLength as p, recordRecertified as r, ContextCompressionSettingsSchema as s, getAdvisorState as t, PRUNE_MARKER as u, resolvePolicy as v, COMPRESSION_PROFILES as w, resolveCustomPolicy as x, CustomCompressionPolicySchema as y };
+export { deepFreeze as C, priceOfficialDeepSeekUsage as D, decimalRateNanoUnits as E, resolveOfficialDeepSeekPrice as O, assertNever as S, DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION as T, resolveConfig as _, AUTO_COMPACT_THRESHOLD_LIMITS as a, DEFAULT_CUSTOM_COMPRESSION_POLICY as b, DEFAULTS as c, charsForTokens as d, charsToTokens as f, parseContextCompressionSettings as g, isValidAutoCompactThresholdPercent as h, recordScore as i, getSavingsLedger as k, DEFAULT_CONTEXT_COMPRESSION_SETTINGS as l, isCompressionProfile as m, invalidateOnTaskChange as n, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as o, codePointLength as p, recordRecertified as r, ContextCompressionSettingsSchema as s, getAdvisorState as t, PRUNE_MARKER as u, resolvePolicy as v, COMPRESSION_PROFILES as w, resolveCustomPolicy as x, CustomCompressionPolicySchema as y };

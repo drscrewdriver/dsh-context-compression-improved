@@ -104,5 +104,10 @@ export const de = {
   'savings.basisExact': 'exakt',
   'savings.basisEstimated': 'geschätzt',
   'savings.basisNote': 'Basen werden getrennt ausgewiesen, nie gemischt: exakt = DeepSeek-Tokenizer; geschätzt = chars/4. Erst Skelett, dann Volltext zählt als negative Einsparung (Netto kann unter null fallen).',
+  'savings.requests': 'Requests',
+  'savings.cacheHit': 'Cache hit rate',
+  'savings.actualCost': 'Actual cost (official prices)',
+  'savings.savedMoney': 'Estimated saved cost (input price)',
+  'savings.perSession': 'Session',
 
 } satisfies Record<ContextCompressionLocaleKey, string>

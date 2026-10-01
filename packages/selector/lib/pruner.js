@@ -1,4 +1,4 @@
-import { C as deepFreeze, S as assertNever, T as getSavingsLedger, _ as resolveConfig, a as AUTO_COMPACT_THRESHOLD_LIMITS, b as DEFAULT_CUSTOM_COMPRESSION_POLICY, c as DEFAULTS, d as charsForTokens, f as charsToTokens, g as parseContextCompressionSettings, h as isValidAutoCompactThresholdPercent, i as recordScore, m as isCompressionProfile, n as invalidateOnTaskChange, o as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, p as codePointLength, r as recordRecertified, s as ContextCompressionSettingsSchema, t as getAdvisorState, u as PRUNE_MARKER, v as resolvePolicy, w as COMPRESSION_PROFILES, x as resolveCustomPolicy, y as CustomCompressionPolicySchema } from "./advisor-state.js";
+import { C as deepFreeze, D as priceOfficialDeepSeekUsage, E as decimalRateNanoUnits, O as resolveOfficialDeepSeekPrice, S as assertNever, T as DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION, _ as resolveConfig, a as AUTO_COMPACT_THRESHOLD_LIMITS, b as DEFAULT_CUSTOM_COMPRESSION_POLICY, c as DEFAULTS, d as charsForTokens, f as charsToTokens, g as parseContextCompressionSettings, h as isValidAutoCompactThresholdPercent, i as recordScore, k as getSavingsLedger, m as isCompressionProfile, n as invalidateOnTaskChange, o as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, p as codePointLength, r as recordRecertified, s as ContextCompressionSettingsSchema, t as getAdvisorState, u as PRUNE_MARKER, v as resolvePolicy, w as COMPRESSION_PROFILES, x as resolveCustomPolicy, y as CustomCompressionPolicySchema } from "./advisor-state.js";
 import { a as validatePublishedTailTrim, i as tailTrimStub, n as tailTrimMessage, o as eventBySeq, r as tailTrimRef, s as sessionEvents, t as parseTailTrimRef } from "./tail-trim.js";
 import z from "@deepseek-ai/schemastery";
 import { createHash } from "node:crypto";
@@ -530,6 +530,10 @@ function measureForCompaction(ctx, session) {
 		intrinsicImageBlockEstimateTokens,
 		countCanonicalText: counter.countText
 	});
+}
+/** Request-level usage exposed by official TokenMeter, without invented route attribution. */
+function officialRequestUsage(view) {
+	return view.baseline.kind === "usage" ? view.baseline.usage : void 0;
 }
 /**
 * Count one canonical content walk in canonical field order.
@@ -3627,254 +3631,6 @@ function dedupePlaceholder(entry, originalChars) {
 	].join(" ");
 }
 //#endregion
-//#region src/runtime/deepseek-official-pricing.ts
-/** Checked-in DeepSeek official prices and fixed-point provider-usage accounting. */
-const DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION = "deepseek-official-2026-08-25";
-/** Wall-clock time at which the checked-in official price pages were verified. */
-const DEEPSEEK_OFFICIAL_PRICE_CHECKED_AT = "2026-08-25T00:10:20+08:00";
-const PRICES = Object.freeze({
-	"deepseek-v4-flash": modelPrices("DeepSeek-V4-Flash-0731", [
-		"0.007",
-		"0.22",
-		"0.66"
-	], [
-		"0.014",
-		"0.44",
-		"1.32"
-	], [
-		"0.05",
-		"1.5",
-		"4.5"
-	], [
-		"0.10",
-		"3.0",
-		"9.0"
-	]),
-	"deepseek-v4-pro": modelPrices("DeepSeek-V4-Pro-0813", [
-		"0.022",
-		"0.66",
-		"1.98"
-	], [
-		"0.044",
-		"1.32",
-		"3.96"
-	], [
-		"0.15",
-		"4.5",
-		"13.5"
-	], [
-		"0.30",
-		"9.0",
-		"27.0"
-	]),
-	"deepseek-v4-flash-vision-exp": modelPrices("DeepSeek-V4-Flash-Vision-Exp", [
-		"0.007",
-		"0.22",
-		"0.66"
-	], [
-		"0.014",
-		"0.44",
-		"1.32"
-	], [
-		"0.05",
-		"1.5",
-		"4.5"
-	], [
-		"0.10",
-		"3.0",
-		"9.0"
-	])
-});
-const PEAK_RULE = "Asia/Shanghai Mon-Fri 09:00-12:00,14:00-18:00";
-const USD_SOURCE = "https://api-docs.deepseek.com/quick_start/pricing/";
-const CNY_SOURCE = "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/";
-/**
-* Resolve one immutable official price record; aliases and compatible gateways fail closed.
-* @param input - exact provider, endpoint, route, model, currency, and timestamp applicability.
-* @returns An immutable price record or an explicit unpriced reason.
-*/
-function resolveOfficialDeepSeekPrice(input) {
-	if (input.provider !== "deepseek-official") return unpriced("unknown provider route");
-	if (input.baseUrlClass !== "official-public") return unpriced("unknown base-url applicability");
-	if (input.apiRoute !== "chat-completions" && input.apiRoute !== "responses") return unpriced("unknown API route");
-	if (!isOfficialModel(input.modelId)) return unpriced("unknown model id");
-	if (input.currency !== "USD" && input.currency !== "CNY") return unpriced("unknown currency");
-	const band = priceBandAt(input.at);
-	if (band === void 0) return unpriced("invalid price timestamp");
-	const model = PRICES[input.modelId];
-	const [inputCacheHit, inputCacheMiss, output] = model[input.currency][band];
-	return {
-		kind: "priced",
-		record: Object.freeze({
-			catalogVersion: DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION,
-			checkedAt: DEEPSEEK_OFFICIAL_PRICE_CHECKED_AT,
-			provider: "deepseek-official",
-			baseUrlClass: "official-public",
-			apiRoute: input.apiRoute,
-			modelId: input.modelId,
-			modelVersion: model.version,
-			currency: input.currency,
-			unitTokens: 1e6,
-			band,
-			inputCacheHit,
-			inputCacheMiss,
-			output,
-			sourceUrl: input.currency === "USD" ? USD_SOURCE : CNY_SOURCE,
-			sourceLocale: input.currency === "USD" ? "en" : "zh-CN",
-			peakRule: PEAK_RULE
-		})
-	};
-}
-/**
-* Classify a timestamp under the published Beijing peak schedule.
-* @param at - absolute request time to interpret in Asia/Shanghai.
-* @returns Peak/off-peak, or undefined for an invalid timestamp.
-*/
-function priceBandAt(at) {
-	if (!Number.isFinite(at.getTime())) return void 0;
-	const parts = new Intl.DateTimeFormat("en-US", {
-		timeZone: "Asia/Shanghai",
-		weekday: "short",
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-		hourCycle: "h23"
-	}).formatToParts(at);
-	const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-	const weekday = values.weekday;
-	const hour = Number(values.hour);
-	const minute = Number(values.minute);
-	const second = Number(values.second);
-	if (weekday === void 0 || !Number.isInteger(hour) || !Number.isInteger(minute) || !Number.isInteger(second)) return void 0;
-	const workday = weekday !== "Sat" && weekday !== "Sun";
-	const seconds = hour * 3600 + minute * 60 + second;
-	return workday && (seconds >= 32400 && seconds < 43200 || seconds >= 50400 && seconds < 64800) ? "peak" : "off-peak";
-}
-/**
-* Price one completed request, returning a range when it spans a published band boundary.
-* @param input - exact applicability, request interval, and complete disjoint usage buckets.
-* @returns Fixed-point exact/range cost or an explicit unpriced reason.
-*/
-function priceOfficialDeepSeekUsage(input) {
-	for (const [name, value] of Object.entries(input.usage)) if (!Number.isSafeInteger(value) || value < 0) return unpriced(`invalid ${name}`);
-	if (input.completedAt.getTime() < input.startedAt.getTime()) return unpriced("completion timestamp precedes request start");
-	const start = resolveOfficialDeepSeekPrice({
-		...input,
-		at: input.startedAt
-	});
-	if (start.kind === "unpriced") return start;
-	const end = resolveOfficialDeepSeekPrice({
-		...input,
-		at: input.completedAt
-	});
-	if (end.kind === "unpriced") return end;
-	const startAmount = amountFor(start.record, input.usage);
-	if (startAmount === void 0) return unpriced("invalid decimal price record");
-	const crossesBoundary = spansPublishedPriceBoundary(input.startedAt, input.completedAt);
-	if (start.record.band === end.record.band && !crossesBoundary) return {
-		kind: "exact",
-		currency: start.record.currency,
-		band: start.record.band,
-		...startAmount
-	};
-	const comparisonRecord = start.record.band === end.record.band ? priceRecordInBand(start.record, start.record.band === "peak" ? "off-peak" : "peak") : end.record;
-	const endAmount = amountFor(comparisonRecord, input.usage);
-	if (endAmount === void 0) return unpriced("invalid decimal price record");
-	const startFemto = BigInt(startAmount.femtoUnits);
-	const endFemto = BigInt(endAmount.femtoUnits);
-	return {
-		kind: "range",
-		currency: start.record.currency,
-		bands: [start.record.band, comparisonRecord.band],
-		minimum: startFemto <= endFemto ? startAmount : endAmount,
-		maximum: startFemto <= endFemto ? endAmount : startAmount
-	};
-}
-/** Detect any published UTC band boundary, even when both endpoints share a band. */
-function spansPublishedPriceBoundary(startedAt, completedAt) {
-	const start = startedAt.getTime();
-	const end = completedAt.getTime();
-	if (end <= start) return false;
-	const dayMs = 864e5;
-	if (end - start >= 7 * dayMs) return true;
-	const firstDay = Math.floor(start / dayMs) * dayMs;
-	for (let day = firstDay; day <= end; day += dayMs) {
-		const weekday = new Date(day).getUTCDay();
-		if (weekday === 0 || weekday === 6) continue;
-		for (const hour of [
-			1,
-			4,
-			6,
-			10
-		]) {
-			const boundary = day + hour * 60 * 60 * 1e3;
-			if (boundary > start && boundary <= end) return true;
-		}
-	}
-	return false;
-}
-function priceRecordInBand(record, band) {
-	const [inputCacheHit, inputCacheMiss, output] = PRICES[record.modelId][record.currency][band];
-	return Object.freeze({
-		...record,
-		band,
-		inputCacheHit,
-		inputCacheMiss,
-		output
-	});
-}
-/**
-* Parse a non-negative decimal rate into nano-currency units, without Number arithmetic.
-* @param value - canonical non-negative decimal with at most nine fractional digits.
-* @returns Integer nano-units, or undefined when the decimal is invalid.
-*/
-function decimalRateNanoUnits(value) {
-	const match = /^(0|[1-9]\d*)(?:\.(\d{1,9}))?$/u.exec(value);
-	if (match === null) return void 0;
-	const whole = match[1] ?? "0";
-	const fraction = (match[2] ?? "").padEnd(9, "0");
-	return BigInt(whole) * 1000000000n + BigInt(fraction || "0");
-}
-function amountFor(record, usage) {
-	const hit = decimalRateNanoUnits(record.inputCacheHit);
-	const miss = decimalRateNanoUnits(record.inputCacheMiss);
-	const output = decimalRateNanoUnits(record.output);
-	if (hit === void 0 || miss === void 0 || output === void 0) return void 0;
-	const femtoUnits = BigInt(usage.cacheReadTokens) * hit + BigInt(usage.cacheMissTokens) * miss + BigInt(usage.outputTokens) * output;
-	return {
-		femtoUnits: femtoUnits.toString(),
-		decimal: formatFemto(femtoUnits)
-	};
-}
-function formatFemto(value) {
-	const digits = value.toString().padStart(16, "0");
-	const whole = digits.slice(0, -15);
-	const fraction = digits.slice(-15).replace(/0+$/u, "");
-	return fraction.length === 0 ? whole : `${whole}.${fraction}`;
-}
-function modelPrices(version, usdOffPeak, usdPeak, cnyOffPeak, cnyPeak) {
-	return Object.freeze({
-		version,
-		USD: Object.freeze({
-			"off-peak": usdOffPeak,
-			peak: usdPeak
-		}),
-		CNY: Object.freeze({
-			"off-peak": cnyOffPeak,
-			peak: cnyPeak
-		})
-	});
-}
-function isOfficialModel(value) {
-	return Object.prototype.hasOwnProperty.call(PRICES, value);
-}
-function unpriced(reason) {
-	return {
-		kind: "unpriced",
-		reason
-	};
-}
-//#endregion
 //#region src/runtime/adaptive-cost.ts
 /**
 * Bound Adaptive's benefit and cache-loss exposure without attributing the
@@ -4065,6 +3821,14 @@ var ToolResultPruner = class extends Service {
 			estimatorRemainingTurns: /* @__PURE__ */ new WeakMap(),
 			advisorChannels: /* @__PURE__ */ new WeakMap()
 		};
+		try {
+			ctx.on("session/disposed", (session) => {
+				try {
+					const line = getSavingsLedger().sessionSummaryLine(String(session.id));
+					if (line.includes("requests=0") === false || line.includes("net=0(exact)/0(est)") === false) ctx.logger.info("context-compression session savings (%s): %s", String(session.id), line);
+				} catch {}
+			});
+		} catch {}
 		ctx.on("session/event", (session, event) => {
 			this.scanForSeededNativeSummary(session);
 			if (event.type === "compaction/summary") {
@@ -4138,7 +3902,11 @@ var ToolResultPruner = class extends Service {
 		if (policy === void 0) return emptyResult();
 		const profile = policy.profile;
 		const view = measureForCompaction(this.ctx, session);
-		if (stage === "fresh") return this.decideFreshStep(session, options, policy, view);
+		if (stage === "fresh") {
+			const usage = officialRequestUsage(view);
+			if (usage !== void 0) getSavingsLedger().recordUsage(String(session.id), usage);
+			return this.decideFreshStep(session, options, policy, view);
+		}
 		if (profile === "off") return emptyResult();
 		const landed = [];
 		if (policy.nativeToolResultEnabled) {
