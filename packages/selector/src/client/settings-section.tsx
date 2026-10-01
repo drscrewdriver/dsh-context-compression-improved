@@ -15,7 +15,7 @@ import {
   type CustomCompressionPolicyV3,
 } from '../profiles.ts'
 import type { CompressionProfileSelectorProps } from './CompressionProfileSelector.tsx'
-import { AutoCompactThresholdControls, CodeSkeletonControls, IntentSummaryControls } from './CompressionProfileControls.tsx'
+import { AutoCompactThresholdControls, CodeSkeletonControls, IntentSummaryControls, MonitorPanelControls } from './CompressionProfileControls.tsx'
 import { EstimatorControls, EstimatorInactiveNotice } from './EstimatorControls.tsx'
 import { CustomPolicyEditor, editableCustom } from './CustomPolicyEditor.tsx'
 import { SavingsCard } from './savings-card'
@@ -26,7 +26,7 @@ export function ContextCompressionSettingsSection(props: CompressionProfileSelec
 }
 
 export function SettingsCompressionProfileControls({
-  useCompression, select, saveCustom, resetCustom, saveAutoCompact, saveCodeSkeleton, saveIntentSummary,
+  useCompression, select, saveCustom, resetCustom, saveAutoCompact, saveCodeSkeleton, saveIntentSummary, saveMonitorPanel,
   savePresetOptions, t,
 }: CompressionProfileSelectorProps) {
   const state = useCompression(snapshot => snapshot)
@@ -107,6 +107,13 @@ export function SettingsCompressionProfileControls({
         value={state.value?.intentSummary?.enabled ?? false}
         disabled={busy || !state.writable || !selectorAvailable}
         save={saveIntentSummary}
+        settle={settle}
+        t={t}
+      />
+      <MonitorPanelControls
+        value={state.value?.monitorPanel?.enabled ?? false}
+        disabled={busy || !state.writable || !selectorAvailable}
+        save={saveMonitorPanel}
         settle={settle}
         t={t}
       />

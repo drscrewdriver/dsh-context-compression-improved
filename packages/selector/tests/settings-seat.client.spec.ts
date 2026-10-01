@@ -89,7 +89,7 @@ describe('settings-seat contract (standalone settings.section only)', () => {
     expect((options['label'] as () => string)()).toBe('nav')
     expect(typeof options['inject']).toBe('function')
     const face = (options['inject'] as () => Record<string, unknown>)()
-    expect(Object.keys(face).sort()).toEqual(['hooks', 'saveAutoCompact', 'saveCodeSkeleton', 'saveCustom', 'saveIntentSummary', 'savePresetOptions', 'select', 'resetCustom'].sort())
+    expect(Object.keys(face).sort()).toEqual(['hooks', 'saveAutoCompact', 'saveCodeSkeleton', 'saveCustom', 'saveIntentSummary', 'saveMonitorPanel', 'savePresetOptions', 'select', 'resetCustom'].sort())
     expect(component).toBe(ContextCompressionSettingsSection)
   })
 
