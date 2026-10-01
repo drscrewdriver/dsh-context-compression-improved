@@ -75,6 +75,7 @@ export const it = {
   'monitor.panel.gross': 'Risparmio lordo',
   'monitor.panel.offsets': 'Compensazioni',
   'monitor.panel.context': 'Occupazione del contesto',
+  'monitor.panel.suggest': 'Occupazione del contesto al {pct}% — vicini alla zona di dimenticanza catastrofica; consigliato comprimere o tagliare la cronologia',
   'monitor.panel.cacheHit': 'Tasso di hit della cache',
   'monitor.panel.cost': 'Costo (effettivo / stimo)',
   'monitor.panel.intent': 'Riepilogo di intento',

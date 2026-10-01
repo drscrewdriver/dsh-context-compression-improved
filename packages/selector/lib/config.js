@@ -636,6 +636,12 @@ function evaluateIntentGate(input) {
 //#endregion
 //#region src/runtime/monitor.ts
 /**
+* 灾难性遗忘区建议阈值:占用达到该比例即建议压缩/裁剪(DeepSeek 等长上下文
+* 模型在高占用段对早期内容的召回显著退化)。有意低于宿主 Auto Compact 阈值
+* (默认 80%)——提前一档给出人工干预窗口。
+*/
+const MONITOR_SUGGEST_PCT = .7;
+/**
 * Savings snapshot plus the intent-summary control block. Ledger is
 * injectable so tests seed a private instance instead of the process
 * singleton.
@@ -650,9 +656,15 @@ function buildMonitorSnapshot(sessionId, ledger = getSavingsLedger()) {
 		pct: observedContext.contextWindow !== void 0 && observedContext.contextWindow > 0 ? Math.round(observedContext.liveTokens / observedContext.contextWindow * 1e3) / 1e3 : null,
 		sessionId: observedContext.sessionId
 	};
+	const suggestion = contextBlock === void 0 || contextBlock.pct === null ? void 0 : {
+		suggest: contextBlock.pct >= MONITOR_SUGGEST_PCT,
+		thresholdPct: MONITOR_SUGGEST_PCT,
+		occupancyPct: contextBlock.pct
+	};
 	return {
 		...ledger.snapshot(sessionId),
 		...contextBlock === void 0 ? {} : { context: contextBlock },
+		...suggestion === void 0 ? {} : { suggestion },
 		intent: {
 			override,
 			observedEnabled: getObservedIntentEnabled(scopeKey),
