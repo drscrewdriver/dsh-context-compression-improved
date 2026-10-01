@@ -10,6 +10,7 @@ import {
 } from './CompressionProfileSelector.tsx'
 import { DEFAULT_CUSTOM_COMPRESSION_POLICY } from '../profiles.ts'
 import { decodeSettings } from './decode.ts'
+import { initMonitorFab } from './monitor-fab.ts'
 import { en, zh } from './locales.ts'
 import { de } from './locales/de.ts'
 import { es } from './locales/es.ts'
@@ -107,6 +108,36 @@ export function apply(ctx: ClientContext): void {
   // binder, so locale switches are still followed.
   const localeSvc = ctx.locale as { bind?: (n: string) => (key: string) => string } | undefined
   const tNav = localeSvc?.bind?.(NS) ?? ((key: string) => key)
+
+  // 浮动监控面板(FAB): body 级幂等单例。enabled 读取走设置文档——表单句柄的
+  // 激活规则与旧 bind 相同,故 apply 侧 try/catch 兜底,注入工厂内再刷新读取闭包。
+  let readMonitorPanelEnabled = (): boolean => {
+    try {
+      const form = ctx.configForms.get<Record<string, unknown>>(ENTRY_ID)
+      return decodeSettings(form.getSnapshot().value?.settings)?.monitorPanel?.enabled ?? false
+    } catch {
+      return false
+    }
+  }
+  initMonitorFab({
+    t: tNav,
+    sessionIdOf: () => undefined, // v1: 全会话聚合(savings 卡同口径);会话级绑定待输入栏座位
+    enabledOf: () => readMonitorPanelEnabled(),
+    fetchSnapshot: async (sessionId) => {
+      const query = sessionId === undefined ? '' : `?sessionId=${encodeURIComponent(sessionId)}`
+      const response = await fetch(`/api/dsh-context-compression-improved/monitor${query}`, { headers: { 'cache-control': 'no-cache' } })
+      if (!response.ok) throw new Error(`monitor snapshot ${response.status}`)
+      return await response.json() as Parameters<typeof initMonitorFab>[0]['fetchSnapshot'] extends (...args: never[]) => Promise<infer T> ? T : never
+    },
+    applyOverride: async (sessionId, action) => {
+      const query = sessionId === undefined ? '' : `?sessionId=${encodeURIComponent(sessionId)}`
+      await fetch(`/api/dsh-context-compression-improved/monitor${query}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action }),
+      })
+    },
+  })
   const injected = (): CompressionSelectorInjected => {
     // 0.1.7: the compression document rides the selector row's entry config as
     // the volatile `settings` field. The form handle is fetched per factory
@@ -116,6 +147,8 @@ export function apply(ctx: ClientContext): void {
     const form = ctx.configForms.get<Record<string, unknown>>(ENTRY_ID)
     const readDoc = (): ContextCompressionSettings | undefined =>
       decodeSettings(form.getSnapshot().value?.settings)
+    readMonitorPanelEnabled = (): boolean =>
+      decodeSettings(form.getSnapshot().value?.settings)?.monitorPanel?.enabled ?? false
     // useSyncExternalStore requires a getSnapshot that returns a STABLE
     // reference between changes — a fresh object per call is React error #185
     // (maximum update depth exceeded). Cache the projection keyed on the form
