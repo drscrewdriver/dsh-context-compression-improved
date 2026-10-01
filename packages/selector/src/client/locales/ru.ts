@@ -74,6 +74,7 @@ export const ru = {
   'monitor.panel.net': 'Чистая экономия',
   'monitor.panel.gross': 'Валовая экономия',
   'monitor.panel.offsets': 'Компенсации',
+  'monitor.panel.context': 'Заполнение контекста',
   'monitor.panel.cacheHit': 'Процент попаданий кэша',
   'monitor.panel.cost': 'Стоимость (факт / эконом. оценка)',
   'monitor.panel.intent': 'Итог намерения',

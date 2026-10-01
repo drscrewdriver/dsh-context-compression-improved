@@ -37,6 +37,7 @@ export interface MonitorSnapshotPayload {
     gate?: { floorFraction?: unknown; growthTokens?: unknown }
     lastFold?: { turn?: unknown; startSeq?: unknown; endSeq?: unknown } | undefined
   }
+  context?: { liveTokens?: unknown; contextWindow?: unknown; pct?: unknown }
   recentOffsets?: Array<{ component?: unknown; tokens?: unknown }>
   sessionScope?: string | null
 }
@@ -111,6 +112,7 @@ export function initMonitorFab(deps: MonitorFabDeps): void {
 <div class="row"><span class="label">${t('monitor.panel.net')}</span><span data-net>–</span></div>
 <div class="row"><span class="label">${t('monitor.panel.gross')}</span><span data-gross class="muted">–</span></div>
 <div class="row"><span class="label">${t('monitor.panel.offsets')}</span><span data-offsets class="muted">–</span></div>
+<div class="row"><span class="label">${t('monitor.panel.context')}</span><div class="bar"><i data-ctxbar></i></div><span data-ctxpct class="muted">–</span></div>
 <div class="row"><span class="label">${t('monitor.panel.cacheHit')}</span><span data-cache class="muted">–</span></div>
 <div class="row"><span class="label">${t('monitor.panel.cost')}</span><span data-cost class="muted">–</span></div>
 <div class="row"><span class="label">${t('monitor.panel.intent')}</span><span data-intent class="muted">–</span></div>
@@ -215,6 +217,17 @@ export function initMonitorFab(deps: MonitorFabDeps): void {
     fab.classList.toggle('lit', net < 0);
     (panel.querySelector('[data-gross]') as HTMLElement).textContent = fmtTokens(snap.gross?.exact);
     (panel.querySelector('[data-offsets]') as HTMLElement).textContent = `-${fmtTokens(snap.offsets?.exact)}`;
+    const ctxBar = panel.querySelector('[data-ctxbar]') as HTMLElement;
+    const ctxPct = panel.querySelector('[data-ctxpct]') as HTMLElement;
+    const ctxPctNum = typeof snap.context?.pct === 'number' ? snap.context.pct : null;
+    if (ctxPctNum === null) {
+      ctxBar.style.width = '0%';
+      ctxPct.textContent = '–';
+    } else {
+      ctxBar.style.width = `${Math.min(100, Math.round(ctxPctNum * 100))}%`;
+      ctxBar.parentElement?.classList.toggle('hot', ctxPctNum >= 0.7);
+      ctxPct.textContent = `${Math.round(ctxPctNum * 100)}%`;
+    }
     const hit = snap.usage?.cacheHitRate;
     (panel.querySelector('[data-cache]') as HTMLElement).textContent =
       typeof hit === 'number' ? `${Math.round(hit * 100)}%` : '–';

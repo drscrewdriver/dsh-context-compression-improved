@@ -46,8 +46,18 @@ export interface MonitorIntentBlock {
   lastFold: IntentFoldRecord | undefined
 }
 
+export interface MonitorContextBlock {
+  liveTokens: number
+  contextWindow: number | undefined
+  /** liveTokens / contextWindow, rounded to 3 decimals; null when the window is unknown. */
+  pct: number | null
+  sessionId: string
+}
+
 export type MonitorSnapshot = SavingsSnapshot & {
   intent: MonitorIntentBlock
+  /** Latest observed context occupancy; undefined until the pruner observes a turn. */
+  context?: MonitorContextBlock
   /** The session the snapshot was filtered to; `null` = all-sessions aggregate. */
   sessionScope: string | null
 }
@@ -61,17 +71,69 @@ export function buildMonitorSnapshot(
   sessionId?: string,
   ledger: SavingsLedger = getSavingsLedger(),
 ): MonitorSnapshot {
-  const override = getSummaryOverride(sessionId ?? '')
+  const scopeKey = sessionId ?? ''
+  const override = getSummaryOverride(scopeKey)
+  const observedContext = scopeKey.length > 0
+    ? getContextUsage(scopeKey)
+    : latestObservedContextUsage()
+  const contextBlock = observedContext === undefined
+    ? undefined
+    : {
+        liveTokens: observedContext.liveTokens,
+        contextWindow: observedContext.contextWindow,
+        pct: observedContext.contextWindow !== undefined && observedContext.contextWindow > 0
+          ? Math.round((observedContext.liveTokens / observedContext.contextWindow) * 1000) / 1000
+          : null,
+        sessionId: observedContext.sessionId,
+      }
   return {
     ...ledger.snapshot(sessionId),
+    ...(contextBlock === undefined ? {} : { context: contextBlock }),
     intent: {
       override,
-      observedEnabled: getObservedIntentEnabled(sessionId ?? ''),
+      observedEnabled: getObservedIntentEnabled(scopeKey),
       gate: { floorFraction: INTENT_GATE_FLOOR_FRACTION, growthTokens: INTENT_GATE_GROWTH_TOKENS },
-      lastFold: getLastIntentFold(sessionId ?? ''),
+      lastFold: getLastIntentFold(scopeKey),
     },
     sessionScope: sessionId ?? null,
   }
+}
+
+export interface ContextUsageObservation {
+  liveTokens: number
+  contextWindow: number | undefined
+}
+
+/** 每会话最近一次上下文占用观测;上限 64 会话,超出淘汰最旧。 */
+const contextUsageBySession = new Map<string, ContextUsageObservation & { at: number; seq: number }>()
+const CONTEXT_USAGE_CAP = 64
+
+/**
+ * 由 pruner 的 turn-tail postflight 调用:记录该会话最近的 liveTokens/
+ * contextWindow,供 monitor 快照的占用条消费。空会话 id 忽略。
+ */
+export function observeContextUsage(sessionId: string, liveTokens: number, contextWindow: number | undefined): void {
+  if (sessionId.length === 0 || !Number.isFinite(liveTokens)) return
+  if (contextUsageBySession.size >= CONTEXT_USAGE_CAP) {
+    const oldest = contextUsageBySession.keys().next().value
+    if (oldest !== undefined) contextUsageBySession.delete(oldest)
+  }
+  contextUsageBySession.set(sessionId, { liveTokens, contextWindow, at: Date.now(), seq: ++observeSeq })
+}
+
+export function getContextUsage(sessionId: string): (ContextUsageObservation & { sessionId: string }) | undefined {
+  const entry = contextUsageBySession.get(sessionId)
+  return entry === undefined ? undefined : { liveTokens: entry.liveTokens, contextWindow: entry.contextWindow, sessionId }
+}
+
+let observeSeq = 0
+
+function latestObservedContextUsage(): (ContextUsageObservation & { sessionId: string }) | undefined {
+  let latest: (ContextUsageObservation & { sessionId: string; seq: number }) | undefined
+  for (const [sessionId, entry] of contextUsageBySession) {
+    if (latest === undefined || entry.seq > latest.seq) latest = { sessionId, liveTokens: entry.liveTokens, contextWindow: entry.contextWindow, seq: entry.seq }
+  }
+  return latest
 }
 
 export type SessionOverrideAction = 'on' | 'off' | 'clear'
