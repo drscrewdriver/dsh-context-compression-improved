@@ -75,6 +75,7 @@ export const ko = {
   'monitor.panel.gross': '총 절감',
   'monitor.panel.offsets': '상쇄',
   'monitor.panel.context': '컨텍스트 점유',
+  'monitor.panel.suggest': '컨텍스트 점유가 {pct}%에 도달——치명적 망각 구간에 근접, 압축이나 기록 정리를 권장',
   'monitor.panel.cacheHit': '캐시 적중률',
   'monitor.panel.cost': '비용 (실제 / 절감 추정)',
   'monitor.panel.intent': '인텐트 요약',

@@ -4064,6 +4064,9 @@ var ToolResultPruner = class extends Service {
 				this.auditFailure(agent.session, "fresh", "terminal-pass", error);
 				ctx.logger.warn("context-compression terminal pass failed open: %o", error);
 			}
+			try {
+				observeContextUsage(String(agent.session.id), measureForCompaction(this.ctx, agent.session).totalTokens, this.contextWindowForRequest(agent.session));
+			} catch {}
 			this.postflightEstimatorPass(agent.session, signal).catch(() => void 0);
 			this.postflightAdvisorPass(agent.session, turn, signal).catch(() => void 0);
 			this.postflightIntentFoldPass(agent.session, turn, signal).catch(() => void 0);
@@ -4421,15 +4424,13 @@ var ToolResultPruner = class extends Service {
 		const view = measureForCompaction(this.ctx, session);
 		const thresholdPercent = settings.autoCompact.thresholdPercent;
 		const contextWindow = policy.autoCompactTokens !== void 0 && thresholdPercent > 0 ? Math.round(policy.autoCompactTokens / (thresholdPercent / 100)) : void 0;
-		const gate = evaluateIntentGate({
+		if (!evaluateIntentGate({
 			enabled: intentEnabled,
 			override,
 			liveTokens: view.totalTokens,
 			contextWindow,
 			baselineTokens: this.state.intentBaselines.get(session) ?? 0
-		});
-		observeContextUsage(sessionId, view.totalTokens, contextWindow);
-		if (!gate.decision) return;
+		}).decision) return;
 		const settingsPreset = settings.presetOptions;
 		if (settingsPreset === void 0) return;
 		if (settingsPreset.estimatorBaseUrl === void 0 || settingsPreset.estimatorBaseUrl.length === 0 || settingsPreset.estimatorModel === void 0 || settingsPreset.estimatorModel.length === 0) {

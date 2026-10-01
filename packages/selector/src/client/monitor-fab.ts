@@ -38,6 +38,7 @@ export interface MonitorSnapshotPayload {
     lastFold?: { turn?: unknown; startSeq?: unknown; endSeq?: unknown } | undefined
   }
   context?: { liveTokens?: unknown; contextWindow?: unknown; pct?: unknown }
+  suggestion?: { suggest?: unknown; thresholdPct?: unknown; occupancyPct?: unknown }
   recentOffsets?: Array<{ component?: unknown; tokens?: unknown }>
   sessionScope?: string | null
 }
@@ -92,6 +93,9 @@ export function initMonitorFab(deps: MonitorFabDeps): void {
 #${PANEL_ID} button.ghost { background: transparent; }
 #${PANEL_ID} button:disabled { opacity: .45; cursor: default; }
 #${PANEL_ID} .stale { padding: 4px 14px 8px; color: #ffd60a; display: none; }
+#${PANEL_ID} .hint { margin: 0; padding: 8px 14px; color: #ffd60a; display: none;
+  border-bottom: 1px solid rgba(255,255,255,.09); }
+#${PANEL_ID} .hint.show { display: block; }
 #${PANEL_ID} .stale.show { display: block; }
 #${PANEL_ID} .recent { max-height: 132px; overflow: auto; padding: 2px 14px 8px;
   color: rgba(245,245,247,.8); white-space: pre-wrap; }
@@ -109,6 +113,7 @@ export function initMonitorFab(deps: MonitorFabDeps): void {
   panel.hidden = true;
   panel.innerHTML = `
 <h4>${t('monitor.panel.title')}</h4>
+<div class="hint" data-hint></div>
 <div class="row"><span class="label">${t('monitor.panel.net')}</span><span data-net>–</span></div>
 <div class="row"><span class="label">${t('monitor.panel.gross')}</span><span data-gross class="muted">–</span></div>
 <div class="row"><span class="label">${t('monitor.panel.offsets')}</span><span data-offsets class="muted">–</span></div>
@@ -212,9 +217,20 @@ export function initMonitorFab(deps: MonitorFabDeps): void {
     last = snap;
     const net = num(snap.net?.exact) + num(snap.net?.estimated);
     const netEl = panel.querySelector('[data-net]') as HTMLElement;
-    netEl.textContent = `${net >= 0 ? '' : ''}${fmtTokens(snap.net?.exact)}${num(snap.net?.estimated) > 0 ? ` (+${fmtTokens(snap.net?.estimated)} est)` : ''}`;
+    netEl.textContent = `${fmtTokens(snap.net?.exact)}${num(snap.net?.estimated) > 0 ? ` (+${fmtTokens(snap.net?.estimated)} est)` : ''}`;
     netEl.classList.toggle('neg', net < 0);
-    fab.classList.toggle('lit', net < 0);
+    const suggest = snap.suggestion?.suggest === true;
+    fab.classList.toggle('lit', suggest || net < 0);
+    const hint = panel.querySelector('[data-hint]') as HTMLElement;
+    if (suggest) {
+      const pct = typeof snap.suggestion?.occupancyPct === 'number'
+        ? Math.round(snap.suggestion.occupancyPct * 100)
+        : null;
+      hint.textContent = (t('monitor.panel.suggest') as string).replace('{pct}', String(pct ?? '–'));
+      hint.classList.add('show');
+    } else {
+      hint.classList.remove('show');
+    }
     (panel.querySelector('[data-gross]') as HTMLElement).textContent = fmtTokens(snap.gross?.exact);
     (panel.querySelector('[data-offsets]') as HTMLElement).textContent = `-${fmtTokens(snap.offsets?.exact)}`;
     const ctxBar = panel.querySelector('[data-ctxbar]') as HTMLElement;

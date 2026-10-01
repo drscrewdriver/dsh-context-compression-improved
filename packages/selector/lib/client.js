@@ -1543,6 +1543,9 @@ window.__ModuleLoader__.load({
 #${PANEL_ID} button.ghost { background: transparent; }
 #${PANEL_ID} button:disabled { opacity: .45; cursor: default; }
 #${PANEL_ID} .stale { padding: 4px 14px 8px; color: #ffd60a; display: none; }
+#${PANEL_ID} .hint { margin: 0; padding: 8px 14px; color: #ffd60a; display: none;
+  border-bottom: 1px solid rgba(255,255,255,.09); }
+#${PANEL_ID} .hint.show { display: block; }
 #${PANEL_ID} .stale.show { display: block; }
 #${PANEL_ID} .recent { max-height: 132px; overflow: auto; padding: 2px 14px 8px;
   color: rgba(245,245,247,.8); white-space: pre-wrap; }
@@ -1559,6 +1562,7 @@ window.__ModuleLoader__.load({
 			panel.hidden = true;
 			panel.innerHTML = `
 <h4>${t("monitor.panel.title")}</h4>
+<div class="hint" data-hint></div>
 <div class="row"><span class="label">${t("monitor.panel.net")}</span><span data-net>–</span></div>
 <div class="row"><span class="label">${t("monitor.panel.gross")}</span><span data-gross class="muted">–</span></div>
 <div class="row"><span class="label">${t("monitor.panel.offsets")}</span><span data-offsets class="muted">–</span></div>
@@ -1664,9 +1668,16 @@ window.__ModuleLoader__.load({
 			const render = (snap) => {
 				const net = num(snap.net?.exact) + num(snap.net?.estimated);
 				const netEl = panel.querySelector("[data-net]");
-				netEl.textContent = `${net >= 0 ? "" : ""}${fmtTokens(snap.net?.exact)}${num(snap.net?.estimated) > 0 ? ` (+${fmtTokens(snap.net?.estimated)} est)` : ""}`;
+				netEl.textContent = `${fmtTokens(snap.net?.exact)}${num(snap.net?.estimated) > 0 ? ` (+${fmtTokens(snap.net?.estimated)} est)` : ""}`;
 				netEl.classList.toggle("neg", net < 0);
-				fab.classList.toggle("lit", net < 0);
+				const suggest = snap.suggestion?.suggest === true;
+				fab.classList.toggle("lit", suggest || net < 0);
+				const hint = panel.querySelector("[data-hint]");
+				if (suggest) {
+					const pct = typeof snap.suggestion?.occupancyPct === "number" ? Math.round(snap.suggestion.occupancyPct * 100) : null;
+					hint.textContent = t("monitor.panel.suggest").replace("{pct}", String(pct ?? "–"));
+					hint.classList.add("show");
+				} else hint.classList.remove("show");
 				panel.querySelector("[data-gross]").textContent = fmtTokens(snap.gross?.exact);
 				panel.querySelector("[data-offsets]").textContent = `-${fmtTokens(snap.offsets?.exact)}`;
 				const ctxBar = panel.querySelector("[data-ctxbar]");
@@ -1824,6 +1835,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.gross": "毛节省",
 			"monitor.panel.offsets": "抵消",
 			"monitor.panel.context": "上下文占用",
+			"monitor.panel.suggest": "上下文占用已达 {pct}%——临近灾难性遗忘区，建议压缩或裁剪历史",
 			"monitor.panel.cacheHit": "缓存命中率",
 			"monitor.panel.cost": "成本（实际 / 省估）",
 			"monitor.panel.intent": "意图摘要",
@@ -1961,6 +1973,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.gross": "Gross savings",
 			"monitor.panel.offsets": "Offsets",
 			"monitor.panel.context": "Context occupancy",
+			"monitor.panel.suggest": "Context occupancy reached {pct}% — nearing the catastrophic-forgetting zone; consider compressing or trimming history",
 			"monitor.panel.cacheHit": "Cache hit rate",
 			"monitor.panel.cost": "Cost (actual / saved est.)",
 			"monitor.panel.intent": "Intent summary",
@@ -2100,6 +2113,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.gross": "Bruttoeinsparung",
 			"monitor.panel.offsets": "Ausgleiche",
 			"monitor.panel.context": "Kontextbelegung",
+			"monitor.panel.suggest": "Kontextbelegung bei {pct}% — nahe der katastrophalen Vergessenszone; Komprimieren oder Kürzen des Verlaufs empfohlen",
 			"monitor.panel.cacheHit": "Cache-Trefferquote",
 			"monitor.panel.cost": "Kosten (ist / gespart gesch.)",
 			"monitor.panel.intent": "Intent-Zusammenfassung",
@@ -2239,6 +2253,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.gross": "Ahorro bruto",
 			"monitor.panel.offsets": "Compensaciones",
 			"monitor.panel.context": "Ocupación del contexto",
+			"monitor.panel.suggest": "La ocupación del contexto alcanzó el {pct} % — cerca de la zona de olvido catastrófico; se recomienda comprimir o recortar el historial",
 			"monitor.panel.cacheHit": "Tasa de acierto de caché",
 			"monitor.panel.cost": "Coste (real / ahorro est.)",
 			"monitor.panel.intent": "Resumen de intención",
@@ -2378,6 +2393,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.gross": "Économie brute",
 			"monitor.panel.offsets": "Compensations",
 			"monitor.panel.context": "Occupation du contexte",
+			"monitor.panel.suggest": "Occupation du contexte à {pct} % — zone de perte de contexte imminente ; pensez à lancer une compression ou à réduire les anciens échanges",
 			"monitor.panel.cacheHit": "Taux de réussite du cache",
 			"monitor.panel.cost": "Coût (réel / écon. est.)",
 			"monitor.panel.intent": "Résumé d'intention",
@@ -2517,6 +2533,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.gross": "Risparmio lordo",
 			"monitor.panel.offsets": "Compensazioni",
 			"monitor.panel.context": "Occupazione del contesto",
+			"monitor.panel.suggest": "Occupazione del contesto al {pct}% — vicini alla zona di dimenticanza catastrofica; consigliato comprimere o tagliare la cronologia",
 			"monitor.panel.cacheHit": "Tasso di hit della cache",
 			"monitor.panel.cost": "Costo (effettivo / stimo)",
 			"monitor.panel.intent": "Riepilogo di intento",
@@ -2656,6 +2673,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.gross": "総節約",
 			"monitor.panel.offsets": "相殺",
 			"monitor.panel.context": "コンテキスト占有",
+			"monitor.panel.suggest": "コンテキスト占有が {pct}% に達しました——壊滅的忘却ゾーンに近づいています。圧縮または履歴の削減を推奨",
 			"monitor.panel.cacheHit": "キャッシュ ヒット率",
 			"monitor.panel.cost": "コスト（実績 / 節約概算）",
 			"monitor.panel.intent": "インテント要約",
@@ -2795,6 +2813,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.gross": "총 절감",
 			"monitor.panel.offsets": "상쇄",
 			"monitor.panel.context": "컨텍스트 점유",
+			"monitor.panel.suggest": "컨텍스트 점유가 {pct}%에 도달——치명적 망각 구간에 근접, 압축이나 기록 정리를 권장",
 			"monitor.panel.cacheHit": "캐시 적중률",
 			"monitor.panel.cost": "비용 (실제 / 절감 추정)",
 			"monitor.panel.intent": "인텐트 요약",
@@ -2934,6 +2953,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.gross": "Валовая экономия",
 			"monitor.panel.offsets": "Компенсации",
 			"monitor.panel.context": "Заполнение контекста",
+			"monitor.panel.suggest": "Заполнение контекста достигло {pct}% — близко к зоне катастрофического забывания; рекомендуется сжать или обрезать историю",
 			"monitor.panel.cacheHit": "Процент попаданий кэша",
 			"monitor.panel.cost": "Стоимость (факт / эконом. оценка)",
 			"monitor.panel.intent": "Итог намерения",

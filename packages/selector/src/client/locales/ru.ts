@@ -75,6 +75,7 @@ export const ru = {
   'monitor.panel.gross': 'Валовая экономия',
   'monitor.panel.offsets': 'Компенсации',
   'monitor.panel.context': 'Заполнение контекста',
+  'monitor.panel.suggest': 'Заполнение контекста достигло {pct}% — близко к зоне катастрофического забывания; рекомендуется сжать или обрезать историю',
   'monitor.panel.cacheHit': 'Процент попаданий кэша',
   'monitor.panel.cost': 'Стоимость (факт / эконом. оценка)',
   'monitor.panel.intent': 'Итог намерения',

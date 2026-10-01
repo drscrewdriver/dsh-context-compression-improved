@@ -107,6 +107,27 @@ describe('monitor fab (body-level overlay)', () => {
     await waitFor(() => (deps.fetchSnapshot as ReturnType<typeof vi.fn>).mock.calls.length >= 2)
   })
 
+  it('灾难性遗忘区建议:点亮悬浮球并展示提示行', async () => {
+    const deps = makeDeps({
+      snapshots: [snapshotPatch({
+        net: { exact: 0, estimated: 0 },
+        context: { liveTokens: 90_000, contextWindow: 100_000, pct: 0.9 },
+        suggestion: { suggest: true, thresholdPct: 0.7, occupancyPct: 0.9 },
+      })],
+    })
+    initMonitorFab(deps)
+    await waitFor(() => (document.getElementById(FAB_ID) as HTMLElement).classList.contains('lit'))
+    const hint = document.querySelector('[data-hint]') as HTMLElement
+    expect(hint.classList.contains('show')).toBe(true)
+    expect(hint.textContent).toBe('monitor.panel.suggest')
+  })
+
+  it('无建议时提示行隐藏', async () => {
+    initMonitorFab(makeDeps())
+    await waitFor(() => (document.querySelector('[data-net]') as HTMLElement).textContent !== '')
+    expect(document.querySelector('[data-hint]')?.classList.contains('show')).toBe(false)
+  })
+
   it('position persists across drag-free re-init via localStorage', () => {
     localStorage.setItem('dsh.cci.monitor.pos', JSON.stringify({ x: 40, y: 60 }))
     initMonitorFab(makeDeps())
