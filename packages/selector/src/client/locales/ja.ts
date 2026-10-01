@@ -109,5 +109,10 @@ export const ja = {
   'savings.basisExact': '正確',
   'savings.basisEstimated': '推定',
   'savings.basisNote': '口径は分列し混算しません:正確 = DeepSeek トークナイザー、推定 = chars/4。スケルトン後に全文を読むと負の節約として計上されます(純額はマイナスになり得ます)。',
+  'savings.requests': 'Richieste',
+  'savings.cacheHit': 'Tasso di cache',
+  'savings.actualCost': 'Costo reale (prezzi ufficiali)',
+  'savings.savedMoney': 'Risparmio stimato (prezzo di input)',
+  'savings.perSession': 'Sessione',
 
 } satisfies Record<ContextCompressionLocaleKey, string>

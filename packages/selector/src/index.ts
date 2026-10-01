@@ -8,6 +8,7 @@ import {
 } from '@deepseek-ai/dsh-settings'
 import { buildEstimatorCatalog, type EstimatorCatalogDeps } from './estimator-catalog.ts'
 import { getSavingsLedger } from './runtime/savings.ts'
+import { priceOfficialDeepSeekUsage } from './runtime/deepseek-official-pricing.ts'
 import {
   CONTEXT_COMPRESSION_SETTINGS_NAMESPACE,
   ContextCompressionSettingsSchema,
@@ -316,6 +317,60 @@ interface SharedSettingsRegistration {
 }
 
 /**
+ * 金额估算(monitor 口径的 token/金额估算,结合官方牌价):
+ *  - actualCost:本进程累计真实 usage 的官方牌价(exact/range);
+ *  - estimatedSavedCost:净节省(精确口径)按 cache-miss 输入价折算——
+ *    基线假设"这些 token 不压缩就要全价进上下文",标注估算。
+ * 仅官方 deepseek-official 路由可解;第三方/未知模型 fail-closed 为 undefined。
+ */
+function estimateSavingsPricing(readService: (name: string) => unknown, snapshot: {
+  startedAt: string
+  net: { exact: number; estimated: number }
+  usage: { requests: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number }
+}): { currency: string; actualCost?: string | undefined; estimatedSavedCost?: string | undefined } | undefined {
+  if (snapshot.usage.requests === 0 && snapshot.net.exact === 0) return undefined
+  const defaults = readService('agentDefaultModel') as AgentDefaultModelLike | undefined
+  const selection = defaults?.currentSelection?.()
+  const provider = typeof selection?.provider === 'string' ? selection.provider : ''
+  const modelId = typeof selection?.model === 'string' ? selection.model : ''
+  if (provider !== 'deepseek-official') return undefined
+  const now = new Date()
+  const startedAt = new Date(snapshot.startedAt)
+  const completedAt = now.getTime() > startedAt.getTime() ? now : new Date(startedAt.getTime() + 1)
+  const base = {
+    provider,
+    baseUrlClass: 'official-public',
+    apiRoute: 'chat-completions',
+    modelId,
+    currency: 'USD',
+    startedAt,
+    completedAt,
+  } as const
+  const actual = priceOfficialDeepSeekUsage({
+    ...base,
+    usage: {
+      cacheReadTokens: Math.max(0, Math.round(snapshot.usage.cacheReadTokens)),
+      cacheMissTokens: Math.max(0, Math.round(snapshot.usage.inputTokens)),
+      outputTokens: Math.max(0, Math.round(snapshot.usage.outputTokens)),
+    },
+  })
+  const saved = snapshot.net.exact > 0
+    ? priceOfficialDeepSeekUsage({
+      ...base,
+      usage: { cacheReadTokens: 0, cacheMissTokens: Math.round(snapshot.net.exact), outputTokens: 0 },
+    })
+    : undefined
+  const decimalOf = (cost: typeof actual): string | undefined =>
+    cost.kind === 'exact' ? cost.decimal : cost.kind === 'range' ? cost.minimum.decimal : undefined
+  if (actual.kind === 'unpriced' && (saved === undefined || saved.kind === 'unpriced')) return undefined
+  return {
+    currency: 'USD',
+    ...(actual.kind === 'unpriced' ? {} : { actualCost: decimalOf(actual) }),
+    ...(saved === undefined || saved.kind === 'unpriced' ? {} : { estimatedSavedCost: decimalOf(saved) }),
+  }
+}
+
+/**
  * Read-only savings snapshot route (`GET .../savings?sessionId=…`): gross saved,
  * offsets (negative savings — compressed content later re-read in full), and net,
  * with exact-tokenizer and chars/4 bases reported separately and never merged.
@@ -352,8 +407,9 @@ function registerSavingsRoute(ctx: Context): void {
         /* 无法解析的查询串 = 全会话聚合 */
       }
       const snapshot = getSavingsLedger().snapshot(sessionId)
+      const pricing = estimateSavingsPricing(readService, snapshot)
       resTyped.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-cache' })
-      resTyped.end(JSON.stringify({ ok: true, ...snapshot }))
+      resTyped.end(JSON.stringify({ ok: true, ...snapshot, ...(pricing === undefined ? {} : { pricing }) }))
     }
     try {
       const disposers = SAVINGS_ROUTES

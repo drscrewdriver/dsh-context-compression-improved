@@ -47,7 +47,53 @@ export class SavingsLedger {
   private readonly entries = new Map<string, SavingsEntry[]>()
   private readonly registry = new Map<string, RegistryItem>()
   private readonly seenFullText = new Set<string>()
+  private readonly usage = new Map<string, SessionUsageTotals>()
   private startedAt = Date.now()
+
+  /**
+   * 累计一次官方 usage(request-boundary 读取上一已完成请求;末次请求在
+   * dispose 汇总前未入账属可接受低估)。usage 字段缺省按 0 计。
+   */
+  recordUsage(sessionId: string, usage: {
+    inputTokens?: number
+    outputTokens?: number
+    cacheReadTokens?: number
+    cacheWriteTokens?: number
+  }): void {
+    let total = this.usage.get(sessionId)
+    if (total === undefined) {
+      total = { requests: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }
+      this.usage.set(sessionId, total)
+    }
+    total.requests += 1
+    total.inputTokens += positiveOrZero(usage.inputTokens)
+    total.outputTokens += positiveOrZero(usage.outputTokens)
+    total.cacheReadTokens += positiveOrZero(usage.cacheReadTokens)
+    total.cacheWriteTokens += positiveOrZero(usage.cacheWriteTokens)
+  }
+
+  private totalsFor(scope: readonly string[]): SessionUsageTotals {
+    const sum: SessionUsageTotals = { requests: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }
+    for (const sid of scope) {
+      const t = this.usage.get(sid)
+      if (t === undefined) continue
+      sum.requests += t.requests
+      sum.inputTokens += t.inputTokens
+      sum.outputTokens += t.outputTokens
+      sum.cacheReadTokens += t.cacheReadTokens
+      sum.cacheWriteTokens += t.cacheWriteTokens
+    }
+    return sum
+  }
+
+  /** 单行会话汇总(session/disposed 日志用)。 */
+  sessionSummaryLine(sessionId: string): string {
+    const snap = this.snapshot(sessionId)
+    const hit = snap.usage.cacheHitRate
+    return `net=${snap.net.exact}(exact)/${snap.net.estimated}(est) ` +
+      `gross=${snap.gross.exact}/${snap.gross.estimated} offsets=${snap.offsets.exact}/${snap.offsets.estimated} ` +
+      `requests=${snap.usage.requests} cacheHit=${hit === null ? '–' : `${Math.round(hit * 100)}%`}`
+  }
 
   /** 记录一次已落盘的压缩节省(land 成功后调用;tokensRemoved ≤ 0 忽略)。 */
   recordSaving(input: {
@@ -181,6 +227,24 @@ export class SavingsLedger {
       }
     }
     recentOffsets.sort((a, b) => b.at - a.at)
+    const usageTotals = this.totalsFor(scope)
+    // 按会话分桶(monitor 口径):净额精确口径降序,前 8
+    const perSession = sessionId === undefined
+      ? [...new Set([...this.entries.keys(), ...this.usage.keys()])]
+        .map(sid => {
+          const s = this.snapshot(sid)
+          return {
+            sessionId: sid,
+            gross: s.gross,
+            offsets: s.offsets,
+            net: s.net,
+            requests: s.usage.requests,
+            cacheHitRate: s.usage.cacheHitRate,
+          }
+        })
+        .sort((a, b) => (b.net.exact - a.net.exact) || (b.net.estimated - a.net.estimated))
+        .slice(0, 8)
+      : []
     return {
       startedAt: new Date(this.startedAt).toISOString(),
       sessions: sessionId === undefined ? this.entries.size : this.entries.has(sessionId) ? 1 : 0,
@@ -198,6 +262,8 @@ export class SavingsLedger {
         at: new Date(e.at).toISOString(),
         ...(e.note === undefined ? {} : { note: e.note }),
       })),
+      usage: { ...usageTotals, cacheHitRate: cacheHitRateOf(usageTotals) },
+      perSession,
     }
   }
 
@@ -206,6 +272,7 @@ export class SavingsLedger {
     this.entries.clear()
     this.registry.clear()
     this.seenFullText.clear()
+    this.usage.clear()
     this.startedAt = Date.now()
   }
 }
@@ -218,6 +285,31 @@ export interface SavingsSnapshot {
   net: { exact: number; estimated: number }
   perComponent: Array<{ component: string; tokens: number; basis: SavingsBasis; kind: 'saving' | 'offset' }>
   recentOffsets: Array<{ component: string; tokens: number; basis: SavingsBasis; at: string; note?: string }>
+  /** 真实 usage 聚合(monitor 模块学到的口径:官方 usage 而非估算)。 */
+  usage: SessionUsageTotals & { cacheHitRate: number | null }
+  /** 按会话分桶(仅全会话聚合时;按净额精确口径降序,前 8)。 */
+  perSession: Array<{
+    sessionId: string
+    gross: { exact: number; estimated: number }
+    offsets: { exact: number; estimated: number }
+    net: { exact: number; estimated: number }
+    requests: number
+    cacheHitRate: number | null
+  }>
+}
+
+/** 单会话真实 usage 累计(官方 TokenMeter 口径)。 */
+export interface SessionUsageTotals {
+  requests: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+}
+
+function cacheHitRateOf(t: { inputTokens: number; cacheReadTokens: number; cacheWriteTokens: number }): number | null {
+  const denom = t.inputTokens + t.cacheReadTokens + t.cacheWriteTokens
+  return denom <= 0 ? null : Math.round((t.cacheReadTokens / denom) * 1000) / 1000
 }
 
 /** 原文配对哈希(规整行尾与首尾空白——同一文件两次读取的 innocuous 差异不配错)。 */
@@ -231,6 +323,10 @@ export function savingsHash(text: string): string {
       'utf8',
     )
     .digest('hex')
+}
+
+function positiveOrZero(v: unknown): number {
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.round(v) : 0
 }
 
 const singleton = new SavingsLedger()

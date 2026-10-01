@@ -109,5 +109,10 @@ export const ru = {
   'savings.basisExact': 'точно',
   'savings.basisEstimated': 'оценка',
   'savings.basisNote': 'Базы приводятся раздельно и не смешиваются: точно = токенизатор DeepSeek; оценка = chars/4. Скелет с последующим полным чтением учитывается как отрицательная экономия (чистая может уйти в минус).',
+  'savings.requests': '요청 수',
+  'savings.cacheHit': '캐시 적중률',
+  'savings.actualCost': '실제 비용(공식 가격)',
+  'savings.savedMoney': '추정 절감액(입력 가격)',
+  'savings.perSession': '세션',
 
 } satisfies Record<ContextCompressionLocaleKey, string>

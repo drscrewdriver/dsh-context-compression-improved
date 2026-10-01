@@ -109,5 +109,10 @@ export const ko = {
   'savings.basisExact': '정확',
   'savings.basisEstimated': '추정',
   'savings.basisNote': '기준은 분리 표기하며 혼합하지 않습니다: 정확 = DeepSeek 토크나이저, 추정 = chars/4. 스켈레톤 후 전체 판독은 음의 절감으로 계산됩니다(순액은 마이너스 가능).',
+  'savings.requests': 'リクエスト数',
+  'savings.cacheHit': 'キャッシュ ヒット率',
+  'savings.actualCost': '実際コスト(公式価格)',
+  'savings.savedMoney': '推定節約額(入力価格)',
+  'savings.perSession': 'セッション',
 
 } satisfies Record<ContextCompressionLocaleKey, string>
