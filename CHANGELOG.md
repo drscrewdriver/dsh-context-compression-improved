@@ -2,6 +2,19 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
+## 0.7.0-beta.2 - 2026-10-01
+
+### Added
+
+- Merged the turn-tail intent summary feature onto this line (previously released
+  as 0.7.0-beta.1 from the feat/intent-summary line): nine-language dictionaries
+  and the intent-summary fold pipeline now ship together. See 0.7.0-beta.1 below.
+
+### Fixed
+
+- CHANGELOG.zh/ja/ko carried unresolved conflict markers committed during the
+  0.6.5-closure merge; the sections are reconstructed clean.
+
 ## Unreleased
 
 ### Added
