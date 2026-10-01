@@ -3,6 +3,7 @@ import { parseContextCompressionSettings, DEFAULT_CONTEXT_COMPRESSION_SETTINGS }
 import { SavingsLedger } from '../../src/runtime/savings.ts'
 import {
   applySessionOverride,
+  MONITOR_SUGGEST_PCT,
   observeContextUsage,
   buildMonitorSnapshot,
   estimateSavingsPricing,
@@ -269,6 +270,32 @@ describe('context occupancy observation (task_6.2)', () => {
     observeContextUsage('', 5, 100)
     observeContextUsage('fin-check', Number.NaN, 100)
     expect(buildMonitorSnapshot('fin-check', new SavingsLedger()).context).toBeUndefined()
+  })
+})
+
+describe('catastrophic-forgetting suggestion (task: 建议压缩)', () => {
+  it('occupancy past the threshold suggests compression', () => {
+    const sessionId = uniqueSession()
+    observeContextUsage(sessionId, 90_000, 100_000)
+    const snap = buildMonitorSnapshot(sessionId, new SavingsLedger())
+    expect(snap.suggestion?.suggest).toBe(true)
+    expect(snap.suggestion?.thresholdPct).toBe(MONITOR_SUGGEST_PCT)
+    expect(snap.suggestion?.occupancyPct).toBe(0.9)
+  })
+
+  it('below the threshold stays silent', () => {
+    const sessionId = uniqueSession()
+    observeContextUsage(sessionId, 50_000, 100_000)
+    const snap = buildMonitorSnapshot(sessionId, new SavingsLedger())
+    expect(snap.suggestion?.suggest).toBe(false)
+  })
+
+  it('threshold sits below the host auto-compact default (提前一档人工干预窗口)', () => {
+    expect(MONITOR_SUGGEST_PCT).toBeLessThan(0.8)
+  })
+
+  it('unobserved sessions carry no suggestion block', () => {
+    expect(buildMonitorSnapshot(uniqueSession(), new SavingsLedger()).suggestion).toBeUndefined()
   })
 })
 
