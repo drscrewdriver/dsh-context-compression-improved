@@ -71,6 +71,34 @@ declare const zh: {
   'codeSkeleton.enabled': string;
   'codeSkeleton.enabled.on': string;
   'codeSkeleton.enabled.off': string;
+  'intentSummary.title': string;
+  'intentSummary.description': string;
+  'intentSummary.enabled': string;
+  'intentSummary.enabled.on': string;
+  'intentSummary.enabled.off': string;
+  'monitor.fab.title': string;
+  'monitor.panel.title': string;
+  'monitor.panel.net': string;
+  'monitor.panel.gross': string;
+  'monitor.panel.offsets': string;
+  'monitor.panel.context': string;
+  'monitor.panel.suggest': string;
+  'monitor.panel.cacheHit': string;
+  'monitor.panel.cost': string;
+  'monitor.panel.intent': string;
+  'monitor.panel.overrideHint': string;
+  'monitor.panel.resume': string;
+  'monitor.panel.disable': string;
+  'monitor.panel.stateOn': string;
+  'monitor.panel.stateOff': string;
+  'monitor.panel.gateUnknown': string;
+  'monitor.panel.lastFold': string;
+  'monitor.panel.stale': string;
+  'monitorPanel.title': string;
+  'monitorPanel.description': string;
+  'monitorPanel.enabled': string;
+  'monitorPanel.enabled.on': string;
+  'monitorPanel.enabled.off': string;
   'custom.title': string;
   'custom.settingsHint': string;
   'custom.sessionScope': string;
@@ -159,6 +187,8 @@ interface CompressionSelectorInjected {
   resetCustom: () => Promise<void>;
   saveAutoCompact: (thresholdPercent: number) => Promise<void>;
   saveCodeSkeleton: (enabled: boolean) => Promise<void>;
+  saveIntentSummary: (enabled: boolean) => Promise<void>;
+  saveMonitorPanel: (enabled: boolean) => Promise<void>;
   /** Patch of `presetOptions` members; an explicit `undefined` clears that field. */
   savePresetOptions: (options: PresetOptionsPatch) => Promise<void>;
 }

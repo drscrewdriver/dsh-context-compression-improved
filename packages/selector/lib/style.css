@@ -307,7 +307,7 @@
   font-size: 12px;
 }
 
-._3-mAqa_savingsCard {
+.j7gVQa_savingsCard {
   border: 1px solid #ffffff1a;
   border-radius: 8px;
   flex-direction: column;
@@ -317,33 +317,33 @@
   display: flex;
 }
 
-._3-mAqa_savingsRow {
+.j7gVQa_savingsRow {
   justify-content: space-between;
   align-items: baseline;
   gap: 12px;
   display: flex;
 }
 
-._3-mAqa_savingsNetPositive strong {
+.j7gVQa_savingsNetPositive strong {
   color: #30d158;
 }
 
-._3-mAqa_savingsNetNegative strong {
+.j7gVQa_savingsNetNegative strong {
   color: #ff9f0a;
 }
 
-._3-mAqa_savingsMuted {
+.j7gVQa_savingsMuted {
   opacity: .66;
   font-size: .92em;
 }
 
-._3-mAqa_savingsBreakdown {
+.j7gVQa_savingsBreakdown {
   border-top: 1px solid #ffffff14;
   margin-top: 4px;
   padding-top: 4px;
 }
 
-._3-mAqa_savingsNote {
+.j7gVQa_savingsNote {
   opacity: .5;
   margin-top: 4px;
   font-size: .85em;
