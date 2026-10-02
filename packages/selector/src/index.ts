@@ -507,7 +507,6 @@ export function registerMonitorRoute(ctx: Context): void {
     register(webServer, 'inject')
   })
 }
-}
 
 /** One selector Host row able to own the registration effect. */
 interface SettingsOwner {

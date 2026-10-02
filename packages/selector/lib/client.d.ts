@@ -79,6 +79,10 @@ interface CodeSkeletonSettings {
 interface IntentSummarySettings {
   enabled: boolean;
 }
+/** Floating compression-monitor panel (FAB); visibility switch. */
+interface MonitorPanelSettings {
+  enabled: boolean;
+}
 /** Browser-safe mirror of the runtime presetOptions section. */
 interface PresetOptionsSettings {
   readonly dedupeToolResults?: boolean;
@@ -111,6 +115,8 @@ interface ContextCompressionSettings {
   codeSkeleton: CodeSkeletonSettings;
   /** Turn-tail intent-summary gate captured independently of `profile`. */
   intentSummary: IntentSummarySettings;
+  /** Floating compression-monitor panel (FAB); absent inherits hidden. */
+  monitorPanel?: MonitorPanelSettings;
   /** Optional tokenpilot-inspired sub-capability overrides (presence-validated only). */
   presetOptions?: PresetOptionsSettings;
 }
@@ -189,6 +195,29 @@ declare const zh: {
   'intentSummary.enabled': string;
   'intentSummary.enabled.on': string;
   'intentSummary.enabled.off': string;
+  'monitor.fab.title': string;
+  'monitor.panel.title': string;
+  'monitor.panel.net': string;
+  'monitor.panel.gross': string;
+  'monitor.panel.offsets': string;
+  'monitor.panel.context': string;
+  'monitor.panel.suggest': string;
+  'monitor.panel.cacheHit': string;
+  'monitor.panel.cost': string;
+  'monitor.panel.intent': string;
+  'monitor.panel.overrideHint': string;
+  'monitor.panel.resume': string;
+  'monitor.panel.disable': string;
+  'monitor.panel.stateOn': string;
+  'monitor.panel.stateOff': string;
+  'monitor.panel.gateUnknown': string;
+  'monitor.panel.lastFold': string;
+  'monitor.panel.stale': string;
+  'monitorPanel.title': string;
+  'monitorPanel.description': string;
+  'monitorPanel.enabled': string;
+  'monitorPanel.enabled.on': string;
+  'monitorPanel.enabled.off': string;
   'custom.title': string;
   'custom.settingsHint': string;
   'custom.sessionScope': string;
@@ -249,6 +278,7 @@ interface CompressionSelectorInjected {
   saveAutoCompact: (thresholdPercent: number) => Promise<void>;
   saveCodeSkeleton: (enabled: boolean) => Promise<void>;
   saveIntentSummary: (enabled: boolean) => Promise<void>;
+  saveMonitorPanel: (enabled: boolean) => Promise<void>;
   /** Patch of `presetOptions` members; an explicit `undefined` clears that field. */
   savePresetOptions: (options: PresetOptionsPatch) => Promise<void>;
 }
