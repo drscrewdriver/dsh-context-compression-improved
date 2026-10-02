@@ -2,6 +2,18 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
+## 0.2.5 - 2026-10-03
+
+### Added
+
+- Full 0.2.0-mainline feature drop onto the regenerated 0.1.2 line: savings statistics
+  (honest ledger, negative-savings pairing, usage aggregation, cost estimation), the
+  compression monitor route, the monitorPanel settings card, the floating monitor bubble
+  (session binding via the input-left seat with graceful aggregate fallback, context
+  occupancy bar, catastrophic-forgetting suggestion at 70% occupancy), and the
+  intent-summary settings card. zh/en dictionaries carry the new keys; other languages
+  register through the existing addLanguage guard.
+
 ## 0.5.7 - 2026-10-01
 
 ### Added
