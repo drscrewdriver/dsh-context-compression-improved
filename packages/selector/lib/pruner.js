@@ -1,4 +1,4 @@
-import { A as assertNever, C as isValidAutoCompactThresholdPercent, D as CustomCompressionPolicySchema, E as resolvePolicy, M as COMPRESSION_PROFILES, O as DEFAULT_CUSTOM_COMPRESSION_POLICY, S as isCompressionProfile, T as resolveConfig, _ as DEFAULTS, b as charsToTokens, c as invalidateOnTaskChange, d as recordRecertified, f as recordScore, g as ContextCompressionSettingsSchema, h as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, i as getAdvisorState, j as deepFreeze, k as resolveCustomPolicy, l as observeIntentEnabled, m as AUTO_COMPACT_THRESHOLD_LIMITS, r as evaluateIntentGate, s as getSummaryOverride, u as recordIntentFold, v as PRUNE_MARKER, w as parseContextCompressionSettings, x as codePointLength, y as charsForTokens } from "./intent-gate.js";
+import { B as priceOfficialDeepSeekUsage, D as evaluateIntentGate, F as recordRecertified, H as getSavingsLedger, I as recordScore, M as invalidateOnTaskChange, N as observeIntentEnabled, O as getAdvisorState, P as recordIntentFold, R as DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION, V as resolveOfficialDeepSeekPrice, _ as assertNever, a as PRUNE_MARKER, c as codePointLength, d as parseContextCompressionSettings, f as resolveConfig, g as resolveCustomPolicy, h as DEFAULT_CUSTOM_COMPRESSION_POLICY, i as DEFAULTS, j as getSummaryOverride, l as isCompressionProfile, m as CustomCompressionPolicySchema, n as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, o as charsForTokens, p as resolvePolicy, r as ContextCompressionSettingsSchema, s as charsToTokens, t as AUTO_COMPACT_THRESHOLD_LIMITS, u as isValidAutoCompactThresholdPercent, v as deepFreeze, w as observeContextUsage, y as COMPRESSION_PROFILES, z as decimalRateNanoUnits } from "./config.js";
 import { a as validatePublishedTailTrim, i as tailTrimStub, n as tailTrimMessage, o as eventBySeq, r as tailTrimRef, s as sessionEvents, t as parseTailTrimRef } from "./tail-trim.js";
 import z from "@deepseek-ai/schemastery";
 import { createHash } from "node:crypto";
@@ -535,6 +535,10 @@ function measureForCompaction(ctx, session) {
 		countCanonicalText: counter.countText
 	});
 }
+/** Request-level usage exposed by official TokenMeter, without invented route attribution. */
+function officialRequestUsage(view) {
+	return view.baseline.kind === "usage" ? view.baseline.usage : void 0;
+}
 /**
 * Count one canonical content walk in canonical field order.
 *
@@ -796,11 +800,23 @@ function installContextCompressionRetrieve(ctx, config = {}) {
 			const tailTrimRef = parseTailTrimRef(args.ref);
 			if (match === null && tailTrimRef === null) throw new Error("context_compression_retrieve: ref must be session://<session-id>/(event|tailtrim)/<seq>");
 			if ((match?.[1] ?? tailTrimRef?.sessionId) !== String(exec.agent.id)) throw new Error("context_compression_retrieve: a compression reference may only read the caller's current session");
-			if (tailTrimRef !== null) return Promise.resolve(recoverTailTrim(exec.agent.session, args.ref, tailTrimRef.manifestSeq, args.query, args.start_line, args.max_lines, {
-				maxChars,
-				maxScanChars,
-				maxQueryChars
-			}));
+			if (tailTrimRef !== null) {
+				const sessionId = String(exec.agent.id);
+				return Promise.resolve(recoverTailTrim(exec.agent.session, args.ref, tailTrimRef.manifestSeq, args.query, args.start_line, args.max_lines, {
+					maxChars,
+					maxScanChars,
+					maxQueryChars
+				})).then((text) => {
+					getSavingsLedger().recordOffset({
+						sessionId,
+						component: "tailtrim-retrieve",
+						tokens: Math.ceil(codePointLength$1(text) / 4),
+						basis: "characters",
+						note: `tailtrim/${tailTrimRef.manifestSeq} 回读`
+					});
+					return text;
+				});
+			}
 			const seq = Number(match?.[2]);
 			const event = sessionEvents(exec.agent.session)[seq];
 			if (event?.type !== "tool/result") throw new Error(`context_compression_retrieve: event ${String(seq)} is not a tool/result in the current session`);
@@ -812,7 +828,7 @@ function installContextCompressionRetrieve(ctx, config = {}) {
 			if (query !== void 0 && exceedsCodePointLimit(query, maxQueryChars)) throw new Error(`context_compression_retrieve: query must be at most ${String(maxQueryChars)} Unicode code points`);
 			const selected = query === void 0 || query === "" ? directSlice(lines, args.start_line ?? 1, maxLines, scan.complete, scannedLines.partialTail) : querySlice(lines, query, maxLines, scan.complete, scannedLines.partialTail);
 			const total = scan.complete ? String(lines.length) : `at least ${String(lines.length)}`;
-			const output = `${[
+			const bounded = boundCodePoints(`${[
 				`source: ${args.ref}`,
 				`tool_call_id: ${event.data.message.source.callId}`,
 				`status: ${event.data.message.content[0].isError === true ? "error" : "completed"}`,
@@ -821,8 +837,15 @@ function installContextCompressionRetrieve(ctx, config = {}) {
 				selected.partialLine === void 0 ? "" : `note: line ${String(selected.partialLine)} is a partial prefix ending at the source scan limit`,
 				selected.omitted ? query === void 0 || query === "" ? "note: additional source lines were omitted" : "note: additional matching or neighboring lines were omitted" : "",
 				"--- original tool result ---"
-			].filter(Boolean).join("\n")}\n${selected.text}`;
-			return Promise.resolve(boundCodePoints(output, maxChars));
+			].filter(Boolean).join("\n")}\n${selected.text}`, maxChars);
+			getSavingsLedger().recordOffset({
+				sessionId: String(exec.agent.id),
+				component: "retrieve",
+				tokens: Math.ceil(codePointLength$1(bounded) / 4),
+				basis: "characters",
+				note: `event/${String(seq)} 回读`
+			});
+			return Promise.resolve(bounded);
 		}
 	}));
 }
@@ -3807,254 +3830,6 @@ function dedupePlaceholder(entry, originalChars) {
 	].join(" ");
 }
 //#endregion
-//#region src/runtime/deepseek-official-pricing.ts
-/** Checked-in DeepSeek official prices and fixed-point provider-usage accounting. */
-const DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION = "deepseek-official-2026-08-25";
-/** Wall-clock time at which the checked-in official price pages were verified. */
-const DEEPSEEK_OFFICIAL_PRICE_CHECKED_AT = "2026-08-25T00:10:20+08:00";
-const PRICES = Object.freeze({
-	"deepseek-v4-flash": modelPrices("DeepSeek-V4-Flash-0731", [
-		"0.007",
-		"0.22",
-		"0.66"
-	], [
-		"0.014",
-		"0.44",
-		"1.32"
-	], [
-		"0.05",
-		"1.5",
-		"4.5"
-	], [
-		"0.10",
-		"3.0",
-		"9.0"
-	]),
-	"deepseek-v4-pro": modelPrices("DeepSeek-V4-Pro-0813", [
-		"0.022",
-		"0.66",
-		"1.98"
-	], [
-		"0.044",
-		"1.32",
-		"3.96"
-	], [
-		"0.15",
-		"4.5",
-		"13.5"
-	], [
-		"0.30",
-		"9.0",
-		"27.0"
-	]),
-	"deepseek-v4-flash-vision-exp": modelPrices("DeepSeek-V4-Flash-Vision-Exp", [
-		"0.007",
-		"0.22",
-		"0.66"
-	], [
-		"0.014",
-		"0.44",
-		"1.32"
-	], [
-		"0.05",
-		"1.5",
-		"4.5"
-	], [
-		"0.10",
-		"3.0",
-		"9.0"
-	])
-});
-const PEAK_RULE = "Asia/Shanghai Mon-Fri 09:00-12:00,14:00-18:00";
-const USD_SOURCE = "https://api-docs.deepseek.com/quick_start/pricing/";
-const CNY_SOURCE = "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/";
-/**
-* Resolve one immutable official price record; aliases and compatible gateways fail closed.
-* @param input - exact provider, endpoint, route, model, currency, and timestamp applicability.
-* @returns An immutable price record or an explicit unpriced reason.
-*/
-function resolveOfficialDeepSeekPrice(input) {
-	if (input.provider !== "deepseek-official") return unpriced("unknown provider route");
-	if (input.baseUrlClass !== "official-public") return unpriced("unknown base-url applicability");
-	if (input.apiRoute !== "chat-completions" && input.apiRoute !== "responses") return unpriced("unknown API route");
-	if (!isOfficialModel(input.modelId)) return unpriced("unknown model id");
-	if (input.currency !== "USD" && input.currency !== "CNY") return unpriced("unknown currency");
-	const band = priceBandAt(input.at);
-	if (band === void 0) return unpriced("invalid price timestamp");
-	const model = PRICES[input.modelId];
-	const [inputCacheHit, inputCacheMiss, output] = model[input.currency][band];
-	return {
-		kind: "priced",
-		record: Object.freeze({
-			catalogVersion: DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION,
-			checkedAt: DEEPSEEK_OFFICIAL_PRICE_CHECKED_AT,
-			provider: "deepseek-official",
-			baseUrlClass: "official-public",
-			apiRoute: input.apiRoute,
-			modelId: input.modelId,
-			modelVersion: model.version,
-			currency: input.currency,
-			unitTokens: 1e6,
-			band,
-			inputCacheHit,
-			inputCacheMiss,
-			output,
-			sourceUrl: input.currency === "USD" ? USD_SOURCE : CNY_SOURCE,
-			sourceLocale: input.currency === "USD" ? "en" : "zh-CN",
-			peakRule: PEAK_RULE
-		})
-	};
-}
-/**
-* Classify a timestamp under the published Beijing peak schedule.
-* @param at - absolute request time to interpret in Asia/Shanghai.
-* @returns Peak/off-peak, or undefined for an invalid timestamp.
-*/
-function priceBandAt(at) {
-	if (!Number.isFinite(at.getTime())) return void 0;
-	const parts = new Intl.DateTimeFormat("en-US", {
-		timeZone: "Asia/Shanghai",
-		weekday: "short",
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-		hourCycle: "h23"
-	}).formatToParts(at);
-	const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-	const weekday = values.weekday;
-	const hour = Number(values.hour);
-	const minute = Number(values.minute);
-	const second = Number(values.second);
-	if (weekday === void 0 || !Number.isInteger(hour) || !Number.isInteger(minute) || !Number.isInteger(second)) return void 0;
-	const workday = weekday !== "Sat" && weekday !== "Sun";
-	const seconds = hour * 3600 + minute * 60 + second;
-	return workday && (seconds >= 32400 && seconds < 43200 || seconds >= 50400 && seconds < 64800) ? "peak" : "off-peak";
-}
-/**
-* Price one completed request, returning a range when it spans a published band boundary.
-* @param input - exact applicability, request interval, and complete disjoint usage buckets.
-* @returns Fixed-point exact/range cost or an explicit unpriced reason.
-*/
-function priceOfficialDeepSeekUsage(input) {
-	for (const [name, value] of Object.entries(input.usage)) if (!Number.isSafeInteger(value) || value < 0) return unpriced(`invalid ${name}`);
-	if (input.completedAt.getTime() < input.startedAt.getTime()) return unpriced("completion timestamp precedes request start");
-	const start = resolveOfficialDeepSeekPrice({
-		...input,
-		at: input.startedAt
-	});
-	if (start.kind === "unpriced") return start;
-	const end = resolveOfficialDeepSeekPrice({
-		...input,
-		at: input.completedAt
-	});
-	if (end.kind === "unpriced") return end;
-	const startAmount = amountFor(start.record, input.usage);
-	if (startAmount === void 0) return unpriced("invalid decimal price record");
-	const crossesBoundary = spansPublishedPriceBoundary(input.startedAt, input.completedAt);
-	if (start.record.band === end.record.band && !crossesBoundary) return {
-		kind: "exact",
-		currency: start.record.currency,
-		band: start.record.band,
-		...startAmount
-	};
-	const comparisonRecord = start.record.band === end.record.band ? priceRecordInBand(start.record, start.record.band === "peak" ? "off-peak" : "peak") : end.record;
-	const endAmount = amountFor(comparisonRecord, input.usage);
-	if (endAmount === void 0) return unpriced("invalid decimal price record");
-	const startFemto = BigInt(startAmount.femtoUnits);
-	const endFemto = BigInt(endAmount.femtoUnits);
-	return {
-		kind: "range",
-		currency: start.record.currency,
-		bands: [start.record.band, comparisonRecord.band],
-		minimum: startFemto <= endFemto ? startAmount : endAmount,
-		maximum: startFemto <= endFemto ? endAmount : startAmount
-	};
-}
-/** Detect any published UTC band boundary, even when both endpoints share a band. */
-function spansPublishedPriceBoundary(startedAt, completedAt) {
-	const start = startedAt.getTime();
-	const end = completedAt.getTime();
-	if (end <= start) return false;
-	const dayMs = 864e5;
-	if (end - start >= 7 * dayMs) return true;
-	const firstDay = Math.floor(start / dayMs) * dayMs;
-	for (let day = firstDay; day <= end; day += dayMs) {
-		const weekday = new Date(day).getUTCDay();
-		if (weekday === 0 || weekday === 6) continue;
-		for (const hour of [
-			1,
-			4,
-			6,
-			10
-		]) {
-			const boundary = day + hour * 60 * 60 * 1e3;
-			if (boundary > start && boundary <= end) return true;
-		}
-	}
-	return false;
-}
-function priceRecordInBand(record, band) {
-	const [inputCacheHit, inputCacheMiss, output] = PRICES[record.modelId][record.currency][band];
-	return Object.freeze({
-		...record,
-		band,
-		inputCacheHit,
-		inputCacheMiss,
-		output
-	});
-}
-/**
-* Parse a non-negative decimal rate into nano-currency units, without Number arithmetic.
-* @param value - canonical non-negative decimal with at most nine fractional digits.
-* @returns Integer nano-units, or undefined when the decimal is invalid.
-*/
-function decimalRateNanoUnits(value) {
-	const match = /^(0|[1-9]\d*)(?:\.(\d{1,9}))?$/u.exec(value);
-	if (match === null) return void 0;
-	const whole = match[1] ?? "0";
-	const fraction = (match[2] ?? "").padEnd(9, "0");
-	return BigInt(whole) * 1000000000n + BigInt(fraction || "0");
-}
-function amountFor(record, usage) {
-	const hit = decimalRateNanoUnits(record.inputCacheHit);
-	const miss = decimalRateNanoUnits(record.inputCacheMiss);
-	const output = decimalRateNanoUnits(record.output);
-	if (hit === void 0 || miss === void 0 || output === void 0) return void 0;
-	const femtoUnits = BigInt(usage.cacheReadTokens) * hit + BigInt(usage.cacheMissTokens) * miss + BigInt(usage.outputTokens) * output;
-	return {
-		femtoUnits: femtoUnits.toString(),
-		decimal: formatFemto(femtoUnits)
-	};
-}
-function formatFemto(value) {
-	const digits = value.toString().padStart(16, "0");
-	const whole = digits.slice(0, -15);
-	const fraction = digits.slice(-15).replace(/0+$/u, "");
-	return fraction.length === 0 ? whole : `${whole}.${fraction}`;
-}
-function modelPrices(version, usdOffPeak, usdPeak, cnyOffPeak, cnyPeak) {
-	return Object.freeze({
-		version,
-		USD: Object.freeze({
-			"off-peak": usdOffPeak,
-			peak: usdPeak
-		}),
-		CNY: Object.freeze({
-			"off-peak": cnyOffPeak,
-			peak: cnyPeak
-		})
-	});
-}
-function isOfficialModel(value) {
-	return Object.prototype.hasOwnProperty.call(PRICES, value);
-}
-function unpriced(reason) {
-	return {
-		kind: "unpriced",
-		reason
-	};
-}
-//#endregion
 //#region src/runtime/adaptive-cost.ts
 /**
 * Bound Adaptive's benefit and cache-loss exposure without attributing the
@@ -4196,6 +3971,10 @@ function emitCompressionAudit(logger, record) {
 *
 * @module dsh-context-compression-improved-runtime
 */
+/** 节省统计配对键用原文(纯文本块才可配对;富内容返回 undefined)。 */
+function originalTextForSavings(candidate) {
+	return flattenPlainText(candidate.event.data.message.content);
+}
 /** Mixed deterministic selector behind the existing `ctx.toolResultPruner` seam. */
 var ToolResultPruner = class extends Service {
 	static inject = ["tokenMeter"];
@@ -4244,6 +4023,14 @@ var ToolResultPruner = class extends Service {
 			intentFoldedSeqs: /* @__PURE__ */ new WeakMap(),
 			intentBaselines: /* @__PURE__ */ new WeakMap()
 		};
+		try {
+			ctx.on("session/disposed", (session) => {
+				try {
+					const line = getSavingsLedger().sessionSummaryLine(String(session.id));
+					if (line.includes("requests=0") === false || line.includes("net=0(exact)/0(est)") === false) ctx.logger.info("context-compression session savings (%s): %s", String(session.id), line);
+				} catch {}
+			});
+		} catch {}
 		ctx.on("session/event", (session, event) => {
 			this.scanForSeededNativeSummary(session);
 			if (event.type === "compaction/summary") {
@@ -4284,6 +4071,9 @@ var ToolResultPruner = class extends Service {
 				this.auditFailure(agent.session, "fresh", "terminal-pass", error);
 				ctx.logger.warn("context-compression terminal pass failed open: %o", error);
 			}
+			try {
+				observeContextUsage(String(agent.session.id), measureForCompaction(this.ctx, agent.session).totalTokens, this.contextWindowForRequest(agent.session));
+			} catch {}
 			this.postflightEstimatorPass(agent.session, signal).catch(() => void 0);
 			this.postflightAdvisorPass(agent.session, turn, signal).catch(() => void 0);
 			this.postflightIntentFoldPass(agent.session, turn, signal).catch(() => void 0);
@@ -4318,7 +4108,11 @@ var ToolResultPruner = class extends Service {
 		if (policy === void 0) return emptyResult();
 		const profile = policy.profile;
 		const view = measureForCompaction(this.ctx, session);
-		if (stage === "fresh") return this.decideFreshStep(session, options, policy, view);
+		if (stage === "fresh") {
+			const usage = officialRequestUsage(view);
+			if (usage !== void 0) getSavingsLedger().recordUsage(String(session.id), usage);
+			return this.decideFreshStep(session, options, policy, view);
+		}
 		if (profile === "off") return emptyResult();
 		const landed = [];
 		if (policy.nativeToolResultEnabled) {
@@ -5139,6 +4933,24 @@ var ToolResultPruner = class extends Service {
 			this.auditComponent(session, policy, "aggregate", "fresh", policy.aggregateEnabled ? "skipped" : "disabled", policy.aggregateEnabled ? "no-new-tool-result-candidates" : "profile-policy");
 			return emptyResult();
 		}
+		const ledger = getSavingsLedger();
+		const sid = String(session.id);
+		for (const candidate of candidates) {
+			const text = flattenPlainText(candidate.event.data.message.content);
+			if (text === void 0) continue;
+			ledger.noteFullText({
+				sessionId: sid,
+				seq: candidate.seq,
+				text,
+				measure: () => candidate.count.kind === "exact-tokenizer" && typeof candidate.count.tokens === "number" ? {
+					tokens: candidate.count.tokens,
+					basis: "exact-tokenizer"
+				} : {
+					tokens: Math.ceil(candidate.characterPressure / 4),
+					basis: "characters"
+				}
+			});
+		}
 		const plans = /* @__PURE__ */ new Map();
 		let freshPlanned = 0;
 		const dedupeEnabled = policy.presetOptions?.dedupeToolResults === true;
@@ -5661,6 +5473,16 @@ var ToolResultPruner = class extends Service {
 				tokenizerId: exact === true && exactSurface !== void 0 ? exactSurface.tokenizerId : "characters",
 				tokenizerRevision: exact === true && exactSurface !== void 0 ? exactSurface.tokenizerRevision : "chars-per-token-4.0"
 			});
+			const groupText = shadowedSeqs.map((seq) => sessionEvents(session)[seq]).filter((event) => event?.type === "tool/result").map((event) => flattenPlainText(event.data.message.content)).filter((text) => text !== void 0).join("\n");
+			if (groupText.length > 0) getSavingsLedger().recordSaving({
+				sessionId: String(session.id),
+				component: "tail-trim",
+				tokensBefore,
+				tokensAfter,
+				basis: exact ? "exact-tokenizer" : "characters",
+				sourceSeq: manifestSeq,
+				originalText: groupText
+			});
 			return;
 		}
 		this.auditComponent(session, policy, "tail-trim", "pressure", "skipped", "no-safe-eligible-tool-group", {
@@ -5794,6 +5616,16 @@ var ToolResultPruner = class extends Service {
 			tokenizerId: plan.tokenizerId,
 			tokenizerRevision: plan.tokenizerRevision,
 			...plan.elidedLines === void 0 ? {} : { elidedLines: plan.elidedLines }
+		});
+		const pairedOriginal = originalTextForSavings(candidate);
+		getSavingsLedger().recordSaving({
+			sessionId: String(session.id),
+			component: plan.component,
+			tokensBefore: plan.tokensBefore,
+			tokensAfter: plan.tokensAfter,
+			basis: plan.measurementBasis,
+			sourceSeq: plan.sourceSeq,
+			...pairedOriginal === void 0 ? {} : { originalText: pairedOriginal }
 		});
 		return {
 			originalSeq: candidate.seq,

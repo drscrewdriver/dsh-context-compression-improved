@@ -1,8 +1,8 @@
-import { a as getLastIntentFold, g as ContextCompressionSettingsSchema, h as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, i as getAdvisorState, n as INTENT_GATE_GROWTH_TOKENS, o as getObservedIntentEnabled, p as setSummaryOverride, s as getSummaryOverride, t as INTENT_GATE_FLOOR_FRACTION } from "./intent-gate.js";
+import { A as getObservedIntentEnabled, C as isSessionOverrideAction, E as INTENT_GATE_GROWTH_TOKENS, H as getSavingsLedger, L as setSummaryOverride, O as getAdvisorState, S as estimateSavingsPricing, T as INTENT_GATE_FLOOR_FRACTION, b as applySessionOverride, j as getSummaryOverride, k as getLastIntentFold, n as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, r as ContextCompressionSettingsSchema, x as buildMonitorSnapshot } from "./config.js";
 import z from "@deepseek-ai/schemastery";
 import "@deepseek-ai/dsh-settings";
-import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { chmod, mkdtemp, readFile, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
@@ -596,6 +596,8 @@ function restoreMethod(presets, snapshot) {
 const CONTEXT_COMPRESSION_NAMESPACE = CONTEXT_COMPRESSION_SETTINGS_NAMESPACE;
 const ESTIMATOR_CATALOG_ROUTES = ["/endpoint/dsh-context-compression-improved/estimator-catalog", "/api/dsh-context-compression-improved/estimator-catalog"];
 const ADVISOR_REPORT_ROUTES = ["/endpoint/dsh-context-compression-improved/advisor-report", "/api/dsh-context-compression-improved/advisor-report"];
+const SAVINGS_ROUTES = ["/endpoint/dsh-context-compression-improved/savings", "/api/dsh-context-compression-improved/savings"];
+const MONITOR_ROUTES = ["/endpoint/dsh-context-compression-improved/monitor", "/api/dsh-context-compression-improved/monitor"];
 function sessionFor(readService, sessionId) {
 	const agents = readService("agents");
 	return typeof agents?.get === "function" ? agents.get(sessionId)?.session : void 0;
@@ -718,6 +720,7 @@ function registerAdvisorReportRoute(ctx) {
 * never reasons to withhold the route.
 */
 const ESTIMATOR_CATALOG_ROUTE_DEPS = ["webServer"];
+/** The estimator-side service the catalog handler enriches its response with. */
 function asWebServer(value) {
 	if (typeof value !== "object" || value === null) return void 0;
 	return typeof value.register === "function" ? value : void 0;
@@ -810,6 +813,202 @@ function registerEstimatorCatalogRoute(ctx) {
 	});
 	log("warn", "context-compression webServer not active yet — estimator catalog route pending: %s", ESTIMATOR_CATALOG_ROUTES.join(", "));
 }
+/**
+* Read-only savings snapshot route (`GET .../savings?sessionId=…`): gross saved,
+* offsets (negative savings — compressed content later re-read in full), and net,
+* with exact-tokenizer and chars/4 bases reported separately and never merged.
+* Registration mirrors the estimator-catalog route (webServer gate alone, dual
+* channels for both service arrival orders, single guarded registration).
+*/
+function registerSavingsRoute(ctx) {
+	const readService = (name) => {
+		try {
+			return ctx.get(name);
+		} catch {
+			return;
+		}
+	};
+	const log = (level, message, ...args) => {
+		console[level](message, ...args);
+	};
+	let registered = false;
+	const register = (webServer, channel) => {
+		if (registered) return;
+		const handler = (req, res) => {
+			const resTyped = res;
+			if (typeof resTyped?.writeHead !== "function" || typeof resTyped?.end !== "function") return;
+			let sessionId;
+			try {
+				const raw = new URL(String(req?.url ?? "/"), "http://localhost").searchParams.get("sessionId");
+				if (typeof raw === "string" && raw.length > 0 && raw.length <= 512) sessionId = raw;
+			} catch {}
+			const snapshot = getSavingsLedger().snapshot(sessionId);
+			const pricing = estimateSavingsPricing(readService, snapshot);
+			resTyped.writeHead(200, {
+				"content-type": "application/json; charset=utf-8",
+				"cache-control": "no-cache"
+			});
+			resTyped.end(JSON.stringify({
+				ok: true,
+				...snapshot,
+				...pricing === void 0 ? {} : { pricing }
+			}));
+		};
+		try {
+			const disposers = SAVINGS_ROUTES.map((path) => webServer.register({
+				kind: "exact",
+				path,
+				handler
+			})).filter((off) => typeof off === "function");
+			registered = true;
+			ctx.effect(() => () => {
+				for (const off of disposers) off();
+			}, "contextCompressionSelector.savings route");
+			log("info", "context-compression savings route registered (%s): %s", channel, SAVINGS_ROUTES.join(", "));
+		} catch (error) {
+			log("warn", "context-compression savings route registration failed (%s): %o", channel, error);
+		}
+	};
+	const active = asWebServer(readService("webServer"));
+	if (active !== void 0) {
+		register(active, "direct");
+		if (registered) return;
+	}
+	ctx.inject(["webServer"], (injected) => {
+		const webServer = asWebServer(injected.webServer);
+		if (webServer === void 0) {
+			log("warn", "context-compression webServer exposes no register() — savings route not registered");
+			return;
+		}
+		register(webServer, "inject");
+	});
+}
+/**
+* Floating-panel monitor route (`GET|POST .../monitor?sessionId=…`):
+*  - GET → the monitor snapshot (savings aggregate + intent control block +
+*    pricing) — the payload shape the panel polls;
+*  - POST → session override action (`{"action":"on"|"off"|"clear"}`),
+*    driving the exact state machine `/ctx-summary` drives.
+* Registration mirrors the savings route (webServer gate alone, dual channels,
+* single guarded registration); the handler branches on `req.method` because
+* the registration surface is method-agnostic.
+*/
+/** Exported for the runtime monitor spec; the entry owns all webServer wiring. */
+function registerMonitorRoute(ctx) {
+	const readService = (name) => {
+		try {
+			return ctx.get(name);
+		} catch {
+			return;
+		}
+	};
+	const log = (level, message, ...args) => {
+		console[level](message, ...args);
+	};
+	let registered = false;
+	const register = (webServer, channel) => {
+		if (registered) return;
+		const handler = (req, res) => {
+			const resTyped = res;
+			if (typeof resTyped?.writeHead !== "function" || typeof resTyped?.end !== "function") return;
+			let sessionId;
+			try {
+				const raw = new URL(String(req?.url ?? "/"), "http://localhost").searchParams.get("sessionId");
+				if (typeof raw === "string" && raw.length > 0 && raw.length <= 512) sessionId = raw;
+			} catch {}
+			if (String(req?.method ?? "GET").toUpperCase() === "POST") {
+				const chunks = [];
+				let size = 0;
+				let done = false;
+				const respond = (status, body) => {
+					if (done) return;
+					done = true;
+					resTyped.writeHead(status, {
+						"content-type": "application/json; charset=utf-8",
+						"cache-control": "no-cache"
+					});
+					resTyped.end(JSON.stringify(body));
+				};
+				const reqTyped = req;
+				if (typeof reqTyped?.on !== "function") {
+					respond(400, {
+						ok: false,
+						error: "unreadable request body"
+					});
+					return;
+				}
+				reqTyped.on("data", (chunk) => {
+					size += chunk?.length ?? 0;
+					if (size <= 4096) chunks.push(Buffer.from(chunk ?? /* @__PURE__ */ new Uint8Array()));
+				});
+				reqTyped.on("end", () => {
+					let action;
+					try {
+						action = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}").action;
+					} catch {
+						respond(400, {
+							ok: false,
+							error: "monitor override action must be JSON"
+						});
+						return;
+					}
+					if (!isSessionOverrideAction(action)) {
+						respond(400, {
+							ok: false,
+							error: "monitor override action must be \"on\" | \"off\" | \"clear\""
+						});
+						return;
+					}
+					const { override } = applySessionOverride(sessionId ?? "", action);
+					respond(200, {
+						ok: true,
+						override: override ?? null,
+						sessionScope: sessionId ?? null
+					});
+				});
+				return;
+			}
+			const snapshot = buildMonitorSnapshot(sessionId);
+			const pricing = estimateSavingsPricing(readService, snapshot);
+			resTyped.writeHead(200, {
+				"content-type": "application/json; charset=utf-8",
+				"cache-control": "no-cache"
+			});
+			resTyped.end(JSON.stringify({
+				ok: true,
+				...snapshot,
+				...pricing === void 0 ? {} : { pricing }
+			}));
+		};
+		try {
+			const disposers = MONITOR_ROUTES.map((path) => webServer.register({
+				kind: "exact",
+				path,
+				handler
+			})).filter((off) => typeof off === "function");
+			registered = true;
+			ctx.effect(() => () => {
+				for (const off of disposers) off();
+			}, "contextCompressionSelector.monitor route");
+			log("info", "context-compression monitor route registered (%s): %s", channel, MONITOR_ROUTES.join(", "));
+		} catch (error) {
+			log("warn", "context-compression monitor route registration failed (%s): %o", channel, error);
+		}
+	};
+	const active = asWebServer(readService("webServer"));
+	if (active !== void 0) {
+		register(active, "direct");
+		if (registered) return;
+	}
+	ctx.inject(["webServer"], (injected) => {
+		const webServer = asWebServer(injected.webServer);
+		if (webServer === void 0) {
+			log("warn", "context-compression webServer exposes no register() — monitor route not registered");
+			return;
+		}
+		register(webServer, "inject");
+	});
+}
 /** Symbol properties reach the shared service target through Cordis proxies. */
 const SHARED_SETTINGS = Symbol.for("dsh-context-compression-improved/settings-registration");
 /** Loader validation for the standalone Bundle opt-in. */
@@ -825,6 +1024,8 @@ function apply(ctx, config = {}) {
 			acquireSettingsRegistration(settingsCtx);
 		});
 		if (config.estimatorCatalogRoute === true) registerEstimatorCatalogRoute(ctx);
+		registerSavingsRoute(ctx);
+		registerMonitorRoute(ctx);
 		if (config.advisorReportRoute === true) registerAdvisorReportRoute(ctx);
 		registerSummaryCommand(ctx);
 		if (config.presetOverlay !== true) return;
@@ -895,4 +1096,4 @@ function acquireSettingsRegistration(ctx) {
 	if (state.owners.size === 1) state.scope = settings.register(CONTEXT_COMPRESSION_NAMESPACE, ContextCompressionSettingsSchema);
 }
 //#endregion
-export { Config, apply };
+export { Config, apply, registerMonitorRoute };

@@ -1,6 +1,18 @@
 import z from "@deepseek-ai/schemastery";
 import { Context } from "@deepseek-ai/cordis";
 //#region src/index.d.ts
+/**
+ * Floating-panel monitor route (`GET|POST .../monitor?sessionId=…`):
+ *  - GET → the monitor snapshot (savings aggregate + intent control block +
+ *    pricing) — the payload shape the panel polls;
+ *  - POST → session override action (`{"action":"on"|"off"|"clear"}`),
+ *    driving the exact state machine `/ctx-summary` drives.
+ * Registration mirrors the savings route (webServer gate alone, dual channels,
+ * single guarded registration); the handler branches on `req.method` because
+ * the registration surface is method-agnostic.
+ */
+/** Exported for the runtime monitor spec; the entry owns all webServer wiring. */
+declare function registerMonitorRoute(ctx: Context): void;
 /** Standalone Bundle behavior; the settings/UI owner remains safe when false. */
 interface Config {
   /** Add the canonical compression stack to every non-Minimal preset. */
@@ -31,4 +43,4 @@ declare const Config: z<Config>;
 /** Register the persisted default read by the currently mounted root pruner. */
 declare function apply(ctx: Context, config?: Config): void;
 //#endregion
-export { Config, apply };
+export { Config, apply, registerMonitorRoute };
