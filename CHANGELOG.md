@@ -2,6 +2,13 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
+## 0.8.0 - 2026-10-02
+
+> 0.2.0-beta 渠道(beta.3-beta.7)转正。本期主线功能(节省统计、意图摘要、
+> 压缩监控悬浮球、会话绑定、上下文占用条、灾难性遗忘区建议压缩)已同步
+> cherry-pick 到 compat/0.1.7 / compat/0.1.5 / compat/0.1.2 三条适配线。
+> 各 beta 节保留于下方,内容即 0.8.0 的完整变更清单。
+
 ## 0.8.0-beta.7 - 2026-10-02
 
 ### Added
