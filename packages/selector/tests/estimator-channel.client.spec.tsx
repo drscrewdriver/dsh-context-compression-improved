@@ -121,6 +121,8 @@ function mountEstimator(
     resetCustom: vi.fn(() => Promise.resolve()),
     saveAutoCompact: vi.fn(() => Promise.resolve()),
     saveCodeSkeleton: vi.fn(() => Promise.resolve()),
+    saveIntentSummary: vi.fn(() => Promise.resolve()),
+    saveMonitorPanel: vi.fn(() => Promise.resolve()),
     savePresetOptions,
     t,
   })} />)
