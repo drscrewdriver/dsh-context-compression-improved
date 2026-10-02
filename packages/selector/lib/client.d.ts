@@ -79,6 +79,10 @@ interface CodeSkeletonSettings {
 interface IntentSummarySettings {
   enabled: boolean;
 }
+/** Floating compression-monitor panel (FAB); visibility switch. */
+interface MonitorPanelSettings {
+  enabled: boolean;
+}
 /** Browser-safe mirror of the runtime presetOptions section. */
 interface PresetOptionsSettings {
   readonly dedupeToolResults?: boolean;
@@ -111,6 +115,8 @@ interface ContextCompressionSettings {
   codeSkeleton: CodeSkeletonSettings;
   /** Turn-tail intent-summary gate captured independently of `profile`. */
   intentSummary: IntentSummarySettings;
+  /** Floating compression-monitor panel (FAB); absent inherits hidden. */
+  monitorPanel?: MonitorPanelSettings;
   /** Optional tokenpilot-inspired sub-capability overrides (presence-validated only). */
   presetOptions?: PresetOptionsSettings;
 }

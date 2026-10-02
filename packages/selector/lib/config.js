@@ -1,4 +1,783 @@
 import z from "@deepseek-ai/schemastery";
+import { createHash } from "node:crypto";
+//#region src/runtime/savings.ts
+/**
+* 节省统计账本(诚实口径)。
+*
+* 原则(与 dsh-token-optimizer 类功能对齐的需求口径):
+*  1. **只记已实现**:抵扣来自真实落盘的 rewrite(published replacement)的
+*     tokensBefore − tokensAfter,不按"本可以压多少"的最大值计;
+*  2. **负节省(配对抵消)**:同一份原文先被压缩(代码骨架/历史老化/去重指针/
+*     尾裁引用)后,模型又请求了全文——原声称的节省被抵消:全文读取本身
+*     记为负项。净额因此可以为负(骨架 S + 全文 O,对比从未压缩的基线 O,
+*     净 −S),这正是"先骨架再全文 = 负节省"的诚实口径;
+*  3. **口径分列,不混算**:精确 tokenizer 与 chars/4 估算两个 basis 各自独立
+*     汇总,永不合并成一个数。
+*
+* 存储:进程内 per-session 账本(条目环形缓冲 + hash 注册表)。不落盘——
+* 节省统计是运行期面板数据,重启归零是可接受语义(审计日志里已有全量原始记录)。
+*
+* @module dsh-context-compression-improved/runtime/savings
+*/
+const MAX_ENTRIES_PER_SESSION = 400;
+const MAX_REGISTRY = 2048;
+var SavingsLedger = class {
+	entries = /* @__PURE__ */ new Map();
+	registry = /* @__PURE__ */ new Map();
+	seenFullText = /* @__PURE__ */ new Set();
+	usage = /* @__PURE__ */ new Map();
+	startedAt = Date.now();
+	/**
+	* 累计一次官方 usage(request-boundary 读取上一已完成请求;末次请求在
+	* dispose 汇总前未入账属可接受低估)。usage 字段缺省按 0 计。
+	*/
+	recordUsage(sessionId, usage) {
+		let total = this.usage.get(sessionId);
+		if (total === void 0) {
+			total = {
+				requests: 0,
+				inputTokens: 0,
+				outputTokens: 0,
+				cacheReadTokens: 0,
+				cacheWriteTokens: 0
+			};
+			this.usage.set(sessionId, total);
+		}
+		total.requests += 1;
+		total.inputTokens += positiveOrZero(usage.inputTokens);
+		total.outputTokens += positiveOrZero(usage.outputTokens);
+		total.cacheReadTokens += positiveOrZero(usage.cacheReadTokens);
+		total.cacheWriteTokens += positiveOrZero(usage.cacheWriteTokens);
+	}
+	totalsFor(scope) {
+		const sum = {
+			requests: 0,
+			inputTokens: 0,
+			outputTokens: 0,
+			cacheReadTokens: 0,
+			cacheWriteTokens: 0
+		};
+		for (const sid of scope) {
+			const t = this.usage.get(sid);
+			if (t === void 0) continue;
+			sum.requests += t.requests;
+			sum.inputTokens += t.inputTokens;
+			sum.outputTokens += t.outputTokens;
+			sum.cacheReadTokens += t.cacheReadTokens;
+			sum.cacheWriteTokens += t.cacheWriteTokens;
+		}
+		return sum;
+	}
+	/** 单行会话汇总(session/disposed 日志用)。 */
+	sessionSummaryLine(sessionId) {
+		const snap = this.snapshot(sessionId);
+		const hit = snap.usage.cacheHitRate;
+		return `net=${snap.net.exact}(exact)/${snap.net.estimated}(est) gross=${snap.gross.exact}/${snap.gross.estimated} offsets=${snap.offsets.exact}/${snap.offsets.estimated} requests=${snap.usage.requests} cacheHit=${hit === null ? "–" : `${Math.round(hit * 100)}%`}`;
+	}
+	/** 记录一次已落盘的压缩节省(land 成功后调用;tokensRemoved ≤ 0 忽略)。 */
+	recordSaving(input) {
+		const removed = input.tokensBefore - input.tokensAfter;
+		if (!Number.isFinite(removed) || removed <= 0) return;
+		this.push(input.sessionId, {
+			kind: "saving",
+			component: input.component,
+			tokens: removed,
+			basis: input.basis,
+			at: Date.now()
+		});
+		if (typeof input.originalText === "string" && input.originalText.length > 0) {
+			const hash = savingsHash(input.originalText);
+			if (this.registry.size >= MAX_REGISTRY && !this.registry.has(hash)) {
+				const oldest = this.registry.keys().next().value;
+				if (oldest !== void 0) this.registry.delete(oldest);
+			}
+			this.registry.set(hash, {
+				sessionId: input.sessionId,
+				component: input.component,
+				claimedTokens: removed,
+				basis: input.basis,
+				sourceSeq: input.sourceSeq,
+				consumed: false
+			});
+		}
+	}
+	/**
+	* 新的全文工具结果进入上下文(每个 (session, seq) 只看一次):若其原文哈希
+	* 命中之前压缩过的条目且未消费过抵消 → 记负项并消费。
+	* @param measure 返回 {tokens, basis}——全文按当前可用口径计量。
+	*/
+	noteFullText(input) {
+		if (typeof input.text !== "string" || input.text.length === 0) return;
+		const seenKey = `${input.sessionId}:${input.seq}`;
+		if (this.seenFullText.has(seenKey)) return;
+		this.seenFullText.add(seenKey);
+		if (this.seenFullText.size > MAX_REGISTRY * 4) {
+			this.seenFullText.clear();
+			this.seenFullText.add(seenKey);
+		}
+		const hit = this.registry.get(savingsHash(input.text));
+		if (hit === void 0 || hit.consumed || hit.sessionId !== input.sessionId) return;
+		hit.consumed = true;
+		const { tokens, basis } = input.measure(input.text);
+		if (tokens <= 0) return;
+		this.push(input.sessionId, {
+			kind: "offset",
+			component: "full-read",
+			tokens,
+			basis,
+			at: Date.now(),
+			note: `#${hit.sourceSeq} ${hit.component} 的原文被全文重读(原声称 −${hit.claimedTokens})`
+		});
+	}
+	/** retrieve 回读(部分或全部)重新进入上下文:按返回内容计量记负项。 */
+	recordOffset(input) {
+		if (!Number.isFinite(input.tokens) || input.tokens <= 0) return;
+		this.push(input.sessionId, {
+			kind: "offset",
+			component: input.component,
+			tokens: input.tokens,
+			basis: input.basis,
+			at: Date.now(),
+			...input.note === void 0 ? {} : { note: input.note }
+		});
+	}
+	sourceSeqOf(item) {
+		return item.sourceSeq;
+	}
+	push(sessionId, entry) {
+		let list = this.entries.get(sessionId);
+		if (list === void 0) {
+			list = [];
+			this.entries.set(sessionId, list);
+		}
+		list.push(entry);
+		if (list.length > MAX_ENTRIES_PER_SESSION) list.splice(0, list.length - MAX_ENTRIES_PER_SESSION);
+	}
+	/** 汇总快照。sessionId 缺省 = 全会话聚合。两个 basis 分列,永不合并。 */
+	snapshot(sessionId) {
+		const scope = sessionId === void 0 ? [...this.entries.keys()] : [sessionId];
+		const totals = {
+			grossExact: 0,
+			grossEstimated: 0,
+			offsetExact: 0,
+			offsetEstimated: 0
+		};
+		const perComponent = /* @__PURE__ */ new Map();
+		const recentOffsets = [];
+		for (const sid of scope) for (const entry of this.entries.get(sid) ?? []) {
+			const exact = entry.basis === "exact-tokenizer";
+			if (entry.kind === "saving") {
+				if (exact) totals.grossExact += entry.tokens;
+				else totals.grossEstimated += entry.tokens;
+			} else {
+				if (exact) totals.offsetExact += entry.tokens;
+				else totals.offsetEstimated += entry.tokens;
+				recentOffsets.push(entry);
+			}
+			const key = `${entry.kind}:${entry.component}:${entry.basis}`;
+			const agg = perComponent.get(key);
+			if (agg === void 0) perComponent.set(key, {
+				component: entry.component,
+				tokens: entry.tokens,
+				basis: entry.basis,
+				kind: entry.kind
+			});
+			else agg.tokens += entry.tokens;
+		}
+		recentOffsets.sort((a, b) => b.at - a.at);
+		const usageTotals = this.totalsFor(scope);
+		const perSession = sessionId === void 0 ? [.../* @__PURE__ */ new Set([...this.entries.keys(), ...this.usage.keys()])].map((sid) => {
+			const s = this.snapshot(sid);
+			return {
+				sessionId: sid,
+				gross: s.gross,
+				offsets: s.offsets,
+				net: s.net,
+				requests: s.usage.requests,
+				cacheHitRate: s.usage.cacheHitRate
+			};
+		}).sort((a, b) => b.net.exact - a.net.exact || b.net.estimated - a.net.estimated).slice(0, 8) : [];
+		return {
+			startedAt: new Date(this.startedAt).toISOString(),
+			sessions: sessionId === void 0 ? this.entries.size : this.entries.has(sessionId) ? 1 : 0,
+			gross: {
+				exact: totals.grossExact,
+				estimated: totals.grossEstimated
+			},
+			offsets: {
+				exact: totals.offsetExact,
+				estimated: totals.offsetEstimated
+			},
+			net: {
+				exact: totals.grossExact - totals.offsetExact,
+				estimated: totals.grossEstimated - totals.offsetEstimated
+			},
+			perComponent: [...perComponent.values()].sort((a, b) => b.tokens - a.tokens),
+			recentOffsets: recentOffsets.slice(0, 8).map((e) => ({
+				component: e.component,
+				tokens: e.tokens,
+				basis: e.basis,
+				at: new Date(e.at).toISOString(),
+				...e.note === void 0 ? {} : { note: e.note }
+			})),
+			usage: {
+				...usageTotals,
+				cacheHitRate: cacheHitRateOf(usageTotals)
+			},
+			perSession
+		};
+	}
+	/** 测试与停机清理。 */
+	clear() {
+		this.entries.clear();
+		this.registry.clear();
+		this.seenFullText.clear();
+		this.usage.clear();
+		this.startedAt = Date.now();
+	}
+};
+function cacheHitRateOf(t) {
+	const denom = t.inputTokens + t.cacheReadTokens + t.cacheWriteTokens;
+	return denom <= 0 ? null : Math.round(t.cacheReadTokens / denom * 1e3) / 1e3;
+}
+/** 原文配对哈希(规整行尾与首尾空白——同一文件两次读取的 innocuous 差异不配错)。 */
+function savingsHash(text) {
+	return createHash("sha256").update(text.replace(/\r\n?/g, "\n").replace(/[ \t]+\n/g, "\n").replace(/(^\s+)|(\s+$)/g, ""), "utf8").digest("hex");
+}
+function positiveOrZero(v) {
+	return typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.round(v) : 0;
+}
+const singleton = new SavingsLedger();
+/** 模块级单例:pruner 与 retrieve 分处两文件,共享同一本账。 */
+function getSavingsLedger() {
+	return singleton;
+}
+//#endregion
+//#region src/runtime/deepseek-official-pricing.ts
+/** Checked-in DeepSeek official prices and fixed-point provider-usage accounting. */
+const DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION = "deepseek-official-2026-08-25";
+/** Wall-clock time at which the checked-in official price pages were verified. */
+const DEEPSEEK_OFFICIAL_PRICE_CHECKED_AT = "2026-08-25T00:10:20+08:00";
+const PRICES = Object.freeze({
+	"deepseek-v4-flash": modelPrices("DeepSeek-V4-Flash-0731", [
+		"0.007",
+		"0.22",
+		"0.66"
+	], [
+		"0.014",
+		"0.44",
+		"1.32"
+	], [
+		"0.05",
+		"1.5",
+		"4.5"
+	], [
+		"0.10",
+		"3.0",
+		"9.0"
+	]),
+	"deepseek-v4-pro": modelPrices("DeepSeek-V4-Pro-0813", [
+		"0.022",
+		"0.66",
+		"1.98"
+	], [
+		"0.044",
+		"1.32",
+		"3.96"
+	], [
+		"0.15",
+		"4.5",
+		"13.5"
+	], [
+		"0.30",
+		"9.0",
+		"27.0"
+	]),
+	"deepseek-v4-flash-vision-exp": modelPrices("DeepSeek-V4-Flash-Vision-Exp", [
+		"0.007",
+		"0.22",
+		"0.66"
+	], [
+		"0.014",
+		"0.44",
+		"1.32"
+	], [
+		"0.05",
+		"1.5",
+		"4.5"
+	], [
+		"0.10",
+		"3.0",
+		"9.0"
+	])
+});
+const PEAK_RULE = "Asia/Shanghai Mon-Fri 09:00-12:00,14:00-18:00";
+const USD_SOURCE = "https://api-docs.deepseek.com/quick_start/pricing/";
+const CNY_SOURCE = "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/";
+/**
+* Resolve one immutable official price record; aliases and compatible gateways fail closed.
+* @param input - exact provider, endpoint, route, model, currency, and timestamp applicability.
+* @returns An immutable price record or an explicit unpriced reason.
+*/
+function resolveOfficialDeepSeekPrice(input) {
+	if (input.provider !== "deepseek-official") return unpriced("unknown provider route");
+	if (input.baseUrlClass !== "official-public") return unpriced("unknown base-url applicability");
+	if (input.apiRoute !== "chat-completions" && input.apiRoute !== "responses") return unpriced("unknown API route");
+	if (!isOfficialModel(input.modelId)) return unpriced("unknown model id");
+	if (input.currency !== "USD" && input.currency !== "CNY") return unpriced("unknown currency");
+	const band = priceBandAt(input.at);
+	if (band === void 0) return unpriced("invalid price timestamp");
+	const model = PRICES[input.modelId];
+	const [inputCacheHit, inputCacheMiss, output] = model[input.currency][band];
+	return {
+		kind: "priced",
+		record: Object.freeze({
+			catalogVersion: DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION,
+			checkedAt: DEEPSEEK_OFFICIAL_PRICE_CHECKED_AT,
+			provider: "deepseek-official",
+			baseUrlClass: "official-public",
+			apiRoute: input.apiRoute,
+			modelId: input.modelId,
+			modelVersion: model.version,
+			currency: input.currency,
+			unitTokens: 1e6,
+			band,
+			inputCacheHit,
+			inputCacheMiss,
+			output,
+			sourceUrl: input.currency === "USD" ? USD_SOURCE : CNY_SOURCE,
+			sourceLocale: input.currency === "USD" ? "en" : "zh-CN",
+			peakRule: PEAK_RULE
+		})
+	};
+}
+/**
+* Classify a timestamp under the published Beijing peak schedule.
+* @param at - absolute request time to interpret in Asia/Shanghai.
+* @returns Peak/off-peak, or undefined for an invalid timestamp.
+*/
+function priceBandAt(at) {
+	if (!Number.isFinite(at.getTime())) return void 0;
+	const parts = new Intl.DateTimeFormat("en-US", {
+		timeZone: "Asia/Shanghai",
+		weekday: "short",
+		hour: "2-digit",
+		minute: "2-digit",
+		second: "2-digit",
+		hourCycle: "h23"
+	}).formatToParts(at);
+	const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+	const weekday = values.weekday;
+	const hour = Number(values.hour);
+	const minute = Number(values.minute);
+	const second = Number(values.second);
+	if (weekday === void 0 || !Number.isInteger(hour) || !Number.isInteger(minute) || !Number.isInteger(second)) return void 0;
+	const workday = weekday !== "Sat" && weekday !== "Sun";
+	const seconds = hour * 3600 + minute * 60 + second;
+	return workday && (seconds >= 32400 && seconds < 43200 || seconds >= 50400 && seconds < 64800) ? "peak" : "off-peak";
+}
+/**
+* Price one completed request, returning a range when it spans a published band boundary.
+* @param input - exact applicability, request interval, and complete disjoint usage buckets.
+* @returns Fixed-point exact/range cost or an explicit unpriced reason.
+*/
+function priceOfficialDeepSeekUsage(input) {
+	for (const [name, value] of Object.entries(input.usage)) if (!Number.isSafeInteger(value) || value < 0) return unpriced(`invalid ${name}`);
+	if (input.completedAt.getTime() < input.startedAt.getTime()) return unpriced("completion timestamp precedes request start");
+	const start = resolveOfficialDeepSeekPrice({
+		...input,
+		at: input.startedAt
+	});
+	if (start.kind === "unpriced") return start;
+	const end = resolveOfficialDeepSeekPrice({
+		...input,
+		at: input.completedAt
+	});
+	if (end.kind === "unpriced") return end;
+	const startAmount = amountFor(start.record, input.usage);
+	if (startAmount === void 0) return unpriced("invalid decimal price record");
+	const crossesBoundary = spansPublishedPriceBoundary(input.startedAt, input.completedAt);
+	if (start.record.band === end.record.band && !crossesBoundary) return {
+		kind: "exact",
+		currency: start.record.currency,
+		band: start.record.band,
+		...startAmount
+	};
+	const comparisonRecord = start.record.band === end.record.band ? priceRecordInBand(start.record, start.record.band === "peak" ? "off-peak" : "peak") : end.record;
+	const endAmount = amountFor(comparisonRecord, input.usage);
+	if (endAmount === void 0) return unpriced("invalid decimal price record");
+	const startFemto = BigInt(startAmount.femtoUnits);
+	const endFemto = BigInt(endAmount.femtoUnits);
+	return {
+		kind: "range",
+		currency: start.record.currency,
+		bands: [start.record.band, comparisonRecord.band],
+		minimum: startFemto <= endFemto ? startAmount : endAmount,
+		maximum: startFemto <= endFemto ? endAmount : startAmount
+	};
+}
+/** Detect any published UTC band boundary, even when both endpoints share a band. */
+function spansPublishedPriceBoundary(startedAt, completedAt) {
+	const start = startedAt.getTime();
+	const end = completedAt.getTime();
+	if (end <= start) return false;
+	const dayMs = 864e5;
+	if (end - start >= 7 * dayMs) return true;
+	const firstDay = Math.floor(start / dayMs) * dayMs;
+	for (let day = firstDay; day <= end; day += dayMs) {
+		const weekday = new Date(day).getUTCDay();
+		if (weekday === 0 || weekday === 6) continue;
+		for (const hour of [
+			1,
+			4,
+			6,
+			10
+		]) {
+			const boundary = day + hour * 60 * 60 * 1e3;
+			if (boundary > start && boundary <= end) return true;
+		}
+	}
+	return false;
+}
+function priceRecordInBand(record, band) {
+	const [inputCacheHit, inputCacheMiss, output] = PRICES[record.modelId][record.currency][band];
+	return Object.freeze({
+		...record,
+		band,
+		inputCacheHit,
+		inputCacheMiss,
+		output
+	});
+}
+/**
+* Parse a non-negative decimal rate into nano-currency units, without Number arithmetic.
+* @param value - canonical non-negative decimal with at most nine fractional digits.
+* @returns Integer nano-units, or undefined when the decimal is invalid.
+*/
+function decimalRateNanoUnits(value) {
+	const match = /^(0|[1-9]\d*)(?:\.(\d{1,9}))?$/u.exec(value);
+	if (match === null) return void 0;
+	const whole = match[1] ?? "0";
+	const fraction = (match[2] ?? "").padEnd(9, "0");
+	return BigInt(whole) * 1000000000n + BigInt(fraction || "0");
+}
+function amountFor(record, usage) {
+	const hit = decimalRateNanoUnits(record.inputCacheHit);
+	const miss = decimalRateNanoUnits(record.inputCacheMiss);
+	const output = decimalRateNanoUnits(record.output);
+	if (hit === void 0 || miss === void 0 || output === void 0) return void 0;
+	const femtoUnits = BigInt(usage.cacheReadTokens) * hit + BigInt(usage.cacheMissTokens) * miss + BigInt(usage.outputTokens) * output;
+	return {
+		femtoUnits: femtoUnits.toString(),
+		decimal: formatFemto(femtoUnits)
+	};
+}
+function formatFemto(value) {
+	const digits = value.toString().padStart(16, "0");
+	const whole = digits.slice(0, -15);
+	const fraction = digits.slice(-15).replace(/0+$/u, "");
+	return fraction.length === 0 ? whole : `${whole}.${fraction}`;
+}
+function modelPrices(version, usdOffPeak, usdPeak, cnyOffPeak, cnyPeak) {
+	return Object.freeze({
+		version,
+		USD: Object.freeze({
+			"off-peak": usdOffPeak,
+			peak: usdPeak
+		}),
+		CNY: Object.freeze({
+			"off-peak": cnyOffPeak,
+			peak: cnyPeak
+		})
+	});
+}
+function isOfficialModel(value) {
+	return Object.prototype.hasOwnProperty.call(PRICES, value);
+}
+function unpriced(reason) {
+	return {
+		kind: "unpriced",
+		reason
+	};
+}
+const advisorStates = /* @__PURE__ */ new WeakMap();
+/**
+* The per-session advisor state, created on first touch.
+* @param session - the session to key the state on (by object identity).
+*/
+function getAdvisorState(session) {
+	let state = advisorStates.get(session);
+	if (state === void 0) {
+		state = {
+			todoVersion: void 0,
+			summary: void 0,
+			lastSummaryTurn: -1,
+			watermarkSeq: 0,
+			scores: /* @__PURE__ */ new Map(),
+			recertified: /* @__PURE__ */ new Map(),
+			failures: void 0,
+			inFlight: false,
+			lastDecay: void 0,
+			lastAdvice: void 0
+		};
+		advisorStates.set(session, state);
+	}
+	return state;
+}
+/**
+* Insert or refresh one score with LRU semantics: a re-touched seq moves to
+* the newest position, and the oldest entry is evicted once the map exceeds
+* {@link ADVISOR_SCORES_LIMIT}.
+*/
+function recordScore(state, seq, entry) {
+	state.scores.delete(seq);
+	state.scores.set(seq, entry);
+	if (state.scores.size > 64) {
+		const oldest = state.scores.keys().next();
+		if (oldest.done !== true) state.scores.delete(oldest.value);
+	}
+}
+/**
+* Mark one seq as LLM-recertified low relevance (a suggestion for later
+* history-aggressiveness decisions, consumed by nothing in this round).
+* Bounded at {@link ADVISOR_RECERTIFIED_LIMIT} with the same LRU eviction.
+*/
+function recordRecertified(state, seq, turn) {
+	state.recertified.delete(seq);
+	state.recertified.set(seq, turn);
+	if (state.recertified.size > 64) {
+		const oldest = state.recertified.keys().next();
+		if (oldest.done !== true) state.recertified.delete(oldest.value);
+	}
+}
+/**
+* Drop every cached artifact that depends on the task semantics: a changed
+* todo version invalidates the summary and makes all eligible candidates
+* rescore-worthy (the watermark alone would otherwise hide them).
+*/
+function invalidateOnTaskChange(state, todoVersion) {
+	if (state.todoVersion === todoVersion) return false;
+	state.todoVersion = todoVersion;
+	state.summary = void 0;
+	state.lastSummaryTurn = -1;
+	return true;
+}
+/**
+* `/ctx-summary off|on` overrides, keyed by session id (string). The command
+* handler only sees `invocation.agent.session.id`, not the pruner's Session
+* object, so these are id-keyed rather than WeakMap'd. Entries are two-char
+* strings per session and cleared whenever the override is lifted.
+*/
+const summaryOverrides = /* @__PURE__ */ new Map();
+/** Read the session's `/ctx-summary` override; `undefined` = default (settings-driven). */
+function getSummaryOverride(sessionId) {
+	return summaryOverrides.get(sessionId);
+}
+/** Set or clear (`undefined`) the session's `/ctx-summary` override. */
+function setSummaryOverride(sessionId, value) {
+	if (value === void 0) summaryOverrides.delete(sessionId);
+	else summaryOverrides.set(sessionId, value);
+}
+/** Last observed `intentSummary.enabled` for a session, for `/ctx-summary status`. */
+const lastObservedIntentEnabled = /* @__PURE__ */ new Map();
+/** Record the gate input the pass last evaluated for this session. */
+function observeIntentEnabled(sessionId, enabled) {
+	lastObservedIntentEnabled.set(sessionId, enabled);
+}
+/** The settings-side enabled flag last observed for the session, if any. */
+function getObservedIntentEnabled(sessionId) {
+	return lastObservedIntentEnabled.get(sessionId);
+}
+const lastIntentFolds = /* @__PURE__ */ new Map();
+/** Record a landed intent fold for the session (newest wins). */
+function recordIntentFold(sessionId, record) {
+	lastIntentFolds.set(sessionId, record);
+}
+/** The most recent landed intent fold for the session, if any. */
+function getLastIntentFold(sessionId) {
+	return lastIntentFolds.get(sessionId);
+}
+//#endregion
+//#region src/runtime/tokenpilot/intent-gate.ts
+/**
+* Turn-tail intent-summary growth gate (TokenPilot-inspired E2).
+*
+* Pure decision helper evaluated at the turn-boundary postflight: it decides
+* whether this turn may spend a summary-writer LLM call and stage a fold for
+* the next pressure round. The gate is deliberately conservative — every
+* unresolved input (unknown context window, non-finite counters) fails closed
+* toward "do not run", because a skipped fold is free while a wasted summary
+* call is not. Content safety is unaffected either way: fail-open semantics
+* live in the fold landing path, not here.
+*/
+/** Floor: the live surface must exceed this fraction of the context window. */
+const INTENT_GATE_FLOOR_FRACTION = .45;
+/** Growth: the live surface must have grown by more than this since the last landed fold. */
+const INTENT_GATE_GROWTH_TOKENS = 5e4;
+function isUsableNumber(value) {
+	return Number.isFinite(value) && value >= 0;
+}
+/** Same evaluation with the reason attached, for audits and `/ctx-summary status`. */
+function evaluateIntentGate(input) {
+	const snapshot = (decision, reason) => ({
+		...input,
+		decision,
+		reason
+	});
+	if (!input.enabled) return snapshot(false, "disabled");
+	if (input.override === "off") return snapshot(false, "override-off");
+	if (!isUsableNumber(input.liveTokens)) return snapshot(false, "below-floor");
+	if (input.contextWindow === void 0 || !isUsableNumber(input.contextWindow)) return snapshot(false, "no-window");
+	if (!(input.liveTokens > input.contextWindow * .45)) return snapshot(false, "below-floor");
+	if (!isUsableNumber(input.baselineTokens)) return snapshot(false, "below-growth");
+	if (!(input.liveTokens - input.baselineTokens > 5e4)) return snapshot(false, "below-growth");
+	return snapshot(true, "passed");
+}
+//#endregion
+//#region src/runtime/monitor.ts
+/**
+* 灾难性遗忘区建议阈值:占用达到该比例即建议压缩/裁剪(DeepSeek 等长上下文
+* 模型在高占用段对早期内容的召回显著退化)。有意低于宿主 Auto Compact 阈值
+* (默认 80%)——提前一档给出人工干预窗口。
+*/
+const MONITOR_SUGGEST_PCT = .7;
+/**
+* Savings snapshot plus the intent-summary control block. Ledger is
+* injectable so tests seed a private instance instead of the process
+* singleton.
+*/
+function buildMonitorSnapshot(sessionId, ledger = getSavingsLedger()) {
+	const scopeKey = sessionId ?? "";
+	const override = getSummaryOverride(scopeKey);
+	const observedContext = scopeKey.length > 0 ? getContextUsage(scopeKey) : latestObservedContextUsage();
+	const contextBlock = observedContext === void 0 ? void 0 : {
+		liveTokens: observedContext.liveTokens,
+		contextWindow: observedContext.contextWindow,
+		pct: observedContext.contextWindow !== void 0 && observedContext.contextWindow > 0 ? Math.round(observedContext.liveTokens / observedContext.contextWindow * 1e3) / 1e3 : null,
+		sessionId: observedContext.sessionId
+	};
+	const suggestion = contextBlock === void 0 || contextBlock.pct === null ? void 0 : {
+		suggest: contextBlock.pct >= MONITOR_SUGGEST_PCT,
+		thresholdPct: MONITOR_SUGGEST_PCT,
+		occupancyPct: contextBlock.pct
+	};
+	return {
+		...ledger.snapshot(sessionId),
+		...contextBlock === void 0 ? {} : { context: contextBlock },
+		...suggestion === void 0 ? {} : { suggestion },
+		intent: {
+			override,
+			observedEnabled: getObservedIntentEnabled(scopeKey),
+			gate: {
+				floorFraction: INTENT_GATE_FLOOR_FRACTION,
+				growthTokens: INTENT_GATE_GROWTH_TOKENS
+			},
+			lastFold: getLastIntentFold(scopeKey)
+		},
+		sessionScope: sessionId ?? null
+	};
+}
+/** 每会话最近一次上下文占用观测;上限 64 会话,超出淘汰最旧。 */
+const contextUsageBySession = /* @__PURE__ */ new Map();
+const CONTEXT_USAGE_CAP = 64;
+/**
+* 由 pruner 的 turn-tail postflight 调用:记录该会话最近的 liveTokens/
+* contextWindow,供 monitor 快照的占用条消费。空会话 id 忽略。
+*/
+function observeContextUsage(sessionId, liveTokens, contextWindow) {
+	if (sessionId.length === 0 || !Number.isFinite(liveTokens)) return;
+	if (contextUsageBySession.size >= CONTEXT_USAGE_CAP) {
+		const oldest = contextUsageBySession.keys().next().value;
+		if (oldest !== void 0) contextUsageBySession.delete(oldest);
+	}
+	contextUsageBySession.set(sessionId, {
+		liveTokens,
+		contextWindow,
+		at: Date.now(),
+		seq: ++observeSeq
+	});
+}
+function getContextUsage(sessionId) {
+	const entry = contextUsageBySession.get(sessionId);
+	return entry === void 0 ? void 0 : {
+		liveTokens: entry.liveTokens,
+		contextWindow: entry.contextWindow,
+		sessionId
+	};
+}
+let observeSeq = 0;
+function latestObservedContextUsage() {
+	let latest;
+	for (const [sessionId, entry] of contextUsageBySession) if (latest === void 0 || entry.seq > latest.seq) latest = {
+		sessionId,
+		liveTokens: entry.liveTokens,
+		contextWindow: entry.contextWindow,
+		seq: entry.seq
+	};
+	return latest;
+}
+function isSessionOverrideAction(value) {
+	return value === "on" || value === "off" || value === "clear";
+}
+/**
+* Drive the `/ctx-summary` override state machine: `on`/`off` pin the
+* session, `clear` returns it to settings-driven. The resulting override is
+* handed back so the route can echo the post-action truth.
+*/
+function applySessionOverride(sessionId, action) {
+	setSummaryOverride(sessionId, action === "clear" ? void 0 : action);
+	return { override: getSummaryOverride(sessionId) };
+}
+/**
+* 金额估算(monitor 口径的 token/金额估算,结合官方牌价):
+*  - actualCost:本进程累计真实 usage 的官方牌价(exact/range);
+*  - estimatedSavedCost:净节省(精确口径)按 cache-miss 输入价折算——
+*    基线假设"这些 token 不压缩就要全价进上下文",标注估算。
+* 仅官方 deepseek-official 路由可解;第三方/未知模型 fail-closed 为 undefined。
+* (自入口迁入: savings 路由与 monitor 路由共享,避免 runtime → entry 回环。)
+*/
+function estimateSavingsPricing(readService, snapshot) {
+	if (snapshot.usage.requests === 0 && snapshot.net.exact === 0) return void 0;
+	const selection = readService("agentDefaultModel")?.currentSelection?.();
+	const provider = typeof selection?.provider === "string" ? selection.provider : "";
+	const modelId = typeof selection?.model === "string" ? selection.model : "";
+	if (provider !== "deepseek-official") return void 0;
+	const now = /* @__PURE__ */ new Date();
+	const startedAt = new Date(snapshot.startedAt);
+	const base = {
+		provider,
+		baseUrlClass: "official-public",
+		apiRoute: "chat-completions",
+		modelId,
+		currency: "USD",
+		startedAt,
+		completedAt: now.getTime() > startedAt.getTime() ? now : new Date(startedAt.getTime() + 1)
+	};
+	const actual = priceOfficialDeepSeekUsage({
+		...base,
+		usage: {
+			cacheReadTokens: Math.max(0, Math.round(snapshot.usage.cacheReadTokens)),
+			cacheMissTokens: Math.max(0, Math.round(snapshot.usage.inputTokens)),
+			outputTokens: Math.max(0, Math.round(snapshot.usage.outputTokens))
+		}
+	});
+	const saved = snapshot.net.exact > 0 ? priceOfficialDeepSeekUsage({
+		...base,
+		usage: {
+			cacheReadTokens: 0,
+			cacheMissTokens: Math.round(snapshot.net.exact),
+			outputTokens: 0
+		}
+	}) : void 0;
+	const decimalOf = (cost) => cost.kind === "exact" ? cost.decimal : cost.kind === "range" ? cost.minimum.decimal : void 0;
+	if (actual.kind === "unpriced" && (saved === void 0 || saved.kind === "unpriced")) return void 0;
+	return {
+		currency: "USD",
+		...actual.kind === "unpriced" ? {} : { actualCost: decimalOf(actual) },
+		...saved === void 0 || saved.kind === "unpriced" ? {} : { estimatedSavedCost: decimalOf(saved) }
+	};
+}
+//#endregion
 //#region src/runtime/types.ts
 /** User-facing mixed strategy profile. */
 const COMPRESSION_PROFILES = [
@@ -930,138 +1709,5 @@ function assertPositiveInteger(name, value) {
 function assertNonNegativeInteger(name, value) {
 	if (!Number.isSafeInteger(value) || value < 0) throw new Error(`ToolResultPruneConfig: ${name} (${String(value)}) must be a non-negative safe integer`);
 }
-const advisorStates = /* @__PURE__ */ new WeakMap();
-/**
-* The per-session advisor state, created on first touch.
-* @param session - the session to key the state on (by object identity).
-*/
-function getAdvisorState(session) {
-	let state = advisorStates.get(session);
-	if (state === void 0) {
-		state = {
-			todoVersion: void 0,
-			summary: void 0,
-			lastSummaryTurn: -1,
-			watermarkSeq: 0,
-			scores: /* @__PURE__ */ new Map(),
-			recertified: /* @__PURE__ */ new Map(),
-			failures: void 0,
-			inFlight: false,
-			lastDecay: void 0,
-			lastAdvice: void 0
-		};
-		advisorStates.set(session, state);
-	}
-	return state;
-}
-/**
-* Insert or refresh one score with LRU semantics: a re-touched seq moves to
-* the newest position, and the oldest entry is evicted once the map exceeds
-* {@link ADVISOR_SCORES_LIMIT}.
-*/
-function recordScore(state, seq, entry) {
-	state.scores.delete(seq);
-	state.scores.set(seq, entry);
-	if (state.scores.size > 64) {
-		const oldest = state.scores.keys().next();
-		if (oldest.done !== true) state.scores.delete(oldest.value);
-	}
-}
-/**
-* Mark one seq as LLM-recertified low relevance (a suggestion for later
-* history-aggressiveness decisions, consumed by nothing in this round).
-* Bounded at {@link ADVISOR_RECERTIFIED_LIMIT} with the same LRU eviction.
-*/
-function recordRecertified(state, seq, turn) {
-	state.recertified.delete(seq);
-	state.recertified.set(seq, turn);
-	if (state.recertified.size > 64) {
-		const oldest = state.recertified.keys().next();
-		if (oldest.done !== true) state.recertified.delete(oldest.value);
-	}
-}
-/**
-* Drop every cached artifact that depends on the task semantics: a changed
-* todo version invalidates the summary and makes all eligible candidates
-* rescore-worthy (the watermark alone would otherwise hide them).
-*/
-function invalidateOnTaskChange(state, todoVersion) {
-	if (state.todoVersion === todoVersion) return false;
-	state.todoVersion = todoVersion;
-	state.summary = void 0;
-	state.lastSummaryTurn = -1;
-	return true;
-}
-/**
-* `/ctx-summary off|on` overrides, keyed by session id (string). The command
-* handler only sees `invocation.agent.session.id`, not the pruner's Session
-* object, so these are id-keyed rather than WeakMap'd. Entries are two-char
-* strings per session and cleared whenever the override is lifted.
-*/
-const summaryOverrides = /* @__PURE__ */ new Map();
-/** Read the session's `/ctx-summary` override; `undefined` = default (settings-driven). */
-function getSummaryOverride(sessionId) {
-	return summaryOverrides.get(sessionId);
-}
-/** Set or clear (`undefined`) the session's `/ctx-summary` override. */
-function setSummaryOverride(sessionId, value) {
-	if (value === void 0) summaryOverrides.delete(sessionId);
-	else summaryOverrides.set(sessionId, value);
-}
-/** Last observed `intentSummary.enabled` for a session, for `/ctx-summary status`. */
-const lastObservedIntentEnabled = /* @__PURE__ */ new Map();
-/** Record the gate input the pass last evaluated for this session. */
-function observeIntentEnabled(sessionId, enabled) {
-	lastObservedIntentEnabled.set(sessionId, enabled);
-}
-/** The settings-side enabled flag last observed for the session, if any. */
-function getObservedIntentEnabled(sessionId) {
-	return lastObservedIntentEnabled.get(sessionId);
-}
-const lastIntentFolds = /* @__PURE__ */ new Map();
-/** Record a landed intent fold for the session (newest wins). */
-function recordIntentFold(sessionId, record) {
-	lastIntentFolds.set(sessionId, record);
-}
-/** The most recent landed intent fold for the session, if any. */
-function getLastIntentFold(sessionId) {
-	return lastIntentFolds.get(sessionId);
-}
 //#endregion
-//#region src/runtime/tokenpilot/intent-gate.ts
-/**
-* Turn-tail intent-summary growth gate (TokenPilot-inspired E2).
-*
-* Pure decision helper evaluated at the turn-boundary postflight: it decides
-* whether this turn may spend a summary-writer LLM call and stage a fold for
-* the next pressure round. The gate is deliberately conservative — every
-* unresolved input (unknown context window, non-finite counters) fails closed
-* toward "do not run", because a skipped fold is free while a wasted summary
-* call is not. Content safety is unaffected either way: fail-open semantics
-* live in the fold landing path, not here.
-*/
-/** Floor: the live surface must exceed this fraction of the context window. */
-const INTENT_GATE_FLOOR_FRACTION = .45;
-/** Growth: the live surface must have grown by more than this since the last landed fold. */
-const INTENT_GATE_GROWTH_TOKENS = 5e4;
-function isUsableNumber(value) {
-	return Number.isFinite(value) && value >= 0;
-}
-/** Same evaluation with the reason attached, for audits and `/ctx-summary status`. */
-function evaluateIntentGate(input) {
-	const snapshot = (decision, reason) => ({
-		...input,
-		decision,
-		reason
-	});
-	if (!input.enabled) return snapshot(false, "disabled");
-	if (input.override === "off") return snapshot(false, "override-off");
-	if (!isUsableNumber(input.liveTokens)) return snapshot(false, "below-floor");
-	if (input.contextWindow === void 0 || !isUsableNumber(input.contextWindow)) return snapshot(false, "no-window");
-	if (!(input.liveTokens > input.contextWindow * .45)) return snapshot(false, "below-floor");
-	if (!isUsableNumber(input.baselineTokens)) return snapshot(false, "below-growth");
-	if (!(input.liveTokens - input.baselineTokens > 5e4)) return snapshot(false, "below-growth");
-	return snapshot(true, "passed");
-}
-//#endregion
-export { assertNever as A, isValidAutoCompactThresholdPercent as C, CustomCompressionPolicySchema as D, resolvePolicy as E, COMPRESSION_PROFILES as M, DEFAULT_CUSTOM_COMPRESSION_POLICY as O, isCompressionProfile as S, resolveConfig as T, DEFAULTS as _, getLastIntentFold as a, charsToTokens as b, invalidateOnTaskChange as c, recordRecertified as d, recordScore as f, ContextCompressionSettingsSchema as g, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as h, getAdvisorState as i, deepFreeze as j, resolveCustomPolicy as k, observeIntentEnabled as l, AUTO_COMPACT_THRESHOLD_LIMITS as m, INTENT_GATE_GROWTH_TOKENS as n, getObservedIntentEnabled as o, setSummaryOverride as p, evaluateIntentGate as r, getSummaryOverride as s, INTENT_GATE_FLOOR_FRACTION as t, recordIntentFold as u, PRUNE_MARKER as v, parseContextCompressionSettings as w, codePointLength as x, charsForTokens as y };
+export { getObservedIntentEnabled as A, priceOfficialDeepSeekUsage as B, isSessionOverrideAction as C, evaluateIntentGate as D, INTENT_GATE_GROWTH_TOKENS as E, recordRecertified as F, getSavingsLedger as H, recordScore as I, setSummaryOverride as L, invalidateOnTaskChange as M, observeIntentEnabled as N, getAdvisorState as O, recordIntentFold as P, DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION as R, estimateSavingsPricing as S, INTENT_GATE_FLOOR_FRACTION as T, resolveOfficialDeepSeekPrice as V, assertNever as _, PRUNE_MARKER as a, applySessionOverride as b, codePointLength as c, parseContextCompressionSettings as d, resolveConfig as f, resolveCustomPolicy as g, DEFAULT_CUSTOM_COMPRESSION_POLICY as h, DEFAULTS as i, getSummaryOverride as j, getLastIntentFold as k, isCompressionProfile as l, CustomCompressionPolicySchema as m, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as n, charsForTokens as o, resolvePolicy as p, ContextCompressionSettingsSchema as r, charsToTokens as s, AUTO_COMPACT_THRESHOLD_LIMITS as t, isValidAutoCompactThresholdPercent as u, deepFreeze as v, observeContextUsage as w, buildMonitorSnapshot as x, COMPRESSION_PROFILES as y, decimalRateNanoUnits as z };
