@@ -4,6 +4,47 @@
 
 Alle nennenswerten Änderungen werden in dieser Datei festgehalten. Das Projekt folgt nach `0.1.0` der semantischen Versionierung.
 
+## 0.9.0 - 2026-10-08
+
+### Hinzugefügt
+
+- **Eine Version für jede Harness-Linie**: 0.9.0 ist eine einzelne Veröffentlichung, die
+  alle 15 rc von 0.1.0-rc.2 bis 0.2.0-rc.2 (sechs Host-Linien) bedient. Das
+  linienweise dist-tag-Schema wird eingestellt — nach der Veröffentlichung zeigen
+  `latest`, `dsh-0.1.2`, `dsh-0.1.5`, `dsh-0.1.7` und `dsh-0.2.0` alle auf 0.9.0.
+- **Drei-Generationen-Einstellungs-Taille**: Beim Start erkennt das Plugin, welche
+  Einstellungsfläche der Host bereitstellt — den Legacy-Dienst `settings.register`
+  (0.1.0-0.1.5) oder loader-verwaltete volatile Konfiguration + `configForms`
+  (0.1.7+/0.2.0) — und aktiviert nur die passende Client-Fläche (`settings.section` vs.
+  `configForms`), auf 0.1.7+ zusätzlich die Karte `plugins.bundle.config`.
+- **Einstellungsbrücke**: Auf Legacy-Linien lesen und schreiben Tools über einen
+  leaseschreibbaren Einstellungs-Namespace (umhüllte Tool-Ergebnisse); auf modernen
+  Linien lesen sie das configForms-Dokument direkt, und Bridge-Schreibvorgänge liefern
+  by design 409.
+- Die Karte `plugins.bundle.config` rendert die vollständige Einstellungskomponente über
+  ein closure-erzeugtes `useCompression` (die Paketdetail-Kette hat kein hookContext,
+  daher ist entry-level Hook-Injection dort nicht verfügbar).
+
+### Behoben
+
+- Der Generierungs-Probe cached keine vorläufige Antwort mehr zur Wire-Zeit: Das Fehlen
+  des settings-Dienstes während der Row-Komposition (vor Existenz der Host-Dienste) wird
+  bei der tatsächlichen Injection neu entschieden — der Legacy-Lease-Arm war zuvor auf
+  0.1.0 tot.
+- Der Tail-Trim-Validator vergleicht die source kind des Ersatzes mit dem
+  generationsgesteuerten Schreiber statt mit einer hartcodierten Plugin-id und verwirft
+  seine eigene Legacy-Umhüllungs-Ausgabe nicht mehr.
+- Der configForms-Client-Arm löst den Dienst über die `.configForms`-Eigenschaft des
+  injizierten Owner-Context auf; der rohe Context als Handle ließ `get()` `undefined`
+  zurückgeben, und die Host-Slot-Grenze stufte die Einstellungssektion auf 0.1.7 in eine
+  tote Zelle ab.
+
+### Geändert
+
+- Alle `@deepseek-ai/dsh-*`-Peer-Bereiche und `engines.dsh` zählen die 15 rc explizit auf,
+  sodass kein Engine-/Peer-Gate die Installation auf einer Host-Linie blockiert.
+
+
 ## 0.8.0-beta.1 - 2026-09-30
 
 ### Geändert

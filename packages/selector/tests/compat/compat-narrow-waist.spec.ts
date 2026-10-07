@@ -119,7 +119,7 @@ describe('acquireSettingsLease', () => {
 		resetHostGenerationCache()
 		const effects: Array<{ name?: string }> = []
 		const ctx = {
-			effect: (factory: () => unknown, name?: string) => { effects.push({ name }); void factory },
+			effect: (factory: () => unknown, name?: string) => { effects.push(name === undefined ? {} : { name }); void factory },
 			settings: { describe: () => [] },
 		} as unknown as Parameters<typeof acquireSettingsLease>[0]
 		const face = acquireSettingsLease(ctx, 'context-compression', {})
