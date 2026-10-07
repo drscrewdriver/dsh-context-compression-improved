@@ -51,16 +51,10 @@ Elija un perfil de compresión, configure el nivel de disparo de Auto Compact y 
 
 ## Instalación
 
-**Recomendado: instalar desde npm.** Un dist-tag por línea de Harness — `dsh-0.2.0` para la línea 0.2.0 (esta rama), `dsh-0.1.7` para la línea 0.1.7, `dsh-0.1.5` para la línea 0.1.5, `dsh-0.1.2` para la línea 0.1.2.
+**Recomendado: instalar desde npm.** Una única versión cubre todas las líneas de Harness compatibles — `latest` lleva la enumeración completa de 15 rc (0.1.0-rc.2 → 0.2.0-rc.2); el runtime elige por sí solo las rutas de código de cada línea.
 
 ```sh
-dsh plugin --profile web add dsh-context-compression-improved@dsh-0.2.0
-# DSH 0.1.7 line:
-# dsh plugin --profile web add dsh-context-compression-improved@dsh-0.1.7
-# DSH 0.1.5 line:
-# dsh plugin --profile web add dsh-context-compression-improved@dsh-0.1.5
-# DSH 0.1.2 line:
-# dsh plugin --profile web add dsh-context-compression-improved@dsh-0.1.2
+dsh plugin --profile web add dsh-context-compression-improved@latest
 dsh --profile web --dump-config
 ```
 
@@ -91,7 +85,7 @@ Las contribuciones siguen la disciplina del upstream: añadir primero la regresi
 
 ## Compatibilidad
 
-- Compilado y probado contra la versión oficial `dsh-v0.2.0-rc.1` de DeepSeek Harness; los peers declaran `>=0.2.0-rc.1 <0.2.1-0` y el plugin usa solo API públicas de plugin y de perfil. Las líneas anteriores siguen atendidas desde sus propios dist-tag (`dsh-0.1.7`, `dsh-0.1.5`, `dsh-0.1.2`).
+- Construido y probado contra las versiones oficiales de DeepSeek Harness; los peers enumeran la lista completa de soporte (`0.1.0-rc.2` → `0.2.0-rc.2`, seis líneas) y el plugin usa solo API públicas de plugin y de perfil. La lista la genera `scripts/sync-hosts.mjs` desde `scripts/hosts.mjs` hacia el bloque gestionado de arriba.
 - Requiere Node `^22.19.0 || >=24` y pnpm `11.7.0`.
 - El plugin usa solo API de extensión públicas del Harness y no modifica el código del núcleo del Harness. Proyecto comunitario no oficial, sin afiliación ni respaldo de DeepSeek.
 

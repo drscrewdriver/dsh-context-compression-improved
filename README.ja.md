@@ -51,7 +51,7 @@
 
 ## インストール
 
-ソースからビルドしてインストールします —— 本フォークは npm にも `dsh-context-compression-improved` として公開済みです（0.2.0 系は dist-tag `dsh-0.2.0`、0.1.7 系は `dsh-0.1.7`、0.1.5 系は `dsh-0.1.5`）。内部パッケージ名は意図的にアップストリームのままです：
+ソースからビルドしてインストールします —— 本フォークは npm にも `dsh-context-compression-improved` として公開済みです（単一バージョンが全サポートラインをカバー：dist-tag `latest` が 15 rc 完全列挙 0.1.0-rc.2〜0.2.0-rc.2 を携え、ライン別コードパスはランタイムが自動選択）。内部パッケージ名は意図的にアップストリームのままです：
 
 ```sh
 git clone https://github.com/drscrewdriver/dsh-context-compression-improved.git
@@ -78,7 +78,7 @@ pnpm verify:release
 
 ## 互換性
 
-- 公式 DeepSeek Harness `dsh-v0.2.0-rc.1` リリースに対してビルド・テスト済み。peers は `>=0.2.0-rc.1 <0.2.1-0` を宣言し、公開されているプラグインおよびプロファイル API のみを使用します。それ以前の Harness 系はそれぞれの dist-tag（`dsh-0.1.7`、`dsh-0.1.5`、`dsh-0.1.2`）で提供を継続します。
+- 公式 DeepSeek Harness リリースに対してビルド・テスト済み。peers はサポート対象の完全列挙（`0.1.0-rc.2`〜`0.2.0-rc.2`、6 ライン）を宣言し、公開されているプラグインおよびプロファイル API のみを使用します。リストは `scripts/sync-hosts.mjs` が `scripts/hosts.mjs` から上記の管理ブロックへ生成します。
 - Node `^22.19.0 || >=24` と pnpm `11.7.0` が必要です。
 - プラグインは Harness の公開拡張 API のみを使用し、Harness コアは改変しません。非公式のコミュニティプロジェクトであり、DeepSeek とは提携・承認関係にありません。
 

@@ -2,13 +2,13 @@
 
 > [English](installation.md) · [中文](installation.zh.md) · [日本語](installation.ja.md) · [한국어](installation.ko.md) · [Français](installation.fr.md) · [Deutsch](installation.de.md) · [Italiano](installation.it.md) · [Русский](installation.ru.md) · [Español](installation.es.md)
 
-本教程从源码安装 fork。fork 亦已发布到 npm，dist-tag 为 `dsh-0.1.5`；包名有意与上游保持一致：
+本教程从源码安装 fork。fork 亦已发布到 npm，dist-tag 为 `latest`（单一版本通吃全部受支持的 Harness 线：0.1.0-rc.2 至 0.2.0-rc.2）；包名有意与上游保持一致：
 `dsh-context-compression-improved`（单一包 —— 原先独立发布的 runtime 包已并入其中）。
 
 ## 前置条件
 
 - Node `^22.19.0 || >=24` 与 pnpm `11.7.0`（`corepack enable` 会按 `packageManager` 字段使用固定版本）。
-- 兼容 `0.1.1-rc.2` peer 范围的 DeepSeek Harness（已针对官方 `dsh-v0.1.2-alpha.5` 验证）。
+- 处于插件 15-rc peer 枚举范围内的 DeepSeek Harness 安装（`0.1.0-rc.2` 至 `0.2.0-rc.2` 任意一版）。
 - DeepSeek 模型路由。有损压缩——包括代码骨架门——按字符基准决策，不再要求内建精确 tokenizer；存在内建 tokenizer 时其 exact 计数仅作遥测记录，其他路由 fail-open 并保留原始工具结果。
 - Git。
 
@@ -30,7 +30,7 @@ selector 包是唯一的 Bundle 入口；runtime 作为其精确版本依赖自�
 ```sh
 cd packages/selector
 pnpm pack
-# → dsh-context-compression-improved-0.1.0.tgz
+# → dsh-context-compression-improved-0.9.0.tgz
 cd ../..
 ```
 
@@ -41,7 +41,7 @@ cd ../..
 selector 包声明了 Harness Bundle manifest 字段 `dsh.bundle.patch`，因此 `dsh plugin add` 是标准的树外 Bundle 安装方式：
 
 ```sh
-dsh plugin --profile web add packages/selector/dsh-context-compression-improved-0.1.0.tgz
+dsh plugin --profile web add packages/selector/dsh-context-compression-improved-0.9.0.tgz
 dsh --profile web --dump-config
 ```
 
@@ -86,7 +86,7 @@ HTTP 路由 `GET .../advisor-report?sessionId=` 读取。advisor 报告的任何
 # 更新：拉取、重建、重新打包、再次添加新 tarball
 git pull && pnpm install --frozen-lockfile && pnpm build
 cd packages/selector && pnpm pack && cd ../..
-dsh plugin --profile web add packages/selector/dsh-context-compression-improved-0.1.0.tgz
+dsh plugin --profile web add packages/selector/dsh-context-compression-improved-0.9.0.tgz
 
 # 卸载
 dsh plugin --profile web remove dsh-context-compression-improved

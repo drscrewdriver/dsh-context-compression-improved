@@ -51,16 +51,10 @@ Wählen Sie ein Kompressionsprofil, stellen Sie den Auto-Compact-Auslösepegel e
 
 ## Installation
 
-**Empfohlen: Installation über npm.** Ein Dist-Tag pro Harness-Linie — `dsh-0.2.0` für die 0.2.0-Linie (dieser Zweig), `dsh-0.1.7` für die 0.1.7-Linie, `dsh-0.1.5` für die 0.1.5-Linie, `dsh-0.1.2` für die 0.1.2-Linie.
+**Empfohlen: Installation über npm.** Eine einzige Version deckt alle unterstützten Harness-Linien ab — `latest` trägt die vollständige 15-rc-Aufzählung (0.1.0-rc.2 → 0.2.0-rc.2); die Runtime wählt die linien­spezifischen Codepfade selbst.
 
 ```sh
-dsh plugin --profile web add dsh-context-compression-improved@dsh-0.2.0
-# DSH 0.1.7 line:
-# dsh plugin --profile web add dsh-context-compression-improved@dsh-0.1.7
-# DSH 0.1.5 line:
-# dsh plugin --profile web add dsh-context-compression-improved@dsh-0.1.5
-# DSH 0.1.2 line:
-# dsh plugin --profile web add dsh-context-compression-improved@dsh-0.1.2
+dsh plugin --profile web add dsh-context-compression-improved@latest
 dsh --profile web --dump-config
 ```
 
@@ -91,7 +85,7 @@ Beiträge folgen der Upstream-Disziplin: zuerst die fehlgeschlagene Regression h
 
 ## Kompatibilität
 
-- Gegen die offizielle DeepSeek Harness `dsh-v0.2.0-rc.1`-Veröffentlichung gebaut und getestet; die Peers deklarieren `>=0.2.0-rc.1 <0.2.1-0`, und das Plugin nutzt ausschließlich öffentliche Plugin- und Profil-APIs. Frühere Linien werden weiterhin über ihre eigenen Dist-Tags bedient (`dsh-0.1.7`, `dsh-0.1.5`, `dsh-0.1.2`).
+- Gegen die offiziellen DeepSeek Harness Veröffentlichungen gebaut und getestet; die Peers enumerieren die vollständige Unterstützungsliste (`0.1.0-rc.2` → `0.2.0-rc.2`, sechs Linien) und das Plugin nutzt ausschließlich öffentliche Plugin- und Profil-APIs. Die Liste wird von `scripts/sync-hosts.mjs` aus `scripts/hosts.mjs` in den obigen verwalteten Block generiert.
 - Erfordert Node `^22.19.0 || >=24` und pnpm `11.7.0`.
 - Das Plugin nutzt nur öffentliche Harness-Erweiterungs-APIs und verändert keinen Harness-Kerncode. Inoffizielles Community-Projekt, weder mit DeepSeek verbunden noch von ihm unterstützt.
 

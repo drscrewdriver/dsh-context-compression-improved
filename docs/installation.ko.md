@@ -3,13 +3,13 @@
 > [English](installation.md) · [中文](installation.zh.md) · [日本語](installation.ja.md) · [한국어](installation.ko.md) · [Français](installation.fr.md) · [Deutsch](installation.de.md) · [Italiano](installation.it.md) · [Русский](installation.ru.md) · [Español](installation.es.md)
 
 이 가이드는 소스에서 포크를 설치합니다. 포크는 npm에도 게시되어 있습니다(dist-tag
-`dsh-0.1.5`). 패키지 이름은 의도적으로 업스트림과 동일합니다(`dsh-context-compression-improved` 단일 패키지이며,
+`latest`(단일 버전이 지원되는 모든 Harness 라인 0.1.0-rc.2~0.2.0-rc.2를 커버)). 패키지 이름은 의도적으로 업스트림과 동일합니다(`dsh-context-compression-improved` 단일 패키지이며,
 예전에 별도 패키지였던 runtime이 함께 포함됩니다).
 
 ## 사전 요구 사항
 
 - Node `^22.19.0 || >=24` 및 pnpm `11.7.0`(`corepack enable`은 `packageManager`의 고정 버전을 사용합니다).
-- `0.1.1-rc.2` peer 범위와 호환되는 DeepSeek Harness(공식 `dsh-v0.1.2-alpha.5` 릴리스에서 검증).
+- 플러그인의 15-rc peer 열거에 포함되는 DeepSeek Harness 설치(`0.1.0-rc.2`~`0.2.0-rc.2`).
 - DeepSeek V4 모델 경로(`deepseek-v4-flash`, `deepseek-v4-pro`, `deepseek-v4-flash-vision-exp`). 코드 스켈레톤 게이트를 포함한 손실 압축은 번들된 정확한 토크나이저가 필요하며, 그 외의 경로는 fail-open으로 원본 도구 결과를 유지합니다.
 - Git.
 
@@ -31,7 +31,7 @@ pnpm build
 ```sh
 cd packages/selector
 pnpm pack
-# → dsh-context-compression-improved-0.1.0.tgz
+# → dsh-context-compression-improved-0.9.0.tgz
 cd ../..
 ```
 
@@ -42,7 +42,7 @@ cd ../..
 셀렉터 패키지는 Harness Bundle 매니페스트 필드 `dsh.bundle.patch`를 선언하므로, `dsh plugin add`가 표준적인 out-of-tree Bundle 설치 경로입니다:
 
 ```sh
-dsh plugin --profile web add packages/selector/dsh-context-compression-improved-0.1.0.tgz
+dsh plugin --profile web add packages/selector/dsh-context-compression-improved-0.9.0.tgz
 dsh --profile web --dump-config
 ```
 
@@ -64,7 +64,7 @@ DeepSeek Harness 설정 → **Context compression selector**를 엽니다:
 # 업데이트: pull, 재빌드, 재pack, 새 tarball을 다시 추가
 git pull && pnpm install --frozen-lockfile && pnpm build
 cd packages/selector && pnpm pack && cd ../..
-dsh plugin --profile web add packages/selector/dsh-context-compression-improved-0.1.0.tgz
+dsh plugin --profile web add packages/selector/dsh-context-compression-improved-0.9.0.tgz
 
 # 제거
 dsh plugin --profile web remove dsh-context-compression-improved

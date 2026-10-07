@@ -3,13 +3,13 @@
 > [English](installation.md) · [中文](installation.zh.md) · [日本語](installation.ja.md) · [한국어](installation.ko.md) · [Français](installation.fr.md) · [Deutsch](installation.de.md) · [Italiano](installation.it.md) · [Русский](installation.ru.md) · [Español](installation.es.md)
 
 このガイドではソースからフォークをインストールします。フォークは npm にも公開済みです（dist-tag
-`dsh-0.1.5`）。パッケージ名は意図的に上流と同一です（`dsh-context-compression-improved` の単一パッケージで、
+`latest`（単一バージョンがサポート対象の全 Harness ライン 0.1.0-rc.2〜0.2.0-rc.2 をカバー））。パッケージ名は意図的に上流と同一です（`dsh-context-compression-improved` の単一パッケージで、
 以前は別パッケージだった runtime も同梱されます）。
 
 ## 前提条件
 
 - Node `^22.19.0 || >=24` と pnpm `11.7.0`（`corepack enable` で `packageManager` の固定バージョンが使われます）。
-- `0.1.1-rc.2` peer 範囲に互換する DeepSeek Harness（公式 `dsh-v0.1.2-alpha.5` リリースに対して検証済み）。
+- プラグインの 15-rc peer 列挙に含まれる DeepSeek Harness（`0.1.0-rc.2`〜`0.2.0-rc.2` のいずれか）。
 - DeepSeek V4 モデルルート（`deepseek-v4-flash`、`deepseek-v4-pro`、`deepseek-v4-flash-vision-exp`）。コードスケルトンゲートを含む非可逆圧縮には同梱の正確なトークナイザーが必要で、その他のルートは fail-open で元のツール結果を保持します。
 - Git。
 
@@ -31,7 +31,7 @@ selector パッケージが唯一の Bundle エントリーで、ランタイム
 ```sh
 cd packages/selector
 pnpm pack
-# →dsh-context-compression-improved-0.1.0.tgz
+# →dsh-context-compression-improved-0.9.0.tgz
 cd ../..
 ```
 
@@ -42,7 +42,7 @@ cd ../..
 selector パッケージは Harness Bundle マニフェストフィールド `dsh.bundle.patch` を宣言しているため、`dsh plugin add` が標準のアウトオブツリー Bundle インストール経路になります：
 
 ```sh
-dsh plugin --profile web add packages/selector/dsh-context-compression-improved-0.1.0.tgz
+dsh plugin --profile web add packages/selector/dsh-context-compression-improved-0.9.0.tgz
 dsh --profile web --dump-config
 ```
 
@@ -64,7 +64,7 @@ DeepSeek Harness の設定→**Context compression selector** を開きます：
 # 更新：pull、再ビルド、再 pack、新しい tarball を再追加
 git pull && pnpm install --frozen-lockfile && pnpm build
 cd packages/selector && pnpm pack && cd ../..
-dsh plugin --profile web add packages/selector/dsh-context-compression-improved-0.1.0.tgz
+dsh plugin --profile web add packages/selector/dsh-context-compression-improved-0.9.0.tgz
 
 # 削除
 dsh plugin --profile web remove dsh-context-compression-improved
