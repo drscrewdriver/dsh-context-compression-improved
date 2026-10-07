@@ -21,6 +21,7 @@ import { ko } from './locales/ko.ts'
 import { ru } from './locales/ru.ts'
 import { planPresetOptionsOps, presetOptionsOpsAccepted } from './preset-options.ts'
 import type { ScopeSnapshot, SettingsScope } from './scope-face.ts'
+import { createBridgeScope, type BridgeScope } from './bridge-scope.ts'
 
 /**
  * Harness 0.1.5 mounts the web core's `slots` service on the client context
@@ -40,13 +41,16 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-// Declare all consumed services (the official client-plugin pattern, and the
-// shape dsh-thinking-levels proves on this same 0.1.5 host line): cordis holds
-// apply until `locale` / `configForms` are provided, so registration can use
-// them directly. Resolving them lazily via ctx.get() instead races the settings
-// client's activation — on a loss the apply early-returned and EVERY settings
-// entry silently vanished.
-export const inject = ['slots', 'locale', 'configForms']
+// compat-legacy 单版本（audit B8，实跑实证）：顶层 inject 只声明六线通用服务。
+// 顶层放 `configForms` 会在 0.1.0–0.1.5 挂死激活（服务不存在），顶层放
+// `settingsScope` 在 0.1.7-rc.1+ 同样挂死（0.1.7-rc.1 格 "waiting for service:
+// settingsScope" 实证）。数据面选择改为双 scoped 臂：
+//   - 桥传输（bridge-scope.ts）为默认——全代际可用的 HTTP 面；
+//   - `configForms` scoped 臂在 0.1.7+ resolve 后把 scope 升级为原生
+//     configForms 路径（volatile entry 字段的权威写）；
+//   - `settingsScope` 臂已裁撤：Gate 0 实测 0.1.5 的 bind scope 永远
+//     status:"unavailable"（写被拒），接了也是死代码。
+export const inject = ['slots', 'locale']
 const NS = 'context-compression'
 
 /** 0.1.7: the profile entry whose config carries the compression settings doc. */
@@ -109,16 +113,20 @@ export function apply(ctx: ClientContext): void {
   const localeSvc = ctx.locale as { bind?: (n: string) => (key: string) => string } | undefined
   const tNav = localeSvc?.bind?.(NS) ?? ((key: string) => key)
 
-  // 浮动监控面板(FAB): body 级幂等单例。enabled 读取走设置文档——表单句柄的
-  // 激活规则与旧 bind 相同,故 apply 侧 try/catch 兜底,注入工厂内再刷新读取闭包。
-  let readMonitorPanelEnabled = (): boolean => {
-    try {
-      const form = ctx.configForms.get<Record<string, unknown>>(ENTRY_ID)
-      return decodeSettings(form.getSnapshot().value?.settings)?.monitorPanel?.enabled ?? false
-    } catch {
-      return false
-    }
-  }
+/** Minimal configForms face (scoped sub-inject arm; 0.1.7+ hosts only). */
+interface ConfigFormsHandle {
+	get(entryId: string): { getSnapshot(): { status: string; value?: { settings?: unknown }; revision?: number | null; writable?: boolean; base?: unknown; user?: unknown; mode?: string }; subscribe(listener: () => void): () => void; set(field: string, value: unknown): Promise<boolean> }
+	getSnapshot(): { status: string; value?: { settings?: unknown }; revision?: number | null; writable?: boolean; base?: unknown; user?: unknown; mode?: string }
+	subscribe(listener: () => void): () => void
+	set(field: string, value: unknown): Promise<boolean>
+}
+let configFormsHandle: ConfigFormsHandle | undefined
+
+/** Last monitorPanel.enabled seen through whichever scope is current (FAB 读数缓存). */
+let monitorPanelEnabledCache = false
+
+/** 浮动监控面板(FAB): body 级幂等单例。enabled 读数走双臂 scope 的投影缓存。 */
+let readMonitorPanelEnabled = (): boolean => monitorPanelEnabledCache
   // 浮动面板会话绑定:跟随输入栏座位的 inject 回调(裸 sessionId,pm longtask 同款)。
   let latestSessionId: string | undefined
   try {
@@ -144,17 +152,29 @@ export function apply(ctx: ClientContext): void {
   } catch (error) {
     console.warn('[dsh-context-compression-improved] 监控浮动球挂载失败(不影响设置分节):', error)
   }
-  const injected = (): CompressionSelectorInjected => {
-    // 0.1.7: the compression document rides the selector row's entry config as
-    // the volatile `settings` field. The form handle is fetched per factory
-    // call on the caller's fiber (same activation rule as the old bind); the
-    // wrapper below decodes the stored doc and converts per-field writes into
-    // whole-doc commits (a volatile object replaces as one snapshot).
-    const form = ctx.configForms.get<Record<string, unknown>>(ENTRY_ID)
+  // compat-legacy 双数据面（audit B8/Gate 0）：
+  //   1) 桥 scope 立即建好并预热（全代际可用的 HTTP 面，apply 期即拉一次文档）；
+  //   2) `configForms` scoped 臂在 0.1.7+ resolve 后接管为原生权威写路径。
+  // 选择发生在 injected() 工厂调用时（宿主渲染期），届时两臂归属已定，无竞态。
+  const bridgeScope = createBridgeScope()
+  bridgeScope.refresh()
+  const bridgeReadEnabled = (): boolean =>
+    decodeSettings(bridgeScope.getSnapshot().value)?.monitorPanel?.enabled ?? false
+  readMonitorPanelEnabled = (): boolean => (configFormsHandle === undefined ? bridgeReadEnabled() : monitorPanelEnabledCache)
+  try {
+    ctx.inject(['configForms'], (configForms) => {
+      configFormsHandle = configForms as unknown as ConfigFormsHandle
+    })
+  } catch (error) {
+    console.warn('[dsh-context-compression-improved] configForms 臂挂载失败(桥面继续服务):', error)
+  }
+
+  /** configForms 原生 scope（0.1.7+）：volatile entry 字段权威写路径。 */
+  const scopeFromConfigForms = (service: ConfigFormsHandle): SettingsScope<ContextCompressionSettings> => {
+    // The arm receives the configForms SERVICE; the doc rides the entry form.
+    const form = service.get(ENTRY_ID) as unknown as ConfigFormsHandle
     const readDoc = (): ContextCompressionSettings | undefined =>
       decodeSettings(form.getSnapshot().value?.settings)
-    readMonitorPanelEnabled = (): boolean =>
-      decodeSettings(form.getSnapshot().value?.settings)?.monitorPanel?.enabled ?? false
     // useSyncExternalStore requires a getSnapshot that returns a STABLE
     // reference between changes — a fresh object per call is React error #185
     // (maximum update depth exceeded). Cache the projection keyed on the form
@@ -165,21 +185,22 @@ export function apply(ctx: ClientContext): void {
       status: 'loading', value: undefined, revision: undefined,
       writable: false, base: undefined, user: undefined, mode: 'host',
     }
-    const scope: SettingsScope<ContextCompressionSettings> = {
+    return {
       getSnapshot() {
         const snap = form.getSnapshot()
         if (snap !== projectedSource) {
           projectedSource = snap
           projected = {
-            status: snap.status,
+            status: (snap.status as ScopeSnapshot<ContextCompressionSettings>['status']) ?? 'loading',
             value: decodeSettings(snap.value?.settings),
-            revision: snap.revision,
-            writable: snap.writable,
+            revision: snap.revision ?? undefined,
+            writable: snap.writable ?? false,
             base: snap.base,
             user: snap.user,
-            mode: snap.mode,
+            mode: (snap.mode as ScopeSnapshot<ContextCompressionSettings>['mode']) ?? 'host',
           }
         }
+        monitorPanelEnabledCache = projected.value?.monitorPanel?.enabled ?? false
         return projected
       },
       subscribe: (listener) => form.subscribe(listener),
@@ -206,6 +227,14 @@ export function apply(ctx: ClientContext): void {
         return form.set('settings', doc)
       },
     }
+  }
+
+  const injected = (): CompressionSelectorInjected => {
+    // 双臂选择：configForms 臂已 resolve（0.1.7+）→ 原生 scope；否则桥 scope
+    // （0.1.0–0.1.5 的唯一活数据面，0.1.7+ resolve 前的过渡读也由它服务）。
+    const scope: SettingsScope<ContextCompressionSettings> = configFormsHandle !== undefined
+      ? scopeFromConfigForms(configFormsHandle)
+      : bridgeScope
     const writeAndConfirm = async (
       write: () => Promise<unknown>,
       accepts: (settings: ContextCompressionSettings) => boolean,
@@ -299,6 +328,20 @@ export function apply(ctx: ClientContext): void {
     }, () => null))
   } catch (error) {
     console.warn('[dsh-context-compression-improved] conversation.input.left 注册失败(旧宿主无该槽,浮动面板保持聚合口径):', error)
+  }
+
+  // Bundle 详情页设置卡(0.1.7+):plugins.bundle.config 槽,key=包名整卡平铺
+  // (searxng compat-legacy 蓝本;Gate 0 rc.1 格注册零异常,渲染级确认留矩阵)。
+  // 老宿主无该槽 → 激活期抛错由 try/catch 吞掉,静默缺席。
+  try {
+    ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
+      name: 'plugins.bundle.config',
+      key: 'dsh-context-compression-improved',
+      locale: NS,
+      inject: injected,
+    }, ContextCompressionSettingsSection))
+  } catch (error) {
+    console.warn('[dsh-context-compression-improved] plugins.bundle.config 注册失败(旧宿主无该槽,静默缺席):', error)
   }
 }
 

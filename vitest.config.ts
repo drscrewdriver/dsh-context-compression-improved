@@ -9,7 +9,10 @@ export default defineConfig({
         test: {
           name: 'runtime',
           environment: 'node',
-          include: ['packages/selector/tests/runtime/**/*.spec.ts'],
+          include: [
+            'packages/selector/tests/runtime/**/*.spec.ts',
+            'packages/selector/tests/compat/**/*.spec.ts',
+          ],
         },
       },
       {

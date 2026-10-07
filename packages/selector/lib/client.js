@@ -3093,12 +3093,120 @@ window.__ModuleLoader__.load({
 			});
 		}
 		//#endregion
+		//#region src/client/bridge-scope.ts
+		const SETTINGS_ROUTE = "/api/dsh-context-compression-improved/settings";
+		const POLL_MS = 4e3;
+		function createBridgeScope() {
+			let snapshot = {
+				status: "loading",
+				value: void 0,
+				revision: void 0,
+				writable: true,
+				base: void 0,
+				user: void 0,
+				mode: "host"
+			};
+			const listeners = /* @__PURE__ */ new Set();
+			let pollTimer;
+			const emit = () => {
+				for (const listener of listeners) listener();
+			};
+			const applyDoc = (doc, revision) => {
+				const value = decodeSettings(doc);
+				const next = {
+					status: value === void 0 ? "unavailable" : "ready",
+					value,
+					revision,
+					writable: true,
+					base: void 0,
+					user: void 0,
+					mode: "host"
+				};
+				if (JSON.stringify(next) !== JSON.stringify(snapshot)) {
+					snapshot = next;
+					emit();
+				}
+			};
+			async function refresh() {
+				try {
+					const response = await fetch(SETTINGS_ROUTE, { headers: { "cache-control": "no-cache" } });
+					if (!response.ok) throw new Error(`settings bridge ${response.status}`);
+					const body = await response.json();
+					applyDoc(body.doc, body.revision ?? void 0);
+				} catch {
+					if (snapshot.status !== "unavailable") {
+						snapshot = {
+							...snapshot,
+							status: "unavailable"
+						};
+						emit();
+					}
+				}
+			}
+			async function writeDoc(next) {
+				const response = await fetch(SETTINGS_ROUTE, {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({ doc: next })
+				});
+				if (!response.ok) return false;
+				const body = await response.json();
+				if (body.ok !== true) return false;
+				applyDoc(body.doc ?? next, (snapshot.revision ?? 0) + 1);
+				return true;
+			}
+			const cloneDoc = () => {
+				const value = snapshot.value;
+				return value === void 0 ? {} : structuredClone(value);
+			};
+			return {
+				getSnapshot: () => snapshot,
+				subscribe: (listener) => {
+					listeners.add(listener);
+					if (listeners.size === 1) {
+						refresh();
+						pollTimer = setInterval(() => {
+							refresh();
+						}, POLL_MS);
+					}
+					return () => {
+						listeners.delete(listener);
+						if (listeners.size === 0 && pollTimer !== void 0) {
+							clearInterval(pollTimer);
+							pollTimer = void 0;
+						}
+					};
+				},
+				set: async (field, value) => {
+					const next = cloneDoc();
+					next[field] = value;
+					return writeDoc(next);
+				},
+				unset: async (field) => {
+					const next = cloneDoc();
+					delete next[field];
+					return writeDoc(next);
+				},
+				mutate: async (ops) => {
+					const doc = cloneDoc();
+					for (const op of ops) {
+						const [head, key] = op.path;
+						if (head !== "presetOptions") return false;
+						const section = { ...doc.presetOptions ?? {} };
+						if (op.op === "unset") delete section[key];
+						else section[key] = op.value;
+						doc.presetOptions = section;
+					}
+					return writeDoc(doc);
+				},
+				refresh: () => {
+					refresh();
+				}
+			};
+		}
+		//#endregion
 		//#region src/client/index.ts
-		const inject = [
-			"slots",
-			"locale",
-			"configForms"
-		];
+		const inject = ["slots", "locale"];
 		const NS = "context-compression";
 		/** 0.1.7: the profile entry whose config carries the compression settings doc. */
 		const ENTRY_ID = "context-compression-improved-bundle";
@@ -3159,13 +3267,11 @@ window.__ModuleLoader__.load({
 				console.warn(`[dsh-context-compression-improved] locale "${language.id}" registration failed:`, error);
 			}
 			const tNav = ctx.locale?.bind?.(NS) ?? ((key) => key);
-			let readMonitorPanelEnabled = () => {
-				try {
-					return decodeSettings(ctx.configForms.get(ENTRY_ID).getSnapshot().value?.settings)?.monitorPanel?.enabled ?? false;
-				} catch {
-					return false;
-				}
-			};
+			let configFormsHandle;
+			/** Last monitorPanel.enabled seen through whichever scope is current (FAB 读数缓存). */
+			let monitorPanelEnabledCache = false;
+			/** 浮动监控面板(FAB): body 级幂等单例。enabled 读数走双臂 scope 的投影缓存。 */
+			let readMonitorPanelEnabled = () => monitorPanelEnabledCache;
 			let latestSessionId;
 			try {
 				initMonitorFab({
@@ -3190,10 +3296,21 @@ window.__ModuleLoader__.load({
 			} catch (error) {
 				console.warn("[dsh-context-compression-improved] 监控浮动球挂载失败(不影响设置分节):", error);
 			}
-			const injected = () => {
-				const form = ctx.configForms.get(ENTRY_ID);
+			const bridgeScope = createBridgeScope();
+			bridgeScope.refresh();
+			const bridgeReadEnabled = () => decodeSettings(bridgeScope.getSnapshot().value)?.monitorPanel?.enabled ?? false;
+			readMonitorPanelEnabled = () => configFormsHandle === void 0 ? bridgeReadEnabled() : monitorPanelEnabledCache;
+			try {
+				ctx.inject(["configForms"], (configForms) => {
+					configFormsHandle = configForms;
+				});
+			} catch (error) {
+				console.warn("[dsh-context-compression-improved] configForms 臂挂载失败(桥面继续服务):", error);
+			}
+			/** configForms 原生 scope（0.1.7+）：volatile entry 字段权威写路径。 */
+			const scopeFromConfigForms = (service) => {
+				const form = service.get(ENTRY_ID);
 				const readDoc = () => decodeSettings(form.getSnapshot().value?.settings);
-				readMonitorPanelEnabled = () => decodeSettings(form.getSnapshot().value?.settings)?.monitorPanel?.enabled ?? false;
 				let projectedSource;
 				let projected = {
 					status: "loading",
@@ -3204,21 +3321,22 @@ window.__ModuleLoader__.load({
 					user: void 0,
 					mode: "host"
 				};
-				const scope = {
+				return {
 					getSnapshot() {
 						const snap = form.getSnapshot();
 						if (snap !== projectedSource) {
 							projectedSource = snap;
 							projected = {
-								status: snap.status,
+								status: snap.status ?? "loading",
 								value: decodeSettings(snap.value?.settings),
-								revision: snap.revision,
-								writable: snap.writable,
+								revision: snap.revision ?? void 0,
+								writable: snap.writable ?? false,
 								base: snap.base,
 								user: snap.user,
-								mode: snap.mode
+								mode: snap.mode ?? "host"
 							};
 						}
+						monitorPanelEnabledCache = projected.value?.monitorPanel?.enabled ?? false;
 						return projected;
 					},
 					subscribe: (listener) => form.subscribe(listener),
@@ -3245,6 +3363,9 @@ window.__ModuleLoader__.load({
 						return form.set("settings", doc);
 					}
 				};
+			};
+			const injected = () => {
+				const scope = configFormsHandle !== void 0 ? scopeFromConfigForms(configFormsHandle) : bridgeScope;
 				const writeAndConfirm = async (write, accepts) => {
 					const beforeRevision = scope.getSnapshot().revision;
 					await write();
@@ -3291,6 +3412,16 @@ window.__ModuleLoader__.load({
 				}, () => null));
 			} catch (error) {
 				console.warn("[dsh-context-compression-improved] conversation.input.left 注册失败(旧宿主无该槽,浮动面板保持聚合口径):", error);
+			}
+			try {
+				ctx.slots.inject("plugins.bundle.config", () => ctx.slots.register({
+					name: "plugins.bundle.config",
+					key: "dsh-context-compression-improved",
+					locale: NS,
+					inject: injected
+				}, ContextCompressionSettingsSection));
+			} catch (error) {
+				console.warn("[dsh-context-compression-improved] plugins.bundle.config 注册失败(旧宿主无该槽,静默缺席):", error);
 			}
 		}
 		//#endregion

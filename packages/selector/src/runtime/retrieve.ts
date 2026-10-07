@@ -20,6 +20,7 @@ import {
 } from './tail-trim.ts'
 import { sessionEvents } from './session-events.ts'
 import { getSavingsLedger } from './savings.ts'
+import { viewToolResult } from '../compat/tool-result.ts'
 
 export const name = 'context-compression-retrieve'
 export const inject = ['tools', 'systemPrompt']
@@ -123,7 +124,10 @@ export function installContextCompressionRetrieve(ctx: Context, config: Config =
         throw new Error(`context_compression_retrieve: event ${String(seq)} is not a tool/result in the current session`)
       }
       const maxLines = resolveMaxLines(args.max_lines)
-      const scan = scanBlocks(event.data.message.content, maxScanChars)
+      // Generation-gated triple view: content blocks / error flag / call id
+      // move together across the 0.1.x envelope and the flat 0.2.0 message.
+      const resultView = viewToolResult(event.data.message)
+      const scan = scanBlocks(resultView.blocks as ContentBlock[], maxScanChars)
       const scannedLines = splitScannedLines(scan)
       const lines = scannedLines.lines
       const query = args.query
@@ -138,8 +142,8 @@ export function installContextCompressionRetrieve(ctx: Context, config: Config =
       const total = scan.complete ? String(lines.length) : `at least ${String(lines.length)}`
       const header = [
         `source: ${args.ref}`,
-        `tool_call_id: ${event.data.message.toolCallId}`,
-        `status: ${(event.data.message as { isError?: boolean }).isError === true ? 'error' : 'completed'}`,
+        `tool_call_id: ${resultView.callId}`,
+        `status: ${resultView.isError ? 'error' : 'completed'}`,
         `lines: ${String(selected.start)}-${String(selected.end)} of ${total}`,
         scan.complete ? '' : 'note: source scan limit reached; later lines were not inspected',
         selected.partialLine === undefined

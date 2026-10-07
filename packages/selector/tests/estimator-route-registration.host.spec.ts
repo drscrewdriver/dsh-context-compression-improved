@@ -18,6 +18,11 @@ const LEGACY_ROUTE = '/endpoint/dsh-context-compression-improved/estimator-catal
 const SAVINGS_ROUTE = '/api/dsh-context-compression-improved/savings'
 const SAVINGS_LEGACY_ROUTE = '/endpoint/dsh-context-compression-improved/savings'
 const MONITOR_ROUTE = '/api/dsh-context-compression-improved/monitor'
+
+// compat-legacy: the settings bridge rides the same always-on plane — its
+// two routes (both prefixes) register wherever savings/monitor do.
+const SETTINGS_LEGACY_ROUTE = '/endpoint/dsh-context-compression-improved/settings'
+const SETTINGS_ROUTE = '/api/dsh-context-compression-improved/settings'
 const MONITOR_LEGACY_ROUTE = '/endpoint/dsh-context-compression-improved/monitor'
 
 interface RegisteredRoute {
@@ -108,7 +113,7 @@ describe('estimator catalog route registration', () => {
     apply(runtime, { estimatorCatalogRoute: true })
     await settle()
 
-    expect(routes.map(route => route.path)).toEqual([LEGACY_ROUTE, CATALOG_ROUTE, SAVINGS_LEGACY_ROUTE, SAVINGS_ROUTE, MONITOR_LEGACY_ROUTE, MONITOR_ROUTE])
+    expect(routes.map(route => route.path)).toEqual([LEGACY_ROUTE, CATALOG_ROUTE, SAVINGS_LEGACY_ROUTE, SAVINGS_ROUTE, MONITOR_LEGACY_ROUTE, MONITOR_ROUTE, SETTINGS_LEGACY_ROUTE, SETTINGS_ROUTE])
     expect(routes.every(route => route.kind === 'exact')).toBe(true)
   })
 
@@ -124,7 +129,7 @@ describe('estimator catalog route registration', () => {
     await mountWebServer(runtime, routes)
     await settle()
 
-    expect(routes.map(route => route.path)).toEqual([LEGACY_ROUTE, CATALOG_ROUTE, SAVINGS_LEGACY_ROUTE, SAVINGS_ROUTE, MONITOR_LEGACY_ROUTE, MONITOR_ROUTE])
+    expect(routes.map(route => route.path)).toEqual([LEGACY_ROUTE, CATALOG_ROUTE, SAVINGS_LEGACY_ROUTE, SAVINGS_ROUTE, MONITOR_LEGACY_ROUTE, MONITOR_ROUTE, SETTINGS_LEGACY_ROUTE, SETTINGS_ROUTE])
   })
 
   it('registers nothing twice when the estimator services arrive later', async () => {
@@ -189,6 +194,6 @@ describe('estimator catalog route registration', () => {
     apply(runtime, { presetOverlay: false })
     await settle()
 
-    expect(routes.map(route => route.path)).toEqual([SAVINGS_LEGACY_ROUTE, SAVINGS_ROUTE, MONITOR_LEGACY_ROUTE, MONITOR_ROUTE])
+    expect(routes.map(route => route.path)).toEqual([SAVINGS_LEGACY_ROUTE, SAVINGS_ROUTE, MONITOR_LEGACY_ROUTE, MONITOR_ROUTE, SETTINGS_LEGACY_ROUTE, SETTINGS_ROUTE])
   })
 })

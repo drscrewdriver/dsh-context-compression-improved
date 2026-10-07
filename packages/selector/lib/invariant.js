@@ -1,4 +1,4 @@
-import { a as validatePublishedTailTrim, s as sessionEvents } from "./tail-trim.js";
+import { a as validatePublishedTailTrim, l as sessionEvents } from "./tail-trim.js";
 //#region src/invariant.ts
 const PACKAGE_NAME = "dsh-context-compression-improved-runtime";
 /** Cordis companion plugin name. */

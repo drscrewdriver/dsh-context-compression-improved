@@ -10,6 +10,7 @@
 import type { Session } from '@deepseek-ai/dsh-session'
 import { sessionEvents } from '../runtime/session-events.ts'
 import { deepSeekV4TokenizerForModel } from '../deepseek-v4-tokenizer.ts'
+import { viewToolResult } from '../compat/tool-result.ts'
 import type { SnapshotCandidate, PlannedReplacement, HistoryPlanOutcome } from './types.ts'
 
 /** Check whether the session currently has an open (unterminated) turn. */
@@ -74,9 +75,9 @@ function tokenizerAuditFact(route: { provider: string, model: string }): { token
 /** Check whether a snapshot candidate represents an error result. */
 function isError(candidate: SnapshotCandidate): boolean {
   // 0.1.7-rc.2: tool results are first-class `tool`-role messages — `isError`
-  // moved from the result block onto the message itself.
-  const message = candidate.event.data.message as { isError?: boolean }
-  return message.isError === true || candidate.event.data.error !== undefined
+  // moved from the result block onto the message itself. The generation-
+  // gated triple view resolves the axis (legacy envelope: the wrapper block).
+  return viewToolResult(candidate.event.data.message).isError || candidate.event.data.error !== undefined
 }
 
 /** Wrap a plan list into a HistoryPlanOutcome. */

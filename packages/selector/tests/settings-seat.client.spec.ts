@@ -3,7 +3,8 @@
  *
  * This spec locks WHERE the compression settings panel mounts: exactly ONE
  * seat — the standalone `settings.section` entry (设置 → 上下文压缩) — and
- * explicitly NOT the Plugins-section surfaces, and NOT a `shell.overlay` float
+ * explicitly NOT the Plugins-section config surfaces (settings.plugins.tab /
+ * settings.plugin.item), and NOT a `shell.overlay` float
  * (the retired review panel's seat was removed with the gate). History this
  * pins against: the 0.1.5 line first lost every entry (a lazy `ctx.get` of
  * locale/settingsScope raced the settings client and apply bailed), then showed
@@ -43,6 +44,11 @@ function collectRegistrations(
   const ctx = {
     locale: { register: vi.fn(() => () => {}), bind: () => (key: string) => key },
     configForms: { get: vi.fn(() => ({}) as never) },
+    // Scoped sub-inject seam: the host resolves declared services and fires
+    // the callback (configForms arm — 0.1.7+ lines only).
+    inject: (services: string[], cb: (service: unknown) => void) => {
+      if (services.includes('configForms')) cb(ctx.configForms)
+    },
     slots: {
       inject: (slot: string, factory: () => (() => void) | Generator<() => void>) => {
         declared.push(slot)
@@ -66,15 +72,20 @@ function collectRegistrations(
 
 describe('settings-seat contract (standalone settings.section + input-bar session binder)', () => {
   it('declares the services apply consumes (cordis waits; no lazy-get race)', () => {
-    expect(inject).toEqual(['slots', 'locale', 'configForms'])
+    // compat-legacy 单版本（B8）：顶层只声明六线通用服务；数据面由 scoped
+    // sub-inject 双臂选择（桥默认 + configForms 升级），不再出现在顶层表。
+    expect(inject).toEqual(['slots', 'locale'])
   })
 
-  it('injects exactly two seats: the settings.section panel + the input-bar session binder', () => {
+  it('injects exactly three seats: the settings.section panel + the input-bar session binder + the 0.1.7+ bundle detail card', () => {
     const { declared, registrations } = collectRegistrations()
-    expect(declared).toEqual(['settings.section', 'conversation.input.left'])
-    expect(registrations).toHaveLength(2)
+    expect(declared).toEqual(['settings.section', 'conversation.input.left', 'plugins.bundle.config'])
+    expect(registrations).toHaveLength(3)
     expect(registrations[0]!.slot).toBe('settings.section')
     expect(registrations[1]!.slot).toBe('conversation.input.left')
+    expect(registrations[2]!.slot).toBe('plugins.bundle.config')
+    // bundle 卡 keyed=包名,0.1.x 宿主无此槽时由 registerThrows 分支另行覆盖
+    expect(registrations[2]!.options['key']).toBe('dsh-context-compression-improved')
   })
 
   it('no longer claims a shell.overlay float (the review panel it served is gone)', () => {
@@ -132,6 +143,9 @@ describe('settings-seat contract (standalone settings.section + input-bar sessio
         subscribe: (listener: () => void) => { listeners.push(listener); return () => {} },
         set: async () => true,
       }) },
+      inject: (services: string[], cb: (service: unknown) => void) => {
+        if (services.includes('configForms')) cb(ctx.configForms)
+      },
       slots: {
         inject: (_slot: string, factory: () => (() => void) | Generator<() => void>) => { void factory() },
         register: (record: Record<string, unknown>) => {
@@ -158,6 +172,29 @@ describe('settings-seat contract (standalone settings.section + input-bar sessio
     expect(second && typeof second === 'object' && 'value' in second && (second as { value?: { profile?: string } }).value?.profile).toBe('off')
   })
 
+  it('defaults to the bridge scope when the configForms arm never resolves (pre-0.1.7 lines)', () => {
+    // B8 dual-arm: on 0.1.x hosts configForms does not exist, the scoped
+    // sub-inject never fires, and the selector must stand on the HTTP bridge
+    // scope (status loading until the first GET returns).
+    const registrations: CapturedRegistration[] = []
+    const ctx = {
+      locale: { register: vi.fn(() => () => {}), bind: () => (key: string) => key },
+      // No `inject` at all: neither arm resolves, bridge stays the scope.
+      slots: {
+        inject: (_slot: string, factory: () => (() => void) | Generator<() => void>) => { void factory() },
+        register: (record: Record<string, unknown>) => {
+          registrations.push({ slot: String(record['name']), options: record, component: null })
+          return () => {}
+        },
+      },
+    }
+    apply(ctx as unknown as ClientContext)
+    const face = (registrations[0]!.options['inject'] as () => { hooks: { compression: { getSnapshot(): unknown } } })()
+    const scope = face.hooks.compression
+    const snapshot = scope.getSnapshot() as { status?: string }
+    expect(snapshot.status).toBe('loading')
+  })
+
   it('survives an older host that does not declare the seat, warning instead of crashing', () => {
     // Cross-version tolerance: a host without this seat rejects the
     // registration at the slot boundary. apply() must swallow that and warn —
@@ -166,8 +203,9 @@ describe('settings-seat contract (standalone settings.section + input-bar sessio
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       const { declared } = collectRegistrations({ registerThrows: true })
-      // It tried both seats (so the degradation is "loud", not a silent no-op)…
-      expect(declared).toEqual(['settings.section', 'conversation.input.left'])
+      // It tried all three seats (so the degradation is "loud", not a silent
+      // no-op)…
+      expect(declared).toEqual(['settings.section', 'conversation.input.left', 'plugins.bundle.config'])
       // …and the rejection never escaped apply().
       expect(warn).toHaveBeenCalled()
     } finally {

@@ -1,5 +1,5 @@
 import { B as decimalRateNanoUnits, F as recordIntentFold, H as resolveOfficialDeepSeekPrice, I as recordRecertified, L as recordScore, M as getSummaryOverride, N as invalidateOnTaskChange, O as evaluateIntentGate, P as observeIntentEnabled, T as observeContextUsage, U as getSavingsLedger, V as priceOfficialDeepSeekUsage, _ as resolveCustomPolicy, b as COMPRESSION_PROFILES, c as charsToTokens, d as isValidAutoCompactThresholdPercent, f as parseContextCompressionSettings, g as DEFAULT_CUSTOM_COMPRESSION_POLICY, h as CustomCompressionPolicySchema, i as DEFAULTS, k as getAdvisorState, l as codePointLength, m as resolvePolicy, n as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, o as PRUNE_MARKER, p as resolveConfig, r as ContextCompressionSettingsSchema, s as charsForTokens, t as AUTO_COMPACT_THRESHOLD_LIMITS, u as isCompressionProfile, v as assertNever, y as deepFreeze, z as DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION } from "./config.js";
-import { a as validatePublishedTailTrim, i as tailTrimStub, n as tailTrimMessage, o as eventBySeq, r as tailTrimRef, s as sessionEvents, t as parseTailTrimRef } from "./tail-trim.js";
+import { a as validatePublishedTailTrim, c as eventBySeq, i as tailTrimStub, l as sessionEvents, n as tailTrimMessage, o as compressionMessageSource, r as tailTrimRef, s as viewToolResult, t as parseTailTrimRef } from "./tail-trim.js";
 import z from "@deepseek-ai/schemastery";
 import { createHash } from "node:crypto";
 import { Service } from "@deepseek-ai/cordis";
@@ -814,7 +814,8 @@ function installContextCompressionRetrieve(ctx, config = {}) {
 			const event = sessionEvents(exec.agent.session)[seq];
 			if (event?.type !== "tool/result") throw new Error(`context_compression_retrieve: event ${String(seq)} is not a tool/result in the current session`);
 			const maxLines = resolveMaxLines(args.max_lines);
-			const scan = scanBlocks(event.data.message.content, maxScanChars);
+			const resultView = viewToolResult(event.data.message);
+			const scan = scanBlocks(resultView.blocks, maxScanChars);
 			const scannedLines = splitScannedLines(scan);
 			const lines = scannedLines.lines;
 			const query = args.query;
@@ -823,8 +824,8 @@ function installContextCompressionRetrieve(ctx, config = {}) {
 			const total = scan.complete ? String(lines.length) : `at least ${String(lines.length)}`;
 			const bounded = boundCodePoints(`${[
 				`source: ${args.ref}`,
-				`tool_call_id: ${event.data.message.toolCallId}`,
-				`status: ${event.data.message.isError === true ? "error" : "completed"}`,
+				`tool_call_id: ${resultView.callId}`,
+				`status: ${resultView.isError ? "error" : "completed"}`,
 				`lines: ${String(selected.start)}-${String(selected.end)} of ${total}`,
 				scan.complete ? "" : "note: source scan limit reached; later lines were not inspected",
 				selected.partialLine === void 0 ? "" : `note: line ${String(selected.partialLine)} is a partial prefix ending at the source scan limit`,
@@ -1127,7 +1128,7 @@ function tokenizerAuditFact(route) {
 }
 /** Check whether a snapshot candidate represents an error result. */
 function isError(candidate) {
-	return candidate.event.data.message.isError === true || candidate.event.data.error !== void 0;
+	return viewToolResult(candidate.event.data.message).isError || candidate.event.data.error !== void 0;
 }
 /** Wrap a plan list into a HistoryPlanOutcome. */
 function historyOutcome(plans) {
@@ -3966,7 +3967,7 @@ function emitCompressionAudit(logger, record) {
 */
 /** 节省统计配对键用原文(纯文本块才可配对;富内容返回 undefined)。 */
 function originalTextForSavings(candidate) {
-	return flattenPlainText(candidate.event.data.message.content);
+	return flattenPlainText(viewToolResult(candidate.event.data.message).blocks);
 }
 /** Mixed deterministic selector behind the existing `ctx.toolResultPruner` seam. */
 var ToolResultPruner = class extends Service {
@@ -4227,7 +4228,7 @@ var ToolResultPruner = class extends Service {
 		lastText.text = `${lastText.text}\n\n${block}`;
 		const replacement = createUserMessage({
 			content,
-			source: { kind: "dsh-context-compression" }
+			source: compressionMessageSource()
 		});
 		session.append("user/message", replacement, {
 			surfaceOp: {
@@ -4369,7 +4370,7 @@ var ToolResultPruner = class extends Service {
 		const candidates = this.snapshot(session, view).filter((candidate) => !this.isRecoveryExempt(session, candidate)).map((candidate) => ({
 			seq: candidate.seq,
 			characterPressure: candidate.characterPressure,
-			preview: advisorCandidatePreview(candidate.call.name, candidate.event.data.message.content)
+			preview: advisorCandidatePreview(candidate.call.name, viewToolResult(candidate.event.data.message).blocks)
 		}));
 		let sawFailure = false;
 		const outcome = await runSessionAdvisorPass(session, channel, (record) => {
@@ -4459,8 +4460,7 @@ var ToolResultPruner = class extends Service {
 		for (const seq of range.seqs) {
 			const candidate = bySeq.get(seq);
 			if (candidate === void 0) continue;
-			const result = candidate.event.data.message;
-			const text = onlyTextBlock(result.content)?.text ?? "";
+			const text = onlyTextBlock(viewToolResult(candidate.event.data.message).blocks)?.text ?? "";
 			const masked = maskCandidateForSummary(seq, candidate.call.name, candidate.call.arguments, text);
 			records.push({
 				seq,
@@ -4552,8 +4552,7 @@ var ToolResultPruner = class extends Service {
 		let charsAfter = 0;
 		for (const seq of foldable) {
 			const candidate = bySeq.get(seq);
-			const result = candidate.event.data.message;
-			const block = onlyTextBlock(result.content);
+			const block = onlyTextBlock(viewToolResult(candidate.event.data.message).blocks);
 			if (block === null) continue;
 			const text = renderIntentFoldBlock(pending, seq);
 			const plan = this.plan(candidate, [{
@@ -4927,7 +4926,7 @@ var ToolResultPruner = class extends Service {
 		const ledger = getSavingsLedger();
 		const sid = String(session.id);
 		for (const candidate of candidates) {
-			const text = flattenPlainText(candidate.event.data.message.content);
+			const text = flattenPlainText(viewToolResult(candidate.event.data.message).blocks);
 			if (text === void 0) continue;
 			ledger.noteFullText({
 				sessionId: sid,
@@ -5019,11 +5018,12 @@ var ToolResultPruner = class extends Service {
 			if (event?.type !== "tool/result") continue;
 			const shadowedHeuristicTokenCount = projectionPrices.get(seq);
 			if (shadowedHeuristicTokenCount === void 0) throw new Error(`surface node ${String(seq)} is absent from the atomic legacy projection`);
-			const content = event.data.message.content;
+			const resultView = viewToolResult(event.data.message);
+			const content = resultView.blocks;
 			candidates.push({
 				seq,
 				event,
-				call: calls.get(event.data.message.toolCallId) ?? {
+				call: calls.get(resultView.callId ?? "") ?? {
 					name: "unknown",
 					arguments: "{}"
 				},
@@ -5037,15 +5037,14 @@ var ToolResultPruner = class extends Service {
 	planNative(candidate, session, stage, policy, view) {
 		if (this.isRecoveryExempt(session, candidate)) return null;
 		if (candidate.characterPressure <= charsForTokens(policy.nativeTriggerTokens)) return null;
-		const result = candidate.event.data.message;
-		if (onlyTextBlocks(result.content) === null) return null;
+		const resultContent = viewToolResult(candidate.event.data.message).blocks;
+		if (onlyTextBlocks(resultContent) === null) return null;
 		const sourceSeq = rootToolResultSeq(session, candidate.seq);
 		const marker = (startLine) => recoveryMarker(sourceRef(session, sourceSeq), "tool result middle pruned", startLine);
 		let head = this.state.config.headChars;
 		let tail = this.state.config.tailChars;
 		for (let attempt = 0; attempt < 10; attempt += 1) {
-			const threshold = head + codePointLength(marker(1)) + tail;
-			const content = nativePruneContent(result.content, threshold, head, tail, marker);
+			const content = nativePruneContent(resultContent, head + codePointLength(marker(1)) + tail, head, tail, marker);
 			if (content !== null) {
 				const plan = this.plan(candidate, content, sourceSeq, "native-head-tail", stage, "native-tool-result", void 0, view);
 				if (plan !== null && plan.tokensAfter <= policy.nativeTargetTokens) return plan;
@@ -5064,8 +5063,7 @@ var ToolResultPruner = class extends Service {
 	*/
 	planDedupe(candidate, session, policy, view) {
 		if (typeof candidate.event.surfaceOp === "object") return null;
-		const result = candidate.event.data.message;
-		const text = flattenPlainText(result.content);
+		const text = flattenPlainText(viewToolResult(candidate.event.data.message).blocks);
 		if (text === void 0) return null;
 		if (candidate.characterPressure <= charsForTokens(policy.freshTriggerTokens)) return null;
 		let table = this.state.dedupeTables.get(session);
@@ -5094,11 +5092,11 @@ var ToolResultPruner = class extends Service {
 	}
 	planFresh(candidate, session, policy, view) {
 		if (typeof candidate.event.surfaceOp === "object") return null;
-		const result = candidate.event.data.message;
+		const resultView = viewToolResult(candidate.event.data.message);
 		if (candidate.characterPressure <= charsForTokens(policy.freshTriggerTokens)) return null;
 		const sourceSeq = candidate.seq;
 		const sourceRef$1 = sourceRef(session, sourceSeq);
-		const textBlock = onlyTextBlock(result.content);
+		const textBlock = onlyTextBlock(resultView.blocks);
 		if (textBlock !== null) {
 			let budgetChars = Math.max(1, Math.floor(codePointLength(textBlock.text) * .75));
 			const codeSkeleton = this.activeSettings(session).codeSkeleton.enabled;
@@ -5109,7 +5107,7 @@ var ToolResultPruner = class extends Service {
 					text: textBlock.text,
 					budgetChars,
 					sourceRef: sourceRef$1,
-					isError: result.isError === true || candidate.event.data.error !== void 0,
+					isError: resultView.isError || candidate.event.data.error !== void 0,
 					codeSkeleton
 				});
 				if (output !== null) {
@@ -5132,8 +5130,8 @@ var ToolResultPruner = class extends Service {
 		if (isError(candidate)) return this.planErrorEvidence(candidate, session, view, stage, targetTokens, component, historyMode);
 		const sourceSeq = rootToolResultSeq(session, candidate.seq);
 		const sourceRef$2 = sourceRef(session, sourceSeq);
-		const redacted = candidate.event.data.message;
-		if (onlyTextBlocks(redacted.content) === null) return null;
+		const redactedContent = viewToolResult(candidate.event.data.message).blocks;
+		if (onlyTextBlocks(redactedContent) === null) return null;
 		const text = [
 			"[Tool result reduced to satisfy the completed-step aggregate budget]",
 			`tool: ${candidate.call.name}`,
@@ -5149,8 +5147,7 @@ var ToolResultPruner = class extends Service {
 	/** Preserve bounded diagnostic evidence whenever an all-text error is reduced. */
 	planErrorEvidence(candidate, session, view, stage, targetTokens, component = "aggregate", historyMode) {
 		if (!isError(candidate)) return null;
-		const result = candidate.event.data.message;
-		const blocks = onlyTextBlocks(result.content);
+		const blocks = onlyTextBlocks(viewToolResult(candidate.event.data.message).blocks);
 		if (blocks === null) return null;
 		const text = blocks.map((block) => block.text).join("\n");
 		const sourceSeq = rootToolResultSeq(session, candidate.seq);
@@ -5188,8 +5185,7 @@ var ToolResultPruner = class extends Service {
 		const protectedSeqs = this.protectedHistoryCandidateSeqs(candidates, policy);
 		const isUnsafe = (candidate) => {
 			if (this.isRecoveryExempt(session, candidate)) return true;
-			const result = candidate.event.data.message;
-			const block = onlyTextBlock(result.content);
+			const block = onlyTextBlock(viewToolResult(candidate.event.data.message).blocks);
 			if (block?.text.includes("[Intent summary") === true) return true;
 			return block?.text.includes("[Old tool result content cleared from active context]") === true;
 		};
@@ -5229,8 +5225,8 @@ var ToolResultPruner = class extends Service {
 		const required = Math.max(minReclaimChars, total - trigger, ...microTarget === void 0 ? [] : [charsForTokens(view.totalTokens) - microTarget]);
 		const batchTarget = microTarget === void 0 ? minReclaimChars : required;
 		for (const candidate of eligible) {
-			const result = candidate.event.data.message;
-			const block = onlyTextBlock(result.content);
+			const resultView = viewToolResult(candidate.event.data.message);
+			const block = onlyTextBlock(resultView.blocks);
 			if (policy.presetOptions?.readState === true && block !== null) {
 				const readPath = toolCallPath(candidate.call.arguments);
 				const estimatorExpired = this.state.estimatorVerdicts.get(session)?.get(candidate.seq) === true;
@@ -5256,7 +5252,7 @@ var ToolResultPruner = class extends Service {
 				toolName: candidate.call.name,
 				sourceRef: sourceRef(session, sourceSeq),
 				charsBefore: codePointLength(block.text),
-				isError: result.isError === true || candidate.event.data.error !== void 0,
+				isError: resultView.isError || candidate.event.data.error !== void 0,
 				text: block.text,
 				compact: false
 			});
@@ -5266,7 +5262,7 @@ var ToolResultPruner = class extends Service {
 				text: block.text,
 				budgetChars: 1200,
 				sourceRef: sourceRef(session, sourceSeq),
-				isError: result.isError === true || candidate.event.data.error !== void 0
+				isError: resultView.isError || candidate.event.data.error !== void 0
 			}, output)) continue;
 			let replacementText = output.text;
 			if (policy.presetOptions?.readState === true) {
@@ -5368,15 +5364,16 @@ var ToolResultPruner = class extends Service {
 			const resultSeqs = nodes.slice(index + 1, index + 1 + calls.length);
 			if (resultSeqs.length !== calls.length || resultSeqs.some((seq) => protectedResults.has(seq))) continue;
 			const results = resultSeqs.map((seq) => events[seq]);
-			if (results.some((event) => {
-				if (event?.type !== "tool/result" || event.data.turn !== assistant.data.turn || event.data.step !== assistant.data.step || event.data.error !== void 0) return true;
-				const block = event.data.message;
-				if (block.isError === true) return true;
-				return block.content.some((contentBlock) => contentBlock.type !== "text");
+			const resultViews = results.map((event) => event?.type === "tool/result" ? viewToolResult(event.data.message) : void 0);
+			if (results.some((event, resultIndex) => {
+				const view = resultViews[resultIndex];
+				if (event?.type !== "tool/result" || view === void 0 || event.data.turn !== assistant.data.turn || event.data.step !== assistant.data.step || event.data.error !== void 0) return true;
+				if (view.isError) return true;
+				return view.blocks.some((contentBlock) => contentBlock.type !== "text");
 			})) continue;
 			const next = events[nodes[index + 1 + calls.length] ?? -1];
 			if (next?.type === "tool/result" && next.data.turn === assistant.data.turn && next.data.step === assistant.data.step) continue;
-			const resultIds = results.map((event) => event?.type === "tool/result" ? String(event.data.message.source.callId) : "");
+			const resultIds = resultViews.map((view) => view === void 0 ? "" : String(view.callId));
 			if (new Set(resultIds).size !== resultIds.length || resultIds.some((id, resultIndex) => id !== callIds[resultIndex])) continue;
 			const shadowedSeqs = [assistantSeq, ...resultSeqs];
 			const roots = shadowedSeqs.map((seq) => this.uniqueAppendRoot(session, seq));
@@ -5464,7 +5461,7 @@ var ToolResultPruner = class extends Service {
 				tokenizerId: exact === true && exactSurface !== void 0 ? exactSurface.tokenizerId : "characters",
 				tokenizerRevision: exact === true && exactSurface !== void 0 ? exactSurface.tokenizerRevision : "chars-per-token-4.0"
 			});
-			const groupText = shadowedSeqs.map((seq) => sessionEvents(session)[seq]).filter((event) => event?.type === "tool/result").map((event) => flattenPlainText(event.data.message.content)).filter((text) => text !== void 0).join("\n");
+			const groupText = shadowedSeqs.map((seq) => sessionEvents(session)[seq]).filter((event) => event?.type === "tool/result").map((event) => flattenPlainText(viewToolResult(event.data.message).blocks)).filter((text) => text !== void 0).join("\n");
 			if (groupText.length > 0) getSavingsLedger().recordSaving({
 				sessionId: String(session.id),
 				component: "tail-trim",
@@ -5527,7 +5524,7 @@ var ToolResultPruner = class extends Service {
 		const tokensBefore = exact ? countBefore.tokens : charsToTokens(charsBefore);
 		const tokensAfter = exact ? countAfter.tokens : charsToTokens(charsAfter);
 		if (options.noNetSavingsGuard === true) {
-			const originalBlocks = onlyTextBlocks(candidate.event.data.message.content);
+			const originalBlocks = onlyTextBlocks(viewToolResult(candidate.event.data.message).blocks);
 			const replacementBlocks = onlyTextBlocks(content);
 			if (originalBlocks !== null && replacementBlocks !== null) {
 				const originalChars = originalBlocks.reduce((sum, block) => sum + codePointLength(block.text), 0);
@@ -5554,6 +5551,7 @@ var ToolResultPruner = class extends Service {
 	}
 	land(session, plan) {
 		const { candidate } = plan;
+		const resultView = viewToolResult(candidate.event.data.message);
 		const message = freezeMessage({
 			...candidate.event.data.message,
 			content: plan.content
@@ -5618,7 +5616,7 @@ var ToolResultPruner = class extends Service {
 			originalSeq: candidate.seq,
 			sourceSeq: plan.sourceSeq,
 			replacementSeq: replacement.seq,
-			callId: candidate.event.data.message.source.callId,
+			callId: resultView.callId,
 			reducer: plan.reducer,
 			stage: plan.stage,
 			charsBefore: plan.charsBefore,

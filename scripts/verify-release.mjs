@@ -279,10 +279,16 @@ const collectSpecs = async (directory) => (await walk(directory))
   .sort()
 
 const runtimeSpecs = await collectSpecs(join(root, 'packages/selector/tests/runtime'))
+const compatSpecs = await collectSpecs(join(root, 'packages/selector/tests/compat'))
 const selectorSpecs = (await collectSpecs(join(root, 'packages/selector/tests')))
-  .filter(path => !path.startsWith('packages/selector/tests/runtime/'))
+  .filter(path => !path.startsWith('packages/selector/tests/runtime/')
+    && !path.startsWith('packages/selector/tests/compat/'))
 if (runtimeSpecs.some(path => !path.endsWith('.spec.ts'))) {
   fail('Runtime test inventory contains a spec outside the active **/*.spec.ts project')
+}
+// compat-legacy: the narrow-waist specs run inside the runtime project (node env).
+if (compatSpecs.some(path => !path.endsWith('.spec.ts'))) {
+  fail('Compat test inventory contains a spec outside the active **/*.spec.ts project')
 }
 const selectorUnclassified = selectorSpecs.filter(path => path !== 'packages/selector/tests/cache-prefix-audit.spec.ts'
   && path !== 'packages/selector/tests/estimator-catalog.spec.ts'
@@ -296,6 +302,7 @@ if (selectorUnclassified.length > 0) {
 const rootTestConfig = await readFile(join(root, 'vitest.config.ts'), 'utf8')
 for (const required of [
   'packages/selector/tests/runtime/**/*.spec.ts',
+  'packages/selector/tests/compat/**/*.spec.ts',
   'packages/selector/tests/**/*.host.spec.ts',
   'packages/selector/tests/**/*.client.spec.{ts,tsx}',
   'packages/selector/tests/cache-prefix-audit.spec.ts',
