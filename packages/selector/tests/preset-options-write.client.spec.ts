@@ -112,6 +112,10 @@ function bindInjected(
     // (ctx.locale / ctx.configForms), the same shape cordis binds on the host.
     locale: { bind: () => (key: string) => key, register: () => {} },
     configForms: { get: () => (stub.form as unknown as { getSnapshot(): unknown }) },
+    // Scoped sub-inject seam: host resolves configForms and fires the arm
+    inject: (services: string[], cb: (service: unknown) => void) => {
+      if (services.includes('configForms')) cb(ctx.configForms)
+    },
   }
   apply(ctx as never)
   if (options === undefined) throw new Error('the settings card never registered')
