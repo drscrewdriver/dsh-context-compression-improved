@@ -19,9 +19,11 @@ describe('standalone package contract', () => {
     expect(Object.keys(selector.peerDependencies ?? {})).not.toContain('dsh-context-compression-improved-runtime')
     expect(Object.keys(selector.peerDependencies ?? {})).not.toContain('@deepseek-ai/dsh-compaction-tool-result-pruner')
     expect(selector.peerDependencies?.['@deepseek-ai/dsh-compaction-basic'])
-      .toBe('>=0.2.0-rc.1 <0.2.1-0')
+      .toBe(selector.engines?.dsh)
     expect(selector.peerDependencies?.['@deepseek-ai/dsh-command-compact'])
-      .toBe('>=0.2.0-rc.1 <0.2.1-0')
+      .toBe(selector.engines?.dsh)
+    // compat-legacy 单版本：dsh-* peer 与 engines.dsh 同为 15rc 枚举（hosts.mjs 口径）。
+    expect(selector.engines?.dsh?.split(' || ')).toHaveLength(15)
     expect(selector.publishConfig?.tag).toBe('latest')
     expect(existsSync(resolve(root, '../runtime/package.json'))).toBe(false)
   })
@@ -31,6 +33,7 @@ describe('standalone package contract', () => {
       name: string
       exports?: Record<string, unknown>
       dependencies?: Record<string, string>
+      peerDependencies?: Record<string, string>
       engines?: Record<string, string>
       dsh?: { bundle?: { patch?: string }, client?: { inject?: string[] } }
     }
@@ -47,7 +50,11 @@ describe('standalone package contract', () => {
       '@deepseek-ai/dsh-client-ui-slots',
       '@deepseek-ai/dsh-client-ui-settings',
     ])
-    expect(rootManifest.engines?.dsh).toBe('>=0.2.0-rc.1 <0.2.1-0')
+    // compat-legacy 单版本：root=安装面，engines 与全部 peer 同为 15rc 枚举（闸门口径）。
+    expect(rootManifest.engines?.dsh?.split(' || ')).toHaveLength(15)
+    for (const range of Object.values(rootManifest.peerDependencies ?? {})) {
+      expect(range).toBe(rootManifest.engines?.dsh)
+    }
   })
 
   it('uses the community package in the one Bundle patch', () => {
