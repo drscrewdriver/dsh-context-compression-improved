@@ -75,9 +75,15 @@ export function validatePublishedTailTrim(
     || manifest.data.shadowedSeqs.at(-1) !== Number(manifest.data.shadowedRange.end)
     || new Set(manifest.data.shadowedSeqs).size !== manifest.data.shadowedSeqs.length) return null
   const replacement = events[manifestSeq + 1]
+  // The validator checks THIS runtime's own publication (same host, same
+  // generation), so the expected source kind is the generation-gated one the
+  // writer used — hardcoding the modern kind made the validator reject its
+  // own legacy output (measured: legacy testbed classified the host, writer
+  // emitted {kind:'plugin'}, validator demanded 'dsh-context-compression').
+  const expectedSource = compressionMessageSource()
   if (replacement?.type !== 'user/message'
     || replacement.seq !== manifest.seq + 1
-    || replacement.data.source.kind !== 'dsh-context-compression'
+    || replacement.data.source.kind !== expectedSource.kind
     || replacement.surfaceOp === undefined
     || replacement.surfaceOp === 'append'
     || replacement.surfaceOp.startSeq !== manifest.data.shadowedRange.start

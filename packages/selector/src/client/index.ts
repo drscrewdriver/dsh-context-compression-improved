@@ -162,8 +162,18 @@ let readMonitorPanelEnabled = (): boolean => monitorPanelEnabledCache
     decodeSettings(bridgeScope.getSnapshot().value)?.monitorPanel?.enabled ?? false
   readMonitorPanelEnabled = (): boolean => (configFormsHandle === undefined ? bridgeReadEnabled() : monitorPanelEnabledCache)
   try {
-    ctx.inject(['configForms'], (configForms) => {
-      configFormsHandle = configForms as unknown as ConfigFormsHandle
+    ctx.inject(['configForms'], (configFormsArg) => {
+      // cordis passes the service's OWNER CONTEXT to inject callbacks (the
+      // server-plane lease relies on the same convention: the service rides a
+      // property of the delivered ctx). Taking the argument itself made
+      // `get(ENTRY_ID)` a Context.get for an entry-shaped service name —
+      // undefined, then `form.getSnapshot()` crashed and the host's slot
+      // boundary abdicated the whole settings section (0.1.7 dead-cell,
+      // measured). Resolve the service off the context; fall back to the raw
+      // argument for test seams that hand the service directly.
+      const svc = (configFormsArg as { configForms?: unknown } | undefined)?.configForms
+      const face = (svc !== undefined && svc !== null ? svc : configFormsArg) as unknown as ConfigFormsHandle
+      configFormsHandle = typeof face?.get === 'function' ? face : undefined
     })
   } catch (error) {
     console.warn('[dsh-context-compression-improved] configForms 臂挂载失败(桥面继续服务):', error)
@@ -232,9 +242,16 @@ let readMonitorPanelEnabled = (): boolean => monitorPanelEnabledCache
   const injected = (): CompressionSelectorInjected => {
     // 双臂选择：configForms 臂已 resolve（0.1.7+）→ 原生 scope；否则桥 scope
     // （0.1.0–0.1.5 的唯一活数据面，0.1.7+ resolve 前的过渡读也由它服务）。
-    const scope: SettingsScope<ContextCompressionSettings> = configFormsHandle !== undefined
-      ? scopeFromConfigForms(configFormsHandle)
-      : bridgeScope
+    // 臂构建失败（宿主面漂移、entry 未服务等）回落桥面，绝不把分节炸成死格
+    // —— 宿主槽边界的 abdicate 是整机退役，0.1.7 实测就是空白分节。
+    let scope: SettingsScope<ContextCompressionSettings> = bridgeScope
+    if (configFormsHandle !== undefined) {
+      try {
+        scope = scopeFromConfigForms(configFormsHandle)
+      } catch (error) {
+        console.warn('[dsh-context-compression-improved] configForms scope 构建失败(回落桥面):', error)
+      }
+    }
     const writeAndConfirm = async (
       write: () => Promise<unknown>,
       accepts: (settings: ContextCompressionSettings) => boolean,

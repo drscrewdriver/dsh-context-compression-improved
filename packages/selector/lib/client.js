@@ -3301,8 +3301,10 @@ window.__ModuleLoader__.load({
 			const bridgeReadEnabled = () => decodeSettings(bridgeScope.getSnapshot().value)?.monitorPanel?.enabled ?? false;
 			readMonitorPanelEnabled = () => configFormsHandle === void 0 ? bridgeReadEnabled() : monitorPanelEnabledCache;
 			try {
-				ctx.inject(["configForms"], (configForms) => {
-					configFormsHandle = configForms;
+				ctx.inject(["configForms"], (configFormsArg) => {
+					const svc = configFormsArg?.configForms;
+					const face = svc !== void 0 && svc !== null ? svc : configFormsArg;
+					configFormsHandle = typeof face?.get === "function" ? face : void 0;
 				});
 			} catch (error) {
 				console.warn("[dsh-context-compression-improved] configForms 臂挂载失败(桥面继续服务):", error);
@@ -3365,7 +3367,12 @@ window.__ModuleLoader__.load({
 				};
 			};
 			const injected = () => {
-				const scope = configFormsHandle !== void 0 ? scopeFromConfigForms(configFormsHandle) : bridgeScope;
+				let scope = bridgeScope;
+				if (configFormsHandle !== void 0) try {
+					scope = scopeFromConfigForms(configFormsHandle);
+				} catch (error) {
+					console.warn("[dsh-context-compression-improved] configForms scope 构建失败(回落桥面):", error);
+				}
 				const writeAndConfirm = async (write, accepts) => {
 					const beforeRevision = scope.getSnapshot().revision;
 					await write();
