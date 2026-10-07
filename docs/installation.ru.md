@@ -3,14 +3,14 @@
 > [English](installation.md) · [中文](installation.zh.md) · [日本語](installation.ja.md) · [한국어](installation.ko.md) · [Français](installation.fr.md) · [Deutsch](installation.de.md) · [Italiano](installation.it.md) · [Русский](installation.ru.md) · [Español](installation.es.md)
 
 Это руководство описывает установку форка из исходников. Форк также опубликован в npm как
-`dsh-context-compression-improved` под dist-tag `dsh-0.1.5`; имя пакета намеренно совпадает
+`dsh-context-compression-improved` под dist-tag `latest` — одна версия обслуживает все поддерживаемые линии Harness (0.1.0-rc.2 — 0.2.0-rc.2); имя пакета намеренно совпадает
 с апстримовским. Рантайм, который раньше был отдельным вторым пакетом, теперь входит в его
 состав, поэтому одна установка приносит весь стек целиком.
 
 ## Предварительные требования
 
 - Node `^22.19.0 || >=24` и pnpm `11.7.0` (`corepack enable` берёт зафиксированную версию из поля `packageManager`).
-- Установка DeepSeek Harness, совместимая с диапазоном peers `0.1.1-rc.2` (проверено против официального релиза `dsh-v0.1.2-alpha.5`).
+- Установка DeepSeek Harness из 15-rc peer-перечня плагина (`0.1.0-rc.2` — `0.2.0-rc.2`).
 - Маршрут модели DeepSeek. Сжатие с потерями — включая гейт скелетов кода — принимает решения на символьной основе, поэтому требование к маршруту со встроенным токенизатором больше не действует; если встроенный токенизатор есть, его точные подсчёты записываются как телеметрия, а остальные маршруты работают по принципу fail-open и сохраняют исходные результаты инструментов.
 - Git.
 
@@ -32,7 +32,7 @@ pnpm build
 ```sh
 cd packages/selector
 pnpm pack
-# → dsh-context-compression-improved-0.1.0.tgz
+# → dsh-context-compression-improved-0.9.0.tgz
 cd ../..
 ```
 
@@ -43,7 +43,7 @@ cd ../..
 Пакет селектора объявляет поле манифеста Bundle харнесса `dsh.bundle.patch`, поэтому `dsh plugin add` — это стандартный путь установки Bundle вне дерева:
 
 ```sh
-dsh plugin --profile web add packages/selector/dsh-context-compression-improved-0.1.0.tgz
+dsh plugin --profile web add packages/selector/dsh-context-compression-improved-0.9.0.tgz
 dsh --profile web --dump-config
 ```
 
@@ -90,7 +90,7 @@ advisor (1) резюмирует текущую задачу по последн
 # update: pull, rebuild, repack, and add the new tarball again
 git pull && pnpm install --frozen-lockfile && pnpm build
 cd packages/selector && pnpm pack && cd ../..
-dsh plugin --profile web add packages/selector/dsh-context-compression-improved-0.1.0.tgz
+dsh plugin --profile web add packages/selector/dsh-context-compression-improved-0.9.0.tgz
 
 # remove
 dsh plugin --profile web remove dsh-context-compression-improved

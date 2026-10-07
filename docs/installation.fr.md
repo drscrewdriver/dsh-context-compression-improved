@@ -3,14 +3,14 @@
 > [English](installation.md) · [中文](installation.zh.md) · [日本語](installation.ja.md) · [한국어](installation.ko.md) · [Français](installation.fr.md) · [Deutsch](installation.de.md) · [Italiano](installation.it.md) · [Русский](installation.ru.md) · [Español](installation.es.md)
 
 Ce guide installe le fork depuis les sources. Le fork est aussi publié sur npm sous le
-nom `dsh-context-compression-improved` avec le dist-tag `dsh-0.1.5` ; le nom du package
+nom `dsh-context-compression-improved` avec le dist-tag `latest` — une seule version couvre toutes les lignes Harness prises en charge (0.1.0-rc.2 à 0.2.0-rc.2) ; le nom du package
 reste volontairement celui de l'amont. Le runtime, qui constituait autrefois un second
 package, en fait désormais partie : une seule installation apporte toute la pile.
 
 ## Prérequis
 
 - Node `^22.19.0 || >=24` et pnpm `11.7.0` (`corepack enable` retient la version épinglée du champ `packageManager`).
-- Une installation de DeepSeek Harness compatible avec la plage de peers `0.1.1-rc.2` (vérifié contre la version officielle `dsh-v0.1.2-alpha.5`).
+- Une installation de DeepSeek Harness dans l'énumération peer 15-rc du plugin (`0.1.0-rc.2` à `0.2.0-rc.2`).
 - Une route de modèle DeepSeek. La compression avec perte — y compris la porte squelette de code — décide sur la base de caractères, de sorte qu'aucune exigence de route avec tokenizer fourni ne subsiste ; lorsqu'un tokenizer fourni existe, ses comptages exacts sont enregistrés comme télémétrie, et les autres routes échouent en mode ouvert (fail-open) et conservent les résultats d'outils originaux.
 - Git.
 
@@ -32,7 +32,7 @@ Le package sélecteur est la seule entrée Bundle ; le runtime l'accompagne comm
 ```sh
 cd packages/selector
 pnpm pack
-# → dsh-context-compression-improved-0.1.0.tgz
+# → dsh-context-compression-improved-0.9.0.tgz
 cd ../..
 ```
 
@@ -43,7 +43,7 @@ cd ../..
 Le package sélecteur déclare le champ de manifeste Bundle du Harness `dsh.bundle.patch`, donc `dsh plugin add` est le chemin d'installation Bundle hors arbre standard :
 
 ```sh
-dsh plugin --profile web add packages/selector/dsh-context-compression-improved-0.1.0.tgz
+dsh plugin --profile web add packages/selector/dsh-context-compression-improved-0.9.0.tgz
 dsh --profile web --dump-config
 ```
 
@@ -90,7 +90,7 @@ supprimer, retarder ni réécrire une réduction qui doit s'appliquer.
 # update: pull, rebuild, repack, and add the new tarball again
 git pull && pnpm install --frozen-lockfile && pnpm build
 cd packages/selector && pnpm pack && cd ../..
-dsh plugin --profile web add packages/selector/dsh-context-compression-improved-0.1.0.tgz
+dsh plugin --profile web add packages/selector/dsh-context-compression-improved-0.9.0.tgz
 
 # remove
 dsh plugin --profile web remove dsh-context-compression-improved

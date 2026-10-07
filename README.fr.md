@@ -51,16 +51,10 @@ Choisissez un profil de compression, réglez le niveau de déclenchement de l'Au
 
 ## Installation
 
-**Recommandé : installer depuis npm.** Un dist-tag par ligne Harness — `dsh-0.2.0` pour la ligne 0.2.0 (cette branche), `dsh-0.1.7` pour la ligne 0.1.7, `dsh-0.1.5` pour la ligne 0.1.5, `dsh-0.1.2` pour la ligne 0.1.2.
+**Recommandé : installer depuis npm.** Une seule version couvre toutes les lignes Harness prises en charge — `latest` porte l'énumération complète des 15 rc (0.1.0-rc.2 → 0.2.0-rc.2) ; le runtime choisit lui-même les chemins de code propres à chaque ligne.
 
 ```sh
-dsh plugin --profile web add dsh-context-compression-improved@dsh-0.2.0
-# DSH 0.1.7 line:
-# dsh plugin --profile web add dsh-context-compression-improved@dsh-0.1.7
-# DSH 0.1.5 line:
-# dsh plugin --profile web add dsh-context-compression-improved@dsh-0.1.5
-# DSH 0.1.2 line:
-# dsh plugin --profile web add dsh-context-compression-improved@dsh-0.1.2
+dsh plugin --profile web add dsh-context-compression-improved@latest
 dsh --profile web --dump-config
 ```
 
@@ -91,7 +85,7 @@ Les contributions suivent la discipline de l'amont : ajouter d'abord la régress
 
 ## Compatibilité
 
-- Construit et testé contre la version officielle DeepSeek Harness `dsh-v0.2.0-rc.1` ; les peers déclarent `>=0.2.0-rc.1 <0.2.1-0` et le plugin n'utilise que les API publiques de plugin et de profil. Les lignes antérieures restent servies depuis leurs propres dist-tags (`dsh-0.1.7`, `dsh-0.1.5`, `dsh-0.1.2`).
+- Construit et testé contre les versions officielles de DeepSeek Harness ; les pairs énumèrent la liste complète de prise en charge (`0.1.0-rc.2` → `0.2.0-rc.2`, six lignes) et le plugin n'utilise que les API publiques de plugin et de profil. La liste est générée par `scripts/sync-hosts.mjs` depuis `scripts/hosts.mjs` vers le bloc géré ci-dessus.
 - Nécessite Node `^22.19.0 || >=24` et pnpm `11.7.0`.
 - Le plugin n'utilise que les API d'extension publiques du Harness et ne modifie pas le code du cœur du Harness. Projet communautaire non officiel, sans affiliation ni approbation de DeepSeek.
 

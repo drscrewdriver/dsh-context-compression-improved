@@ -51,16 +51,10 @@
 
 ## Установка
 
-**Рекомендуется: установка из npm.** Один dist-tag на линейку Harness — `dsh-0.2.0` для линейки 0.2.0 (эта ветка), `dsh-0.1.7` для линейки 0.1.7, `dsh-0.1.5` для линейки 0.1.5, `dsh-0.1.2` для линейки 0.1.2.
+**Рекомендуется: установка из npm.** Одна версия обслуживает все поддерживаемые линейки Harness — `latest` несёт полный перечень из 15 rc (0.1.0-rc.2 → 0.2.0-rc.2); рантайм сам выбирает ветки кода для своей линейки.
 
 ```sh
-dsh plugin --profile web add dsh-context-compression-improved@dsh-0.2.0
-# DSH 0.1.7 line:
-# dsh plugin --profile web add dsh-context-compression-improved@dsh-0.1.7
-# DSH 0.1.5 line:
-# dsh plugin --profile web add dsh-context-compression-improved@dsh-0.1.5
-# DSH 0.1.2 line:
-# dsh plugin --profile web add dsh-context-compression-improved@dsh-0.1.2
+dsh plugin --profile web add dsh-context-compression-improved@latest
 dsh --profile web --dump-config
 ```
 
@@ -91,7 +85,7 @@ pnpm verify:release
 
 ## Совместимость
 
-- Собрано и протестировано против официального релиза DeepSeek Harness `dsh-v0.2.0-rc.1`; peers объявляют `>=0.2.0-rc.1 <0.2.1-0`, и плагин использует только публичные API плагинов и профилей. Прежние линейки по-прежнему обслуживаются собственными dist-tag (`dsh-0.1.7`, `dsh-0.1.5`, `dsh-0.1.2`).
+- Собрано и протестировано против официальных релизов DeepSeek Harness; peers перечисляют полный список поддержки (`0.1.0-rc.2` → `0.2.0-rc.2`, шесть линеек), и плагин использует только публичные API плагинов и профилей. Список генерируется `scripts/sync-hosts.mjs` из `scripts/hosts.mjs` в управляемый блок выше.
 - Требуются Node `^22.19.0 || >=24` и pnpm `11.7.0`.
 - Плагин использует только публичные API расширений Harness и не изменяет код ядра Harness. Неофициальный проект сообщества, не связан с DeepSeek и не одобрен им.
 
