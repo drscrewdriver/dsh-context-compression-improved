@@ -3,14 +3,14 @@
 > [English](installation.md) · [中文](installation.zh.md) · [日本語](installation.ja.md) · [한국어](installation.ko.md) · [Français](installation.fr.md) · [Deutsch](installation.de.md) · [Italiano](installation.it.md) · [Русский](installation.ru.md) · [Español](installation.es.md)
 
 This guide installs the fork from source. The fork is published to npm as
-`dsh-context-compression-improved` under the `dsh-0.1.5` dist-tag; the package name
+`dsh-context-compression-improved` under the `latest` — one version serves every supported Harness line, `0.1.0-rc.2` through `0.2.0-rc.2` dist-tag; the package name
 intentionally stays upstream's. The runtime that used to be a second package is now part of
 it, so one install brings the whole stack.
 
 ## Prerequisites
 
 - Node `^22.19.0 || >=24` and pnpm `11.7.0` (`corepack enable` picks the pinned version from `packageManager`).
-- A DeepSeek Harness installation compatible with the `0.1.1-rc.2` peer range (verified against the official `dsh-v0.1.2-alpha.5` release).
+- A DeepSeek Harness installation within the plugin's 15-rc peer enum (any of `0.1.0-rc.2` through `0.2.0-rc.2`).
 - A DeepSeek model route. Lossy compression — including the code-skeleton gate — decides on the character basis, so no bundled-tokenizer route requirement remains; when a bundled tokenizer exists its exact counts are recorded as telemetry, and other routes fail open and keep original tool results.
 - Git.
 
@@ -32,7 +32,7 @@ The selector package is the single Bundle entry; the runtime comes along as its 
 ```sh
 cd packages/selector
 pnpm pack
-# → dsh-context-compression-improved-0.1.0.tgz
+# → dsh-context-compression-improved-0.9.0.tgz
 cd ../..
 ```
 
@@ -43,7 +43,7 @@ cd ../..
 The selector package declares the Harness Bundle manifest field `dsh.bundle.patch`, so `dsh plugin add` is the standard out-of-tree Bundle installation path:
 
 ```sh
-dsh plugin --profile web add packages/selector/dsh-context-compression-improved-0.1.0.tgz
+dsh plugin --profile web add packages/selector/dsh-context-compression-improved-0.9.0.tgz
 dsh --profile web --dump-config
 ```
 
@@ -89,7 +89,7 @@ suppress, delay, or rewrite any reduction that would land.
 # update: pull, rebuild, repack, and add the new tarball again
 git pull && pnpm install --frozen-lockfile && pnpm build
 cd packages/selector && pnpm pack && cd ../..
-dsh plugin --profile web add packages/selector/dsh-context-compression-improved-0.1.0.tgz
+dsh plugin --profile web add packages/selector/dsh-context-compression-improved-0.9.0.tgz
 
 # remove
 dsh plugin --profile web remove dsh-context-compression-improved
