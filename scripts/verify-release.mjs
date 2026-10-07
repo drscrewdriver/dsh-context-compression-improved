@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { selectorDshPeers } from './hosts.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 
@@ -147,12 +148,21 @@ if (selectorPackage.files?.some((entry) => entry.endsWith('.css'))) {
 if (selectorPackage.name !== 'dsh-context-compression-improved') fail('unexpected selector package name')
 if (selectorPackage.publishConfig?.access !== 'public') fail('selector publish access is not public')
 if (selectorPackage.publishConfig?.tag !== 'latest') fail('selector publish tag is not latest')
-for (const peer of [
-  '@deepseek-ai/dsh-command-compact',
-  '@deepseek-ai/dsh-compaction-basic',
-]) {
-  if (selectorPackage.peerDependencies?.[peer] !== '>=0.2.0-rc.1 <0.2.1-0') {
-    fail(`selector peer ${peer} is missing or outside the verified range`)
+// compat-legacy 单版本：dsh-* peer 走 hosts.mjs 的 15rc 枚举（同一口径）。
+for (const peer of selectorDshPeers) {
+  if (selectorPackage.peerDependencies?.[peer] !== selectorPackage.engines?.dsh) {
+    fail(`selector peer ${peer} is missing or outside the supportedHosts enum`)
+  }
+}
+if (selectorPackage.engines?.dsh?.split(' || ').length !== 15) {
+  fail('selector engines.dsh must carry the 15-rc supportedHosts enum')
+}
+if (rootPackage.engines?.dsh?.split(' || ').length !== 15) {
+  fail('root engines.dsh must carry the 15-rc supportedHosts enum (install-surface gate)')
+}
+for (const peer of Object.keys(rootPackage.peerDependencies ?? {})) {
+  if (rootPackage.peerDependencies[peer] !== rootPackage.engines.dsh) {
+    fail(`root peer ${peer} must equal the install-surface enum`)
   }
 }
 const packageRoot = join(root, 'packages/selector')

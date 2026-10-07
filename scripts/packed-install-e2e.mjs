@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { selectorDshPeers } from './hosts.mjs'
 import { spawn } from 'node:child_process'
 import { createReadStream } from 'node:fs'
 import { copyFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
@@ -1112,10 +1113,13 @@ try {
   if (selector.publishConfig?.tag !== 'latest') {
     throw new Error('packed package is not guarded by publishConfig.tag=latest')
   }
-  for (const peer of ['@deepseek-ai/dsh-command-compact', '@deepseek-ai/dsh-compaction-basic']) {
-    if (selector.peerDependencies?.[peer] !== '>=0.2.0-rc.1 <0.2.1-0') {
-      throw new Error(`packed selector has an invalid ${peer} peer range`)
+  for (const peer of selectorDshPeers) {
+    if (selector.peerDependencies?.[peer] !== selector.engines?.dsh) {
+      throw new Error(`packed selector has an invalid ${peer} peer range (expected the supportedHosts enum)`)
     }
+  }
+  if (selector.engines?.dsh?.split(' || ').length !== 15) {
+    throw new Error('packed selector engines.dsh must carry the 15-rc supportedHosts enum')
   }
   for (const directory of [selectorDir]) {
     const notice = await readFile(join(directory, 'THIRD_PARTY_NOTICES.md'), 'utf8')
