@@ -1,6 +1,6 @@
 {
   "name": "dsh-context-compression-improved",
-  "version": "0.9.0-alpha.3",
+  "version": "0.9.0-alpha.4",
   "publishConfig": {
     "tag": "latest"
   },
