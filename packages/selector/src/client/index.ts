@@ -3,6 +3,7 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
+import { createElement, useSyncExternalStore } from 'react'
 import {
   isCustomCompressionPolicy,
   ContextCompressionSettingsSection,
@@ -347,16 +348,33 @@ let readMonitorPanelEnabled = (): boolean => monitorPanelEnabledCache
     console.warn('[dsh-context-compression-improved] conversation.input.left 注册失败(旧宿主无该槽,浮动面板保持聚合口径):', error)
   }
 
-  // Bundle 详情页设置卡(0.1.7+):plugins.bundle.config 槽,key=包名整卡平铺
-  // (searxng compat-legacy 蓝本;Gate 0 rc.1 格注册零异常,渲染级确认留矩阵)。
+  // Bundle 详情页设置卡(0.1.7+):plugins.bundle.config keyed 槽,key=包名整卡平铺
+  // (searxng compat-legacy 蓝本)。实测契约(0.1.7-rc.1 真机格):
+  //   ①不能用 entry.inject —— 这条渲染链不带 hookContext,宿主不会把 inject 返回的
+  //     hooks.compression 映射成组件的 useCompression,组件首帧
+  //     `useCompression is not a function` 崩进 SlotErrorBoundary → entry 被
+  //     abdicate 成 data-slot-error 死格,且 abdication 本会话粘滞不再重试;
+  //   ②locale: NS 必须保留 —— 它是宿主标准包 t(localeSeat)的唯一来源;
+  //   ③组件闭包自取 injected(),并把 hooks.compression 手工适配成 useCompression
+  //     (useSyncExternalStore 包装)。读写仍走 configForms 原生臂(宿主桥)。
   // 老宿主无该槽 → 激活期抛错由 try/catch 吞掉,静默缺席。
   try {
     ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
       name: 'plugins.bundle.config',
       key: 'dsh-context-compression-improved',
       locale: NS,
-      inject: injected,
-    }, ContextCompressionSettingsSection))
+    }, (props: { close?: () => void }) => {
+      const inj = injected()
+      const scope = inj.hooks?.compression
+      const useCompression = <T,>(selector: (snapshot: ScopeSnapshot<ContextCompressionSettings>) => T): T => {
+        if (!scope) return selector({ status: 'loading', value: undefined, revision: undefined, writable: false, base: undefined, user: undefined, mode: 'memory' })
+        return useSyncExternalStore(
+          scope.subscribe,
+          () => selector(scope.getSnapshot()),
+        )
+      }
+      return createElement(ContextCompressionSettingsSection, { ...inj, ...props, useCompression } as never)
+    }))
   } catch (error) {
     console.warn('[dsh-context-compression-improved] plugins.bundle.config 注册失败(旧宿主无该槽,静默缺席):', error)
   }
