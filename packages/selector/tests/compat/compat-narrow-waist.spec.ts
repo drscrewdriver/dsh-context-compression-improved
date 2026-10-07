@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { viewToolResult, compressionMessageSource } from '../../src/compat/tool-result.ts'
-import { detectHostGeneration, resetHostGenerationCache } from '../../src/compat/host-generation.ts'
+import { detectHostGeneration, resetHostGenerationCache, noteResolvedSettingsService, hostGenerationSnapshot } from '../../src/compat/host-generation.ts'
 import { acquireSettingsLease } from '../../src/compat/settings-lease.ts'
 
 const MODERN_TOOL_RESULT = {
@@ -89,6 +89,28 @@ describe('detectHostGeneration (capability probe)', () => {
 		resetHostGenerationCache()
 		expect(detectHostGeneration({ get: () => undefined })).toBe('modern')
 		resetHostGenerationCache()
+	})
+
+	it('does not cache the provisional verdict taken while the service is absent', () => {
+		// Measured on the real 0.1.0-rc.2 cell: rows compose before the host
+		// settings service, and the old probe cached that absence as 'modern'
+		// forever — the legacy lease arm went dead on the line it was built for.
+		resetHostGenerationCache()
+		expect(detectHostGeneration({ get: () => undefined })).toBe('modern')
+		// Later evidence (the settings inject callback) must still flip it.
+		expect(noteResolvedSettingsService({ register: () => ({}) })).toBe('legacy')
+	})
+
+	it('noteResolvedSettingsService overrides even a definitive earlier verdict', () => {
+		resetHostGenerationCache()
+		expect(detectHostGeneration({ get: () => ({ describe: () => [] }) })).toBe('modern')
+		expect(noteResolvedSettingsService({ register: () => ({}) })).toBe('legacy')
+		expect(hostGenerationSnapshot()).toBe('legacy')
+	})
+
+	it('hostGenerationSnapshot defaults to modern without any evidence', () => {
+		resetHostGenerationCache()
+		expect(hostGenerationSnapshot()).toBe('modern')
 	})
 })
 

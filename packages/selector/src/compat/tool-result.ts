@@ -17,7 +17,7 @@
  * 0.1.7-rc.1 envelope shape was only load-verified, not session-verified —
  * this makes a wrong flag self-correcting instead of silently misreading).
  */
-import { detectHostGeneration, type HostGeneration } from './host-generation.ts'
+import { hostGenerationSnapshot, type HostGeneration } from './host-generation.ts'
 
 /** Strict signature of the enveloped (0.1.x) tool/result message. */
 function envelopedShape(content: unknown): content is [{ type: 'tool-result'; content: unknown[]; isError?: boolean }] {
@@ -39,7 +39,7 @@ export function viewToolResult(
 	message: { content?: unknown; isError?: unknown; toolCallId?: unknown; source?: { callId?: unknown } },
 	generation?: HostGeneration,
 ): ToolResultView {
-	const gen = generation ?? detectHostGeneration({ get: () => undefined })
+	const gen = generation ?? hostGenerationSnapshot()
 	const content = message.content
 	if (envelopedShape(content)) {
 		const wrapper = content[0]
@@ -83,7 +83,7 @@ export function viewToolResult(
 const PLUGIN_ID = 'dsh-context-compression-improved'
 
 export function compressionMessageSource(generation?: HostGeneration): { kind: string; plugin?: string } {
-	const gen = generation ?? detectHostGeneration({ get: () => undefined })
+	const gen = generation ?? hostGenerationSnapshot()
 	if (gen === 'legacy') {
 		return { kind: 'plugin', plugin: PLUGIN_ID } as never
 	}

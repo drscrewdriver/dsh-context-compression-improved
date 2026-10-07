@@ -1,4 +1,4 @@
-import { n as detectHostGeneration } from "./host-generation.js";
+import { r as hostGenerationSnapshot } from "./host-generation.js";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 //#region src/runtime/session-events.ts
 /**
@@ -47,7 +47,7 @@ function envelopedShape(content) {
 	return Array.isArray(content) && content.length === 1 && typeof content[0] === "object" && content[0] !== null && content[0].type === "tool-result" && Array.isArray(content[0].content);
 }
 function viewToolResult(message, generation) {
-	const gen = generation ?? detectHostGeneration({ get: () => void 0 });
+	const gen = generation ?? hostGenerationSnapshot();
 	const content = message.content;
 	if (envelopedShape(content)) {
 		const wrapper = content[0];
@@ -81,7 +81,7 @@ function viewToolResult(message, generation) {
 */
 const PLUGIN_ID = "dsh-context-compression-improved";
 function compressionMessageSource(generation) {
-	if ((generation ?? detectHostGeneration({ get: () => void 0 })) === "legacy") return {
+	if ((generation ?? hostGenerationSnapshot()) === "legacy") return {
 		kind: "plugin",
 		plugin: PLUGIN_ID
 	};
@@ -135,7 +135,8 @@ function validatePublishedTailTrim(session, manifestSeq) {
 	const manifest = events[manifestSeq];
 	if (manifest?.type !== "compaction/prune" || manifest.data.shadowedSeqs.length < 2 || manifest.data.shadowedSeqs.length > MAX_ROOTS || manifest.data.shadowedSeqs[0] !== Number(manifest.data.shadowedRange.start) || manifest.data.shadowedSeqs.at(-1) !== Number(manifest.data.shadowedRange.end) || new Set(manifest.data.shadowedSeqs).size !== manifest.data.shadowedSeqs.length) return null;
 	const replacement = events[manifestSeq + 1];
-	if (replacement?.type !== "user/message" || replacement.seq !== manifest.seq + 1 || replacement.data.source.kind !== "dsh-context-compression" || replacement.surfaceOp === void 0 || replacement.surfaceOp === "append" || replacement.surfaceOp.startSeq !== manifest.data.shadowedRange.start || replacement.surfaceOp.endSeq !== manifest.data.shadowedRange.end || !sameNumbers(replacement.sourceEventSeqs, [manifest.seq, ...manifest.data.shadowedSeqs]) || replacement.data.content.length !== 1 || replacement.data.content[0]?.type !== "text") return null;
+	const expectedSource = compressionMessageSource();
+	if (replacement?.type !== "user/message" || replacement.seq !== manifest.seq + 1 || replacement.data.source.kind !== expectedSource.kind || replacement.surfaceOp === void 0 || replacement.surfaceOp === "append" || replacement.surfaceOp.startSeq !== manifest.data.shadowedRange.start || replacement.surfaceOp.endSeq !== manifest.data.shadowedRange.end || !sameNumbers(replacement.sourceEventSeqs, [manifest.seq, ...manifest.data.shadowedSeqs]) || replacement.data.content.length !== 1 || replacement.data.content[0]?.type !== "text") return null;
 	const tracedRoots = manifest.data.shadowedSeqs.map((seq) => uniqueAppendRoot(session, seq, manifestSeq));
 	if (tracedRoots.some((root) => root === null)) return null;
 	const sourceEventSeqs = tracedRoots;
