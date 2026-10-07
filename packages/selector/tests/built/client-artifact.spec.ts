@@ -34,15 +34,12 @@ describe('built Harness client artifact', () => {
     }) as { apply?: unknown, inject?: unknown }
 
     expect(exported.apply).toBeTypeOf('function')
-    // Declare every consumed service: cordis holds apply until each one is
-    // provided, which is the official client-plugin pattern on this 0.1.5 host
-    // line (dsh-thinking-levels does the same). The earlier lazy alternative —
-    // resolving `locale` / `configForms` through ctx.get() inside apply —
-    // raced the settings client's activation; on a loss the apply
-    // early-returned and EVERY settings entry (the standalone section, the
-    // plugins-tab card, the item card) silently vanished. See the rationale
-    // recorded in src/client/index.ts.
-    expect(exported.inject).toEqual(['slots', 'locale', 'configForms'])
+    // compat-legacy 单版本（audit B8，实跑实证）：顶层 inject 只声明六线通用服务；
+    // configForms（0.1.7+ 才存在）由 apply 内的 scoped 子注入消费。早期把 configForms
+    // 放进顶层 inject 会令 0.1.0-0.1.5 宿主的 cordis 永久 hold 整个 client 模块。
+    // 另见 src/client/index.ts 顶注：lazy 化曾与 settings client 激活竞速导致全部
+    // 设置入口静默消失，故 slots/locale 仍保持官方声明式 inject。
+    expect(exported.inject).toEqual(['slots', 'locale'])
     const style = document.querySelector<HTMLStyleElement>(
       'style[data-plugin-css="dsh-context-compression-improved/CompressionProfileSelector.module.css"]',
     )

@@ -2,6 +2,46 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
+## 0.9.0 - 2026-10-08
+
+### Added
+
+- **One version for every Harness line**: 0.9.0 is a single release serving all 15 rc
+  from 0.1.0-rc.2 to 0.2.0-rc.2 (six host lines). The per-line dist-tag scheme is
+  retired — after publishing, `latest`, `dsh-0.1.2`, `dsh-0.1.5`, `dsh-0.1.7` and
+  `dsh-0.2.0` all point at 0.9.0.
+- **Three-generation settings waist**: at startup the plugin detects which settings
+  face the host exposes — the legacy `settings.register` service (0.1.0-0.1.5) or
+  loader-managed volatile config + `configForms` (0.1.7+/0.2.0) — and arms only the
+  matching client surface (`settings.section` vs `configForms`), plus the
+  `plugins.bundle.config` package-detail card on 0.1.7+.
+- **Settings bridge**: on legacy lines tools read and write through a lease-writable
+  settings namespace (enveloped tool results); on modern lines they read the
+  configForms document directly, and bridge writes return 409 by design.
+- The `plugins.bundle.config` detail card renders the full settings component via a
+  closure-built `useCompression` (the package-detail chain has no hookContext, so
+  entry-level hook injection is unavailable there).
+
+### Fixed
+
+- The generation probe no longer caches a provisional answer at wire time: absence of
+  the settings service during row composition (before host services exist) is
+  re-resolved when the service actually injects — the legacy lease arm was previously
+  dead on 0.1.0.
+- The tail-trim validator compares the replacement's source kind against the
+  generation-gated writer instead of a hardcoded plugin id, so it no longer rejects
+  its own legacy enveloped output.
+- The configForms client arm resolves the service off the injected owner context's
+  `.configForms` property; using the raw Context as the handle made `get()` return
+  `undefined` and the host slot boundary abdicated the settings section into a dead
+  cell on 0.1.7.
+
+### Changed
+
+- All `@deepseek-ai/dsh-*` peer ranges and `engines.dsh` enumerate the 15 rc
+  explicitly, so no engine/peer gate blocks installation on any host line.
+
+
 ## 0.8.0 - 2026-10-02
 
 > 0.2.0-beta 渠道(beta.3-beta.7)转正。本期主线功能(节省统计、意图摘要、

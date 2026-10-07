@@ -2,7 +2,7 @@ import { realpath } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import { agentEvents } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
@@ -15,7 +15,6 @@ import LlmRuntime, {
   LlmAdapter,
 } from '@deepseek-ai/dsh-llm'
 import SessionStore, { Session, SessionId, canonicalHeader } from '@deepseek-ai/dsh-session'
-import { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
@@ -41,17 +40,43 @@ for (const path of [selectorPackage, prunerEntry]) {
     `product module resolved outside the packed consumer: ${resolved}`)
 }
 
-class MemorySettings extends SettingsProvider {
+// compat-legacy 单版本：dsh-settings 在 0.1.7+ 基线不再导出 SettingsProvider
+// （≤0.1.5 专属，0.1.7 起为 SettingsForms），因此内存 provider 自带 legacy 面
+// （register/get/update/persist 语义），不再继承宿主类。
+class MemorySettings extends Service {
   writable = true
   stored = {}
+  registrations = new Map()
 
-  load() {
-    return Promise.resolve(structuredClone(this.stored))
+  constructor(ctx) {
+    super(ctx, 'settings')
   }
 
-  persist(namespace, section) {
-    this.stored[namespace] = structuredClone(section)
-    return Promise.resolve()
+  register(ns, schema, options) {
+    const registration = {
+      schema,
+      base: options?.base,
+      section: {},
+      resolved: schema({ ...(options?.base ?? {}) }),
+    }
+    this.registrations.set(String(ns), registration)
+    return {
+      get: () => registration.resolved,
+      update: (patch) => this.update(ns, patch),
+    }
+  }
+
+  get(ns) {
+    return this.registrations.get(String(ns))?.resolved
+  }
+
+  update(ns, patch) {
+    const registration = this.registrations.get(String(ns))
+    if (registration === undefined) return Promise.resolve(false)
+    registration.section = { ...registration.section, ...patch }
+    registration.resolved = registration.schema({ ...(registration.base ?? {}), ...registration.section })
+    this.stored[String(ns)] = structuredClone(registration.section)
+    return Promise.resolve(registration.resolved)
   }
 }
 
@@ -68,6 +93,9 @@ class NativeSummaryAdapter extends LlmAdapter {
       id: model,
       name: model,
       context: { contextWindow: this.contextWindow },
+      // 0.1.7+ 压缩引擎按 contextWindow − completion 保留 − headroom 计算压力
+      // 预算；不声明保留量会让预算落到负值，引擎在 pre-step 里静默跳过。
+      defaultMaxTokens: 16,
     })
   }
 
@@ -600,13 +628,16 @@ try {
   const beforeNative = ctx.tokenMeter.measure(session).totalTokens
   assert(beforeNative > 2, 'installed pipeline has no Native pressure')
   ctx.llm.registerAdapter(['deepseek'], new NativeSummaryAdapter(['packed native summary'], beforeNative))
-  void new BasicCompactionEngine(ctx, {
+  const nativeEngine = new BasicCompactionEngine(ctx, {
     auto: true,
     thresholdRatio: 0.5,
     retainTokens: 0,
     maxTokens: 100,
+    // 0.1.7+ 引擎默认 headroom 65536，必须压到 contextWindow 之内才存在压力预算。
+    headroomTokens: 100,
     compactionRetries: 0,
   })
+  void nativeEngine
   const decision = await agentEvents(ctx, stubAgent(ctx, session)).waterfall(
     'agent/pre-step',
     { messages: [], turn: 5, step: 1, signal: new AbortController().signal },
@@ -614,7 +645,7 @@ try {
   )
   assert(decision.kind === 'enter', 'Native pre-step did not return enter')
   assert(session.snapshotEvents().some(event => event.type === 'compaction/summary'),
-    'official BasicCompactionEngine did not commit Native summary')
+    `official BasicCompactionEngine did not commit Native summary (beforeNative=${beforeNative})`)
 
   await ctx.settings.update(namespace, { profile: 'native' })
   const nativeSession = Session.create(SessionId('packed-native-tool-result'))

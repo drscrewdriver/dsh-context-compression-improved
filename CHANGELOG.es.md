@@ -4,6 +4,47 @@
 
 Todos los cambios notables se registran en este archivo. El proyecto sigue el versionado semántico a partir de `0.1.0`.
 
+## 0.9.0 - 2026-10-08
+
+### Añadido
+
+- **Una versión para todas las líneas de Harness**: 0.9.0 es una única versión que atiende
+  los 15 rc desde 0.1.0-rc.2 hasta 0.2.0-rc.2 (seis líneas de host). El esquema de
+  dist-tag por línea se retira — tras publicar, `latest`, `dsh-0.1.2`, `dsh-0.1.5`,
+  `dsh-0.1.7` y `dsh-0.2.0` apuntarán todos a 0.9.0.
+- **Cinturón de ajustes de tres generaciones**: al arrancar, el plugin detecta qué cara de
+  ajustes expone el host — el servicio heredado `settings.register` (0.1.0-0.1.5) o la
+  configuración volátil gestionada por el loader + `configForms` (0.1.7+/0.2.0) — y arma
+  solo la superficie cliente correspondiente (`settings.section` vs `configForms`), más la
+  tarjeta `plugins.bundle.config` en 0.1.7+.
+- **Puente de ajustes**: en líneas heredadas las herramientas leen y escriben a través de
+  un namespace de ajustes escribible por arriendo (resultados de herramienta envueltos); en
+  líneas modernas leen el documento configForms directamente y las escrituras del puente
+  devuelven 409 por diseño.
+- La tarjeta `plugins.bundle.config` renderiza el componente completo de ajustes mediante un
+  `useCompression` construido por clausura (la cadena de detalle de paquete no tiene
+  hookContext, así que la inyección de hooks a nivel de entry no está disponible allí).
+
+### Corregido
+
+- La sonda de generación ya no guarda en caché una respuesta provisional en tiempo de wire:
+  la ausencia del servicio de ajustes durante la composición de filas (antes de que existan
+  los servicios del host) se re-resuelve cuando el servicio se inyecta realmente — el brazo
+  de arriendo heredado estaba muerto en 0.1.0.
+- El validador de tail-trim compara el source kind del reemplazo contra el escritor gateado
+  por generación en lugar de un id de plugin codificado, así ya no rechaza su propia salida
+  heredada envuelta.
+- El brazo cliente configForms resuelve el servicio desde la propiedad `.configForms` del
+  Context propietario inyectado; usar el Context crudo como handle hacía que `get()`
+  devolviera `undefined` y el límite de slot del host abdicara la sección de ajustes en una
+  celda muerta en 0.1.7.
+
+### Cambiado
+
+- Todos los rangos peer `@deepseek-ai/dsh-*` y `engines.dsh` enumeran explícitamente los
+  15 rc, de modo que ninguna compuerta engine/peer bloquea la instalación en línea alguna.
+
+
 ## 0.8.0-beta.1 - 2026-09-30
 
 ### Cambiado

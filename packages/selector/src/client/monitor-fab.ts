@@ -207,14 +207,12 @@ export function initMonitorFab(deps: MonitorFabDeps): void {
   makeDrag(panel.querySelector('h4') as HTMLElement, 'panel');
 
   // 状态与轮询
-  let last: MonitorSnapshotPayload | undefined;
   let stale = false;
   let busyAction = false;
 
   const fmtTokens = (n: unknown): string => num(n).toLocaleString('en-US');
 
   const render = (snap: MonitorSnapshotPayload): void => {
-    last = snap;
     const net = num(snap.net?.exact) + num(snap.net?.estimated);
     const netEl = panel.querySelector('[data-net]') as HTMLElement;
     netEl.textContent = `${fmtTokens(snap.net?.exact)}${num(snap.net?.estimated) > 0 ? ` (+${fmtTokens(snap.net?.estimated)} est)` : ''}`;

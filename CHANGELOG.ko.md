@@ -2,6 +2,40 @@
 
 > 전체 히스토리(업스트림 0.1.0 이전 포함)는 [CHANGELOG.md](CHANGELOG.md)를 참고하세요. 이 파일은 포크의 추가 항목만 번역한 것입니다. · [English](CHANGELOG.md) · [中文](CHANGELOG.zh.md) · [日本語](CHANGELOG.ja.md)
 
+## 0.9.0 - 2026-10-08
+
+### 추가
+
+- **모든 Harness 라인을 단일 버전으로**: 0.9.0은 0.1.0-rc.2부터 0.2.0-rc.2까지 15개 rc
+  (6개 호스트 라인)를 하나의 릴리스로 지원합니다. 라인별 dist-tag 방식은 폐지되며, 배포 후
+  `latest`, `dsh-0.1.2`, `dsh-0.1.5`, `dsh-0.1.7`, `dsh-0.2.0` 모두 0.9.0을 가리킵니다.
+- **3세대 설정 웨이스트**: 시작 시 호스트가 노출하는 설정 면을 감지합니다 — 구형 라인
+  (0.1.0-0.1.5)의 `settings.register` 서비스 또는 0.1.7+/0.2.0의 로더 관리 volatile 설정 +
+  `configForms` — 일치하는 클라이언트 면(`settings.section` vs `configForms`)만 활성화하고,
+  0.1.7+에서는 `plugins.bundle.config` 상세 카드도 등록합니다.
+- **설정 브리지**: 구형 라인에서는 도구가 리스 쓰기 가능 설정 네임스페이스를 통해 읽고 쓰고
+  (envelope형 도구 결과), 신형 라인에서는 configForms 문서를 직접 읽으며 브리지 쓰기는
+  설계대로 409를 반환합니다.
+- `plugins.bundle.config` 상세 카드는 클로저로 만든 `useCompression`으로 설정 컴포넌트를
+  렌더링합니다(패키지 상세 체인에는 hookContext가 없어 entry 수준 hook 주입이 불가).
+
+### 수정
+
+- 세대 프로브가 wire 시점의 잠정 판정을 캐시하지 않습니다: 행 합성 시(호스트 서비스 미초기화)
+  settings 서비스 부재는 서비스가 실제 주입될 때 확정 판정으로 대체됩니다 — 이전에는
+  legacy 리스 팔이 0.1.0에서 동작하지 않았습니다.
+- tail-trim 검증기는 치환의 source kind를 하드코딩된 플러그인 id 대신 세대 게이트 라이터와
+  비교하여 자신의 legacy envelope 출력을 더 이상 거부하지 않습니다.
+- configForms 클라이언트 팔은 주입된 오너 Context의 `.configForms` 속성에서 서비스를
+  해석합니다. 날 Context를 핸들로 쓰면 `get()`이 `undefined`를 반환해 0.1.7에서 호스트 슬롯
+  경계가 설정 섹션을 죽은 셀로 퇴위시켰습니다.
+
+### 변경
+
+- 모든 `@deepseek-ai/dsh-*` peer 범위와 `engines.dsh`는 15 rc를 명시적으로 열거하여
+  어떤 호스트 라인에서도 엔진/peer 게이트가 설치를 막지 않습니다.
+
+
 ## 0.8.0-beta.1 - 2026-09-30
 
 ### 변경 사항

@@ -2,6 +2,38 @@
 
 > 完整历史（含上游 0.1.0 及更早版本）见 [CHANGELOG.md](CHANGELOG.md)。本文件只翻译本 fork 的新增条目。 · [English](CHANGELOG.md) · [日本語](CHANGELOG.ja.md) · [한국어](CHANGELOG.ko.md)
 
+## 0.9.0 - 2026-10-08
+
+### 新增
+
+- **一个版本通吃全部 Harness 线**：0.9.0 是单一版本，同时服务 0.1.0-rc.2 至
+  0.2.0-rc.2 的全部 15 个 rc（六条宿主线）。按线分发的 dist-tag 方案退役——发版后
+  `latest`、`dsh-0.1.2`、`dsh-0.1.5`、`dsh-0.1.7`、`dsh-0.2.0` 全部指向 0.9.0。
+- **三代设置腰**：启动时探测宿主暴露的设置面——旧线（0.1.0-0.1.5）的
+  `settings.register` 服务，或 0.1.7+/0.2.0 的 loader 托管易失配置 + `configForms`——
+  只武装匹配的客户端面（`settings.section` 对 `configForms`），0.1.7+ 另有
+  `plugins.bundle.config` 包详情卡片。
+- **设置桥**：旧线上工具经租约可写设置命名空间读写（信封式工具结果）；新线上直读
+  configForms 文档，桥写入按设计返回 409。
+- `plugins.bundle.config` 详情卡以闭包构建的 `useCompression` 渲染完整设置组件
+  （包详情链没有 hookContext，entry 级 hook 注入在该链不可用）。
+
+### 修复
+
+- 代际探针不再在 wire 期缓存临时结论：行组装期（宿主服务尚不存在）拿到的
+  「settings 服务缺席」只在服务真正注入时改判——旧线租约臂此前在 0.1.0 上失效。
+- tail-trim 校验器将替换结果的 source kind 与代际门控的写入方比对，而非硬编码插件 id，
+  不再误杀自己的 legacy 信封输出。
+- configForms 客户端臂从注入的属主 Context 的 `.configForms` 属性上解出服务；此前把
+  裸 Context 当句柄导致 `get()` 返回 `undefined`，宿主槽边界在 0.1.7 上把设置节
+  废黜成死格。
+
+### 变更
+
+- 全部 `@deepseek-ai/dsh-*` peer 范围与 `engines.dsh` 显式枚举 15 个 rc，
+  任何宿主线上引擎/peer 闸不再拦截安装。
+
+
 ## 0.8.0-beta.1 - 2026-09-30
 
 ### 变更

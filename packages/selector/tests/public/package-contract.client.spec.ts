@@ -11,6 +11,7 @@ describe('standalone package contract', () => {
       version: string
       dependencies?: Record<string, string>
       peerDependencies?: Record<string, string>
+      engines?: Record<string, string>
       publishConfig?: { tag?: string }
     }
     expect(selector.name).toBe('dsh-context-compression-improved')

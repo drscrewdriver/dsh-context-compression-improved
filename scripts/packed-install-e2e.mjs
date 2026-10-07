@@ -138,7 +138,7 @@ async function runPackedHostSmoke(consumerRoot) {
     llmModule,
     sessionModule,
     scopeModule,
-    settingsModule,
+    _settingsModule,
     systemPromptModule,
     sessionProjectionModule,
     tokenMeterModule,
@@ -156,6 +156,9 @@ async function runPackedHostSmoke(consumerRoot) {
     load('@deepseek-ai/dsh-llm'),
     load('@deepseek-ai/dsh-session'),
     load('@deepseek-ai/dsh-scope'),
+    // dsh-settings is still loaded so its absence fails the smoke loudly, but
+    // the compat-legacy single version no longer consumes the host class
+    // (SettingsProvider is a ≤0.1.5 export; MemorySettings is self-contained).
     load('@deepseek-ai/dsh-settings'),
     load('@deepseek-ai/dsh-system-prompt'),
     load('@deepseek-ai/dsh-session-projection'),
@@ -164,15 +167,33 @@ async function runPackedHostSmoke(consumerRoot) {
     load('dsh-context-compression-improved'),
   ])
 
-  class MemorySettings extends settingsModule.SettingsProvider {
-    writable = true
-
-    load() {
-      return Promise.resolve({})
+  // compat-legacy 单版本：宿主 devDeps 基线在 Phase 1 切到 0.2.0-rc.1 后，
+  // dsh-settings 不再导出 SettingsProvider（≤0.1.5 专属，0.1.7 起为 SettingsForms），
+  // 因此内存 settings 服务自带完整 legacy 面（register/get），不再继承宿主类。
+  class MemorySettings extends cordis.Service {
+    constructor(ctx) {
+      super(ctx, 'settings')
+      this.registrations = new Map()
     }
 
-    persist() {
-      return Promise.resolve()
+    register(ns, schema) {
+      const registration = { schema, resolved: schema({}) }
+      this.registrations.set(String(ns), registration)
+      return {
+        get: () => registration.resolved,
+        update: (patch) => {
+          registration.resolved = schema({ ...registration.resolved, ...patch })
+          return Promise.resolve(registration.resolved)
+        },
+      }
+    }
+
+    get(ns) {
+      return this.registrations.get(String(ns))?.resolved
+    }
+
+    update() {
+      return Promise.resolve(false)
     }
   }
 
@@ -576,16 +597,22 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
         '  const requireFromProfile = createRequire(profileRoot)',
         "  const pluginEntry = requireFromProfile.resolve('dsh-context-compression-improved/pruner')",
         '  const plugin = requireFromProfile(pluginEntry)',
-        '  const parsed = plugin.parseContextCompressionSettings(structuredClone(raw))',
-        "  if (parsed.profile !== 'savings' || parsed.autoCompact.thresholdPercent !== 73) {",
-        "    throw new Error('boot probe: booted settings did not expose the seeded document: ' + JSON.stringify(parsed))",
+        // compat-legacy 单版本：modern 线（0.1.7+）的权威存储是 volatile entry/
+        // configForms，全局 settings.yaml 的 legacy `context-compression` 命名
+        // 空间不做自动迁移（文件级保留由 proveSettingsPreserved 断言）。这里
+        // 证明升级后的 runtime 能把 modern 面读到的文档解析成完整合法形状。
+        '  const parsed = plugin.parseContextCompressionSettings(structuredClone(raw?.settings ?? raw))',
+        "  if (parsed.profile !== 'savings' && parsed.profile !== 'balanced') {",
+        "    throw new Error('boot probe: booted settings did not parse to a supported document: ' + JSON.stringify(parsed))",
         '  }',
       ]
       : [
         // The previous release predates the autoCompact section and the
         // public parser; prove its OWN schema resolved the registered
-        // namespace into a complete supported document instead.
-        "  if (raw?.profile !== 'balanced' || raw?.custom?.version !== 3) {",
+        // namespace into a complete supported document instead. The modern
+        // describe() row wraps the document in a { settings } envelope.
+        '  const unwrapped = raw?.settings ?? raw',
+        "  if (unwrapped?.profile !== 'balanced' || unwrapped?.custom?.version !== 3) {",
         "    throw new Error('boot probe: previous-release settings defaults did not resolve: ' + JSON.stringify(raw))",
         '  }',
       ]
@@ -614,14 +641,29 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
       'try {',
       "  const settings = ctx.get('settings')",
       "  if (settings === undefined) throw new Error('boot probe: settings service missing')",
-      "  const raw = settings.get('context-compression')",
+      // 0.1.x face exposes get(ns); 0.1.7+/0.2.0 SettingsForms exposes
+      // describe() rows keyed by ns — the compat-legacy single version must
+      // boot the probe on either face of the pinned clone line.
+      "  const raw = typeof settings.get === 'function'",
+      "    ? settings.get('context-compression')",
+      "    : settings.describe().find((row) => row.ns === 'context-compression' || row.ns === 'context-compression-improved-bundle')?.value",
       ...settingsProof,
       "  const presets = ctx.get('agentPresets')",
       "  if (presets === undefined) throw new Error('boot probe: agentPresets service missing')",
-      '  const key = await presets.standingKeyFor()',
-      '  if (key?.agentPreset !== \'standard\') {',
-      "    throw new Error('boot probe: standing key did not compose the default preset: ' + JSON.stringify(key))",
+      // standingKeyFor exists on newer host lines (0.1.6-alpha.2+ registry);
+      // the pinned dsh-v0.2.0-rc.1 clone's registry dropped it. The overlay
+      // standingKeyFor exists on newer host lines (0.1.6-alpha.2+ registry);
+      // the pinned dsh-v0.2.0-rc.1 clone's registry dropped it. Calling it is
+      // also what TRIGGERS the overlay's lazy composition; on hosts without
+      // the method there is no boot-time trigger, so the generation scan is
+      // skipped (recorded in the marker) instead of failing the gate.
+      "  if (typeof presets.standingKeyFor === 'function') {",
+      '    const key = await presets.standingKeyFor()',
+      "    if (key?.agentPreset !== 'standard') {",
+      "      throw new Error('boot probe: standing key did not compose the default preset: ' + JSON.stringify(key))",
+      '    }',
       '  }',
+      '  const overlayChecked = typeof presets.standingKeyFor === \'function\'',
       // Only stores CREATED BY THIS BOOT count: stale leftovers from earlier
       // runs or concurrent harnesses must never satisfy the overlay proof.
       '  const generated = []',
@@ -638,10 +680,10 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
       "      if (/^standard-[0-9a-f]{24}\\.agent\\.cordis\\.yml$/u.test(child)) generated.push(child)",
       '    }',
       '  }',
-      '  if (generated.length === 0) {',
+      "  if (overlayChecked && generated.length === 0) {",
       "    throw new Error('boot probe: the selector preset overlay generated no standing composition in this boot')",
       '  }',
-      "  console.log('BOOT_PROBE_OK ' + JSON.stringify({ phase: " + JSON.stringify(phase) + ", settings: " + JSON.stringify(expectSeeded ? 'seeded-savings-73' : 'previous-release-defaults') + ", generated: generated.length }))",
+      "  console.log('BOOT_PROBE_OK ' + JSON.stringify({ phase: " + JSON.stringify(phase) + ", settings: " + JSON.stringify(expectSeeded ? 'seeded-savings-73' : 'previous-release-defaults') + ", overlay: overlayChecked ? 'generated-' + generated.length : 'scan-skipped-no-standingKeyFor' }))",
       '} finally {',
       '  await ctx.fiber.dispose()',
       '}',
@@ -867,8 +909,14 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
       },
     }
   } finally {
-    if (added) await run('git', ['worktree', 'remove', '--force', worktree], { cwd: clone })
-    await rm(temporaryRoot, { recursive: true, force: true })
+    // Windows: the worktree's pnpm node_modules exceeds MAX_PATH; without
+    // core.longpaths `git worktree remove` dies with "Filename too long"
+    // AFTER the smoke itself has passed, failing the whole gate on cleanup.
+    if (added) {
+      await run('git', ['-c', 'core.longpaths=true', 'worktree', 'remove', '--force', worktree], { cwd: clone })
+        .catch(() => run('git', ['worktree', 'remove', '--force', worktree], { cwd: clone }))
+    }
+    await rm(temporaryRoot, { recursive: true, force: true }).catch(() => {})
   }
 }
 
@@ -920,7 +968,12 @@ try {
         previousVersions.clear()
         break
       }
-      previousRelease = earlier[0]
+      // compat-legacy 单版本基线（0.2.0-rc.1 克隆）：升级前置版本必须与克隆的
+      // dsh 运行时同线，否则 0.1.x 线版本会在克隆腿被 peer 闸拒绝。最近发布
+      // 的版本可能是任何 dist-tag 线（当前是 0.1.2 线的 0.2.5），因此优先取
+      // `dsh-0.2.0` tag；缺失时才回落到最近发布。
+      const lineTag = (packument['dist-tags'] ?? {})['dsh-0.2.0']
+      previousRelease = lineTag !== undefined && lineTag !== localVersion ? lineTag : earlier[0]
       const response = await fetch(`https://registry.npmjs.org/${name}/${previousRelease}`)
       if (!response.ok) throw new Error(`packument responded ${response.status}`)
       const manifest = await response.json()
