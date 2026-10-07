@@ -1,5 +1,5 @@
 import { A as getLastIntentFold, C as estimateSavingsPricing, D as INTENT_GATE_GROWTH_TOKENS, E as INTENT_GATE_FLOOR_FRACTION, M as getSummaryOverride, R as setSummaryOverride, S as buildMonitorSnapshot, U as getSavingsLedger, a as DEFAULT_CONTEXT_COMPRESSION_SETTINGS, j as getObservedIntentEnabled, k as getAdvisorState, n as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, r as ContextCompressionSettingsSchema, w as isSessionOverrideAction, x as applySessionOverride } from "./config.js";
-import { n as detectHostGeneration, t as compatLog } from "./host-generation.js";
+import { i as noteResolvedSettingsService, n as detectHostGeneration, t as compatLog } from "./host-generation.js";
 import z from "@deepseek-ai/schemastery";
 import { createHash } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -253,11 +253,14 @@ function readEntryDoc(settings) {
 }
 function wireSettingsBridge(ctx) {
 	const log = compatLog(ctx, "warn");
-	const generation = detectHostGeneration(ctx);
+	let generation = detectHostGeneration(ctx);
 	let lease;
 	try {
 		ctx.inject(["settings"], (settingsCtx) => {
 			lease = acquireSettingsLease(settingsCtx, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, ContextCompressionSettingsSchema);
+			const svc = settingsCtx.settings;
+			generation = noteResolvedSettingsService(svc);
+			compatLog(ctx, "info")(`settings service resolved, generation=${generation}`);
 		});
 	} catch (error) {
 		log("settings lease wiring failed:", error);

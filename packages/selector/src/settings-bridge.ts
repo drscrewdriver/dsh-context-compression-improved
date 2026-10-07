@@ -16,7 +16,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import { CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, ContextCompressionSettingsSchema } from './runtime/config.ts'
-import { detectHostGeneration, compatLog } from './compat/host-generation.ts'
+import { detectHostGeneration, noteResolvedSettingsService, compatLog } from './compat/host-generation.ts'
 import { acquireSettingsLease, type LeaseFace } from './compat/settings-lease.ts'
 
 const ENTRY_ID = 'context-compression-improved-bundle'
@@ -59,7 +59,11 @@ function readEntryDoc(settings: unknown): unknown {
 
 export function wireSettingsBridge(ctx: Context): void {
 	const log = compatLog(ctx, 'warn')
-	const generation = detectHostGeneration(ctx)
+	// Provisional at wire time: rows compose before host services, so the
+	// probe usually sees no settings service here. The inject callback below
+	// rewrites it from the resolved face — handlers read the variable lazily
+	// per request, never a frozen snapshot.
+	let generation = detectHostGeneration(ctx)
 
 	// Lease the namespace on legacy hosts; no-op face on modern (register is
 	// gone there — P1-13). Assigned inside the settings inject; handlers read
@@ -68,6 +72,9 @@ export function wireSettingsBridge(ctx: Context): void {
 	try {
 		ctx.inject(['settings'], (settingsCtx) => {
 			lease = acquireSettingsLease(settingsCtx as Context, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, ContextCompressionSettingsSchema)
+			const svc = (settingsCtx as { settings?: unknown }).settings
+			generation = noteResolvedSettingsService(svc)
+			compatLog(ctx, 'info')(`settings service resolved, generation=${generation}`)
 		})
 	} catch (error) {
 		log('settings lease wiring failed:', error)
