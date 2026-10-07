@@ -53,7 +53,7 @@ function readEntryDoc(settings: unknown): unknown {
 			const record = described as { settings?: unknown }
 			return record !== null && typeof record === 'object' && 'settings' in record ? record.settings : described
 		}
-	} catch {}
+	} catch { /* describe face is optional on every generation */ }
 	return undefined
 }
 

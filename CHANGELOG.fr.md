@@ -4,6 +4,48 @@
 
 Tous les changements notables sont consignés dans ce fichier. Le projet suit le versionnement sémantique après `0.1.0`.
 
+## 0.9.0 - 2026-10-08
+
+### Ajouté
+
+- **Une seule version pour toutes les lignes Harness** : 0.9.0 est une publication unique
+  couvrant les 15 rc de 0.1.0-rc.2 à 0.2.0-rc.2 (six lignes d'hôte). Le schéma de dist-tag
+  par ligne est retiré — après publication, `latest`, `dsh-0.1.2`, `dsh-0.1.5`,
+  `dsh-0.1.7` et `dsh-0.2.0` pointeront tous vers 0.9.0.
+- **Taille des réglages à trois générations** : au démarrage, le plugin détecte quelle face
+  de réglages expose l'hôte — le service hérité `settings.register` (0.1.0-0.1.5) ou la
+  config volatile gérée par le loader + `configForms` (0.1.7+/0.2.0) — et n'arme que la
+  surface client correspondante (`settings.section` vs `configForms`), plus la carte
+  `plugins.bundle.config` sur 0.1.7+.
+- **Pont de réglages** : sur les lignes héritées, les outils lisent et écrivent via un
+  namespace de réglages modifiable en lease (résultats d'outils enveloppés) ; sur les lignes
+  modernes ils lisent directement le document configForms, et les écritures du pont
+  répondent 409 par conception.
+- La carte `plugins.bundle.config` affiche le composant de réglages complet via un
+  `useCompression` construit par closure (la chaîne de détail de paquet n'a pas de
+  hookContext, l'injection de hooks au niveau entry n'y est donc pas disponible).
+
+### Corrigé
+
+- La sonde de génération ne met plus en cache une réponse provisoire au moment du wire :
+  l'absence du service de réglages pendant la composition des rows (avant l'existence des
+  services d'hôte) est re-résolue quand le service s'injecte réellement — le bras lease
+  hérité était auparavant mort sur 0.1.0.
+- Le validateur tail-trim compare le source kind du remplacement à l'écrivain gouverné par
+  génération plutôt qu'à un id de plugin codé en dur, et ne rejette donc plus sa propre
+  sortie héritée enveloppée.
+- Le bras client configForms résout le service depuis la propriété `.configForms` du
+  Context propriétaire injecté ; utiliser le Context brut comme handle faisait renvoyer
+  `undefined` par `get()`, et la frontière de slot de l'hôte abdiquait la section de
+  réglages en cellule morte sur 0.1.7.
+
+### Modifié
+
+- Toutes les plages de peers `@deepseek-ai/dsh-*` et `engines.dsh` énumèrent explicitement
+  les 15 rc, si bien qu'aucun verrou engine/peer ne bloque l'installation sur une ligne
+  d'hôte.
+
+
 ## 0.8.0-beta.1 - 2026-09-30
 
 ### Modifié

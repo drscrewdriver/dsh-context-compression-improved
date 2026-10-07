@@ -709,7 +709,7 @@ describe('standalone runtime on published Harness APIs', () => {
     const legacySettings = ctx.settings as unknown as LegacySettingsProvider
     const originalGet = legacySettings.get.bind(legacySettings)
     vi.spyOn(legacySettings, 'get').mockImplementation((ns: unknown) =>
-      // eslint-disable-next-line @typescript-eslint/no-base-to-string -- namespace keys are scalars by contract
+       
       ns === undefined || String(ns) === String(namespace) ? structuredClone(malformed) : originalGet(ns as never))
     await ctx.plugin(ToolResultPruner, {
       profile: 'balanced',
@@ -755,7 +755,7 @@ describe('standalone runtime on published Harness APIs', () => {
     const legacySettings = ctx.settings as unknown as LegacySettingsProvider
     const originalGet = legacySettings.get.bind(legacySettings)
     vi.spyOn(legacySettings, 'get').mockImplementation((ns: unknown) =>
-      // eslint-disable-next-line @typescript-eslint/no-base-to-string -- namespace keys are scalars by contract
+       
       ns === undefined || String(ns) === String(namespace) ? structuredClone(malformed) : originalGet(ns as never))
     await ctx.plugin(ToolResultPruner, {
       profile: 'balanced',
@@ -796,7 +796,7 @@ describe('standalone runtime on published Harness APIs', () => {
     const legacySettings = ctx.settings as unknown as LegacySettingsProvider
     const originalGet = legacySettings.get.bind(legacySettings)
     vi.spyOn(legacySettings, 'get').mockImplementation((ns: unknown) =>
-      // eslint-disable-next-line @typescript-eslint/no-base-to-string -- namespace keys are scalars by contract
+       
       ns === undefined || String(ns) === String(namespace) ? malformed : originalGet(ns as never))
     await ctx.plugin(ToolResultPruner, {
       profile: 'balanced',

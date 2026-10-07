@@ -22,7 +22,7 @@ import { ko } from './locales/ko.ts'
 import { ru } from './locales/ru.ts'
 import { planPresetOptionsOps, presetOptionsOpsAccepted } from './preset-options.ts'
 import type { ScopeSnapshot, SettingsScope } from './scope-face.ts'
-import { createBridgeScope, type BridgeScope } from './bridge-scope.ts'
+import { createBridgeScope } from './bridge-scope.ts'
 
 /**
  * Harness 0.1.5 mounts the web core's `slots` service on the client context
