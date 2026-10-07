@@ -4,8 +4,8 @@ window.__ModuleLoader__.load({
 		var module = { exports: {} };
 		var exports = module.exports;
 		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
-		let react_jsx_runtime = require("react/jsx-runtime");
 		let react = require("react");
+		let react_jsx_runtime = require("react/jsx-runtime");
 		require("@deepseek-ai/dsh-client-ui-primitives");
 		//#region src/profiles.ts
 		/** Public context-compression choices shared by the Host schema and browser selector. */
@@ -3424,9 +3424,28 @@ window.__ModuleLoader__.load({
 				ctx.slots.inject("plugins.bundle.config", () => ctx.slots.register({
 					name: "plugins.bundle.config",
 					key: "dsh-context-compression-improved",
-					locale: NS,
-					inject: injected
-				}, ContextCompressionSettingsSection));
+					locale: NS
+				}, (props) => {
+					const inj = injected();
+					const scope = inj.hooks?.compression;
+					const useCompression = (selector) => {
+						if (!scope) return selector({
+							status: "loading",
+							value: void 0,
+							revision: void 0,
+							writable: false,
+							base: void 0,
+							user: void 0,
+							mode: "memory"
+						});
+						return (0, react.useSyncExternalStore)(scope.subscribe, () => selector(scope.getSnapshot()));
+					};
+					return (0, react.createElement)(ContextCompressionSettingsSection, {
+						...inj,
+						...props,
+						useCompression
+					});
+				}));
 			} catch (error) {
 				console.warn("[dsh-context-compression-improved] plugins.bundle.config 注册失败(旧宿主无该槽,静默缺席):", error);
 			}
