@@ -12,7 +12,7 @@ import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { createUserMessage, freezeMessage } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, UserMessage } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, ToolCallId, UserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionSeq } from '@deepseek-ai/dsh-session'
 
 // 0.1.7-rc.2 removed the shared 'plugin' source kind — each producer declares
@@ -98,6 +98,7 @@ import { INTENT_FOLD_MARKER, renderIntentFoldBlock } from './runtime/tokenpilot/
 import { buildIntentSummarySystemPrompt, buildIntentSummaryUserPrompt, parseIntentSummaryAnswer } from './runtime/tokenpilot/advisor-prompt.ts'
 import { getSummaryOverride, observeIntentEnabled, recordIntentFold } from './runtime/tokenpilot/advisor-state.ts'
 import { observeContextUsage } from './runtime/monitor.ts'
+import { compressionMessageSource, viewToolResult } from './compat/tool-result.ts'
 
 import {
   DedupeTable,
@@ -109,7 +110,7 @@ import { getSavingsLedger } from './runtime/savings.ts'
 
 /** 节省统计配对键用原文(纯文本块才可配对;富内容返回 undefined)。 */
 function originalTextForSavings(candidate: SnapshotCandidate): string | undefined {
-  return flattenPlainText(candidate.event.data.message.content)
+  return flattenPlainText(viewToolResult(candidate.event.data.message).blocks as ContentBlock[])
 }
 import {
   charsForTokens,
@@ -601,7 +602,8 @@ export class ToolResultPruner extends Service {
     // carrying the marker would fail the host's closed-transaction validation.
     const replacement = createUserMessage({
       content,
-      source: { kind: 'dsh-context-compression' },
+      // Generation-gated: 0.1.x hosts only accept the shared plugin kind.
+      source: compressionMessageSource() as { kind: 'dsh-context-compression' },
     })
     session.append('user/message', replacement, {
       surfaceOp: { op: 'replace', startSeq: SessionSeq(checkpointSeq), endSeq: SessionSeq(checkpointSeq) },
@@ -757,7 +759,7 @@ export class ToolResultPruner extends Service {
       .map(candidate => ({
         seq: candidate.seq,
         characterPressure: candidate.characterPressure,
-        preview: advisorCandidatePreview(candidate.call.name, candidate.event.data.message.content),
+        preview: advisorCandidatePreview(candidate.call.name, viewToolResult(candidate.event.data.message).blocks),
       }))
 
     let sawFailure = false
@@ -865,8 +867,7 @@ export class ToolResultPruner extends Service {
     for (const seq of range.seqs) {
       const candidate = bySeq.get(seq)
       if (candidate === undefined) continue
-      const result = candidate.event.data.message as ToolResultMessage
-      const text = onlyTextBlock(result.content)?.text ?? ''
+      const text = onlyTextBlock(viewToolResult(candidate.event.data.message).blocks as ContentBlock[])?.text ?? ''
       const masked = maskCandidateForSummary(seq, candidate.call.name, candidate.call.arguments, text)
       records.push({ seq, role: masked.role, toolName: candidate.call.name, line: masked.record })
       for (const line of extractErrorLines(text)) errorLines.add(line)
@@ -961,8 +962,7 @@ export class ToolResultPruner extends Service {
     let charsAfter = 0
     for (const seq of foldable) {
       const candidate = bySeq.get(seq)!
-      const result = candidate.event.data.message as ToolResultMessage
-      const block = onlyTextBlock(result.content)
+      const block = onlyTextBlock(viewToolResult(candidate.event.data.message).blocks as ContentBlock[])
       if (block === null) continue
       const text = renderIntentFoldBlock(pending, seq)
       const plan = this.plan(
@@ -1475,7 +1475,7 @@ export class ToolResultPruner extends Service {
     const ledger = getSavingsLedger()
     const sid = String(session.id)
     for (const candidate of candidates) {
-      const text = flattenPlainText(candidate.event.data.message.content)
+      const text = flattenPlainText(viewToolResult(candidate.event.data.message).blocks as ContentBlock[])
       if (text === undefined) continue
       ledger.noteFullText({
         sessionId: sid,
@@ -1603,11 +1603,14 @@ export class ToolResultPruner extends Service {
       if (shadowedHeuristicTokenCount === undefined) {
         throw new Error(`surface node ${String(seq)} is absent from the atomic legacy projection`)
       }
-      const content = event.data.message.content
+      // Generation-gated triple view: block set / error flag / call id move
+      // together across the 0.1.x envelope and the flat 0.2.0 message.
+      const resultView = viewToolResult(event.data.message)
+      const content = resultView.blocks as ContentBlock[]
       candidates.push({
         seq,
         event,
-        call: calls.get(event.data.message.toolCallId) ?? { name: 'unknown', arguments: '{}' },
+        call: calls.get(resultView.callId ?? '') ?? { name: 'unknown', arguments: '{}' },
         count: onlyTextBlocks(content) === null
           ? unavailableCount(`surface node ${String(seq)} contains unsupported rich tool-result content`)
           : measured.get(seq) ?? unavailableCount(`surface node ${String(seq)} is absent from the atomic token view`),
@@ -1627,8 +1630,8 @@ export class ToolResultPruner extends Service {
   ): PlannedReplacement | null {
     if (this.isRecoveryExempt(session, candidate)) return null
     if (candidate.characterPressure <= charsForTokens(policy.nativeTriggerTokens)) return null
-    const result = candidate.event.data.message as ToolResultMessage
-    if (onlyTextBlocks(result.content) === null) return null
+    const resultContent = viewToolResult(candidate.event.data.message).blocks as ContentBlock[]
+    if (onlyTextBlocks(resultContent) === null) return null
     const sourceSeq = rootToolResultSeq(session, candidate.seq)
     // R9b site: the marker's retrieve hint starts at the event line right
     // after the retained head, computed inside nativePruneContent.
@@ -1637,7 +1640,7 @@ export class ToolResultPruner extends Service {
     let tail = this.state.config.tailChars
     for (let attempt = 0; attempt < 10; attempt += 1) {
       const threshold = head + codePointLength(marker(1)) + tail
-      const content = nativePruneContent(result.content, threshold, head, tail, marker)
+      const content = nativePruneContent(resultContent, threshold, head, tail, marker)
       if (content !== null) {
         const plan = this.plan(
           candidate,
@@ -1679,8 +1682,7 @@ export class ToolResultPruner extends Service {
     view: CompactionTokenView,
   ): PlannedReplacement | null {
     if (typeof candidate.event.surfaceOp === 'object') return null
-    const result = candidate.event.data.message as ToolResultMessage
-    const text = flattenPlainText(result.content)
+    const text = flattenPlainText(viewToolResult(candidate.event.data.message).blocks as ContentBlock[])
     if (text === undefined) return null
     if (candidate.characterPressure <= charsForTokens(policy.freshTriggerTokens)) return null
     let table = this.state.dedupeTables.get(session)
@@ -1727,11 +1729,11 @@ export class ToolResultPruner extends Service {
     // pre-step coordinate filter prevents previously-kept originals from ever
     // being reconsidered after their first request.
     if (typeof candidate.event.surfaceOp === 'object') return null
-    const result = candidate.event.data.message as ToolResultMessage
+    const resultView = viewToolResult(candidate.event.data.message)
     if (candidate.characterPressure <= charsForTokens(policy.freshTriggerTokens)) return null
     const sourceSeq = candidate.seq
     const sourceRef = sourceRefFn(session, sourceSeq)
-    const textBlock = onlyTextBlock(result.content)
+    const textBlock = onlyTextBlock(resultView.blocks as ContentBlock[])
     if (textBlock !== null) {
       let budgetChars = Math.max(1, Math.floor(codePointLength(textBlock.text) * 0.75))
       const codeSkeleton = this.activeSettings(session).codeSkeleton.enabled
@@ -1742,7 +1744,7 @@ export class ToolResultPruner extends Service {
           text: textBlock.text,
           budgetChars,
           sourceRef,
-          isError: result.isError === true || candidate.event.data.error !== undefined,
+          isError: resultView.isError || candidate.event.data.error !== undefined,
           codeSkeleton,
         })
         if (output !== null) {
@@ -1805,8 +1807,8 @@ export class ToolResultPruner extends Service {
     // example one carrying an image) must never reach it. The character basis
     // no longer inherits the exact-tokenizer precondition that used to reject
     // this path implicitly, so the guard has to be explicit.
-    const redacted = candidate.event.data.message as ToolResultMessage
-    if (onlyTextBlocks(redacted.content) === null) return null
+    const redactedContent = viewToolResult(candidate.event.data.message).blocks as ContentBlock[]
+    if (onlyTextBlocks(redactedContent) === null) return null
     const text = [
       '[Tool result reduced to satisfy the completed-step aggregate budget]',
       `tool: ${candidate.call.name}`,
@@ -1839,8 +1841,7 @@ export class ToolResultPruner extends Service {
     historyMode?: HistoryMode,
   ): PlannedReplacement | null {
     if (!isError(candidate)) return null
-    const result = candidate.event.data.message as ToolResultMessage
-    const blocks = onlyTextBlocks(result.content)
+    const blocks = onlyTextBlocks(viewToolResult(candidate.event.data.message).blocks as ContentBlock[])
     if (blocks === null) return null
     const text = blocks.map(block => block.text).join('\n')
     const sourceSeq = rootToolResultSeq(session, candidate.seq)
@@ -1897,8 +1898,7 @@ export class ToolResultPruner extends Service {
     const protectedSeqs = this.protectedHistoryCandidateSeqs(candidates, policy)
     const isUnsafe = (candidate: SnapshotCandidate): boolean => {
       if (this.isRecoveryExempt(session, candidate)) return true
-      const result = candidate.event.data.message as ToolResultMessage
-      const block = onlyTextBlock(result.content)
+      const block = onlyTextBlock(viewToolResult(candidate.event.data.message).blocks as ContentBlock[])
       // Fold-once: an already-folded intent block is never re-candidated.
       if (block?.text.includes(INTENT_FOLD_MARKER) === true) return true
       return block?.text.includes('[Old tool result content cleared from active context]') === true
@@ -1961,8 +1961,8 @@ export class ToolResultPruner extends Service {
       ? minReclaimChars
       : required
     for (const candidate of eligible) {
-      const result = candidate.event.data.message as ToolResultMessage
-      const block = onlyTextBlock(result.content)
+      const resultView = viewToolResult(candidate.event.data.message)
+      const block = onlyTextBlock(resultView.blocks as ContentBlock[])
       // TokenPilot-inspired R2: a read output whose file was later mutated is
       // superseded — its text can no longer match the file — so it takes the
       // small whole-result placeholder before the ordinary reducer runs.
@@ -2010,7 +2010,7 @@ export class ToolResultPruner extends Service {
         toolName: candidate.call.name,
         sourceRef: sourceRefFn(session, sourceSeq),
         charsBefore: codePointLength(block.text),
-        isError: result.isError === true || candidate.event.data.error !== undefined,
+        isError: resultView.isError || candidate.event.data.error !== undefined,
         text: block.text,
         compact: false,
       })
@@ -2020,7 +2020,7 @@ export class ToolResultPruner extends Service {
         text: block.text,
         budgetChars: 1_200,
         sourceRef: sourceRefFn(session, sourceSeq),
-        isError: result.isError === true || candidate.event.data.error !== undefined,
+        isError: resultView.isError || candidate.event.data.error !== undefined,
       }
       if (!verifyReduction(verifyInput, output)) continue
       // TokenPilot-inspired R3: when read-state semantics are on, append an
@@ -2166,22 +2166,25 @@ export class ToolResultPruner extends Service {
       const resultSeqs = nodes.slice(index + 1, index + 1 + calls.length)
       if (resultSeqs.length !== calls.length || resultSeqs.some(seq => protectedResults.has(seq))) continue
       const results = resultSeqs.map(seq => events[seq])
-      if (results.some((event): boolean => {
-        if (event?.type !== 'tool/result'
+      // One generation-gated triple view per result message, shared by the
+      // safety gate below and the call-id pairing.
+      const resultViews = results.map(event =>
+        event?.type === 'tool/result' ? viewToolResult(event.data.message) : undefined)
+      if (results.some((event, resultIndex): boolean => {
+        const view = resultViews[resultIndex]
+        if (event?.type !== 'tool/result' || view === undefined
           || event.data.turn !== assistant.data.turn || event.data.step !== assistant.data.step
           || event.data.error !== undefined) return true
-        const block = event.data.message as ToolResultMessage
-        if (block.isError === true) return true
+        if (view.isError) return true
         // Images and other rich inner blocks stay fail-open: a TailTrim stub
         // would silently delete them from the active context.
-        return block.content.some((contentBlock: ContentBlock) => contentBlock.type !== 'text')
+        return (view.blocks as ContentBlock[]).some((contentBlock: ContentBlock) => contentBlock.type !== 'text')
       })) continue
       const next = events[nodes[index + 1 + calls.length] ?? -1]
       if (next?.type === 'tool/result'
         && next.data.turn === assistant.data.turn
         && next.data.step === assistant.data.step) continue
-      const resultIds = results.map(event => event?.type === 'tool/result'
-        ? String(event.data.message.source.callId) : '')
+      const resultIds = resultViews.map(view => view === undefined ? '' : String(view.callId))
       if (new Set(resultIds).size !== resultIds.length
         || resultIds.some((id, resultIndex) => id !== callIds[resultIndex])) continue
       const shadowedSeqs = [assistantSeq, ...resultSeqs]
@@ -2294,7 +2297,7 @@ export class ToolResultPruner extends Service {
       const groupText = shadowedSeqs
         .map(seq => sessionEvents(session)[seq])
         .filter((event): event is SessionEvent<'tool/result'> => event?.type === 'tool/result')
-        .map(event => flattenPlainText(event.data.message.content))
+        .map(event => flattenPlainText(viewToolResult(event.data.message).blocks as ContentBlock[]))
         .filter((text): text is string => text !== undefined)
         .join('\n')
       if (groupText.length > 0) {
@@ -2380,7 +2383,7 @@ export class ToolResultPruner extends Service {
     // noise without reclaiming context. Text-level because the placeholder
     // guidance lines (source refs, retrieval hints) must pay for themselves.
     if (options.noNetSavingsGuard === true) {
-      const originalBlocks = onlyTextBlocks(candidate.event.data.message.content)
+      const originalBlocks = onlyTextBlocks(viewToolResult(candidate.event.data.message).blocks as ContentBlock[])
       const replacementBlocks = onlyTextBlocks(content)
       if (originalBlocks !== null && replacementBlocks !== null) {
         const originalChars = originalBlocks.reduce((sum, block) => sum + codePointLength(block.text), 0)
@@ -2410,7 +2413,9 @@ export class ToolResultPruner extends Service {
   private land(session: Session, plan: PlannedReplacement): PrunedEntry | null {
     const { candidate } = plan
     // 0.1.7-rc.2: the tool message's own `content` is the result block set —
-    // no wrapping result block anymore.
+    // no wrapping result block anymore. The triple view still resolves the
+    // call id axis on a legacy envelope.
+    const resultView = viewToolResult(candidate.event.data.message)
     const message = freezeMessage<ToolResultMessage>({
       ...candidate.event.data.message,
       content: plan.content,
@@ -2478,7 +2483,7 @@ export class ToolResultPruner extends Service {
       originalSeq: candidate.seq,
       sourceSeq: plan.sourceSeq,
       replacementSeq: replacement.seq,
-      callId: candidate.event.data.message.source.callId,
+      callId: resultView.callId as ToolCallId,
       reducer: plan.reducer,
       stage: plan.stage,
       charsBefore: plan.charsBefore,

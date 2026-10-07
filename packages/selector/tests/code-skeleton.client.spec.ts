@@ -57,6 +57,10 @@ describe('codeSkeleton confirm-on-write client contract', () => {
       effect: (install: () => unknown) => { install() },
       locale: { register: vi.fn(() => () => {}) },
       configForms: { get: vi.fn(() => form) },
+      // Scoped sub-inject seam: host resolves configForms and fires the arm
+      inject: (services: string[], cb: (service: unknown) => void) => {
+        if (services.includes('configForms')) cb(ctx.configForms)
+      },
       slots: {
         inject: (_slot: string, install: () => unknown) => { install() },
         register: (registration: { name?: string, inject?: () => CompressionSelectorInjected }) => {

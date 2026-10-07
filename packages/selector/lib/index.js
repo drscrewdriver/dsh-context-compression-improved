@@ -1,4 +1,5 @@
-import { A as getLastIntentFold, C as estimateSavingsPricing, D as INTENT_GATE_GROWTH_TOKENS, E as INTENT_GATE_FLOOR_FRACTION, M as getSummaryOverride, R as setSummaryOverride, S as buildMonitorSnapshot, U as getSavingsLedger, a as DEFAULT_CONTEXT_COMPRESSION_SETTINGS, j as getObservedIntentEnabled, k as getAdvisorState, w as isSessionOverrideAction, x as applySessionOverride } from "./config.js";
+import { A as getLastIntentFold, C as estimateSavingsPricing, D as INTENT_GATE_GROWTH_TOKENS, E as INTENT_GATE_FLOOR_FRACTION, M as getSummaryOverride, R as setSummaryOverride, S as buildMonitorSnapshot, U as getSavingsLedger, a as DEFAULT_CONTEXT_COMPRESSION_SETTINGS, j as getObservedIntentEnabled, k as getAdvisorState, n as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, r as ContextCompressionSettingsSchema, w as isSessionOverrideAction, x as applySessionOverride } from "./config.js";
+import { n as detectHostGeneration, t as compatLog } from "./host-generation.js";
 import z from "@deepseek-ai/schemastery";
 import { createHash } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -162,6 +163,208 @@ function registerSummaryCommand(ctx) {
 				});
 			} catch {}
 		})();
+	});
+}
+//#endregion
+//#region src/compat/settings-lease.ts
+const SHARED_LEASE = Symbol.for("dsh-context-compression-improved/settings-lease");
+/**
+* Lease the namespace. No-op on modern hosts (register absent). Returns a
+* read/update face; both are undefined-safe on modern hosts so callers can
+* hold the face unconditionally and stay on the entry-config path there.
+*/
+function acquireSettingsLease(ctx, namespace, schema) {
+	const settings = ctx.settings;
+	if (settings === void 0 || typeof settings.register !== "function") return {
+		get: () => void 0,
+		update: async () => false
+	};
+	const owner = { settings };
+	let shared = settings[SHARED_LEASE];
+	if (shared === void 0) {
+		shared = {
+			owners: /* @__PURE__ */ new Set(),
+			registrationOwner: owner
+		};
+		Object.defineProperty(settings, SHARED_LEASE, {
+			configurable: true,
+			enumerable: false,
+			writable: false,
+			value: shared
+		});
+	}
+	shared.owners.add(owner);
+	const state = shared;
+	ctx.effect(() => () => {
+		state.owners.delete(owner);
+		if (state.registrationOwner === owner && state.owners.size > 0) {
+			const next = state.owners.values().next().value;
+			state.registrationOwner = next;
+			next.settings.register(namespace, schema);
+		}
+		if (state.owners.size === 0 && settings[SHARED_LEASE] === state) Reflect.deleteProperty(settings, SHARED_LEASE);
+	}, "contextCompressionSelector.settingsLease()");
+	if (state.owners.size === 1) settings.register(namespace, schema);
+	return {
+		get: () => {
+			try {
+				return settings.get?.(namespace);
+			} catch {
+				return;
+			}
+		},
+		update: async (patch) => {
+			try {
+				await settings.update?.(namespace, patch);
+				return true;
+			} catch {
+				return false;
+			}
+		}
+	};
+}
+//#endregion
+//#region src/settings-bridge.ts
+const ENTRY_ID = "context-compression-improved-bundle";
+/** Hand back the service itself — the host reads route tables off `this`. */
+function asWebServer$1(value) {
+	if (typeof value !== "object" || value === null) return void 0;
+	return typeof value.register === "function" ? value : void 0;
+}
+function jsonResponse$1(res, status, body) {
+	const typed = res;
+	if (typeof typed?.writeHead !== "function" || typeof typed?.end !== "function") return;
+	typed.writeHead(status, {
+		"content-type": "application/json; charset=utf-8",
+		"cache-control": "no-cache"
+	});
+	typed.end(JSON.stringify(body));
+}
+/** Modern-host read: the entry config descriptor's resolved value (pruner parity). */
+function readEntryDoc(settings) {
+	const host = settings;
+	try {
+		const described = host?.describe?.().find((d) => String(d.ns) === ENTRY_ID)?.value;
+		if (described !== void 0) {
+			const record = described;
+			return record !== null && typeof record === "object" && "settings" in record ? record.settings : described;
+		}
+	} catch {}
+}
+function wireSettingsBridge(ctx) {
+	const log = compatLog(ctx, "warn");
+	const generation = detectHostGeneration(ctx);
+	let lease;
+	try {
+		ctx.inject(["settings"], (settingsCtx) => {
+			lease = acquireSettingsLease(settingsCtx, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, ContextCompressionSettingsSchema);
+		});
+	} catch (error) {
+		log("settings lease wiring failed:", error);
+	}
+	const readDoc = () => {
+		const settings = (() => {
+			try {
+				return ctx.get("settings");
+			} catch {
+				return;
+			}
+		})();
+		if (generation === "legacy") return lease?.get() ?? settings?.get?.("context-compression");
+		return readEntryDoc(settings) ?? settings?.get?.("context-compression");
+	};
+	const handleGet = (_req, res) => {
+		jsonResponse$1(res, 200, {
+			ok: true,
+			doc: readDoc() ?? null,
+			generation
+		});
+	};
+	const handlePost = (req, res) => {
+		if (generation !== "legacy" || lease === void 0) {
+			jsonResponse$1(res, 409, {
+				ok: false,
+				error: "modern-host: configForms is authoritative"
+			});
+			return;
+		}
+		const chunks = [];
+		const typed = req;
+		if (typeof typed?.on !== "function") {
+			jsonResponse$1(res, 400, {
+				ok: false,
+				error: "unreadable request body"
+			});
+			return;
+		}
+		typed.on("data", (chunk) => {
+			if (chunk) chunks.push(chunk);
+		});
+		typed.on("end", async () => {
+			try {
+				const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+				if (parsed.doc === void 0 || parsed.doc === null || typeof parsed.doc !== "object") {
+					jsonResponse$1(res, 400, {
+						ok: false,
+						error: "doc must be an object"
+					});
+					return;
+				}
+				if (!await lease.update(parsed.doc)) {
+					jsonResponse$1(res, 502, {
+						ok: false,
+						error: "settings update rejected by host"
+					});
+					return;
+				}
+				jsonResponse$1(res, 200, {
+					ok: true,
+					doc: parsed.doc
+				});
+			} catch (error) {
+				jsonResponse$1(res, 500, {
+					ok: false,
+					error: String(error?.message ?? error)
+				});
+			}
+		});
+	};
+	let registered = false;
+	const register = (webServer, channel) => {
+		if (registered) return;
+		try {
+			const disposers = [`/endpoint/dsh-context-compression-improved/settings`, `/api/dsh-context-compression-improved/settings`].map((path) => webServer.register({
+				kind: "exact",
+				path,
+				handler: (req, res) => {
+					if (String(req?.method ?? "GET").toUpperCase() === "POST") return handlePost(req, res);
+					return handleGet(req, res);
+				}
+			})).filter((off) => typeof off === "function");
+			registered = true;
+			ctx.effect(() => () => {
+				for (const off of disposers) off();
+			}, "contextCompressionSelector.settings bridge route");
+			compatLog(ctx, "info")(`settings bridge registered (${channel}), generation=${generation}`);
+		} catch (error) {
+			log("settings bridge registration failed:", error);
+		}
+	};
+	const active = asWebServer$1((() => {
+		try {
+			return ctx.get("webServer");
+		} catch {
+			return;
+		}
+	})());
+	if (active !== void 0) {
+		register(active, "direct");
+		if (registered) return;
+	}
+	ctx.inject(["webServer"], (injected) => {
+		const webServer = asWebServer$1(injected.webServer);
+		if (webServer === void 0) return;
+		register(webServer, "inject");
 	});
 }
 //#endregion
@@ -1032,6 +1235,7 @@ function apply(ctx, config = {}) {
 		if (config.estimatorCatalogRoute === true) registerEstimatorCatalogRoute(ctx);
 		registerSavingsRoute(ctx);
 		registerMonitorRoute(ctx);
+		wireSettingsBridge(ctx);
 		if (config.advisorReportRoute === true) registerAdvisorReportRoute(ctx);
 		registerSummaryCommand(ctx);
 		if (config.presetOverlay !== true) return;

@@ -19,6 +19,7 @@ import {
 
 import { getAdvisorState } from './runtime/tokenpilot/advisor-state.ts'
 import { registerSummaryCommand } from './runtime/summary-command.ts'
+import { wireSettingsBridge } from './settings-bridge.ts'
 
 // The settings namespace literal and the settings schema are owned by the
 // runtime config module. Both were once inlined/replaced here to dodge a
@@ -566,6 +567,13 @@ export function apply(ctx: Context, config: Config = {}): void {
     // 节省统计路由:只读快照,无 opt-in 门槛(无敏感数据,纯 token 计数)。
     registerSavingsRoute(ctx)
     registerMonitorRoute(ctx)
+
+    // compat-legacy 单版本：legacy 宿主（0.1.0–0.1.5，settings.register 仍在）
+    // 上租约注册压缩命名空间 + 全线挂 settings 桥路由（旧线 client 的唯一数据面；
+    // modern 线 client 走 configForms，桥 GET 只是补充读）。零 opt-in 门槛，与
+    // savings/monitor 同级；Gate 0 实证路由行必须带行级 inject:[webServer]，
+    // bundle patch 已含该行（findings B2.1 工程契约）。
+    wireSettingsBridge(ctx)
 
     // Advisory advisor: read-only decay/score/advice report (opt-in).
     if (config.advisorReportRoute === true) registerAdvisorReportRoute(ctx)

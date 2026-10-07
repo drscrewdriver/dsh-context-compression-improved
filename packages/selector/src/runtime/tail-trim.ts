@@ -4,6 +4,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, UserMessage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { sessionEvents } from './session-events.ts'
+import { compressionMessageSource, viewToolResult } from '../compat/tool-result.ts'
 
 const TAIL_TRIM_REF_PATTERN = /^session:\/\/([^/]+)\/tailtrim\/(\d+)$/
 const MAX_ROOTS = 64
@@ -55,7 +56,8 @@ export function tailTrimStub(
 export function tailTrimMessage(stub: string): UserMessage {
   return createUserMessage({
     content: [{ type: 'text', text: stub }],
-    source: { kind: 'dsh-context-compression' },
+    // Generation-gated: 0.1.x hosts only accept the shared plugin kind.
+    source: compressionMessageSource() as { kind: 'dsh-context-compression' },
   })
 }
 
@@ -149,12 +151,14 @@ function validRootGroup(roots: readonly SessionEvent[], manifestSeq: number): bo
   if (new Set(callIds).size !== callIds.length || roots.length !== callIds.length + 1) return false
   for (const [index, root] of roots.slice(1).entries()) {
     if (root.type !== 'tool/result' || root.seq >= manifestSeq || root.surfaceOp !== 'append') return false
-    const result = root.data.message as { isError?: boolean }
-    if (result.isError === true
+    // Generation-gated triple view: error flag and call id axes relocate
+    // between the 0.1.x envelope and the flat 0.2.0 message.
+    const result = viewToolResult(root.data.message)
+    if (result.isError
       || root.data.error !== undefined
       || root.data.turn !== assistant.data.turn
       || root.data.step !== assistant.data.step
-      || String((root.data.message as { toolCallId?: unknown }).toolCallId) !== String(callIds[index])) return false
+      || String(result.callId) !== String(callIds[index])) return false
   }
   return true
 }
