@@ -14,3 +14,6 @@ release-artifacts/
 
 # host-compat matrix artifacts (never ship)
 .compat-results/
+
+# cell-browser-e2e scratch cells (never ship)
+.cell-e2e/
