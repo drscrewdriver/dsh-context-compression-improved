@@ -2,6 +2,24 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
+## 0.9.3 - 2026-10-08
+
+### Fixed
+
+- **≤0.1.1 resume killer: tool-result-pruner loader entry failed to import**.
+  The 0.1.0/0.1.1 host loader module table serves a `@deepseek-ai/dsh-session`
+  without the `SessionSeq` / `deriveEventMessage` runtime exports; the static
+  named imports in `pruner.ts` / `runtime/measurement.ts` died at ESM link
+  time, the loader entry failed to mount, and the whole `standard` agent
+  preset mount failed — every session resume on the two oldest cells errored
+  with "failed to apply loader entry compaction … does not provide an export
+  named 'SessionSeq'" (2026-10-08 five-cell reproduction). Both imports are
+  now namespace soft-imports with feature-detected fallbacks: `SessionSeq`
+  degrades to identity (old-line session seqs are plain numbers; the brand is
+  new-line paranoia), `deriveEventMessage` degrades to null which the
+  measurement adapter already maps to `unavailableTokenCount`. CJS-interop
+  shapes (named exports under `default`) are covered too.
+
 ## 0.9.2 - 2026-10-08
 
 ### Reverted

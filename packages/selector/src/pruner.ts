@@ -13,7 +13,22 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { createUserMessage, freezeMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, ToolCallId, UserMessage } from '@deepseek-ai/dsh-llm'
-import { SessionSeq } from '@deepseek-ai/dsh-session'
+// ≤0.1.1 宿主 loader 模块表的 dsh-session 没有 SessionSeq 运行时导出——静态
+// named import 在 ESM 链接期即炸，loader entry（tool-result-pruner）mount 失败
+// 连累整个 standard 预设（会话 resume 全挂，2026-10-08 五格 0.1.0/0.1.1 实证）。
+// namespace 软取（链接零失败）+ 恒等回退：老线 session 事件 seq 本就是裸 number，
+// 身份封印仅是新线防呆。CJS interop 形态（named 挂 default 下）一并兼容。
+import * as dshSessionNamespace from '@deepseek-ai/dsh-session'
+import type { SessionSeq as SessionSeqBrand } from '@deepseek-ai/dsh-session'
+const dshSessionSoft = dshSessionNamespace as unknown as {
+  SessionSeq?: (value: number) => SessionSeqBrand
+  default?: { SessionSeq?: (value: number) => SessionSeqBrand }
+}
+const SessionSeqImpl =
+  dshSessionSoft.SessionSeq ??
+  dshSessionSoft.default?.SessionSeq ??
+  ((value: number) => value as SessionSeqBrand)
+const SessionSeq = SessionSeqImpl as (value: number) => SessionSeqBrand
 
 // 0.1.7-rc.2 removed the shared 'plugin' source kind — each producer declares
 // its own kind in its own module (official pattern: compaction's
