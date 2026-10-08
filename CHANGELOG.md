@@ -2,6 +2,27 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
+## 0.9.1 - 2026-10-08
+
+### Changed
+
+- **Settings consolidated into the family in-section tab**: the top-level
+  `settings.section` sidebar entry (上下文压缩选择器) is retired; the settings
+  panel now appears only as a contributor tab inside the 起子插件设置 family
+  section (`dsh-family.tab`, order 55), matching the 2026-10-08 fleet-wide
+  consolidation decision (perm-gate compat.8 removes its duplicated seats in
+  the same batch). The component goes through the shared closure
+  `useCompression` adapter (extracted from the `plugins.bundle.config` card,
+  which now reuses it) because neither the family-tab nor the bundle-detail
+  render chain maps `inject.hooks` into component hooks. Eager-bound `tNav`
+  label retained (search-index 0.5.3 family-tab incident). Server-side
+  settings bridge, lease, estimator-catalog and savings routes unchanged.
+
+### Fixed
+
+- `packages/selector/dsh.plugin.json` version metadata was stale at
+  `0.9.0-alpha.4` while the package shipped 0.9.0.
+
 ## 0.9.0 - 2026-10-08
 
 ### Added
