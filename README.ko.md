@@ -1,6 +1,6 @@
 # dsh-context-compression-improved
 
-> [dsh-context-compression-selector](https://github.com/WilliamShi666/dsh-context-compression-selector)의 개선 포크——DeepSeek Harness용 감사 가능한 도구 결과 컨텍스트 압축 셀렉터에, 직교하는 **코드 스켈레톤 압축 게이트*를추가했습니다.
+> **토큰 절약 우선——매 턴 도구 결과 토큰을 줄입니다.** [dsh-context-compression-selector](https://github.com/WilliamShi666/dsh-context-compression-selector)의 개선 포크——DeepSeek Harness용 감사 가능한 도구 결과 컨텍스트 압축 셀렉터에, 직교하는 **코드 스켈레톤 압축 게이트*를추가했습니다.
 
 [English](README.md) · [中文说明](README.zh.md) · [日本語](README.ja.md) · [변경 로그](CHANGELOG.ko.md) · [설치 가이드](docs/installation.ko.md)
 

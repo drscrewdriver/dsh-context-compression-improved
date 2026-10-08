@@ -1,6 +1,6 @@
 # dsh-context-compression-improved
 
-The installable Product Bundle for the unofficial community DeepSeek Harness context-compression selector.
+Token-saving, one-install Product Bundle for the unofficial community DeepSeek Harness context-compression selector — fewer tool-result tokens on every turn, fully auditable.
 
 **0.1.0 highlights:** DeepSeek V4 Flash Vision's official tokenizer is included; users can choose the model-driven Auto Compact threshold; standard profile watermarks and compression parameters follow that choice.
 
