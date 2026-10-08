@@ -3417,16 +3417,16 @@ window.__ModuleLoader__.load({
 				});
 			};
 			try {
-				ctx.slots.inject("dsh-family.tab", () => ctx.slots.register({
-					name: "dsh-family.tab",
+				ctx.slots.inject("settings.section", () => ctx.slots.register({
+					name: "settings.section",
 					id: "context-compression",
-					order: 55,
+					order: 17,
 					label: () => tNav("nav"),
 					locale: NS,
 					inject: injected
-				}, sectionViaAdapter));
+				}, ContextCompressionSettingsSection));
 			} catch (error) {
-				console.warn("[dsh-context-compression-improved] dsh-family.tab 注册失败(TL 家族节缺席,静默缺席):", error);
+				console.warn("[dsh-context-compression-improved] settings.section 注册失败(宿主无该槽,静默缺席):", error);
 			}
 			try {
 				ctx.slots.inject("conversation.input.left", () => ctx.slots.register({

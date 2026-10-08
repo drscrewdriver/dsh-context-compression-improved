@@ -2,6 +2,23 @@
 
 All notable changes use this file. The project follows semantic versioning after `0.1.0`.
 
+## 0.9.2 - 2026-10-08
+
+### Reverted
+
+- **Standalone settings.section restored (family-tab consolidation rolled back
+  for this plugin)**: the 上下文压缩选择器 sidebar entry (`settings.section`,
+  order 17, the exact 0.9.0 registration and component identity) is back as the
+  only settings-nav seat; the `dsh-family.tab` contributor tab introduced in
+  0.9.1 is removed. 2026-10-08 user verdict: perm-gate and cci were never in
+  the family tab-ification scope — both plugins ship independent insections.
+  The `plugins.bundle.config` bundle-detail card is unchanged and keeps the
+  shared `sectionViaAdapter` closure adapter (now bundle-card-only).
+- Tests: the four client specs (`settings-seat` / `code-skeleton` /
+  `custom-contract` / `preset-options-write`) are restored to the 0.9.0
+  contracts — settings.section seat pinned at order 17 with
+  `ContextCompressionSettingsSection` as the mounted component.
+
 ## 0.9.1 - 2026-10-08
 
 ### Changed

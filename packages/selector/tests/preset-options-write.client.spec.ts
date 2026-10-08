@@ -104,7 +104,7 @@ function bindInjected(
       register: (registerOptions: Record<string, unknown>) => {
         // The R4 overlay registration rides the same slots service; only the
         // settings card carries the inject factory these tests drive.
-        if (registerOptions.name === 'dsh-family.tab') options = registerOptions
+        if (registerOptions.name === 'settings.section') options = registerOptions
         return () => {}
       },
     },

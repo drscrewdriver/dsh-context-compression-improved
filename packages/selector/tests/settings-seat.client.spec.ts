@@ -2,22 +2,21 @@
  * Settings-seat contract pin for dsh-context-compression-improved's client.
  *
  * This spec locks WHERE the compression settings panel mounts: exactly ONE
- * settings seat — the `dsh-family.tab` contributor entry (起子插件设置 family
- * section tab, 2026-10-08 family-insection consolidation; the standalone
- * `settings.section` sidebar entry it duplicates was retired in 0.9.1) — plus
- * the input-bar session binder and the 0.1.7+ bundle detail card. Explicitly
- * NOT the Plugins-section config surfaces (settings.plugins.tab /
- * settings.plugin.item), and NOT a `shell.overlay` float. History this pins
- * against: the 0.1.5 line first lost every entry (a lazy `ctx.get` of
+ * seat — the standalone `settings.section` entry (设置 → 上下文压缩) — and
+ * explicitly NOT the Plugins-section config surfaces (settings.plugins.tab /
+ * settings.plugin.item), and NOT a `shell.overlay` float
+ * (the retired review panel's seat was removed with the gate). History this
+ * pins against: the 0.1.5 line first lost every entry (a lazy `ctx.get` of
  * locale/settingsScope raced the settings client and apply bailed), then showed
- * the panel twice (item card + tab on top of the standalone section), then the
- * standalone section itself duplicated the family tab. All fixed by the
- * declarative-inject + single-family-tab shape below. When a future DSH line
- * moves the seat again, migrate src/client/index.ts AND this file together.
+ * the panel twice (item card + tab on top of the standalone section). Both were
+ * fixed by the declarative-inject + single-section shape below. When a future
+ * DSH line moves the seat again, migrate src/client/index.ts AND this file
+ * together.
  */
 import { describe, expect, it, vi } from 'vitest'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { apply, inject } from '../src/client/index.ts'
+import { ContextCompressionSettingsSection } from '../src/client/CompressionProfileSelector.tsx'
 import { DEFAULT_CUSTOM_COMPRESSION_POLICY } from '../src/profiles.ts'
 
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
@@ -71,18 +70,18 @@ function collectRegistrations(
   return { declared, registrations }
 }
 
-describe('settings-seat contract (family in-section tab + input-bar session binder)', () => {
+describe('settings-seat contract (standalone settings.section + input-bar session binder)', () => {
   it('declares the services apply consumes (cordis waits; no lazy-get race)', () => {
     // compat-legacy 单版本（B8）：顶层只声明六线通用服务；数据面由 scoped
     // sub-inject 双臂选择（桥默认 + configForms 升级），不再出现在顶层表。
     expect(inject).toEqual(['slots', 'locale'])
   })
 
-  it('injects exactly three seats: the dsh-family.tab panel + the input-bar session binder + the 0.1.7+ bundle detail card', () => {
+  it('injects exactly three seats: the settings.section panel + the input-bar session binder + the 0.1.7+ bundle detail card', () => {
     const { declared, registrations } = collectRegistrations()
-    expect(declared).toEqual(['dsh-family.tab', 'conversation.input.left', 'plugins.bundle.config'])
+    expect(declared).toEqual(['settings.section', 'conversation.input.left', 'plugins.bundle.config'])
     expect(registrations).toHaveLength(3)
-    expect(registrations[0]!.slot).toBe('dsh-family.tab')
+    expect(registrations[0]!.slot).toBe('settings.section')
     expect(registrations[1]!.slot).toBe('conversation.input.left')
     expect(registrations[2]!.slot).toBe('plugins.bundle.config')
     // bundle 卡 keyed=包名,0.1.x 宿主无此槽时由 registerThrows 分支另行覆盖
@@ -94,21 +93,17 @@ describe('settings-seat contract (family in-section tab + input-bar session bind
     expect(declared).not.toContain('shell.overlay')
   })
 
-  it('pins the family-tab identity (id/order/label/locale) and the adapter component', () => {
+  it('pins the section identity (id/order/label/locale) and the panel component', () => {
     const { registrations } = collectRegistrations()
     const { options, component } = registrations[0]!
     expect(options['id']).toBe('context-compression')
-    expect(options['order']).toBe(55)
+    expect(options['order']).toBe(17)
     expect(options['locale']).toBe('context-compression')
     expect((options['label'] as () => string)()).toBe('nav')
     expect(typeof options['inject']).toBe('function')
     const face = (options['inject'] as () => Record<string, unknown>)()
     expect(Object.keys(face).sort()).toEqual(['hooks', 'saveAutoCompact', 'saveCodeSkeleton', 'saveCustom', 'saveIntentSummary', 'saveMonitorPanel', 'savePresetOptions', 'select', 'resetCustom'].sort())
-    // The component is the closure adapter (sectionViaAdapter): the family-tab
-    // render chain's hooks mapping is unverified, so the adapter binds
-    // useCompression itself instead of trusting inject.hooks — the component
-    // is a wrapper function, not ContextCompressionSettingsSection directly.
-    expect(component).toBeTypeOf('function')
+    expect(component).toBe(ContextCompressionSettingsSection)
   })
 
   it('pins the input-bar binder: invisible component, inject captures the bare sessionId', () => {
@@ -210,7 +205,7 @@ describe('settings-seat contract (family in-section tab + input-bar session bind
       const { declared } = collectRegistrations({ registerThrows: true })
       // It tried all three seats (so the degradation is "loud", not a silent
       // no-op)…
-      expect(declared).toEqual(['dsh-family.tab', 'conversation.input.left', 'plugins.bundle.config'])
+      expect(declared).toEqual(['settings.section', 'conversation.input.left', 'plugins.bundle.config'])
       // …and the rejection never escaped apply().
       expect(warn).toHaveBeenCalled()
     } finally {
