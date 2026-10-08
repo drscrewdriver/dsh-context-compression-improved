@@ -2,7 +2,20 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
-import { deriveEventMessage } from '@deepseek-ai/dsh-session'
+// ≤0.1.1 宿主 dsh-session 无 deriveEventMessage 运行时导出（SessionSeq 同因，
+// 见 pruner.ts 顶部注）：namespace 软取，缺席落恒 null——调用方 L152 已有
+// message===null → unavailableTokenCount 的降级路径，测量退化为 unavailable
+// 而不是炸 loader entry。
+import * as dshSessionNamespace from '@deepseek-ai/dsh-session'
+const dshSessionSoft = dshSessionNamespace as unknown as {
+  deriveEventMessage?: (event: never) => unknown
+  default?: { deriveEventMessage?: (event: never) => unknown }
+}
+const deriveEventMessageImpl =
+  dshSessionSoft.deriveEventMessage ??
+  dshSessionSoft.default?.deriveEventMessage ??
+  (() => null)
+const deriveEventMessage = deriveEventMessageImpl as typeof import('@deepseek-ai/dsh-session').deriveEventMessage
 import { sessionEvents } from './session-events.ts'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-token-meter'

@@ -4,7 +4,7 @@ import z from "@deepseek-ai/schemastery";
 import { createHash } from "node:crypto";
 import { Service } from "@deepseek-ai/cordis";
 import { createUserMessage, freezeMessage } from "@deepseek-ai/dsh-llm";
-import { SessionSeq, deriveEventMessage } from "@deepseek-ai/dsh-session";
+import * as dshSessionNamespace from "@deepseek-ai/dsh-session";
 import { readFileSync } from "node:fs";
 import { Tokenizer } from "@huggingface/tokenizers";
 import { defineTool } from "@deepseek-ai/dsh-tools";
@@ -469,6 +469,8 @@ function emptyResult() {
 }
 //#endregion
 //#region src/runtime/measurement.ts
+const dshSessionSoft$1 = dshSessionNamespace;
+const deriveEventMessage = dshSessionSoft$1.deriveEventMessage ?? dshSessionSoft$1.default?.deriveEventMessage ?? (() => null);
 /**
 * Character pressure of one model-visible content array, measured on the same
 * level `SnapshotCandidate.characterPressure` uses: a tool/result message is
@@ -3965,6 +3967,8 @@ function emitCompressionAudit(logger, record) {
 *
 * @module dsh-context-compression-improved-runtime
 */
+const dshSessionSoft = dshSessionNamespace;
+const SessionSeq = dshSessionSoft.SessionSeq ?? dshSessionSoft.default?.SessionSeq ?? ((value) => value);
 /** 节省统计配对键用原文(纯文本块才可配对;富内容返回 undefined)。 */
 function originalTextForSavings(candidate) {
 	return flattenPlainText(viewToolResult(candidate.event.data.message).blocks);
