@@ -65,6 +65,7 @@
     "test:watch": "vitest",
     "test:built": "vitest run --config vitest.built.config.ts",
     "test:e2e:packed": "node scripts/packed-install-e2e.mjs",
+    "test:browser:e2e": "node scripts/cell-browser-e2e.mjs",
     "test:unit": "vitest run",
     "verify:release": "node scripts/verify-release.mjs",
     "pack:dry-run": "pnpm -r --if-present run pack:dry-run"
