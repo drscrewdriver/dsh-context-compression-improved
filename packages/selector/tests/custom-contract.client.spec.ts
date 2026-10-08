@@ -172,7 +172,7 @@ describe('context compression browser contract', () => {
         inject: (_slot: string, install: () => unknown) => { install() },
         register: (registration: { name?: string, inject?: () => CompressionSelectorInjected }) => {
           // The R4 overlay registration carries no inject face; keep the card's.
-          if (registration.name === 'settings.section' && typeof registration.inject === 'function') injected = registration.inject
+          if (registration.name === 'dsh-family.tab' && typeof registration.inject === 'function') injected = registration.inject
           return () => {}
         },
       },

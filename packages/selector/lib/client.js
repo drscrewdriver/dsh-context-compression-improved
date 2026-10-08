@@ -3395,17 +3395,38 @@ window.__ModuleLoader__.load({
 					}
 				};
 			};
+			const sectionViaAdapter = (props) => {
+				const inj = injected();
+				const scope = inj.hooks?.compression;
+				const useCompression = (selector) => {
+					if (!scope) return selector({
+						status: "loading",
+						value: void 0,
+						revision: void 0,
+						writable: false,
+						base: void 0,
+						user: void 0,
+						mode: "memory"
+					});
+					return (0, react.useSyncExternalStore)(scope.subscribe, () => selector(scope.getSnapshot()));
+				};
+				return (0, react.createElement)(ContextCompressionSettingsSection, {
+					...inj,
+					...props,
+					useCompression
+				});
+			};
 			try {
-				ctx.slots.inject("settings.section", () => ctx.slots.register({
-					name: "settings.section",
+				ctx.slots.inject("dsh-family.tab", () => ctx.slots.register({
+					name: "dsh-family.tab",
 					id: "context-compression",
-					order: 17,
+					order: 55,
 					label: () => tNav("nav"),
 					locale: NS,
 					inject: injected
-				}, ContextCompressionSettingsSection));
+				}, sectionViaAdapter));
 			} catch (error) {
-				console.warn("[dsh-context-compression-improved] settings.section 注册失败(新宿主已收编):", error);
+				console.warn("[dsh-context-compression-improved] dsh-family.tab 注册失败(TL 家族节缺席,静默缺席):", error);
 			}
 			try {
 				ctx.slots.inject("conversation.input.left", () => ctx.slots.register({
@@ -3425,27 +3446,7 @@ window.__ModuleLoader__.load({
 					name: "plugins.bundle.config",
 					key: "dsh-context-compression-improved",
 					locale: NS
-				}, (props) => {
-					const inj = injected();
-					const scope = inj.hooks?.compression;
-					const useCompression = (selector) => {
-						if (!scope) return selector({
-							status: "loading",
-							value: void 0,
-							revision: void 0,
-							writable: false,
-							base: void 0,
-							user: void 0,
-							mode: "memory"
-						});
-						return (0, react.useSyncExternalStore)(scope.subscribe, () => selector(scope.getSnapshot()));
-					};
-					return (0, react.createElement)(ContextCompressionSettingsSection, {
-						...inj,
-						...props,
-						useCompression
-					});
-				}));
+				}, sectionViaAdapter));
 			} catch (error) {
 				console.warn("[dsh-context-compression-improved] plugins.bundle.config 注册失败(旧宿主无该槽,静默缺席):", error);
 			}
