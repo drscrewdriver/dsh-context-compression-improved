@@ -314,10 +314,9 @@ let readMonitorPanelEnabled = (): boolean => monitorPanelEnabledCache
       },
     }
   }
-  // 家族 tab / bundle 详情卡共用的组件适配器：closure 自取 injected() 并把
-  // hooks.compression 手工适配成 useCompression（useSyncExternalStore 包装）。
-  // 两条渲染链都不带 hookContext、宿主不会做 hooks 映射（0.1.7 真机实证，
-  // 见下方 bundle 卡注释；family.tab 渲染链同型未单测——适配器两侧皆安全）。
+  // bundle 详情卡的组件适配器：closure 自取 injected() 并把 hooks.compression
+  // 手工适配成 useCompression（useSyncExternalStore 包装）。这条渲染链不带
+  // hookContext、宿主不会做 hooks 映射（0.1.7 真机实证，见下方 bundle 卡注释）。
   const sectionViaAdapter = (props: { close?: () => void }) => {
     const inj = injected()
     const scope = inj.hooks?.compression
@@ -331,24 +330,24 @@ let readMonitorPanelEnabled = (): boolean => monitorPanelEnabledCache
     return createElement(ContextCompressionSettingsSection, { ...inj, ...props, useCompression } as never)
   }
 
-  // 家族节 contributor tab（2026-10-08 family-insection 收拢定案）：原顶级
-  // settings.section（侧栏「上下文压缩选择器」独立分节，0.1.0-0.2.0 单注册点）
-  // 移除——与家族节 tab 重复的导航面不再出现，设置面板唯一入口 = 起子插件设置
-  // （TL `dsh-family` 节）里的「上下文压缩选择器」tab。TL 缺席的宿主该注入
-  // 静默 pending（五格实证 TL 常驻，可接受）；无该槽的老宿主激活期抛错由
-  // try/catch 吞掉，静默缺席。label 沿用已 eager bind 的 tNav（search-index
-  // 0.5.3 family-tab incident：label 在家族节渲染期求值，禁懒取 locale）。
+  // 设置 → 上下文压缩 直挂分节（2026-10-08 回退定案：本插件不在家族 tab 化
+  // 范围内——上下文压缩选择器是独立 insection，0.1.1 契约、0.1.0-0.2.0 单注册
+  // 点，恢复 0.9.0 原注册）。只挂这一处：再注册 `settings.plugins.tab` /
+  // `settings.plugin.item` 会在设置里同时出现独立分节和插件卡片，重复展示
+  // 同一张面板。未声明槽的注册会在激活期抛错，故 try/catch 守卫（同
+  // dsh-prime-memory 的双槽冗余）。label 沿用已 eager bind 的 tNav（search-index
+  // 0.5.3 family-tab incident 的教训通用：label 在宿主渲染期求值，禁懒取 locale）。
   try {
-    ctx.slots.inject('dsh-family.tab', () => ctx.slots.register({
-      name: 'dsh-family.tab',
+    ctx.slots.inject('settings.section', () => ctx.slots.register({
+      name: 'settings.section',
       id: 'context-compression',
-      order: 55,
+      order: 17,
       label: () => tNav('nav'),
       locale: NS,
       inject: injected,
-    }, sectionViaAdapter))
+    }, ContextCompressionSettingsSection))
   } catch (error) {
-    console.warn('[dsh-context-compression-improved] dsh-family.tab 注册失败(TL 家族节缺席,静默缺席):', error)
+    console.warn('[dsh-context-compression-improved] settings.section 注册失败(宿主无该槽,静默缺席):', error)
   }
 
   // 输入栏左座(0.1.5+ 宿主):组件刻意空渲染——注册此座位只为接收宿主的
