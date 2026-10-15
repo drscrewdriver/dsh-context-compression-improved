@@ -72,7 +72,7 @@ function unavailableCount(reason: string): TokenCount {
 
 function recoveryMarker(sourceRef: string, label: string, startLine?: number): string {
   const hint = startLine === undefined
-    ? 'use context_compression_retrieve if needed'
+    ? 'use context_compression_retrieve with a query or narrow start_line/max_lines if needed (avoid re-reading the whole result)'
     : `retrieve with context_compression_retrieve({"ref":"${sourceRef}","start_line":${String(startLine)},"max_lines":80})`
   return `\n\n[... ${label}; source=${sourceRef}; ${hint} ...]\n\n`
 }

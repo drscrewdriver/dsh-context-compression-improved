@@ -48,6 +48,10 @@ export interface PrunerState {
   readonly estimatorRemainingTurns: WeakMap<Session, number>
   /** Per-session advisor side channel, constructed once with the advisor overrides. */
   readonly advisorChannels: WeakMap<Session, SideChannel>
+  /** Per-session intent-summary writer channel, constructed once with the estimator channel mode. */
+  readonly intentChannels: WeakMap<Session, SideChannel>
+  /** Sessions whose savings ledger has been seeded from the session-log projection. */
+  readonly projectedSavings: WeakSet<Session>
   /** Staged intent fold awaiting the next pressure round (at most one per session). */
   readonly pendingIntentFolds: WeakMap<Session, PendingIntentFold>
   /** Landed intent-fold seqs: fold-once, never reconsidered by any later stage. */

@@ -1,7 +1,7 @@
 import z from "@deepseek-ai/schemastery";
 import { Context, Service } from "@deepseek-ai/cordis";
 import { ContentBlock, ToolCallId } from "@deepseek-ai/dsh-llm";
-import { Session } from "@deepseek-ai/dsh-session";
+import { Session, SessionEvent } from "@deepseek-ai/dsh-session";
 import { TokenMeasurement } from "@deepseek-ai/dsh-token-meter";
 //#region src/runtime/tokenpilot/dedup.d.ts
 /** Entry stored per first-seen content hash. */
@@ -473,12 +473,143 @@ interface PrunerState {
   readonly estimatorRemainingTurns: WeakMap<Session, number>;
   /** Per-session advisor side channel, constructed once with the advisor overrides. */
   readonly advisorChannels: WeakMap<Session, SideChannel>;
+  /** Per-session intent-summary writer channel, constructed once with the estimator channel mode. */
+  readonly intentChannels: WeakMap<Session, SideChannel>;
+  /** Sessions whose savings ledger has been seeded from the session-log projection. */
+  readonly projectedSavings: WeakSet<Session>;
   /** Staged intent fold awaiting the next pressure round (at most one per session). */
   readonly pendingIntentFolds: WeakMap<Session, PendingIntentFold>;
   /** Landed intent-fold seqs: fold-once, never reconsidered by any later stage. */
   readonly intentFoldedSeqs: WeakMap<Session, Set<number>>;
   /** Live-surface tokens when the last intent fold landed (growth-gate baseline). */
   readonly intentBaselines: WeakMap<Session, number>;
+}
+//#endregion
+//#region src/runtime/token-count.d.ts
+/** Token counts owned by the standalone compression runtime. */
+/** Exact count of one canonical value under a pinned tokenizer artifact. */
+interface ExactTokenizerTokenCount {
+  readonly kind: 'exact-tokenizer';
+  readonly tokens: number;
+  readonly tokenizerId: string;
+  readonly tokenizerRevision: string;
+}
+/** A value that the bundled tokenizer cannot safely count. */
+interface UnavailableTokenCount {
+  readonly kind: 'unavailable';
+  readonly reason: string;
+}
+/** Best-effort estimate carrying a conservative upper value when available. */
+interface TokenizerEstimateTokenCount {
+  readonly kind: 'tokenizer-estimate';
+  readonly tokens: number;
+  readonly upperBoundTokens: number;
+  readonly estimatorId: string;
+  readonly estimatorRevision: string;
+  readonly calibration?: Readonly<{
+    readonly sampleCount: number;
+    readonly conservativeMarginTokens: number;
+  }>;
+}
+/** Exact, conservative request estimate, or an explicit refusal. */
+type TokenCount = ExactTokenizerTokenCount | TokenizerEstimateTokenCount | UnavailableTokenCount;
+//#endregion
+//#region src/runtime/measurement.d.ts
+/** Request identity retained only when every dimension is publicly known. */
+interface ProviderMeasurementKey {
+  readonly provider: string;
+  readonly baseUrlClass: string;
+  readonly apiRoute: string;
+  readonly modelId: string;
+  readonly requestTemplateRevision: string;
+  readonly tokenizerRevision: string;
+  readonly modality: string;
+}
+/** Rich request observation used by Adaptive when a future public API supplies it. */
+interface ObservedPromptUsage {
+  readonly attemptId: string;
+  readonly providerRequestOrdinal: number;
+  readonly startedAtMs: number;
+  readonly completedAtMs: number;
+  readonly measurement: TokenCount;
+  readonly observedPromptTokens: number;
+  readonly observedOutputTokens?: number;
+  readonly responseModelId?: string;
+  readonly cacheStatus?: 'complete' | 'unknown';
+  readonly cacheReadTokens?: number;
+  readonly cacheMissTokens?: number;
+  readonly key?: ProviderMeasurementKey;
+}
+/**
+ * Intrinsic-grid diagnostic attached to nodes whose count estimates images.
+ * It reports ONLY the official block
+ * arithmetic evaluated on the attachment's intrinsic dimensions at the two
+ * alignment-padding extremes (compress-pad 0 and 3). It is NOT a request-token
+ * bound: the adapter may still re-project the image (per-route pixel-budget
+ * or image-detail overrides, byte-cap reprojection), which can move the real
+ * count below the diagnostic minimum. It never participates in exact gates,
+ * rewrite proofs, or any lossy decision.
+ */
+interface IntrinsicImageBlockDiagnostic {
+  readonly paddingMinimumTokens: number;
+  readonly paddingMaximumTokens: number;
+}
+/** One same-revision surface node with exact, estimated, or unavailable count. */
+interface MeasuredTokenSurfaceNode {
+  readonly seq: number;
+  readonly count: TokenCount;
+  /**
+   * Authoritative decision metric for this node: character pressure in
+   * Unicode code points (same convention as SnapshotCandidate.characterPressure).
+   */
+  readonly characterPressure: number;
+  /** Intrinsic-grid diagnostic when usable image dimensions were available. */
+  readonly intrinsicImageBlockEstimate?: IntrinsicImageBlockDiagnostic;
+}
+/** Compression view derived only from published Session and TokenMeter methods. */
+interface CompactionTokenView extends TokenMeasurement {
+  readonly providerRoute?: string;
+  readonly modelId?: string;
+  readonly measuredNodes: readonly MeasuredTokenSurfaceNode[];
+  readonly currentSurface: TokenCount;
+  /**
+   * Exact character analogue of `currentSurface`: sum of per-node
+   * `characterPressure` over the same nodes `currentSurface` covers.
+   */
+  readonly currentSurfaceChars: number;
+  /** Sum of per-node intrinsic padding minima; a diagnostic, not a token bound. */
+  readonly intrinsicImageBlockEstimateTokens: number;
+  readonly latestEnvelopeKey?: ProviderMeasurementKey;
+  readonly lastCompletedUsage?: ObservedPromptUsage;
+  countCanonicalText(text: string): TokenCount;
+}
+/**
+ * Capture one route-bound view without calling patched Harness methods.
+ * Official `measure()` remains authoritative for request pressure; the bundled
+ * tokenizer supplies exact canonical content counts used by safe rewrites.
+ */
+declare function measureForCompaction(ctx: Context, session: Session): CompactionTokenView;
+//#endregion
+//#region src/pruner/types.d.ts
+interface ToolCallInfo {
+  readonly name: string;
+  readonly arguments: string;
+}
+interface SnapshotCandidate {
+  readonly seq: number;
+  readonly event: SessionEvent<'tool/result'>;
+  readonly call: ToolCallInfo;
+  /** Authoritative same-revision exact canonical content count (telemetry only). */
+  readonly count: TokenCount;
+  /** Same-revision legacy heuristic price used only by bounded projections. */
+  readonly shadowedHeuristicTokenCount: number;
+  /**
+   * Authoritative decision metric: character pressure in Unicode code points.
+   * Every eligibility and acceptance gate decides on this number so the plugin
+   * never depends on the routed model id owning a bundled exact tokenizer;
+   * `count` is retained as diagnostic telemetry only.
+   */
+  readonly characterPressure: number;
 }
 //#endregion
 //#region src/runtime/custom-policy.d.ts
@@ -636,111 +767,6 @@ declare function verifyReduction(input: ReducerInput, output: ReducerOutput): bo
  */
 declare function normalizeTerminalText(text: string): string;
 //#endregion
-//#region src/runtime/token-count.d.ts
-/** Token counts owned by the standalone compression runtime. */
-/** Exact count of one canonical value under a pinned tokenizer artifact. */
-interface ExactTokenizerTokenCount {
-  readonly kind: 'exact-tokenizer';
-  readonly tokens: number;
-  readonly tokenizerId: string;
-  readonly tokenizerRevision: string;
-}
-/** A value that the bundled tokenizer cannot safely count. */
-interface UnavailableTokenCount {
-  readonly kind: 'unavailable';
-  readonly reason: string;
-}
-/** Best-effort estimate carrying a conservative upper value when available. */
-interface TokenizerEstimateTokenCount {
-  readonly kind: 'tokenizer-estimate';
-  readonly tokens: number;
-  readonly upperBoundTokens: number;
-  readonly estimatorId: string;
-  readonly estimatorRevision: string;
-  readonly calibration?: Readonly<{
-    readonly sampleCount: number;
-    readonly conservativeMarginTokens: number;
-  }>;
-}
-/** Exact, conservative request estimate, or an explicit refusal. */
-type TokenCount = ExactTokenizerTokenCount | TokenizerEstimateTokenCount | UnavailableTokenCount;
-//#endregion
-//#region src/runtime/measurement.d.ts
-/** Request identity retained only when every dimension is publicly known. */
-interface ProviderMeasurementKey {
-  readonly provider: string;
-  readonly baseUrlClass: string;
-  readonly apiRoute: string;
-  readonly modelId: string;
-  readonly requestTemplateRevision: string;
-  readonly tokenizerRevision: string;
-  readonly modality: string;
-}
-/** Rich request observation used by Adaptive when a future public API supplies it. */
-interface ObservedPromptUsage {
-  readonly attemptId: string;
-  readonly providerRequestOrdinal: number;
-  readonly startedAtMs: number;
-  readonly completedAtMs: number;
-  readonly measurement: TokenCount;
-  readonly observedPromptTokens: number;
-  readonly observedOutputTokens?: number;
-  readonly responseModelId?: string;
-  readonly cacheStatus?: 'complete' | 'unknown';
-  readonly cacheReadTokens?: number;
-  readonly cacheMissTokens?: number;
-  readonly key?: ProviderMeasurementKey;
-}
-/**
- * Intrinsic-grid diagnostic attached to nodes whose count estimates images.
- * It reports ONLY the official block
- * arithmetic evaluated on the attachment's intrinsic dimensions at the two
- * alignment-padding extremes (compress-pad 0 and 3). It is NOT a request-token
- * bound: the adapter may still re-project the image (per-route pixel-budget
- * or image-detail overrides, byte-cap reprojection), which can move the real
- * count below the diagnostic minimum. It never participates in exact gates,
- * rewrite proofs, or any lossy decision.
- */
-interface IntrinsicImageBlockDiagnostic {
-  readonly paddingMinimumTokens: number;
-  readonly paddingMaximumTokens: number;
-}
-/** One same-revision surface node with exact, estimated, or unavailable count. */
-interface MeasuredTokenSurfaceNode {
-  readonly seq: number;
-  readonly count: TokenCount;
-  /**
-   * Authoritative decision metric for this node: character pressure in
-   * Unicode code points (same convention as SnapshotCandidate.characterPressure).
-   */
-  readonly characterPressure: number;
-  /** Intrinsic-grid diagnostic when usable image dimensions were available. */
-  readonly intrinsicImageBlockEstimate?: IntrinsicImageBlockDiagnostic;
-}
-/** Compression view derived only from published Session and TokenMeter methods. */
-interface CompactionTokenView extends TokenMeasurement {
-  readonly providerRoute?: string;
-  readonly modelId?: string;
-  readonly measuredNodes: readonly MeasuredTokenSurfaceNode[];
-  readonly currentSurface: TokenCount;
-  /**
-   * Exact character analogue of `currentSurface`: sum of per-node
-   * `characterPressure` over the same nodes `currentSurface` covers.
-   */
-  readonly currentSurfaceChars: number;
-  /** Sum of per-node intrinsic padding minima; a diagnostic, not a token bound. */
-  readonly intrinsicImageBlockEstimateTokens: number;
-  readonly latestEnvelopeKey?: ProviderMeasurementKey;
-  readonly lastCompletedUsage?: ObservedPromptUsage;
-  countCanonicalText(text: string): TokenCount;
-}
-/**
- * Capture one route-bound view without calling patched Harness methods.
- * Official `measure()` remains authoritative for request pressure; the bundled
- * tokenizer supplies exact canonical content counts used by safe rewrites.
- */
-declare function measureForCompaction(ctx: Context, session: Session): CompactionTokenView;
-//#endregion
 //#region src/pruner.d.ts
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
@@ -754,6 +780,25 @@ declare module '@deepseek-ai/cordis' {
     toolResultPruner: ToolResultPruner;
   }
 }
+/**
+ * Cross-generation adaptation (0.2.0): the host `settings` service hands back
+ * the WHOLE entry config `{ settings: <subtree> }` instead of the settings
+ * subtree directly (older lines surfaced the subtree at the top level). The
+ * parser requires `profile`+`custom` at the root, so the wrapped shape threw
+ * "missing its complete shape" → the session failed open to `profile:'off'`,
+ * silently disabling fresh/aggregate on the desktop. Descend exactly one
+ * `{settings:<obj>}` wrapper ONLY when the root has no `profile`; every other
+ * shape is passed through untouched so the "exotic Host value must fail open
+ * to off" safety contract still holds.
+ */
+declare function unwrapSettingsEntry(value: unknown): unknown;
+/**
+ * Whether a fresh candidate is BELOW the fresh trigger. Uses the real token
+ * count when an exact tokenizer is available (DeepSeek routes), and otherwise
+ * falls back to the 4.0 chars/token estimate — byte-for-byte the pre-existing
+ * behavior on routes without a bundled tokenizer (e.g. local Qwen).
+ */
+declare function freshBelowTrigger(candidate: SnapshotCandidate, policy: CompressionPolicy): boolean;
 /** Mixed deterministic selector behind the existing `ctx.toolResultPruner` seam. */
 declare class ToolResultPruner extends Service {
   static inject: string[];
@@ -808,6 +853,12 @@ declare class ToolResultPruner extends Service {
    * reads, so the default configuration adds exactly zero behavior.
    */
   private postflightAdvisorPass;
+  /**
+   * 重进/重启会话的懒重建:首次观测某会话时,若账本尚无该会话条目,则按会话
+   * 日志投影播种(当前生效毛节省 + 每次重读惩罚 + 原文配对键)。只做一次,
+   * fail-open;同一进程内的实时增量随后在同一条目集合上继续。
+   */
+  private ensureSavingsProjection;
   /**
    * Fire-and-forget postflight: evaluate the growth gate, and only when it
    * passes, select the consumed increment OUTSIDE the protected working set,
@@ -908,4 +959,4 @@ declare class ToolResultPruner extends Service {
   private warnOnce;
 }
 //#endregion
-export { AUTO_COMPACT_THRESHOLD_LIMITS, type AutoCompactSettings, COMPRESSION_PROFILES, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, type CodeSkeletonSettings, type CompactionTokenView, type CompressionPolicy, type CompressionProfile, type ContextCompressionSettings, ContextCompressionSettingsSchema, type CustomCompressionBudget, type CustomCompressionPolicy, CustomCompressionPolicySchema, type CustomCompressionPolicyV1, type CustomCompressionPolicyV2, type CustomCompressionPolicyV3, type CustomCompressionUnit, type CustomHistoryPolicy, type CustomPolicyResolutionOptions, type CustomPrefixPolicy, type CustomTailTrimPolicy, DEFAULTS, DEFAULT_CUSTOM_COMPRESSION_POLICY, type HistoryMode, type MeasuredTokenSurfaceNode, PRUNE_MARKER, type PruneResult, type PruneSessionOptions, type PruneStage, type PrunedEntry, type ToolResultPruneConfig, ToolResultPruner, ToolResultPruner as default, codePointLength, historicalPlaceholder, isCompressionProfile, isValidAutoCompactThresholdPercent, measureForCompaction, normalizeTerminalText, parseContextCompressionSettings, reduceFreshToolResult, resolveConfig, resolveCustomPolicy, resolvePolicy, verifyReduction };
+export { AUTO_COMPACT_THRESHOLD_LIMITS, type AutoCompactSettings, COMPRESSION_PROFILES, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, type CodeSkeletonSettings, type CompactionTokenView, type CompressionPolicy, type CompressionProfile, type ContextCompressionSettings, ContextCompressionSettingsSchema, type CustomCompressionBudget, type CustomCompressionPolicy, CustomCompressionPolicySchema, type CustomCompressionPolicyV1, type CustomCompressionPolicyV2, type CustomCompressionPolicyV3, type CustomCompressionUnit, type CustomHistoryPolicy, type CustomPolicyResolutionOptions, type CustomPrefixPolicy, type CustomTailTrimPolicy, DEFAULTS, DEFAULT_CUSTOM_COMPRESSION_POLICY, type HistoryMode, type MeasuredTokenSurfaceNode, PRUNE_MARKER, type PruneResult, type PruneSessionOptions, type PruneStage, type PrunedEntry, type ToolResultPruneConfig, ToolResultPruner, ToolResultPruner as default, codePointLength, freshBelowTrigger, historicalPlaceholder, isCompressionProfile, isValidAutoCompactThresholdPercent, measureForCompaction, normalizeTerminalText, parseContextCompressionSettings, reduceFreshToolResult, resolveConfig, resolveCustomPolicy, resolvePolicy, unwrapSettingsEntry, verifyReduction };

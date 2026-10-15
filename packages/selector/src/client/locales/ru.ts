@@ -80,6 +80,7 @@ export const ru = {
   'monitor.panel.cost': 'Стоимость (факт / эконом. оценка)',
   'monitor.panel.intent': 'Итог намерения',
   'monitor.panel.overrideHint': 'Приоритет сессии',
+  'monitor.panel.overridePrefix': 'Приоритет сессии',
   'monitor.panel.resume': 'Возобновить',
   'monitor.panel.disable': 'Отключить',
   'monitor.panel.stateOn': 'вкл',

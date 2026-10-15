@@ -26,6 +26,25 @@ describe('savings ledger(诚实口径)', () => {
     expect(ledger.snapshot('s1').gross.exact).toBe(8_000)
   })
 
+  it('仪表口径:替换离开 surface 后毛节省回落;仍在 surface 时保持', () => {
+    ledger.recordSaving({
+      sessionId: 's1',
+      component: 'fresh',
+      tokensBefore: 9_000,
+      tokensAfter: 1_000,
+      basis: 'exact-tokenizer',
+      sourceSeq: 5,
+      replacementSeq: 100,
+    })
+    expect(ledger.snapshot('s1').gross.exact).toBe(8_000)
+    // 替换仍在 surface → 保持
+    ledger.observeActive('s1', new Set([100, 101]))
+    expect(ledger.snapshot('s1').gross.exact).toBe(8_000)
+    // 替换离开 surface → 回落为 0
+    ledger.observeActive('s1', new Set([101]))
+    expect(ledger.snapshot('s1').gross.exact).toBe(0)
+  })
+
   it('**先骨架后全文 = 负节省**:全文重读抵消原声称,净额可为负', () => {
     const original = 'export function readFile() {\n  // ...long body...\n}\n'.repeat(200)
     ledger.recordSaving({
@@ -52,15 +71,15 @@ describe('savings ledger(诚实口径)', () => {
     expect(snap.recentOffsets[0]?.note).toContain('#7')
   })
 
-  it('同一 (session, seq) 的全文只探测一次;抵消每个哈希只消费一次', () => {
+  it('同一 (session, seq) 的全文只探测一次;每次重读都记负项(不再一次性消费)', () => {
     const text = 'payload-body\n'.repeat(100)
     ledger.recordSaving({ sessionId: 's1', component: 'history', tokensBefore: 900, tokensAfter: 100, basis: 'characters', sourceSeq: 3, originalText: text })
     const measure = () => ({ tokens: 900, basis: 'characters' as const })
     ledger.noteFullText({ sessionId: 's1', seq: 30, text, measure })
     ledger.noteFullText({ sessionId: 's1', seq: 30, text, measure }) // 同 seq 重放:忽略
     expect(ledger.snapshot('s1').offsets.estimated).toBe(900)
-    ledger.noteFullText({ sessionId: 's1', seq: 31, text: text + '\n', measure }) // 新 seq、同哈希:已消费,不再抵消
-    expect(ledger.snapshot('s1').offsets.estimated).toBe(900)
+    ledger.noteFullText({ sessionId: 's1', seq: 31, text: text + '\n', measure }) // 新 seq、同哈希:再次记负
+    expect(ledger.snapshot('s1').offsets.estimated).toBe(1_800)
   })
 
   it('跨会话不串账;retrieve 抵消走估算口径分列', () => {

@@ -80,6 +80,7 @@ export const es = {
   'monitor.panel.cost': 'Coste (real / ahorro est.)',
   'monitor.panel.intent': 'Resumen de intención',
   'monitor.panel.overrideHint': 'Invalidación de sesión',
+  'monitor.panel.overridePrefix': 'Invalidación de sesión',
   'monitor.panel.resume': 'Reanudar',
   'monitor.panel.disable': 'Desactivar',
   'monitor.panel.stateOn': 'sí',

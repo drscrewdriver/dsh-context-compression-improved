@@ -677,7 +677,7 @@ export function resolvePolicy(
     'tokenpilot-inspired': {
       nativeToolResultEnabled: false, freshEnabled: true, aggregateEnabled: true, historyMode: 'routine',
       nativeTriggerTokens: Number.MAX_SAFE_INTEGER, nativeTargetTokens: Number.MAX_SAFE_INTEGER,
-      freshTriggerTokens: 8_192, freshTargetTokens: 3_072,
+      freshTriggerTokens: 4_096, freshTargetTokens: 1_536,
       aggregateTriggerTokens: 32_768, aggregateTargetTokens: 12_288,
       historyTriggerTokens: 500_000, historyKeepRecentToolCalls: 10,
       historyKeepRecentTokens: 64_000, historyMinReclaimTokens: 96_000,

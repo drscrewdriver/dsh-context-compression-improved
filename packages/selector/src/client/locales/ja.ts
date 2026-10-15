@@ -80,6 +80,7 @@ export const ja = {
   'monitor.panel.cost': 'コスト（実績 / 節約概算）',
   'monitor.panel.intent': 'インテント要約',
   'monitor.panel.overrideHint': 'セッション上書き',
+  'monitor.panel.overridePrefix': 'セッション上書き',
   'monitor.panel.resume': '再開',
   'monitor.panel.disable': '停止',
   'monitor.panel.stateOn': 'オン',

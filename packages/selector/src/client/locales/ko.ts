@@ -80,6 +80,7 @@ export const ko = {
   'monitor.panel.cost': '비용 (실제 / 절감 추정)',
   'monitor.panel.intent': '인텐트 요약',
   'monitor.panel.overrideHint': '세션 재정의',
+  'monitor.panel.overridePrefix': '세션 재정의',
   'monitor.panel.resume': '재개',
   'monitor.panel.disable': '중지',
   'monitor.panel.stateOn': '켬',
