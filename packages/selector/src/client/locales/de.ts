@@ -80,6 +80,7 @@ export const de = {
   'monitor.panel.cost': 'Kosten (ist / gespart gesch.)',
   'monitor.panel.intent': 'Intent-Zusammenfassung',
   'monitor.panel.overrideHint': 'Sitzungs-Übersteuerung',
+  'monitor.panel.overridePrefix': 'Sitzungs-Übersteuerung',
   'monitor.panel.resume': 'Fortsetzen',
   'monitor.panel.disable': 'Deaktivieren',
   'monitor.panel.stateOn': 'ein',

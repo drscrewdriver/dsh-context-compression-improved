@@ -80,6 +80,7 @@ export const it = {
   'monitor.panel.cost': 'Costo (effettivo / stimo)',
   'monitor.panel.intent': 'Riepilogo di intento',
   'monitor.panel.overrideHint': 'Override di sessione',
+  'monitor.panel.overridePrefix': 'Override di sessione',
   'monitor.panel.resume': 'Riprendi',
   'monitor.panel.disable': 'Disattiva',
   'monitor.panel.stateOn': 'on',

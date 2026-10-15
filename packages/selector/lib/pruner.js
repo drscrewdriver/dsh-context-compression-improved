@@ -1,4 +1,4 @@
-import { B as decimalRateNanoUnits, F as recordIntentFold, H as resolveOfficialDeepSeekPrice, I as recordRecertified, L as recordScore, M as getSummaryOverride, N as invalidateOnTaskChange, O as evaluateIntentGate, P as observeIntentEnabled, T as observeContextUsage, U as getSavingsLedger, V as priceOfficialDeepSeekUsage, _ as resolveCustomPolicy, b as COMPRESSION_PROFILES, c as charsToTokens, d as isValidAutoCompactThresholdPercent, f as parseContextCompressionSettings, g as DEFAULT_CUSTOM_COMPRESSION_POLICY, h as CustomCompressionPolicySchema, i as DEFAULTS, k as getAdvisorState, l as codePointLength, m as resolvePolicy, n as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, o as PRUNE_MARKER, p as resolveConfig, r as ContextCompressionSettingsSchema, s as charsForTokens, t as AUTO_COMPACT_THRESHOLD_LIMITS, u as isCompressionProfile, v as assertNever, y as deepFreeze, z as DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION } from "./config.js";
+import { B as decimalRateNanoUnits, F as recordIntentFold, H as resolveOfficialDeepSeekPrice, I as recordRecertified, L as recordScore, M as getSummaryOverride, N as invalidateOnTaskChange, O as evaluateIntentGate, P as observeIntentEnabled, T as observeContextUsage, U as getSavingsLedger, V as priceOfficialDeepSeekUsage, W as savingsHash, _ as resolveCustomPolicy, b as COMPRESSION_PROFILES, c as charsToTokens, d as isValidAutoCompactThresholdPercent, f as parseContextCompressionSettings, g as DEFAULT_CUSTOM_COMPRESSION_POLICY, h as CustomCompressionPolicySchema, i as DEFAULTS, k as getAdvisorState, l as codePointLength, m as resolvePolicy, n as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, o as PRUNE_MARKER, p as resolveConfig, r as ContextCompressionSettingsSchema, s as charsForTokens, t as AUTO_COMPACT_THRESHOLD_LIMITS, u as isCompressionProfile, v as assertNever, y as deepFreeze, z as DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION } from "./config.js";
 import { a as validatePublishedTailTrim, c as eventBySeq, i as tailTrimStub, l as sessionEvents, n as tailTrimMessage, o as compressionMessageSource, r as tailTrimRef, s as viewToolResult, t as parseTailTrimRef } from "./tail-trim.js";
 import z from "@deepseek-ai/schemastery";
 import { createHash } from "node:crypto";
@@ -385,7 +385,7 @@ function unavailableCount(reason) {
 	});
 }
 function recoveryMarker(sourceRef, label, startLine) {
-	return `\n\n[... ${label}; source=${sourceRef}; ${startLine === void 0 ? "use context_compression_retrieve if needed" : `retrieve with context_compression_retrieve({"ref":"${sourceRef}","start_line":${String(startLine)},"max_lines":80})`} ...]\n\n`;
+	return `\n\n[... ${label}; source=${sourceRef}; ${startLine === void 0 ? "use context_compression_retrieve with a query or narrow start_line/max_lines if needed (avoid re-reading the whole result)" : `retrieve with context_compression_retrieve({"ref":"${sourceRef}","start_line":${String(startLine)},"max_lines":80})`} ...]\n\n`;
 }
 /**
 * Measure text content in Unicode code points; non-text blocks cost zero.
@@ -732,17 +732,17 @@ function countSurfaceCounts(counts, subject) {
 	});
 }
 z.object({
-	maxChars: z.number().step(1).min(1).default(5e4),
+	maxChars: z.number().step(1).min(1).default(12e3),
 	maxScanChars: z.number().step(1).min(1).default(25e4),
 	maxQueryChars: z.number().step(1).min(1).default(256)
 });
 const REF_PATTERN = /^session:\/\/([^/]+)\/event\/(\d+)$/;
 const MAX_LINES = 1e3;
-const DEFAULT_MAX_CHARS = 5e4;
+const DEFAULT_MAX_CHARS = 12e3;
 const DEFAULT_MAX_SCAN_CHARS = 25e4;
 const DEFAULT_MAX_QUERY_CHARS = 256;
 const TRUNCATION_MARKER = "\n[context_compression_retrieve output truncated; reported lines describe the selected source range]\n";
-const PROMPT = "When a compacted tool result contains a session://<session-id>/event/<seq> reference, or TailTrim contains a session://<session-id>/tailtrim/<seq> reference, use context_compression_retrieve with that exact ref and a narrow line range or query if the omitted evidence is necessary. The returned event content comes from the append-only session log, which is the source of truth.";
+const PROMPT = "When a compacted tool result contains a session://<session-id>/event/<seq> reference, or TailTrim contains a session://<session-id>/tailtrim/<seq> reference, use context_compression_retrieve with that exact ref and a narrow line range or query if the omitted evidence is necessary. Prefer a query or a tight start_line/max_lines over re-reading the whole result: every recovery re-enters the context and is charged against the savings, so a targeted slice keeps the rest of the reduction. The returned event content comes from the append-only session log, which is the source of truth.";
 const OUTPUT = {
 	schema: { type: "string" },
 	render: (_args, value) => [{
@@ -1370,6 +1370,11 @@ const ADJACENT_REPEAT_MARKER = "[previous line repeated";
 const NON_ADJACENT_FOLD_THRESHOLD = 3;
 /** Read-output line-number gutter added unconditionally by the host's `formatReadOutput`. */
 const READ_GUTTER_PATTERN = /^(\d+): ?/;
+/** JSONL/NDJSON preview: records kept from the head and tail of the stream. */
+const JSONL_HEAD_RECORDS = 3;
+const JSONL_TAIL_RECORDS = 2;
+/** JSONL detection validates a bounded prefix so a multi-MB stream stays cheap. */
+const JSONL_DETECT_SCAN = 512;
 /**
 * Block-level read-gutter detection (GF-1). The host prefixes read output with
 * `N: ` line numbers unconditionally and cannot be configured off. The gutter
@@ -1428,7 +1433,8 @@ function reduceFreshToolResult(input, ranking) {
 	const toolClass = classifyToolSource(input.toolName, command, normalized.contentText);
 	const readTocFirst = toolClass === "read" && codePointLength(normalized.contentText) >= READ_TOC_MIN_CHARS;
 	const candidates = [];
-	if (looksLikeJson(normalized.contentText)) candidates.push(() => reduceJson(prepared));
+	if (looksLikeJsonl(normalized.contentText)) candidates.push(() => reduceJsonl(prepared));
+	else if (looksLikeJson(normalized.contentText)) candidates.push(() => reduceJson(prepared));
 	if (looksLikeMinified(normalized.contentText)) candidates.push(() => reduceBundledJs(prepared));
 	if (toolClass === "search") candidates.push(() => reduceSearch(prepared, ranking?.files));
 	if (isGitCommand(name, command)) candidates.push(() => reduceGit(prepared, command));
@@ -1790,6 +1796,76 @@ function reduceJson(input) {
 		lossy: true
 	};
 	return null;
+}
+/**
+* Reduce line-delimited JSON (JSONL/NDJSON): keep a head and tail sample of
+* records — each run through the same `shrinkJson` as the single-value branch —
+* and collapse the middle into an omitted-record count. Reads the gutter-
+* stripped content view so a host read listing (`N: ` prefix) still resolves.
+* Returns null when the sampled envelope cannot fit the budget (or when there
+* are too few records to omit anything), letting head/tail take over.
+*/
+function reduceJsonl(input) {
+	const recordLines = [];
+	for (const line of input.contentText.split("\n")) {
+		const trimmed = line.trim();
+		if (trimmed !== "" && (trimmed.startsWith("{") || trimmed.startsWith("["))) recordLines.push(trimmed);
+	}
+	const total = recordLines.length;
+	if (total < 2) return null;
+	const parseRecord = (text) => {
+		try {
+			return JSON.parse(text);
+		} catch {
+			return text;
+		}
+	};
+	const headCount = Math.min(JSONL_HEAD_RECORDS, total);
+	const tailCount = total > headCount ? Math.min(JSONL_TAIL_RECORDS, total - headCount) : 0;
+	const head = recordLines.slice(0, headCount).map((entry) => shrinkJson(parseRecord(entry), 0));
+	const tail = tailCount > 0 ? recordLines.slice(total - tailCount).map((entry) => shrinkJson(parseRecord(entry), 0)) : [];
+	const omitted = total - headCount - tailCount;
+	const envelope = {
+		$dsh_compression: {
+			kind: "jsonl-preview",
+			source: input.sourceRef,
+			original_chars: codePointLength(input.text),
+			records: total
+		},
+		head
+	};
+	if (omitted > 0) envelope.$dsh_omitted_records = omitted;
+	if (tail.length > 0) envelope.tail = tail;
+	const text = JSON.stringify(envelope, null, 2);
+	if (codePointLength(text) >= codePointLength(input.text) || codePointLength(text) > input.budgetChars) return null;
+	return {
+		text,
+		reducer: "jsonl-structure-preview",
+		lossy: true
+	};
+}
+/**
+* Detect JSONL/NDJSON: at least two non-empty lines, each of which parses on
+* its own as a JSON object or array. A pretty-printed single JSON fails this
+* (its interior lines are not standalone values), so the two forms never
+* collide. Only a bounded prefix is validated to keep multi-MB streams cheap.
+*/
+function looksLikeJsonl(text) {
+	let records = 0;
+	for (const line of text.split("\n")) {
+		const trimmed = line.trim();
+		if (trimmed === "") continue;
+		if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) return false;
+		try {
+			const parsed = JSON.parse(trimmed);
+			if (typeof parsed !== "object" || parsed === null) return false;
+			records += 1;
+		} catch {
+			return false;
+		}
+		if (records >= JSONL_DETECT_SCAN) break;
+	}
+	return records >= 2;
 }
 function shrinkJson(value, depth) {
 	if (depth >= 5) {
@@ -3826,6 +3902,177 @@ function dedupePlaceholder(entry, originalChars) {
 	].join(" ");
 }
 //#endregion
+//#region src/runtime/savings-projection.ts
+const EMPTY = Object.freeze({
+	savings: [],
+	offsets: [],
+	registry: []
+});
+function blocksOf(event) {
+	if (event.type !== "tool/result") return void 0;
+	return viewToolResult(event.data.message).blocks;
+}
+function textOf(event) {
+	const blocks = blocksOf(event);
+	return blocks === void 0 ? void 0 : flattenPlainText(blocks);
+}
+/** 与 pruner 的 `plan()` 同口径定价：全文本块可精确，否则字符口径。 */
+function priceEvent(event, countText) {
+	const blocks = blocksOf(event);
+	if (blocks === void 0) return void 0;
+	const chars = pressureCost(blocks);
+	if (chars <= 0) return void 0;
+	const texts = blocks.map((block) => block.type === "text" ? block.text : void 0);
+	if (texts.every((text) => text !== void 0)) {
+		const count = countExactCanonicalTextFields(texts, countText, "savings projection");
+		if (count.kind === "exact-tokenizer") return {
+			tokens: count.tokens,
+			basis: "exact-tokenizer",
+			chars
+		};
+	}
+	return {
+		tokens: Math.max(1, charsToTokens(chars)),
+		basis: "characters",
+		chars
+	};
+}
+/** 替换事件的被替换 span；非替换节点（或畸形 op）返回 undefined。 */
+function replacedSpan(event) {
+	const op = event.surfaceOp;
+	if (typeof op !== "object" || op === null || op.op !== "replace") return void 0;
+	const start = Number(op.startSeq);
+	const end = Number(op.endSeq);
+	if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return void 0;
+	return {
+		start,
+		end
+	};
+}
+function originalText(bySeq, span) {
+	const parts = [];
+	for (let seq = span.start; seq <= span.end; seq++) {
+		const event = bySeq.get(seq);
+		const text = event === void 0 ? void 0 : textOf(event);
+		if (text !== void 0 && text.length > 0) parts.push(text);
+	}
+	return parts.join("\n");
+}
+/**
+* 一个替换节点"压掉了多少"（与实时 `plan()` 同口径：差额>0 才算）。
+* 原始价 = span 内原始事件之和；替换价 = 替换事件。
+*/
+function computeDelta(bySeq, replacement, span, counter) {
+	const after = priceEvent(replacement, counter);
+	if (after === void 0) return void 0;
+	let beforeChars = 0;
+	let beforeExactTokens = 0;
+	let beforeExact = true;
+	let any = false;
+	for (let seq = span.start; seq <= span.end; seq++) {
+		const original = bySeq.get(seq);
+		const priced = original === void 0 ? void 0 : priceEvent(original, counter);
+		if (priced === void 0) continue;
+		any = true;
+		beforeChars += priced.chars;
+		beforeExactTokens += priced.tokens;
+		if (priced.basis !== "exact-tokenizer") beforeExact = false;
+	}
+	if (!any) return void 0;
+	const exact = after.basis === "exact-tokenizer" && beforeExact;
+	const basis = exact ? "exact-tokenizer" : "characters";
+	const delta = (exact ? beforeExactTokens : charsToTokens(beforeChars)) - (exact ? after.tokens : charsToTokens(after.chars));
+	if (delta <= 0) return void 0;
+	return {
+		tokens: delta,
+		basis
+	};
+}
+/**
+* 纯核心：给定事件流、当前 surface 节点与计价计数器，重算节省投影。
+* @param input - events/surfaceNodes/counter，均为实时路径的只读快照。
+* @returns savings（当前生效毛节省）/ offsets（每次重读惩罚）/ registry（原文配对键）。
+*/
+function projectSavingsCore(input) {
+	const { events, surfaceNodes, counter } = input;
+	if (events.length === 0) return EMPTY;
+	const bySeq = /* @__PURE__ */ new Map();
+	for (const event of events) bySeq.set(Number(event.seq), event);
+	const savings = [];
+	for (const rawSeq of surfaceNodes) {
+		const seq = Number(rawSeq);
+		const replacement = bySeq.get(seq);
+		if (replacement === void 0) continue;
+		const span = replacedSpan(replacement);
+		if (span === void 0) continue;
+		const delta = computeDelta(bySeq, replacement, span, counter);
+		if (delta === void 0) continue;
+		savings.push({
+			component: "projection",
+			tokens: delta.tokens,
+			basis: delta.basis,
+			at: Number(replacement.time) || 0,
+			replacementSeq: seq
+		});
+	}
+	const offsets = [];
+	const registry = [];
+	const owned = /* @__PURE__ */ new Map();
+	for (const event of events) {
+		if (event.type !== "tool/result") continue;
+		const span = replacedSpan(event);
+		if (span !== void 0) {
+			const groupText = originalText(bySeq, span);
+			if (groupText.length === 0) continue;
+			const delta = computeDelta(bySeq, event, span, counter);
+			if (delta === void 0) continue;
+			const hash = savingsHash(groupText);
+			owned.set(hash, {
+				claimedTokens: delta.tokens,
+				basis: delta.basis,
+				sourceSeq: span.start
+			});
+			registry.push({
+				hash,
+				claimedTokens: delta.tokens,
+				basis: delta.basis,
+				sourceSeq: span.start
+			});
+			continue;
+		}
+		const text = textOf(event);
+		if (text === void 0 || text.length === 0) continue;
+		const hit = owned.get(savingsHash(text));
+		if (hit === void 0) continue;
+		const priced = priceEvent(event, counter);
+		if (priced === void 0) continue;
+		offsets.push({
+			component: "full-read",
+			tokens: priced.tokens,
+			basis: priced.basis,
+			at: Number(event.time) || 0,
+			note: `#${hit.sourceSeq} 的原文被全文重读(投影重建)`
+		});
+	}
+	return {
+		savings,
+		offsets,
+		registry
+	};
+}
+/**
+* 从会话快照投影节省账。`measureForCompaction` 提供与实时同口径的 tokenizer
+* 计数器；失败时向上抛，由调用方 fail-open。
+*/
+function projectSessionSavings(ctx, session) {
+	const view = measureForCompaction(ctx, session);
+	return projectSavingsCore({
+		events: sessionEvents(session),
+		surfaceNodes: session.surface.nodes,
+		counter: (candidate) => view.countCanonicalText(candidate)
+	});
+}
+//#endregion
 //#region src/runtime/adaptive-cost.ts
 /**
 * Bound Adaptive's benefit and cache-loss exposure without attributing the
@@ -3973,6 +4220,35 @@ const SessionSeq = dshSessionSoft.SessionSeq ?? dshSessionSoft.default?.SessionS
 function originalTextForSavings(candidate) {
 	return flattenPlainText(viewToolResult(candidate.event.data.message).blocks);
 }
+/**
+* Cross-generation adaptation (0.2.0): the host `settings` service hands back
+* the WHOLE entry config `{ settings: <subtree> }` instead of the settings
+* subtree directly (older lines surfaced the subtree at the top level). The
+* parser requires `profile`+`custom` at the root, so the wrapped shape threw
+* "missing its complete shape" → the session failed open to `profile:'off'`,
+* silently disabling fresh/aggregate on the desktop. Descend exactly one
+* `{settings:<obj>}` wrapper ONLY when the root has no `profile`; every other
+* shape is passed through untouched so the "exotic Host value must fail open
+* to off" safety contract still holds.
+*/
+function unwrapSettingsEntry(value) {
+	if (value === null || typeof value !== "object" || Array.isArray(value)) return value;
+	const record = value;
+	if ("profile" in record) return value;
+	const inner = record.settings;
+	if (inner !== null && typeof inner === "object" && !Array.isArray(inner)) return inner;
+	return value;
+}
+/**
+* Whether a fresh candidate is BELOW the fresh trigger. Uses the real token
+* count when an exact tokenizer is available (DeepSeek routes), and otherwise
+* falls back to the 4.0 chars/token estimate — byte-for-byte the pre-existing
+* behavior on routes without a bundled tokenizer (e.g. local Qwen).
+*/
+function freshBelowTrigger(candidate, policy) {
+	if (candidate.count.kind === "exact-tokenizer") return candidate.count.tokens <= policy.freshTriggerTokens;
+	return candidate.characterPressure <= charsForTokens(policy.freshTriggerTokens);
+}
 /** Mixed deterministic selector behind the existing `ctx.toolResultPruner` seam. */
 var ToolResultPruner = class extends Service {
 	static inject = ["tokenMeter"];
@@ -4017,6 +4293,8 @@ var ToolResultPruner = class extends Service {
 			turnClocks: /* @__PURE__ */ new WeakMap(),
 			estimatorRemainingTurns: /* @__PURE__ */ new WeakMap(),
 			advisorChannels: /* @__PURE__ */ new WeakMap(),
+			intentChannels: /* @__PURE__ */ new WeakMap(),
+			projectedSavings: /* @__PURE__ */ new WeakSet(),
 			pendingIntentFolds: /* @__PURE__ */ new WeakMap(),
 			intentFoldedSeqs: /* @__PURE__ */ new WeakMap(),
 			intentBaselines: /* @__PURE__ */ new WeakMap()
@@ -4071,6 +4349,10 @@ var ToolResultPruner = class extends Service {
 			}
 			try {
 				observeContextUsage(String(agent.session.id), measureForCompaction(this.ctx, agent.session).totalTokens, this.contextWindowForRequest(agent.session));
+			} catch {}
+			this.ensureSavingsProjection(agent.session);
+			try {
+				getSavingsLedger().observeActive(String(agent.session.id), new Set([...agent.session.surface.nodes].map(Number)));
 			} catch {}
 			this.postflightEstimatorPass(agent.session, signal).catch(() => void 0);
 			this.postflightAdvisorPass(agent.session, turn, signal).catch(() => void 0);
@@ -4160,12 +4442,13 @@ var ToolResultPruner = class extends Service {
 		if (frozen !== void 0) return frozen;
 		const settingsHost = this.ctx.get("settings");
 		const settings = settingsHost?.describe?.().find((d) => String(d.ns) === "context-compression-improved-bundle")?.value ?? settingsHost?.get?.("context-compression");
+		const unwrapped = unwrapSettingsEntry(settings);
 		let resolved;
 		let settingsSource = settings === void 0 ? "plugin-config-fallback" : "host-settings";
 		let autoCompactThresholdSource = settings === void 0 ? "schema-default" : "host-settings";
 		let settingsInvalidFallback;
 		try {
-			resolved = settings === void 0 ? ContextCompressionSettingsSchema({ profile: this.state.config.profile }) : parseContextCompressionSettings(settings);
+			resolved = settings === void 0 ? ContextCompressionSettingsSchema({ profile: this.state.config.profile }) : parseContextCompressionSettings(unwrapped);
 		} catch (error) {
 			const reason = error instanceof Error ? error.message : String(error);
 			this.auditFailure(session, "pressure", "policy-resolution", error);
@@ -4275,7 +4558,7 @@ var ToolResultPruner = class extends Service {
 		for (const candidate of this.snapshot(session, measureForCompaction(this.ctx, session))) {
 			if (samples.length >= 3) break;
 			if (candidate.event.data.turn === void 0) continue;
-			if (candidate.characterPressure <= charsForTokens(policy.freshTriggerTokens)) continue;
+			if (freshBelowTrigger(candidate, policy)) continue;
 			const path = toolCallPath(candidate.call.arguments);
 			if (path === void 0) continue;
 			if (isSupersededRead(events, candidate.seq, path)) continue;
@@ -4406,6 +4689,20 @@ var ToolResultPruner = class extends Service {
 		else if (outcome !== void 0) advisorState.failures = void 0;
 	}
 	/**
+	* 重进/重启会话的懒重建:首次观测某会话时,若账本尚无该会话条目,则按会话
+	* 日志投影播种(当前生效毛节省 + 每次重读惩罚 + 原文配对键)。只做一次,
+	* fail-open;同一进程内的实时增量随后在同一条目集合上继续。
+	*/
+	ensureSavingsProjection(session) {
+		if (this.state.projectedSavings.has(session)) return;
+		this.state.projectedSavings.add(session);
+		const ledger = getSavingsLedger();
+		if (ledger.hasSession(String(session.id))) return;
+		try {
+			ledger.seedProjected(String(session.id), projectSessionSavings(this.ctx, session));
+		} catch {}
+	}
+	/**
 	* Fire-and-forget postflight: evaluate the growth gate, and only when it
 	* passes, select the consumed increment OUTSIDE the protected working set,
 	* mask it to semantic-role records, and spend ONE summary-writer call. The
@@ -4438,7 +4735,20 @@ var ToolResultPruner = class extends Service {
 		}).decision) return;
 		const settingsPreset = settings.presetOptions;
 		if (settingsPreset === void 0) return;
-		if (settingsPreset.estimatorBaseUrl === void 0 || settingsPreset.estimatorBaseUrl.length === 0 || settingsPreset.estimatorModel === void 0 || settingsPreset.estimatorModel.length === 0) {
+		const estimatorMode = settingsPreset.estimatorMode ?? "";
+		if (estimatorMode !== "host" && estimatorMode !== "direct") {
+			emitCompressionAudit(this.ctx.logger, {
+				schemaVersion: 1,
+				kind: "intent-summary-outcome",
+				sessionId,
+				ok: false,
+				reason: "no-estimator-channel",
+				turnIndex: turn,
+				latencyMs: Date.now() - started
+			});
+			return;
+		}
+		if (estimatorMode === "direct" && (settingsPreset.estimatorBaseUrl === void 0 || settingsPreset.estimatorBaseUrl.length === 0 || settingsPreset.estimatorModel === void 0 || settingsPreset.estimatorModel.length === 0)) {
 			emitCompressionAudit(this.ctx.logger, {
 				schemaVersion: 1,
 				kind: "intent-summary-outcome",
@@ -4477,14 +4787,14 @@ var ToolResultPruner = class extends Service {
 		if (records.length === 0) return;
 		const events = sessionEvents(session);
 		const task = collectTaskSemantics(events);
-		let channel = this.state.advisorChannels.get(session);
+		let channel = this.state.intentChannels.get(session);
 		if (channel === void 0) {
 			channel = new SideChannel(this.ctx, settingsPreset, {
-				mode: "direct",
+				mode: estimatorMode,
 				timeoutMs: 3e4,
 				maxTokens: 512
 			});
-			this.state.advisorChannels.set(session, channel);
+			this.state.intentChannels.set(session, channel);
 		}
 		const answer = await channel.ask({
 			system: buildIntentSummarySystemPrompt(),
@@ -4948,8 +5258,7 @@ var ToolResultPruner = class extends Service {
 		const plans = /* @__PURE__ */ new Map();
 		let freshPlanned = 0;
 		const dedupeEnabled = policy.presetOptions?.dedupeToolResults === true;
-		const candidateChars = candidates.map((candidate) => candidate.characterPressure);
-		const maxCandidateChars = candidateChars.length === 0 ? void 0 : Math.max(...candidateChars);
+		const maxCandidateTokens = candidates.length === 0 ? void 0 : Math.max(...candidates.map((candidate) => candidate.count.kind === "exact-tokenizer" ? candidate.count.tokens : charsToTokens(candidate.characterPressure)));
 		if (policy.freshEnabled) {
 			if (candidates.some((candidate) => candidate.call.name !== "context_compression_retrieve" && candidate.count.kind !== "exact-tokenizer")) this.warnExactUnavailable(session, view, "fresh");
 			for (const candidate of candidates) {
@@ -4992,9 +5301,9 @@ var ToolResultPruner = class extends Service {
 		const landed = this.landAll(session, this.adviseReplacements(session, policy, freshCandidates, "fresh"));
 		const freshLanded = landed.some((entry) => entry.stage === "fresh" && plans.get(entry.originalSeq)?.component === "fresh");
 		const aggregateLanded = landed.some((entry) => entry.stage === "fresh" && plans.get(entry.originalSeq)?.component === "aggregate");
-		if (!freshLanded) this.auditComponent(session, policy, "fresh", "fresh", policy.freshEnabled ? "skipped" : "disabled", !policy.freshEnabled ? "profile-policy" : (maxCandidateChars ?? 0) <= charsForTokens(policy.freshTriggerTokens) ? "at-or-below-trigger" : freshPlanned > 0 && aggregatePlanned > 0 ? "superseded-by-aggregate" : freshPlanned === 0 ? "no-valid-reduction" : "recovery-tool-unavailable", {
+		if (!freshLanded) this.auditComponent(session, policy, "fresh", "fresh", policy.freshEnabled ? "skipped" : "disabled", !policy.freshEnabled ? "profile-policy" : (maxCandidateTokens ?? 0) <= policy.freshTriggerTokens ? "at-or-below-trigger" : freshPlanned > 0 && aggregatePlanned > 0 ? "superseded-by-aggregate" : freshPlanned === 0 ? "no-valid-reduction" : "recovery-tool-unavailable", {
 			measurementKind: "characters",
-			...maxCandidateChars === void 0 ? {} : { currentTokens: charsToTokens(maxCandidateChars) },
+			...maxCandidateTokens === void 0 ? {} : { currentTokens: maxCandidateTokens },
 			triggerTokens: policy.freshTriggerTokens,
 			targetTokens: policy.freshTargetTokens
 		});
@@ -5069,7 +5378,7 @@ var ToolResultPruner = class extends Service {
 		if (typeof candidate.event.surfaceOp === "object") return null;
 		const text = flattenPlainText(viewToolResult(candidate.event.data.message).blocks);
 		if (text === void 0) return null;
-		if (candidate.characterPressure <= charsForTokens(policy.freshTriggerTokens)) return null;
+		if (freshBelowTrigger(candidate, policy)) return null;
 		let table = this.state.dedupeTables.get(session);
 		if (table === void 0) {
 			table = new DedupeTable();
@@ -5097,7 +5406,7 @@ var ToolResultPruner = class extends Service {
 	planFresh(candidate, session, policy, view) {
 		if (typeof candidate.event.surfaceOp === "object") return null;
 		const resultView = viewToolResult(candidate.event.data.message);
-		if (candidate.characterPressure <= charsForTokens(policy.freshTriggerTokens)) return null;
+		if (freshBelowTrigger(candidate, policy)) return null;
 		const sourceSeq = candidate.seq;
 		const sourceRef$1 = sourceRef(session, sourceSeq);
 		const textBlock = onlyTextBlock(resultView.blocks);
@@ -5140,7 +5449,7 @@ var ToolResultPruner = class extends Service {
 			"[Tool result reduced to satisfy the completed-step aggregate budget]",
 			`tool: ${candidate.call.name}`,
 			`source: ${sourceRef$2}`,
-			"Use context_compression_retrieve with this source if the omitted evidence is necessary."
+			"Retrieve a narrow slice via context_compression_retrieve if needed."
 		].join("\n");
 		const plan = this.plan(candidate, [{
 			type: "text",
@@ -5473,6 +5782,7 @@ var ToolResultPruner = class extends Service {
 				tokensAfter,
 				basis: exact ? "exact-tokenizer" : "characters",
 				sourceSeq: manifestSeq,
+				replacementSeq: Number(replacement.seq),
 				originalText: groupText
 			});
 			return;
@@ -5614,6 +5924,7 @@ var ToolResultPruner = class extends Service {
 			tokensAfter: plan.tokensAfter,
 			basis: plan.measurementBasis,
 			sourceSeq: plan.sourceSeq,
+			replacementSeq: Number(replacement.seq),
 			...pairedOriginal === void 0 ? {} : { originalText: pairedOriginal }
 		});
 		return {
@@ -5786,4 +6097,4 @@ var ToolResultPruner = class extends Service {
 	}
 };
 //#endregion
-export { AUTO_COMPACT_THRESHOLD_LIMITS, COMPRESSION_PROFILES, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, ContextCompressionSettingsSchema, CustomCompressionPolicySchema, DEFAULTS, DEFAULT_CUSTOM_COMPRESSION_POLICY, PRUNE_MARKER, ToolResultPruner, ToolResultPruner as default, codePointLength, historicalPlaceholder, isCompressionProfile, isValidAutoCompactThresholdPercent, measureForCompaction, normalizeTerminalText, parseContextCompressionSettings, reduceFreshToolResult, resolveConfig, resolveCustomPolicy, resolvePolicy, verifyReduction };
+export { AUTO_COMPACT_THRESHOLD_LIMITS, COMPRESSION_PROFILES, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, ContextCompressionSettingsSchema, CustomCompressionPolicySchema, DEFAULTS, DEFAULT_CUSTOM_COMPRESSION_POLICY, PRUNE_MARKER, ToolResultPruner, ToolResultPruner as default, codePointLength, freshBelowTrigger, historicalPlaceholder, isCompressionProfile, isValidAutoCompactThresholdPercent, measureForCompaction, normalizeTerminalText, parseContextCompressionSettings, reduceFreshToolResult, resolveConfig, resolveCustomPolicy, resolvePolicy, unwrapSettingsEntry, verifyReduction };

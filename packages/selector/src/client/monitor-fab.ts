@@ -156,15 +156,19 @@ export function initMonitorFab(deps: MonitorFabDeps): void {
     let active = false;
     let moved = false;
     let origin = { x: 0, y: 0 };
+    let startPos = { x: 0, y: 0 };
     el.addEventListener('pointerdown', (e) => {
       active = true;
       moved = false;
       origin = { x: e.clientX, y: e.clientY };
+      startPos = { x: pos.x, y: pos.y };
       el.setPointerCapture(e.pointerId);
     });
     el.addEventListener('pointermove', (e) => {
       if (!active) return;
-      const next = clamp({ x: pos.x + e.clientX - origin.x, y: pos.y + e.clientY - origin.y });
+      // 以「按下时的位置」为基准 + 指针相对按下点的总位移。若把每帧更新后的 pos
+      // 再当基准叠加总位移,位移会被重复累加,浮窗一路被甩到边缘(只能贴边)。
+      const next = clamp({ x: startPos.x + (e.clientX - origin.x), y: startPos.y + (e.clientY - origin.y) });
       if (Math.abs(next.x - pos.x) > 2 || Math.abs(next.y - pos.y) > 2) moved = true;
       pos = key === 'fab' ? next : pos;
       if (key === 'fab') place();
@@ -212,10 +216,19 @@ export function initMonitorFab(deps: MonitorFabDeps): void {
 
   const fmtTokens = (n: unknown): string => num(n).toLocaleString('en-US');
 
+  // 面板主数字口径:优先精确 tokenizer(exact);exact 为 0(如无内置 tokenizer 的
+  // Qwen 路由)时退回估算(chars/4)并标 "est"。两口径绝不合并成一个数。
+  const lead = (exact: unknown, estimated: unknown): { v: number; est: boolean } => {
+    const ex = num(exact);
+    const es = num(estimated);
+    return ex !== 0 ? { v: ex, est: false } : { v: es, est: es !== 0 };
+  };
+
   const render = (snap: MonitorSnapshotPayload): void => {
     const net = num(snap.net?.exact) + num(snap.net?.estimated);
     const netEl = panel.querySelector('[data-net]') as HTMLElement;
-    netEl.textContent = `${fmtTokens(snap.net?.exact)}${num(snap.net?.estimated) > 0 ? ` (+${fmtTokens(snap.net?.estimated)} est)` : ''}`;
+    const netLead = lead(snap.net?.exact, snap.net?.estimated);
+    netEl.textContent = netLead.est ? `${fmtTokens(netLead.v)} est` : fmtTokens(netLead.v);
     netEl.classList.toggle('neg', net < 0);
     const suggest = snap.suggestion?.suggest === true;
     fab.classList.toggle('lit', suggest || net < 0);
@@ -229,8 +242,10 @@ export function initMonitorFab(deps: MonitorFabDeps): void {
     } else {
       hint.classList.remove('show');
     }
-    (panel.querySelector('[data-gross]') as HTMLElement).textContent = fmtTokens(snap.gross?.exact);
-    (panel.querySelector('[data-offsets]') as HTMLElement).textContent = `-${fmtTokens(snap.offsets?.exact)}`;
+    const grossLead = lead(snap.gross?.exact, snap.gross?.estimated);
+    (panel.querySelector('[data-gross]') as HTMLElement).textContent = grossLead.est ? `${fmtTokens(grossLead.v)} est` : fmtTokens(grossLead.v);
+    const offLead = lead(snap.offsets?.exact, snap.offsets?.estimated);
+    (panel.querySelector('[data-offsets]') as HTMLElement).textContent = offLead.est ? `-${fmtTokens(offLead.v)} est` : `-${fmtTokens(offLead.v)}`;
     const ctxBar = panel.querySelector('[data-ctxbar]') as HTMLElement;
     const ctxPct = panel.querySelector('[data-ctxpct]') as HTMLElement;
     const ctxPctNum = typeof snap.context?.pct === 'number' ? snap.context.pct : null;

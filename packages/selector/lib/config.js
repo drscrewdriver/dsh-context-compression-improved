@@ -74,7 +74,12 @@ var SavingsLedger = class {
 		const hit = snap.usage.cacheHitRate;
 		return `net=${snap.net.exact}(exact)/${snap.net.estimated}(est) gross=${snap.gross.exact}/${snap.gross.estimated} offsets=${snap.offsets.exact}/${snap.offsets.estimated} requests=${snap.usage.requests} cacheHit=${hit === null ? "–" : `${Math.round(hit * 100)}%`}`;
 	}
-	/** 记录一次已落盘的压缩节省(land 成功后调用;tokensRemoved ≤ 0 忽略)。 */
+	/**
+	* 记录一次已落盘的压缩节省(land 成功后调用;tokensRemoved ≤ 0 忽略)。
+	*
+	* 仪表口径:该条目在替换事件离开当前 surface 前一直计入"当前生效毛节省"
+	* (由 {@link observeActive} 每回合收敛),不再一次性永久累加。
+	*/
 	recordSaving(input) {
 		const removed = input.tokensBefore - input.tokensAfter;
 		if (!Number.isFinite(removed) || removed <= 0) return;
@@ -83,7 +88,8 @@ var SavingsLedger = class {
 			component: input.component,
 			tokens: removed,
 			basis: input.basis,
-			at: Date.now()
+			at: Date.now(),
+			...input.replacementSeq === void 0 ? {} : { replacementSeq: input.replacementSeq }
 		});
 		if (typeof input.originalText === "string" && input.originalText.length > 0) {
 			const hash = savingsHash(input.originalText);
@@ -116,8 +122,7 @@ var SavingsLedger = class {
 			this.seenFullText.add(seenKey);
 		}
 		const hit = this.registry.get(savingsHash(input.text));
-		if (hit === void 0 || hit.consumed || hit.sessionId !== input.sessionId) return;
-		hit.consumed = true;
+		if (hit === void 0 || hit.sessionId !== input.sessionId) return;
 		const { tokens, basis } = input.measure(input.text);
 		if (tokens <= 0) return;
 		this.push(input.sessionId, {
@@ -152,6 +157,65 @@ var SavingsLedger = class {
 		}
 		list.push(entry);
 		if (list.length > MAX_ENTRIES_PER_SESSION) list.splice(0, list.length - MAX_ENTRIES_PER_SESSION);
+	}
+	/**
+	* 仪表口径收敛:一个 'saving' 条目只在其替换事件仍位于当前 surface 时计为
+	* "当前生效毛节省"。pruner 每回合传入存活 seq 集合,离开 surface 的替换
+	* (被后续压缩/裁剪替换)即从毛节省中扣除,数字随压缩内容进出而涨落。
+	* 无 replacementSeq 的条目保持原样(无法追踪者不收敛)。
+	*/
+	observeActive(sessionId, liveSeqs) {
+		const list = this.entries.get(sessionId);
+		if (list === void 0) return;
+		const kept = list.filter((entry) => entry.kind !== "saving" || entry.replacementSeq === void 0 || liveSeqs.has(entry.replacementSeq));
+		if (kept.length !== list.length) this.entries.set(sessionId, kept);
+	}
+	/** 该会话是否已有账本条目(重进会话时用于避免投影与实时叠加)。 */
+	hasSession(sessionId) {
+		return this.entries.has(sessionId);
+	}
+	/**
+	* 用会话日志投影播种一个会话的账本(重进/重启会话时调用一次)。写入
+	* savings/offsets 条目及其原文配对 registry,后续实时增量(observeActive /
+	* noteFullText)在同一条目集合上继续工作。调用方负责只播种一次。
+	*/
+	seedProjected(sessionId, projection) {
+		for (const entry of projection.savings) {
+			if (!Number.isFinite(entry.tokens) || entry.tokens <= 0) continue;
+			this.push(sessionId, {
+				kind: "saving",
+				component: entry.component,
+				tokens: entry.tokens,
+				basis: entry.basis,
+				at: entry.at,
+				replacementSeq: entry.replacementSeq
+			});
+		}
+		for (const entry of projection.offsets) {
+			if (!Number.isFinite(entry.tokens) || entry.tokens <= 0) continue;
+			this.push(sessionId, {
+				kind: "offset",
+				component: entry.component,
+				tokens: entry.tokens,
+				basis: entry.basis,
+				at: entry.at,
+				...entry.note === void 0 ? {} : { note: entry.note }
+			});
+		}
+		for (const item of projection.registry) {
+			if (this.registry.size >= MAX_REGISTRY && !this.registry.has(item.hash)) {
+				const oldest = this.registry.keys().next().value;
+				if (oldest !== void 0) this.registry.delete(oldest);
+			}
+			this.registry.set(item.hash, {
+				sessionId,
+				component: "projection",
+				claimedTokens: item.claimedTokens,
+				basis: item.basis,
+				sourceSeq: item.sourceSeq,
+				consumed: false
+			});
+		}
 	}
 	/** 汇总快照。sessionId 缺省 = 全会话聚合。两个 basis 分列,永不合并。 */
 	snapshot(sessionId) {
@@ -1662,8 +1726,8 @@ function resolvePolicy(config, profile, custom = DEFAULT_CUSTOM_COMPRESSION_POLI
 			historyMode: "routine",
 			nativeTriggerTokens: Number.MAX_SAFE_INTEGER,
 			nativeTargetTokens: Number.MAX_SAFE_INTEGER,
-			freshTriggerTokens: 8192,
-			freshTargetTokens: 3072,
+			freshTriggerTokens: 4096,
+			freshTargetTokens: 1536,
 			aggregateTriggerTokens: 32768,
 			aggregateTargetTokens: 12288,
 			historyTriggerTokens: 5e5,
@@ -1710,4 +1774,4 @@ function assertNonNegativeInteger(name, value) {
 	if (!Number.isSafeInteger(value) || value < 0) throw new Error(`ToolResultPruneConfig: ${name} (${String(value)}) must be a non-negative safe integer`);
 }
 //#endregion
-export { getLastIntentFold as A, decimalRateNanoUnits as B, estimateSavingsPricing as C, INTENT_GATE_GROWTH_TOKENS as D, INTENT_GATE_FLOOR_FRACTION as E, recordIntentFold as F, resolveOfficialDeepSeekPrice as H, recordRecertified as I, recordScore as L, getSummaryOverride as M, invalidateOnTaskChange as N, evaluateIntentGate as O, observeIntentEnabled as P, setSummaryOverride as R, buildMonitorSnapshot as S, observeContextUsage as T, getSavingsLedger as U, priceOfficialDeepSeekUsage as V, resolveCustomPolicy as _, DEFAULT_CONTEXT_COMPRESSION_SETTINGS as a, COMPRESSION_PROFILES as b, charsToTokens as c, isValidAutoCompactThresholdPercent as d, parseContextCompressionSettings as f, DEFAULT_CUSTOM_COMPRESSION_POLICY as g, CustomCompressionPolicySchema as h, DEFAULTS as i, getObservedIntentEnabled as j, getAdvisorState as k, codePointLength as l, resolvePolicy as m, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as n, PRUNE_MARKER as o, resolveConfig as p, ContextCompressionSettingsSchema as r, charsForTokens as s, AUTO_COMPACT_THRESHOLD_LIMITS as t, isCompressionProfile as u, assertNever as v, isSessionOverrideAction as w, applySessionOverride as x, deepFreeze as y, DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION as z };
+export { getLastIntentFold as A, decimalRateNanoUnits as B, estimateSavingsPricing as C, INTENT_GATE_GROWTH_TOKENS as D, INTENT_GATE_FLOOR_FRACTION as E, recordIntentFold as F, resolveOfficialDeepSeekPrice as H, recordRecertified as I, recordScore as L, getSummaryOverride as M, invalidateOnTaskChange as N, evaluateIntentGate as O, observeIntentEnabled as P, setSummaryOverride as R, buildMonitorSnapshot as S, observeContextUsage as T, getSavingsLedger as U, priceOfficialDeepSeekUsage as V, savingsHash as W, resolveCustomPolicy as _, DEFAULT_CONTEXT_COMPRESSION_SETTINGS as a, COMPRESSION_PROFILES as b, charsToTokens as c, isValidAutoCompactThresholdPercent as d, parseContextCompressionSettings as f, DEFAULT_CUSTOM_COMPRESSION_POLICY as g, CustomCompressionPolicySchema as h, DEFAULTS as i, getObservedIntentEnabled as j, getAdvisorState as k, codePointLength as l, resolvePolicy as m, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as n, PRUNE_MARKER as o, resolveConfig as p, ContextCompressionSettingsSchema as r, charsForTokens as s, AUTO_COMPACT_THRESHOLD_LIMITS as t, isCompressionProfile as u, assertNever as v, isSessionOverrideAction as w, applySessionOverride as x, deepFreeze as y, DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION as z };

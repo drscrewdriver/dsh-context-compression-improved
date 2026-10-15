@@ -27,6 +27,8 @@ export interface SavingsEntry {
   tokens: number
   basis: SavingsBasis
   at: number
+  /** 落盘替换事件的 seq;'saving' 条目靠它判定"当前是否仍在 surface 中生效"。 */
+  replacementSeq?: number
   note?: string
 }
 
@@ -95,7 +97,12 @@ export class SavingsLedger {
       `requests=${snap.usage.requests} cacheHit=${hit === null ? '–' : `${Math.round(hit * 100)}%`}`
   }
 
-  /** 记录一次已落盘的压缩节省(land 成功后调用;tokensRemoved ≤ 0 忽略)。 */
+  /**
+   * 记录一次已落盘的压缩节省(land 成功后调用;tokensRemoved ≤ 0 忽略)。
+   *
+   * 仪表口径:该条目在替换事件离开当前 surface 前一直计入"当前生效毛节省"
+   * (由 {@link observeActive} 每回合收敛),不再一次性永久累加。
+   */
   recordSaving(input: {
     sessionId: string
     component: string
@@ -103,6 +110,8 @@ export class SavingsLedger {
     tokensAfter: number
     basis: SavingsBasis
     sourceSeq: number
+    /** 落盘替换事件的 seq;仪表口径用它判定"当前是否仍生效"。 */
+    replacementSeq?: number
     /** 原文全文(配对键;哈希后不存原文)。 */
     originalText?: string
   }): void {
@@ -114,6 +123,7 @@ export class SavingsLedger {
       tokens: removed,
       basis: input.basis,
       at: Date.now(),
+      ...(input.replacementSeq === undefined ? {} : { replacementSeq: input.replacementSeq }),
     })
     if (typeof input.originalText === 'string' && input.originalText.length > 0) {
       const hash = savingsHash(input.originalText)
@@ -153,8 +163,9 @@ export class SavingsLedger {
       this.seenFullText.add(seenKey)
     }
     const hit = this.registry.get(savingsHash(input.text))
-    if (hit === undefined || hit.consumed || hit.sessionId !== input.sessionId) return
-    hit.consumed = true
+    if (hit === undefined || hit.sessionId !== input.sessionId) return
+    // 每次重读都罚:不再一次性消费——只要首次压缩(骨架/老化/去重/尾裁)存在,
+    // 之后每次把该原文全文重新读入上下文都记一条负项。
     const { tokens, basis } = input.measure(input.text)
     if (tokens <= 0) return
     this.push(input.sessionId, {
@@ -198,6 +209,75 @@ export class SavingsLedger {
     }
     list.push(entry)
     if (list.length > MAX_ENTRIES_PER_SESSION) list.splice(0, list.length - MAX_ENTRIES_PER_SESSION)
+  }
+
+  /**
+   * 仪表口径收敛:一个 'saving' 条目只在其替换事件仍位于当前 surface 时计为
+   * "当前生效毛节省"。pruner 每回合传入存活 seq 集合,离开 surface 的替换
+   * (被后续压缩/裁剪替换)即从毛节省中扣除,数字随压缩内容进出而涨落。
+   * 无 replacementSeq 的条目保持原样(无法追踪者不收敛)。
+   */
+  observeActive(sessionId: string, liveSeqs: ReadonlySet<number>): void {
+    const list = this.entries.get(sessionId)
+    if (list === undefined) return
+    const kept = list.filter(entry =>
+      entry.kind !== 'saving'
+      || entry.replacementSeq === undefined
+      || liveSeqs.has(entry.replacementSeq))
+    if (kept.length !== list.length) this.entries.set(sessionId, kept)
+  }
+
+  /** 该会话是否已有账本条目(重进会话时用于避免投影与实时叠加)。 */
+  hasSession(sessionId: string): boolean {
+    return this.entries.has(sessionId)
+  }
+
+  /**
+   * 用会话日志投影播种一个会话的账本(重进/重启会话时调用一次)。写入
+   * savings/offsets 条目及其原文配对 registry,后续实时增量(observeActive /
+   * noteFullText)在同一条目集合上继续工作。调用方负责只播种一次。
+   */
+  seedProjected(sessionId: string, projection: {
+    savings: readonly { component: string; tokens: number; basis: SavingsBasis; at: number; replacementSeq: number }[]
+    offsets: readonly { component: string; tokens: number; basis: SavingsBasis; at: number; note?: string }[]
+    registry: readonly { hash: string; claimedTokens: number; basis: SavingsBasis; sourceSeq: number }[]
+  }): void {
+    for (const entry of projection.savings) {
+      if (!Number.isFinite(entry.tokens) || entry.tokens <= 0) continue
+      this.push(sessionId, {
+        kind: 'saving',
+        component: entry.component,
+        tokens: entry.tokens,
+        basis: entry.basis,
+        at: entry.at,
+        replacementSeq: entry.replacementSeq,
+      })
+    }
+    for (const entry of projection.offsets) {
+      if (!Number.isFinite(entry.tokens) || entry.tokens <= 0) continue
+      this.push(sessionId, {
+        kind: 'offset',
+        component: entry.component,
+        tokens: entry.tokens,
+        basis: entry.basis,
+        at: entry.at,
+        ...(entry.note === undefined ? {} : { note: entry.note }),
+      })
+    }
+    for (const item of projection.registry) {
+      if (this.registry.size >= MAX_REGISTRY && !this.registry.has(item.hash)) {
+        const oldest = this.registry.keys().next().value
+        if (oldest !== undefined) this.registry.delete(oldest)
+      }
+      this.registry.set(item.hash, {
+        sessionId,
+        component: 'projection',
+        claimedTokens: item.claimedTokens,
+        basis: item.basis,
+        sourceSeq: item.sourceSeq,
+        consumed: false,
+      })
+    }
   }
 
   /** 汇总快照。sessionId 缺省 = 全会话聚合。两个 basis 分列,永不合并。 */

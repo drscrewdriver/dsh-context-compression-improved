@@ -122,6 +122,7 @@ import {
   flattenPlainText,
 } from './runtime/tokenpilot/dedup.ts'
 import { getSavingsLedger } from './runtime/savings.ts'
+import { projectSessionSavings } from './runtime/savings-projection.ts'
 
 /** 节省统计配对键用原文(纯文本块才可配对;富内容返回 undefined)。 */
 function originalTextForSavings(candidate: SnapshotCandidate): string | undefined {
@@ -228,6 +229,39 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+/**
+ * Cross-generation adaptation (0.2.0): the host `settings` service hands back
+ * the WHOLE entry config `{ settings: <subtree> }` instead of the settings
+ * subtree directly (older lines surfaced the subtree at the top level). The
+ * parser requires `profile`+`custom` at the root, so the wrapped shape threw
+ * "missing its complete shape" → the session failed open to `profile:'off'`,
+ * silently disabling fresh/aggregate on the desktop. Descend exactly one
+ * `{settings:<obj>}` wrapper ONLY when the root has no `profile`; every other
+ * shape is passed through untouched so the "exotic Host value must fail open
+ * to off" safety contract still holds.
+ */
+export function unwrapSettingsEntry(value: unknown): unknown {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return value
+  const record = value as Record<string, unknown>
+  if ('profile' in record) return value
+  const inner = record.settings
+  if (inner !== null && typeof inner === 'object' && !Array.isArray(inner)) return inner
+  return value
+}
+
+/**
+ * Whether a fresh candidate is BELOW the fresh trigger. Uses the real token
+ * count when an exact tokenizer is available (DeepSeek routes), and otherwise
+ * falls back to the 4.0 chars/token estimate — byte-for-byte the pre-existing
+ * behavior on routes without a bundled tokenizer (e.g. local Qwen).
+ */
+export function freshBelowTrigger(candidate: SnapshotCandidate, policy: CompressionPolicy): boolean {
+  if (candidate.count.kind === 'exact-tokenizer') {
+    return candidate.count.tokens <= policy.freshTriggerTokens
+  }
+  return candidate.characterPressure <= charsForTokens(policy.freshTriggerTokens)
+}
+
 /** Mixed deterministic selector behind the existing `ctx.toolResultPruner` seam. */
 export class ToolResultPruner extends Service {
   static inject = ['tokenMeter']
@@ -276,6 +310,8 @@ export class ToolResultPruner extends Service {
       turnClocks: new WeakMap(),
       estimatorRemainingTurns: new WeakMap(),
       advisorChannels: new WeakMap(),
+      intentChannels: new WeakMap(),
+      projectedSavings: new WeakSet(),
       pendingIntentFolds: new WeakMap(),
       intentFoldedSeqs: new WeakMap(),
       intentBaselines: new WeakMap(),
@@ -371,6 +407,15 @@ export class ToolResultPruner extends Service {
           this.contextWindowForRequest(agent.session),
         )
       } catch { /* 观测失败静默:面板显示陈旧/空态 */ }
+      // 仪表口径:把当前 surface 存活 seq 交给账本,离开 surface 的压缩替换
+      // 即从“当前生效毛节省”中回落(数字随压缩内容进出而涨落)。
+      this.ensureSavingsProjection(agent.session)
+      try {
+        getSavingsLedger().observeActive(
+          String(agent.session.id),
+          new Set([...agent.session.surface.nodes].map(Number)),
+        )
+      } catch { /* 观测失败静默:维持上次口径 */ }
       // TokenPilot-inspired E1: advisory estimator pass, strictly off the
       // synchronous chain. Verdicts only feed the next pressure pass.
       void this.postflightEstimatorPass(agent.session, signal).catch(() => undefined)
@@ -517,6 +562,7 @@ export class ToolResultPruner extends Service {
       (d) => String(d.ns) === 'context-compression-improved-bundle',
     )?.value
       ?? settingsHost?.get?.(CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as never)) as ContextCompressionSettings | undefined
+    const unwrapped = unwrapSettingsEntry(settings)
     let resolved: ContextCompressionSettings
     let settingsSource: 'host-settings' | 'plugin-config-fallback' = settings === undefined
       ? 'plugin-config-fallback'
@@ -530,7 +576,7 @@ export class ToolResultPruner extends Service {
         // Validate the Host value BEFORE cloning: structuredClone normalizes
         // class/exotic prototypes to Object.prototype and would otherwise
         // erase the very boundary the parser is responsible for enforcing.
-        : parseContextCompressionSettings(settings)
+        : parseContextCompressionSettings(unwrapped as ContextCompressionSettings)
     } catch (error: unknown) {
       // A malformed persisted document must fail open LOSSLESSLY: freezing the
       // deployment default could silently re-enable lossy compression the
@@ -659,7 +705,7 @@ export class ToolResultPruner extends Service {
     for (const candidate of this.snapshot(session, measureForCompaction(this.ctx, session))) {
       if (samples.length >= 3) break
       if (candidate.event.data.turn === undefined) continue
-      if (candidate.characterPressure <= charsForTokens(policy.freshTriggerTokens)) continue
+      if (freshBelowTrigger(candidate, policy)) continue
       const path = toolCallPath(candidate.call.arguments)
       if (path === undefined) continue
       if (isSupersededRead(events, candidate.seq, path)) continue
@@ -810,6 +856,21 @@ export class ToolResultPruner extends Service {
     }
   }
 
+  /**
+   * 重进/重启会话的懒重建:首次观测某会话时,若账本尚无该会话条目,则按会话
+   * 日志投影播种(当前生效毛节省 + 每次重读惩罚 + 原文配对键)。只做一次,
+   * fail-open;同一进程内的实时增量随后在同一条目集合上继续。
+   */
+  private ensureSavingsProjection(session: Session): void {
+    if (this.state.projectedSavings.has(session)) return
+    this.state.projectedSavings.add(session)
+    const ledger = getSavingsLedger()
+    if (ledger.hasSession(String(session.id))) return
+    try {
+      ledger.seedProjected(String(session.id), projectSessionSavings(this.ctx, session))
+    } catch { /* 投影失败静默:面板显示空态,不影响主流程 */ }
+  }
+
   // ─────────── Turn-tail intent summary (host-driven fold, model writes text only) ───────────
 
   /**
@@ -852,8 +913,25 @@ export class ToolResultPruner extends Service {
 
     const settingsPreset = settings.presetOptions
     if (settingsPreset === undefined) return
-    if (settingsPreset.estimatorBaseUrl === undefined || settingsPreset.estimatorBaseUrl.length === 0
-      || settingsPreset.estimatorModel === undefined || settingsPreset.estimatorModel.length === 0) {
+    // 写手通道复用估计器通道:`host` 走宿主 llm 路由(provider/model 可省),
+    // `direct` 才需要显式 OpenAI 兼容端点。此前无条件要求直连端点,导致
+    // host 通道下每个回合都以 'no-direct-endpoint' 提前返回,fold 永不落地。
+    const estimatorMode = settingsPreset.estimatorMode ?? ''
+    if (estimatorMode !== 'host' && estimatorMode !== 'direct') {
+      emitCompressionAudit(this.ctx.logger, {
+        schemaVersion: 1,
+        kind: 'intent-summary-outcome',
+        sessionId,
+        ok: false,
+        reason: 'no-estimator-channel',
+        turnIndex: turn,
+        latencyMs: Date.now() - started,
+      })
+      return
+    }
+    if (estimatorMode === 'direct'
+      && (settingsPreset.estimatorBaseUrl === undefined || settingsPreset.estimatorBaseUrl.length === 0
+        || settingsPreset.estimatorModel === undefined || settingsPreset.estimatorModel.length === 0)) {
       emitCompressionAudit(this.ctx.logger, {
         schemaVersion: 1,
         kind: 'intent-summary-outcome',
@@ -891,14 +969,16 @@ export class ToolResultPruner extends Service {
 
     const events = sessionEvents(session)
     const task = collectTaskSemantics(events)
-    let channel = this.state.advisorChannels.get(session)
+    // 独立通道:写手用 30s 超时,advisor 用其自身超时——两者若共享
+    // advisorChannels,先构造者会把 mode/timeout 强加给后者。
+    let channel = this.state.intentChannels.get(session)
     if (channel === undefined) {
       channel = new SideChannel(this.ctx, settingsPreset, {
-        mode: 'direct',
+        mode: estimatorMode,
         timeoutMs: 30_000,
         maxTokens: 512,
       })
-      this.state.advisorChannels.set(session, channel)
+      this.state.intentChannels.set(session, channel)
     }
 
     const answer = await channel.ask({
@@ -1470,7 +1550,8 @@ export class ToolResultPruner extends Service {
       return emptyResult()
     }
     const decisions = this.decisions(session)
-    const candidates = this.snapshot(session, view).filter(candidate =>
+    const snapshot = this.snapshot(session, view)
+    const candidates = snapshot.filter(candidate =>
       typeof candidate.event.surfaceOp !== 'object'
       && candidate.event.data.turn === options.freshTurn
       && candidate.event.data.step === options.freshStep
@@ -1506,8 +1587,14 @@ export class ToolResultPruner extends Service {
     const plans = new Map<number, PlannedReplacement>()
     let freshPlanned = 0
     const dedupeEnabled = policy.presetOptions?.dedupeToolResults === true
-    const candidateChars = candidates.map(candidate => candidate.characterPressure)
-    const maxCandidateChars = candidateChars.length === 0 ? undefined : Math.max(...candidateChars)
+    // Token-basis max, mirroring freshBelowTrigger: exact tokenizer where
+    // available, else the 4.0 char estimate. Drives the 'at-or-below-trigger'
+    // audit reason on the same basis the fresh gate uses.
+    const maxCandidateTokens = candidates.length === 0
+      ? undefined
+      : Math.max(...candidates.map(candidate => candidate.count.kind === 'exact-tokenizer'
+        ? candidate.count.tokens
+        : charsToTokens(candidate.characterPressure)))
     if (policy.freshEnabled) {
       if (candidates.some(candidate => candidate.call.name !== 'context_compression_retrieve'
         && candidate.count.kind !== 'exact-tokenizer')) {
@@ -1573,12 +1660,12 @@ export class ToolResultPruner extends Service {
       this.auditComponent(session, policy, 'fresh', 'fresh',
         policy.freshEnabled ? 'skipped' : 'disabled',
         !policy.freshEnabled ? 'profile-policy'
-          : (maxCandidateChars ?? 0) <= charsForTokens(policy.freshTriggerTokens) ? 'at-or-below-trigger'
+          : (maxCandidateTokens ?? 0) <= policy.freshTriggerTokens ? 'at-or-below-trigger'
             : freshPlanned > 0 && aggregatePlanned > 0 ? 'superseded-by-aggregate'
               : freshPlanned === 0 ? 'no-valid-reduction'
                 : 'recovery-tool-unavailable', {
           measurementKind: 'characters',
-          ...(maxCandidateChars === undefined ? {} : { currentTokens: charsToTokens(maxCandidateChars) }),
+          ...(maxCandidateTokens === undefined ? {} : { currentTokens: maxCandidateTokens }),
           triggerTokens: policy.freshTriggerTokens,
           targetTokens: policy.freshTargetTokens,
         })
@@ -1699,7 +1786,7 @@ export class ToolResultPruner extends Service {
     if (typeof candidate.event.surfaceOp === 'object') return null
     const text = flattenPlainText(viewToolResult(candidate.event.data.message).blocks as ContentBlock[])
     if (text === undefined) return null
-    if (candidate.characterPressure <= charsForTokens(policy.freshTriggerTokens)) return null
+    if (freshBelowTrigger(candidate, policy)) return null
     let table = this.state.dedupeTables.get(session)
     if (table === undefined) {
       table = new DedupeTable()
@@ -1745,7 +1832,7 @@ export class ToolResultPruner extends Service {
     // being reconsidered after their first request.
     if (typeof candidate.event.surfaceOp === 'object') return null
     const resultView = viewToolResult(candidate.event.data.message)
-    if (candidate.characterPressure <= charsForTokens(policy.freshTriggerTokens)) return null
+    if (freshBelowTrigger(candidate, policy)) return null
     const sourceSeq = candidate.seq
     const sourceRef = sourceRefFn(session, sourceSeq)
     const textBlock = onlyTextBlock(resultView.blocks as ContentBlock[])
@@ -1828,7 +1915,7 @@ export class ToolResultPruner extends Service {
       '[Tool result reduced to satisfy the completed-step aggregate budget]',
       `tool: ${candidate.call.name}`,
       `source: ${sourceRef}`,
-      'Use context_compression_retrieve with this source if the omitted evidence is necessary.',
+      'Retrieve a narrow slice via context_compression_retrieve if needed.',
     ].join('\n')
     const plan = this.plan(
       candidate,
@@ -2323,6 +2410,7 @@ export class ToolResultPruner extends Service {
           tokensAfter,
           basis: exact ? 'exact-tokenizer' : 'characters',
           sourceSeq: manifestSeq,
+          replacementSeq: Number(replacement.seq),
           originalText: groupText,
         })
       }
@@ -2492,6 +2580,7 @@ export class ToolResultPruner extends Service {
       tokensAfter: plan.tokensAfter,
       basis: plan.measurementBasis,
       sourceSeq: plan.sourceSeq,
+      replacementSeq: Number(replacement.seq),
       ...(pairedOriginal === undefined ? {} : { originalText: pairedOriginal }),
     })
     return {

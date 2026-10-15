@@ -1608,6 +1608,10 @@ window.__ModuleLoader__.load({
 					x: 0,
 					y: 0
 				};
+				let startPos = {
+					x: 0,
+					y: 0
+				};
 				el.addEventListener("pointerdown", (e) => {
 					active = true;
 					moved = false;
@@ -1615,13 +1619,17 @@ window.__ModuleLoader__.load({
 						x: e.clientX,
 						y: e.clientY
 					};
+					startPos = {
+						x: pos.x,
+						y: pos.y
+					};
 					el.setPointerCapture(e.pointerId);
 				});
 				el.addEventListener("pointermove", (e) => {
 					if (!active) return;
 					const next = clamp({
-						x: pos.x + e.clientX - origin.x,
-						y: pos.y + e.clientY - origin.y
+						x: startPos.x + (e.clientX - origin.x),
+						y: startPos.y + (e.clientY - origin.y)
 					});
 					if (Math.abs(next.x - pos.x) > 2 || Math.abs(next.y - pos.y) > 2) moved = true;
 					pos = key === "fab" ? next : pos;
@@ -1665,10 +1673,22 @@ window.__ModuleLoader__.load({
 			let stale = false;
 			let busyAction = false;
 			const fmtTokens = (n) => num(n).toLocaleString("en-US");
+			const lead = (exact, estimated) => {
+				const ex = num(exact);
+				const es = num(estimated);
+				return ex !== 0 ? {
+					v: ex,
+					est: false
+				} : {
+					v: es,
+					est: es !== 0
+				};
+			};
 			const render = (snap) => {
 				const net = num(snap.net?.exact) + num(snap.net?.estimated);
 				const netEl = panel.querySelector("[data-net]");
-				netEl.textContent = `${fmtTokens(snap.net?.exact)}${num(snap.net?.estimated) > 0 ? ` (+${fmtTokens(snap.net?.estimated)} est)` : ""}`;
+				const netLead = lead(snap.net?.exact, snap.net?.estimated);
+				netEl.textContent = netLead.est ? `${fmtTokens(netLead.v)} est` : fmtTokens(netLead.v);
 				netEl.classList.toggle("neg", net < 0);
 				const suggest = snap.suggestion?.suggest === true;
 				fab.classList.toggle("lit", suggest || net < 0);
@@ -1678,8 +1698,10 @@ window.__ModuleLoader__.load({
 					hint.textContent = t("monitor.panel.suggest").replace("{pct}", String(pct ?? "–"));
 					hint.classList.add("show");
 				} else hint.classList.remove("show");
-				panel.querySelector("[data-gross]").textContent = fmtTokens(snap.gross?.exact);
-				panel.querySelector("[data-offsets]").textContent = `-${fmtTokens(snap.offsets?.exact)}`;
+				const grossLead = lead(snap.gross?.exact, snap.gross?.estimated);
+				panel.querySelector("[data-gross]").textContent = grossLead.est ? `${fmtTokens(grossLead.v)} est` : fmtTokens(grossLead.v);
+				const offLead = lead(snap.offsets?.exact, snap.offsets?.estimated);
+				panel.querySelector("[data-offsets]").textContent = offLead.est ? `-${fmtTokens(offLead.v)} est` : `-${fmtTokens(offLead.v)}`;
 				const ctxBar = panel.querySelector("[data-ctxbar]");
 				const ctxPct = panel.querySelector("[data-ctxpct]");
 				const ctxPctNum = typeof snap.context?.pct === "number" ? snap.context.pct : null;
@@ -1840,6 +1862,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.cost": "成本（实际 / 省估）",
 			"monitor.panel.intent": "意图摘要",
 			"monitor.panel.overrideHint": "会话覆盖",
+			"monitor.panel.overridePrefix": "会话覆盖",
 			"monitor.panel.resume": "恢复",
 			"monitor.panel.disable": "停用",
 			"monitor.panel.stateOn": "开",
@@ -1978,6 +2001,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.cost": "Cost (actual / saved est.)",
 			"monitor.panel.intent": "Intent summary",
 			"monitor.panel.overrideHint": "Session override",
+			"monitor.panel.overridePrefix": "Session override",
 			"monitor.panel.resume": "Resume",
 			"monitor.panel.disable": "Disable",
 			"monitor.panel.stateOn": "on",
@@ -2118,6 +2142,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.cost": "Kosten (ist / gespart gesch.)",
 			"monitor.panel.intent": "Intent-Zusammenfassung",
 			"monitor.panel.overrideHint": "Sitzungs-Übersteuerung",
+			"monitor.panel.overridePrefix": "Sitzungs-Übersteuerung",
 			"monitor.panel.resume": "Fortsetzen",
 			"monitor.panel.disable": "Deaktivieren",
 			"monitor.panel.stateOn": "ein",
@@ -2258,6 +2283,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.cost": "Coste (real / ahorro est.)",
 			"monitor.panel.intent": "Resumen de intención",
 			"monitor.panel.overrideHint": "Invalidación de sesión",
+			"monitor.panel.overridePrefix": "Invalidación de sesión",
 			"monitor.panel.resume": "Reanudar",
 			"monitor.panel.disable": "Desactivar",
 			"monitor.panel.stateOn": "sí",
@@ -2398,6 +2424,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.cost": "Coût (réel / écon. est.)",
 			"monitor.panel.intent": "Résumé d'intention",
 			"monitor.panel.overrideHint": "Priorité de session",
+			"monitor.panel.overridePrefix": "Priorité de session",
 			"monitor.panel.resume": "Reprendre",
 			"monitor.panel.disable": "Désactiver",
 			"monitor.panel.stateOn": "activé",
@@ -2538,6 +2565,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.cost": "Costo (effettivo / stimo)",
 			"monitor.panel.intent": "Riepilogo di intento",
 			"monitor.panel.overrideHint": "Override di sessione",
+			"monitor.panel.overridePrefix": "Override di sessione",
 			"monitor.panel.resume": "Riprendi",
 			"monitor.panel.disable": "Disattiva",
 			"monitor.panel.stateOn": "on",
@@ -2678,6 +2706,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.cost": "コスト（実績 / 節約概算）",
 			"monitor.panel.intent": "インテント要約",
 			"monitor.panel.overrideHint": "セッション上書き",
+			"monitor.panel.overridePrefix": "セッション上書き",
 			"monitor.panel.resume": "再開",
 			"monitor.panel.disable": "停止",
 			"monitor.panel.stateOn": "オン",
@@ -2818,6 +2847,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.cost": "비용 (실제 / 절감 추정)",
 			"monitor.panel.intent": "인텐트 요약",
 			"monitor.panel.overrideHint": "세션 재정의",
+			"monitor.panel.overridePrefix": "세션 재정의",
 			"monitor.panel.resume": "재개",
 			"monitor.panel.disable": "중지",
 			"monitor.panel.stateOn": "켬",
@@ -2958,6 +2988,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.cost": "Стоимость (факт / эконом. оценка)",
 			"monitor.panel.intent": "Итог намерения",
 			"monitor.panel.overrideHint": "Приоритет сессии",
+			"monitor.panel.overridePrefix": "Приоритет сессии",
 			"monitor.panel.resume": "Возобновить",
 			"monitor.panel.disable": "Отключить",
 			"monitor.panel.stateOn": "вкл",
@@ -3215,10 +3246,14 @@ window.__ModuleLoader__.load({
 			return left.version === right.version && left.unit === right.unit && left.prefixPolicy === right.prefixPolicy && left.fresh.enabled === right.fresh.enabled && left.fresh.trigger === right.fresh.trigger && left.fresh.target === right.fresh.target && left.aggregate.enabled === right.aggregate.enabled && left.aggregate.trigger === right.aggregate.trigger && left.aggregate.target === right.aggregate.target && left.history.enabled === right.history.enabled && left.history.trigger === right.history.trigger && left.history.keepRecentToolCalls === right.history.keepRecentToolCalls && left.history.keepRecentTokens === right.history.keepRecentTokens && left.history.minReclaim === right.history.minReclaim && left.tailTrim.enabled === right.tailTrim.enabled && left.tailTrim.trigger === right.tailTrim.trigger;
 		}
 		function apply(ctx) {
-			ctx.locale.register(NS, {
-				zh,
-				en
-			});
+			try {
+				ctx.locale.register(NS, {
+					zh,
+					en
+				});
+			} catch (error) {
+				console.warn("[dsh-context-compression-improved] locale 默认包(zh/en) 已注册,跳过:", error);
+			}
 			const languages = [
 				{
 					id: "de",
@@ -3270,6 +3305,8 @@ window.__ModuleLoader__.load({
 			let configFormsHandle;
 			/** Last monitorPanel.enabled seen through whichever scope is current (FAB 读数缓存). */
 			let monitorPanelEnabledCache = false;
+			/** configForms 臂是否已经成功读过一次文档(FAB 读数是否可信)。 */
+			let nativeMonitorReady = false;
 			/** 浮动监控面板(FAB): body 级幂等单例。enabled 读数走双臂 scope 的投影缓存。 */
 			let readMonitorPanelEnabled = () => monitorPanelEnabledCache;
 			let latestSessionId;
@@ -3299,12 +3336,27 @@ window.__ModuleLoader__.load({
 			const bridgeScope = createBridgeScope();
 			bridgeScope.refresh();
 			const bridgeReadEnabled = () => decodeSettings(bridgeScope.getSnapshot().value)?.monitorPanel?.enabled ?? false;
-			readMonitorPanelEnabled = () => configFormsHandle === void 0 ? bridgeReadEnabled() : monitorPanelEnabledCache;
+			readMonitorPanelEnabled = () => configFormsHandle !== void 0 && nativeMonitorReady ? monitorPanelEnabledCache : bridgeReadEnabled();
 			try {
 				ctx.inject(["configForms"], (configFormsArg) => {
 					const svc = configFormsArg?.configForms;
 					const face = svc !== void 0 && svc !== null ? svc : configFormsArg;
 					configFormsHandle = typeof face?.get === "function" ? face : void 0;
+					if (configFormsHandle !== void 0) try {
+						const form = configFormsHandle.get(ENTRY_ID);
+						const refresh = () => {
+							monitorPanelEnabledCache = decodeSettings(form.getSnapshot().value?.settings)?.monitorPanel?.enabled ?? false;
+							nativeMonitorReady = true;
+						};
+						refresh();
+						form.subscribe(() => {
+							try {
+								refresh();
+							} catch {}
+						});
+					} catch (error) {
+						console.warn("[dsh-context-compression-improved] FAB 读数预热失败(沿用桥面):", error);
+					}
 				});
 			} catch (error) {
 				console.warn("[dsh-context-compression-improved] configForms 臂挂载失败(桥面继续服务):", error);
@@ -3339,6 +3391,7 @@ window.__ModuleLoader__.load({
 							};
 						}
 						monitorPanelEnabledCache = projected.value?.monitorPanel?.enabled ?? false;
+						nativeMonitorReady = true;
 						return projected;
 					},
 					subscribe: (listener) => form.subscribe(listener),

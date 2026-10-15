@@ -373,6 +373,17 @@ function wireSettingsBridge(ctx) {
 //#endregion
 //#region src/preset-overlay.ts
 /** Plugin-owned, reversible compression overlays for native agent presets. */
+/** Cordis 把未被代理的原始 service 暴露在该 symbol 下(见 cordis createTraceable 的 get 陷阱)。 */
+const CORDIS_ORIGINAL = Symbol.for("cordis.original");
+/**
+* 取得 Cordis traceable 代理背后的原始 service。原始对象是宿主内部调用
+* (`this.resolveMountable → this.resolve`) 时的接收者;只有装饰它,压缩栈补丁才能
+* 真正注入(实证:装饰代理/原型代理均失败)。
+*/
+function rawService(presets) {
+	const raw = presets[CORDIS_ORIGINAL];
+	return raw !== null && typeof raw === "object" ? raw : presets;
+}
 /**
 * Fixed base for deterministic standing mtimes. The stamp is derived from the
 * FULL content identity (source + modules + threshold), not from the write
@@ -658,6 +669,75 @@ function renderPatchWarning(message, args) {
 	let index = 0;
 	return `context-compression selector: ${message.replace(/%C/g, () => JSON.stringify(args[index++]))}`;
 }
+/** Read a definition's preset id when the shape is a plain object. */
+function readDefinitionId(definition) {
+	if (typeof definition !== "object" || definition === null) return void 0;
+	const id = definition.id;
+	return typeof id === "string" ? id : void 0;
+}
+/**
+* Inject the canonical compression stack into one preset definition's rows.
+*
+* The 0.2.0 `dsh-agent-preset-registry` PRE-BUILDS a generation per definition
+* (`activate` → `mountPreset(ctx, id, definition.plugins)`) and `mount` only
+* `retain`s it; the composition never calls `resolve`. So the stack must land in
+* the definition's own `plugins` before activation, not in a resolved preset
+* file. Best-effort: a failed injection leaves the original rows untouched.
+*/
+function injectCompressionRows(definition, options, excluded) {
+	const id = readDefinitionId(definition);
+	if (id === void 0 || excluded.has(id)) return;
+	const plugins = definition.plugins;
+	if (!Array.isArray(plugins)) return;
+	try {
+		const thresholdPercent = options.autoCompactThresholdPercent?.();
+		definition.plugins = applyEntryPatches(stripCompressionRows(plugins), [{ insert: compressionRowsBySpecifier(thresholdPercent) }], (message, ...args) => {
+			throw new Error(renderPatchWarning(message, args));
+		});
+	} catch {}
+}
+/**
+* The canonical compression stack addressed by BARE SPECIFIERS. The 0.2.0
+* `dsh-agent-preset-registry` preset files declare this exact group by package
+* name, and its loader resolves bare specifiers (`@deepseek-ai/...`,
+* `dsh-context-compression-improved/pruner`) — absolute filesystem paths from
+* {@link resolveCompressionModulePaths} are NOT accepted there (empirically:
+* every injected row reports "never started").
+*/
+function compressionRowsBySpecifier(thresholdPercent) {
+	return [{
+		id: "compaction",
+		name: "cordis:group",
+		group: true,
+		isolate: {
+			compaction: true,
+			toolResultPruner: true
+		},
+		config: [
+			{
+				id: "compaction-basic",
+				name: "@deepseek-ai/dsh-compaction-basic",
+				...thresholdPercent === void 0 ? {} : { config: {
+					thresholdRatio: thresholdPercent / 100,
+					retainRatio: .16
+				} }
+			},
+			{
+				id: "command-compact",
+				name: "@deepseek-ai/dsh-command-compact"
+			},
+			{
+				id: "tool-result-pruner",
+				name: "dsh-context-compression-improved/pruner",
+				config: {
+					headChars: 4096,
+					tailChars: 1024,
+					...thresholdPercent === void 0 ? {} : { autoCompactThresholdPercent: thresholdPercent }
+				}
+			}
+		]
+	}];
+}
 /**
 * Cordis can hand two callers different traceable proxies for one service.
 * Symbol properties forward to the shared target, unlike proxy identity.
@@ -734,47 +814,67 @@ function installAgentPresetsDecoration(presets, options) {
 	const excluded = new Set(options.excludedPresetIds ?? ["minimal"]);
 	const operations = new AsyncLocalStorage();
 	const store = new PresetOverlayStore(options);
+	const raw = rawService(presets);
 	const snapshots = snapshotMethods(presets);
 	const resolveSnapshot = snapshotFor(snapshots, "resolve");
 	const resolveWrapped = async (id) => {
-		const preset = await Reflect.apply(resolveSnapshot.original, presets, [id]);
-		if (operations.getStore()?.composing !== true || excluded.has(preset.id)) return preset;
+		const preset = await Reflect.apply(resolveSnapshot.original, raw, [id]);
+		if (!(operations.getStore()?.composing === true) || excluded.has(preset.id)) return preset;
 		return await store.overlay(preset);
 	};
-	installMethod(presets, resolveSnapshot, resolveWrapped);
+	installMethod(resolveSnapshot, resolveWrapped);
 	for (const method of [
 		"mount",
 		"recompose",
 		"standingKeyFor"
 	]) {
-		const snapshot = snapshotFor(snapshots, method);
-		const wrapped = (...args) => operations.run({ composing: true }, () => Reflect.apply(snapshot.original, presets, args));
-		installMethod(presets, snapshot, wrapped);
+		const snapshot = snapshots.find((candidate) => candidate.name === method);
+		if (snapshot === void 0) continue;
+		const wrapped = (...args) => {
+			return operations.run({ composing: true }, () => Reflect.apply(snapshot.original, raw, args));
+		};
+		installMethod(snapshot, wrapped);
+	}
+	const registerSnapshot = snapshots.find((candidate) => candidate.name === "register");
+	if (registerSnapshot !== void 0) {
+		const registerWrapped = async (definition) => {
+			injectCompressionRows(definition, options, excluded);
+			return await Reflect.apply(registerSnapshot.original, raw, [definition]);
+		};
+		installMethod(registerSnapshot, registerWrapped);
 	}
 	let disposed = false;
 	return { async dispose() {
 		if (disposed) return;
 		disposed = true;
-		for (const snapshot of [...snapshots].reverse()) restoreMethod(presets, snapshot);
+		for (const snapshot of [...snapshots].reverse()) restoreMethod(snapshot);
 		await store.dispose();
 	} };
 }
 /** Capture callable methods and whether each was inherited or owned. */
 function snapshotMethods(presets) {
-	return [
+	const methods = [];
+	for (const name of [
 		"resolve",
 		"mount",
 		"recompose",
-		"standingKeyFor"
-	].map((name) => {
+		"standingKeyFor",
+		"register"
+	]) {
 		const original = presets[name];
-		if (typeof original !== "function") throw new TypeError(`context-compression selector: AgentPresets.${name} is unavailable`);
-		return {
+		if (typeof original !== "function") {
+			if (name === "resolve") throw new TypeError(`context-compression selector: AgentPresets.${name} is unavailable`);
+			continue;
+		}
+		const home = rawService(presets);
+		methods.push({
 			name,
-			own: Object.getOwnPropertyDescriptor(presets, name),
+			home,
+			own: Object.getOwnPropertyDescriptor(home, name),
 			original
-		};
-	});
+		});
+	}
+	return methods;
 }
 /** Return the captured method or fail loudly if the snapshot set is corrupt. */
 function snapshotFor(snapshots, name) {
@@ -783,18 +883,18 @@ function snapshotFor(snapshots, name) {
 	return snapshot;
 }
 /** Install one own method while retaining its identity for safe disposal. */
-function installMethod(presets, snapshot, wrapped) {
+function installMethod(snapshot, wrapped) {
 	snapshot.wrapped = wrapped;
-	Object.defineProperty(presets, snapshot.name, {
+	Object.defineProperty(snapshot.home, snapshot.name, {
 		configurable: true,
 		writable: true,
 		value: wrapped
 	});
 }
 /** Restore the captured own/prototype state after the final shared lease. */
-function restoreMethod(presets, snapshot) {
-	if (snapshot.own === void 0) Reflect.deleteProperty(presets, snapshot.name);
-	else Object.defineProperty(presets, snapshot.name, snapshot.own);
+function restoreMethod(snapshot) {
+	if (snapshot.own === void 0) Reflect.deleteProperty(snapshot.home, snapshot.name);
+	else Object.defineProperty(snapshot.home, snapshot.name, snapshot.own);
 }
 //#endregion
 //#region src/index.ts
