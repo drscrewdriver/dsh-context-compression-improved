@@ -27,7 +27,7 @@ export const inject = ['tools', 'systemPrompt']
 
 /** Maximum text returned by one recovery call. */
 export interface Config {
-  /** Hard response bound in Unicode code points. Defaults to 50000. */
+  /** Hard response bound in Unicode code points. Defaults to 12000. */
   maxChars?: number
   /** Maximum source text inspected by one call. Defaults to 250000. */
   maxScanChars?: number
@@ -37,20 +37,21 @@ export interface Config {
 
 /** Loader schema for the recovery tool's bounded runtime configuration. */
 export const Config: z<Config> = z.object({
-  maxChars: z.number().step(1).min(1).default(50_000),
+  maxChars: z.number().step(1).min(1).default(12_000),
   maxScanChars: z.number().step(1).min(1).default(250_000),
   maxQueryChars: z.number().step(1).min(1).default(256),
 })
 
 const REF_PATTERN = /^session:\/\/([^/]+)\/event\/(\d+)$/
 const MAX_LINES = 1_000
-const DEFAULT_MAX_CHARS = 50_000
+const DEFAULT_MAX_CHARS = 12_000
 const DEFAULT_MAX_SCAN_CHARS = 250_000
 const DEFAULT_MAX_QUERY_CHARS = 256
 const TRUNCATION_MARKER = '\n[context_compression_retrieve output truncated; reported lines describe the selected source range]\n'
 const PROMPT = 'When a compacted tool result contains a session://<session-id>/event/<seq> reference, '
   + 'or TailTrim contains a session://<session-id>/tailtrim/<seq> reference, use context_compression_retrieve with that exact ref '
   + 'and a narrow line range or query if the omitted evidence is necessary. '
+  + 'Prefer a query or a tight start_line/max_lines over re-reading the whole result: every recovery re-enters the context and is charged against the savings, so a targeted slice keeps the rest of the reduction. '
   + 'The returned event content comes from the append-only session log, which is the source of truth.'
 
 const OUTPUT = {

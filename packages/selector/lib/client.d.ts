@@ -87,6 +87,7 @@ declare const zh: {
   'monitor.panel.cost': string;
   'monitor.panel.intent': string;
   'monitor.panel.overrideHint': string;
+  'monitor.panel.overridePrefix': string;
   'monitor.panel.resume': string;
   'monitor.panel.disable': string;
   'monitor.panel.stateOn': string;

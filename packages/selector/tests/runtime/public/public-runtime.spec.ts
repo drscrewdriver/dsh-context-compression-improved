@@ -417,6 +417,54 @@ describe('standalone runtime on published Harness APIs', () => {
     expect(record?.tokensRemoved).toBe((record?.tokensBefore ?? 0) - (record?.tokensAfter ?? 0))
   })
 
+  it('tokenpilot-inspired default threshold lands a fresh replace end-to-end (no explicit override)', async () => {
+    const ctx = await runtimeContext()
+    const audit = captureAudit(ctx)
+    // No freshTriggerTokens passed → the profile default governs. The lowered
+    // default (4096) must reduce a large fresh result through the real cordis
+    // path, mirroring what the desktop panel observes at turn tail.
+    await ctx.plugin(ToolResultPruner, { profile: 'tokenpilot-inspired' }).await()
+    const session = Session.create(SessionId('public-tokenpilot-default-fresh'))
+    const fixture = Array.from({ length: 1_200 }, (_, index) =>
+      `row ${String(index)} :: ${['alpha', 'bravo', 'charlie', 'delta', 'echo'][index % 5]}-${String((index * 7) % 997)} payload ${String(index)}`).join('\n')
+    appendToolTurn(session, 1, fixture, false, undefined, 'deepseek-official')
+
+    const result = ctx.toolResultPruner.pruneSession(session, {
+      stage: 'fresh',
+      freshTurn: 1,
+      freshStep: 1,
+    })
+
+    expect(result.pruned.length).toBeGreaterThanOrEqual(1)
+    const record = rewrites(audit.records()).find(entry => entry.component === 'fresh')
+    expect(record).toBeDefined()
+    expect(record?.reducer).toEqual(expect.any(String))
+  })
+
+  it('tokenpilot-inspired lands a fresh replace on an UNAVAILABLE-tokenizer route (local Qwen)', async () => {
+    const ctx = await runtimeContext()
+    const audit = captureAudit(ctx)
+    await ctx.plugin(ToolResultPruner, { profile: 'tokenpilot-inspired' }).await()
+    const session = Session.create(SessionId('public-tokenpilot-qwen-fresh'))
+    // A ~40KB JSONL result — the exact shape the desktop test feeds. local-35 has
+    // no bundled tokenizer, so every node count is 'unavailable' and the fresh
+    // gate + land must run entirely on the character basis.
+    const jsonl = Array.from({ length: 150 }, (_, index) =>
+      JSON.stringify({ qid: index, question: `Janet's ducks lay ${index} eggs. How many remain after ${index + 3}?`, answer: `step ${index} ... #### ${index * 2}` })).join('\n')
+    appendToolTurn(session, 1, jsonl, false, undefined, 'local-35', 'Qwen3.6-35B-A3B')
+
+    const result = ctx.toolResultPruner.pruneSession(session, {
+      stage: 'fresh',
+      freshTurn: 1,
+      freshStep: 1,
+    })
+
+    const record = rewrites(audit.records()).find(entry => entry.component === 'fresh')
+    // eslint-disable-next-line no-console
+    console.log('QWEN_FRESH pruned=', result.pruned.length, 'reducer=', record?.reducer ?? 'none', 'basis=', record?.measurementBasis ?? 'none')
+    expect(result.pruned.length).toBeGreaterThanOrEqual(1)
+  })
+
   it('threads the reducer elided-line count from a fresh plan into the rewrite audit', async () => {
     // The skeleton reducer counts the lines it hid behind elision markers; that
     // count must survive the whole planning middle (plan options → planned

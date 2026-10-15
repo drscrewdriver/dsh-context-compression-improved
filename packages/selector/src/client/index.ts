@@ -81,7 +81,14 @@ function sameCustomPolicy(
 }
 
 export function apply(ctx: ClientContext): void {
-  ctx.locale.register(NS, { zh, en })
+  // 幂等:本插件可被两行同 name 挂载(bundle 行 + estimator-catalog 行,宿主侧靠
+  // 引用计数去重压缩栈),客户端 apply 会被调用多次。首注册必须容错,否则第二次
+  // 抛 'locale namespace ... already has locale "zh"' 会使整个客户端同步失败。
+  try {
+    ctx.locale.register(NS, { zh, en })
+  } catch (error) {
+    console.warn('[dsh-context-compression-improved] locale 默认包(zh/en) 已注册,跳过:', error)
+  }
   // de/es/fr/it/ja/ko/ru are not host built-ins (`BuiltInLocaleId` is zh|en), so
   // their dictionaries ride the single-locale untyped register overload, and each
   // needs an `addLanguage` definition to become selectable — the catalog owns
@@ -125,6 +132,8 @@ let configFormsHandle: ConfigFormsHandle | undefined
 
 /** Last monitorPanel.enabled seen through whichever scope is current (FAB 读数缓存). */
 let monitorPanelEnabledCache = false
+/** configForms 臂是否已经成功读过一次文档(FAB 读数是否可信)。 */
+let nativeMonitorReady = false
 
 /** 浮动监控面板(FAB): body 级幂等单例。enabled 读数走双臂 scope 的投影缓存。 */
 let readMonitorPanelEnabled = (): boolean => monitorPanelEnabledCache
@@ -161,7 +170,9 @@ let readMonitorPanelEnabled = (): boolean => monitorPanelEnabledCache
   bridgeScope.refresh()
   const bridgeReadEnabled = (): boolean =>
     decodeSettings(bridgeScope.getSnapshot().value)?.monitorPanel?.enabled ?? false
-  readMonitorPanelEnabled = (): boolean => (configFormsHandle === undefined ? bridgeReadEnabled() : monitorPanelEnabledCache)
+  readMonitorPanelEnabled = (): boolean => (configFormsHandle !== undefined && nativeMonitorReady
+    ? monitorPanelEnabledCache
+    : bridgeReadEnabled())
   try {
     ctx.inject(['configForms'], (configFormsArg) => {
       // cordis passes the service's OWNER CONTEXT to inject callbacks (the
@@ -175,6 +186,21 @@ let readMonitorPanelEnabled = (): boolean => monitorPanelEnabledCache
       const svc = (configFormsArg as { configForms?: unknown } | undefined)?.configForms
       const face = (svc !== undefined && svc !== null ? svc : configFormsArg) as unknown as ConfigFormsHandle
       configFormsHandle = typeof face?.get === 'function' ? face : undefined
+      // 预热 FAB 读数:不看设置面板也要能读到 monitorPanel.enabled。此前缓存只
+      // 在设置分节渲染时刷新,导致浮动监控球必须先打开设置才出现。
+      if (configFormsHandle !== undefined) {
+        try {
+          const form = configFormsHandle.get(ENTRY_ID)
+          const refresh = (): void => {
+            monitorPanelEnabledCache = decodeSettings(form.getSnapshot().value?.settings)?.monitorPanel?.enabled ?? false
+            nativeMonitorReady = true
+          }
+          refresh()
+          form.subscribe(() => { try { refresh() } catch { /* ignore */ } })
+        } catch (error) {
+          console.warn('[dsh-context-compression-improved] FAB 读数预热失败(沿用桥面):', error)
+        }
+      }
     })
   } catch (error) {
     console.warn('[dsh-context-compression-improved] configForms 臂挂载失败(桥面继续服务):', error)
@@ -212,6 +238,7 @@ let readMonitorPanelEnabled = (): boolean => monitorPanelEnabledCache
           }
         }
         monitorPanelEnabledCache = projected.value?.monitorPanel?.enabled ?? false
+        nativeMonitorReady = true
         return projected
       },
       subscribe: (listener) => form.subscribe(listener),

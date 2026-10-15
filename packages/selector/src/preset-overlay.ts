@@ -11,6 +11,19 @@ import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type { AgentPreset } from '@deepseek-ai/dsh-agent-presets'
 import { dump, load } from 'js-yaml'
 
+/** Cordis 把未被代理的原始 service 暴露在该 symbol 下(见 cordis createTraceable 的 get 陷阱)。 */
+const CORDIS_ORIGINAL = Symbol.for('cordis.original')
+
+/**
+ * 取得 Cordis traceable 代理背后的原始 service。原始对象是宿主内部调用
+ * (`this.resolveMountable → this.resolve`) 时的接收者;只有装饰它,压缩栈补丁才能
+ * 真正注入(实证:装饰代理/原型代理均失败)。
+ */
+function rawService(presets: object): object {
+  const raw = (presets as Record<symbol, unknown>)[CORDIS_ORIGINAL]
+  return raw !== null && typeof raw === 'object' ? raw : presets
+}
+
 /** Absolute runtime entry points used by the generated compression stack. */
 export interface CompressionModulePaths {
   /** Exact aggregate/history compaction implementation shipped with the Bundle. */
@@ -31,6 +44,8 @@ export interface OverlayableAgentPresets {
   recompose(agentCtx: unknown, id: string): Promise<AgentPreset>
   /** Ensure a standing preset composition for cold readers. */
   standingKeyFor(id?: string): Promise<unknown>
+  /** Register a preset definition; the 0.2.0 registry pre-composes it here. Optional: older host lines lack it. */
+  register?(definition: unknown): Promise<unknown>
 }
 
 /** Configuration for one reversible decoration. */
@@ -425,12 +440,92 @@ function renderPatchWarning(message: string, args: readonly unknown[]): string {
   return `context-compression selector: ${message.replace(/%C/g, () => JSON.stringify(args[index++]))}`
 }
 
+/** Read a definition's preset id when the shape is a plain object. */
+function readDefinitionId(definition: unknown): string | undefined {
+  if (typeof definition !== 'object' || definition === null) return undefined
+  const id = (definition as { id?: unknown }).id
+  return typeof id === 'string' ? id : undefined
+}
+
+/**
+ * Inject the canonical compression stack into one preset definition's rows.
+ *
+ * The 0.2.0 `dsh-agent-preset-registry` PRE-BUILDS a generation per definition
+ * (`activate` → `mountPreset(ctx, id, definition.plugins)`) and `mount` only
+ * `retain`s it; the composition never calls `resolve`. So the stack must land in
+ * the definition's own `plugins` before activation, not in a resolved preset
+ * file. Best-effort: a failed injection leaves the original rows untouched.
+ */
+function injectCompressionRows(
+  definition: unknown,
+  options: PresetOverlayOptions,
+  excluded: ReadonlySet<string>,
+): void {
+  const id = readDefinitionId(definition)
+  if (id === undefined || excluded.has(id)) return
+  const plugins = (definition as { plugins?: unknown }).plugins
+  if (!Array.isArray(plugins)) return
+  try {
+    const thresholdPercent = options.autoCompactThresholdPercent?.()
+    const next = applyEntryPatches(
+      stripCompressionRows(plugins as EntryOptions[]),
+      [{ insert: compressionRowsBySpecifier(thresholdPercent) }],
+      (message: string, ...args: unknown[]) => {
+        throw new Error(renderPatchWarning(message, args))
+      },
+    )
+    ;(definition as { plugins: EntryOptions[] }).plugins = next
+  } catch {
+    // 保留原 rows:注入失败不影响定义注册主流程
+  }
+}
+
+/**
+ * The canonical compression stack addressed by BARE SPECIFIERS. The 0.2.0
+ * `dsh-agent-preset-registry` preset files declare this exact group by package
+ * name, and its loader resolves bare specifiers (`@deepseek-ai/...`,
+ * `dsh-context-compression-improved/pruner`) — absolute filesystem paths from
+ * {@link resolveCompressionModulePaths} are NOT accepted there (empirically:
+ * every injected row reports "never started").
+ */
+function compressionRowsBySpecifier(thresholdPercent?: number): EntryOptions[] {
+  return [
+    {
+      id: 'compaction',
+      name: 'cordis:group',
+      group: true,
+      isolate: { compaction: true, toolResultPruner: true },
+      config: [
+        {
+          id: 'compaction-basic',
+          name: '@deepseek-ai/dsh-compaction-basic',
+          ...(thresholdPercent === undefined ? {} : {
+            config: { thresholdRatio: thresholdPercent / 100, retainRatio: 0.16 },
+          }),
+        },
+        { id: 'command-compact', name: '@deepseek-ai/dsh-command-compact' },
+        {
+          id: 'tool-result-pruner',
+          name: 'dsh-context-compression-improved/pruner',
+          config: {
+            headChars: 4096,
+            tailChars: 1024,
+            ...(thresholdPercent === undefined ? {} : { autoCompactThresholdPercent: thresholdPercent }),
+          },
+        },
+      ],
+    },
+  ]
+}
+
 /** Method names whose native execution is allowed to resolve an overlay. */
-type CompositionMethod = 'mount' | 'recompose' | 'standingKeyFor'
+type CompositionMethod = 'mount' | 'recompose' | 'standingKeyFor' | 'register'
 
 /** Restore one method to exactly the own/prototype state it had before decoration. */
 interface MethodSnapshot {
   readonly name: 'resolve' | CompositionMethod
+  /** Object whose OWN property holds the original (the raw service target). */
+  readonly home: object
   readonly own: PropertyDescriptor | undefined
   readonly original: (...args: never[]) => unknown
   wrapped?: (...args: never[]) => unknown
@@ -542,23 +637,37 @@ function installAgentPresetsDecoration(
   const excluded = new Set(options.excludedPresetIds ?? ['minimal'])
   const operations = new AsyncLocalStorage<CompositionOperation>()
   const store = new PresetOverlayStore(options)
+  const raw = rawService(presets)
   const snapshots = snapshotMethods(presets)
   const resolveSnapshot = snapshotFor(snapshots, 'resolve')
 
   const resolveWrapped = async (id?: string): Promise<AgentPreset> => {
-    const preset = await Reflect.apply(resolveSnapshot.original, presets, [id]) as AgentPreset
-    if (operations.getStore()?.composing !== true || excluded.has(preset.id)) return preset
+    const preset = await Reflect.apply(resolveSnapshot.original, raw, [id]) as AgentPreset
+    const composing = operations.getStore()?.composing === true
+    if (!composing || excluded.has(preset.id)) return preset
     return await store.overlay(preset)
   }
-  installMethod(presets, resolveSnapshot, resolveWrapped)
+  installMethod(resolveSnapshot, resolveWrapped)
 
   for (const method of ['mount', 'recompose', 'standingKeyFor'] as const) {
-    const snapshot = snapshotFor(snapshots, method)
-    const wrapped = (...args: unknown[]): unknown => operations.run(
-      { composing: true },
-      (): unknown => Reflect.apply(snapshot.original, presets, args) as unknown,
-    )
-    installMethod(presets, snapshot, wrapped)
+    const snapshot = snapshots.find(candidate => candidate.name === method)
+    if (snapshot === undefined) continue
+    const wrapped = (...args: unknown[]): unknown => {
+      return operations.run(
+        { composing: true },
+        (): unknown => Reflect.apply(snapshot.original, raw, args) as unknown,
+      )
+    }
+    installMethod(snapshot, wrapped)
+  }
+
+  const registerSnapshot = snapshots.find(candidate => candidate.name === 'register')
+  if (registerSnapshot !== undefined) {
+    const registerWrapped = async (definition: unknown): Promise<unknown> => {
+      injectCompressionRows(definition, options, excluded)
+      return await Reflect.apply(registerSnapshot.original, raw, [definition]) as unknown
+    }
+    installMethod(registerSnapshot, registerWrapped)
   }
 
   let disposed = false
@@ -566,7 +675,7 @@ function installAgentPresetsDecoration(
     async dispose(): Promise<void> {
       if (disposed) return
       disposed = true
-      for (const snapshot of [...snapshots].reverse()) restoreMethod(presets, snapshot)
+      for (const snapshot of [...snapshots].reverse()) restoreMethod(snapshot)
       await store.dispose()
     },
   }
@@ -574,17 +683,32 @@ function installAgentPresetsDecoration(
 
 /** Capture callable methods and whether each was inherited or owned. */
 function snapshotMethods(presets: OverlayableAgentPresets): MethodSnapshot[] {
-  return (['resolve', 'mount', 'recompose', 'standingKeyFor'] as const).map((name) => {
+  const methods: MethodSnapshot[] = []
+  for (const name of ['resolve', 'mount', 'recompose', 'standingKeyFor', 'register'] as const) {
     const original = presets[name]
     if (typeof original !== 'function') {
-      throw new TypeError(`context-compression selector: AgentPresets.${name} is unavailable`)
+      // `resolve` 是 overlay 自身的重写器,必须有。其余生命周期方法(mount/
+      // recompose/standingKeyFor)仅需被 AsyncLocalStorage 作用域包裹:宿主线
+      // 缺其中一个(0.1.7-rc.2 无 `standingKeyFor`)不得让整个 overlay 失败,
+      // 跳过它即可——否则压缩栈永远注入不了(实证:overlay:err)。
+      if (name === 'resolve') {
+        throw new TypeError(`context-compression selector: AgentPresets.${name} is unavailable`)
+      }
+      continue
     }
-    return {
+    // Cordis 的 traceable 代理每次读取都会重绑方法,且把**未代理的原始 target**
+    // 暴露在 `Symbol.for('cordis.original')` 下。因此装饰代理或"原型代理"都对
+    // target 内部的 `this.resolve(...)` 无效(实证:overlay:composition{mount} 触发、
+    // 却无嵌套 overlay:resolve)。装饰**原始 target 自身**方能同时命中两种接收者。
+    const home = rawService(presets)
+    methods.push({
       name,
-      own: Object.getOwnPropertyDescriptor(presets, name),
+      home,
+      own: Object.getOwnPropertyDescriptor(home, name),
       original,
-    }
-  })
+    })
+  }
+  return methods
 }
 
 /** Return the captured method or fail loudly if the snapshot set is corrupt. */
@@ -601,12 +725,11 @@ function snapshotFor(
 
 /** Install one own method while retaining its identity for safe disposal. */
 function installMethod(
-  presets: OverlayableAgentPresets,
   snapshot: MethodSnapshot,
   wrapped: (...args: never[]) => unknown,
 ): void {
   snapshot.wrapped = wrapped
-  Object.defineProperty(presets, snapshot.name, {
+  Object.defineProperty(snapshot.home, snapshot.name, {
     configurable: true,
     writable: true,
     value: wrapped,
@@ -614,13 +737,13 @@ function installMethod(
 }
 
 /** Restore the captured own/prototype state after the final shared lease. */
-function restoreMethod(presets: OverlayableAgentPresets, snapshot: MethodSnapshot): void {
+function restoreMethod(snapshot: MethodSnapshot): void {
   // Cordis' traceable service proxy rebinds a method on every read, so function
   // identity cannot prove ownership here. The shared reference count is the
   // ownership guard: this path runs only after the final decorator lease ends.
   if (snapshot.own === undefined) {
-    Reflect.deleteProperty(presets, snapshot.name)
+    Reflect.deleteProperty(snapshot.home, snapshot.name)
   } else {
-    Object.defineProperty(presets, snapshot.name, snapshot.own)
+    Object.defineProperty(snapshot.home, snapshot.name, snapshot.own)
   }
 }

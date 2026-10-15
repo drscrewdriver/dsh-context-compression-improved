@@ -80,6 +80,7 @@ export const fr = {
   'monitor.panel.cost': 'Coût (réel / écon. est.)',
   'monitor.panel.intent': 'Résumé d\'intention',
   'monitor.panel.overrideHint': 'Priorité de session',
+  'monitor.panel.overridePrefix': 'Priorité de session',
   'monitor.panel.resume': 'Reprendre',
   'monitor.panel.disable': 'Désactiver',
   'monitor.panel.stateOn': 'activé',

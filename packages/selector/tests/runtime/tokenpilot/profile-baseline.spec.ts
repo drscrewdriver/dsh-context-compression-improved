@@ -47,8 +47,11 @@ describe('tokenpilot-inspired preset', () => {
     expect(policy.freshEnabled).toBe(true)
     expect(policy.aggregateEnabled).toBe(true)
     expect(policy.historyMode).toBe('routine')
-    expect(policy.freshTriggerTokens).toBe(8_192)
-    expect(policy.freshTargetTokens).toBe(3_072)
+    // tokenpilot-inspired ships a lower fresh trigger (4096/1536, aligned to the
+    // savings tier) so moderate results — and CJK/JSON under a real tokenizer —
+    // compress sooner. Intentional divergence from balanced's 8192/3072.
+    expect(policy.freshTriggerTokens).toBe(4_096)
+    expect(policy.freshTargetTokens).toBe(1_536)
     expect(policy.aggregateTriggerTokens).toBe(32_768)
     expect(policy.aggregateTargetTokens).toBe(12_288)
     expect(policy.historyTriggerTokens).toBe(500_000)

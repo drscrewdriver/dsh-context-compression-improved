@@ -155,6 +155,11 @@ const ADJACENT_REPEAT_MARKER = '[previous line repeated'
 const NON_ADJACENT_FOLD_THRESHOLD = 3
 /** Read-output line-number gutter added unconditionally by the host's `formatReadOutput`. */
 const READ_GUTTER_PATTERN = /^(\d+): ?/
+/** JSONL/NDJSON preview: records kept from the head and tail of the stream. */
+const JSONL_HEAD_RECORDS = 3
+const JSONL_TAIL_RECORDS = 2
+/** JSONL detection validates a bounded prefix so a multi-MB stream stays cheap. */
+const JSONL_DETECT_SCAN = 512
 
 /**
  * Block-level read-gutter detection (GF-1). The host prefixes read output with
@@ -220,7 +225,12 @@ export function reduceFreshToolResult(input: ReducerInput, ranking?: ReductionRa
   const readTocFirst = toolClass === 'read' && codePointLength(normalized.contentText) >= READ_TOC_MIN_CHARS
   const candidates: Array<() => ReducerOutput | null> = []
 
-  if (looksLikeJson(normalized.contentText)) candidates.push(() => reduceJson(prepared))
+  // JSONL first: a line-delimited stream also passes `looksLikeJson` (its first
+  // and last chars are braces) yet `JSON.parse` of the whole blob fails, so the
+  // single-value branch would bail and silently drop it to head/tail. Detect the
+  // line form explicitly and give it a record-sampling preview.
+  if (looksLikeJsonl(normalized.contentText)) candidates.push(() => reduceJsonl(prepared))
+  else if (looksLikeJson(normalized.contentText)) candidates.push(() => reduceJson(prepared))
   // R10-B (bundled/minified JS): must sit before every line-anchored candidate
   // — a bundle's statement structure lives INSIDE lines, not at line starts.
   if (looksLikeMinified(normalized.contentText)) candidates.push(() => reduceBundledJs(prepared))
@@ -645,6 +655,76 @@ function reduceJson(input: PreparedInput): ReducerOutput | null {
     return { text, reducer: 'json-structure-preview', lossy: true }
   }
   return null
+}
+
+/**
+ * Reduce line-delimited JSON (JSONL/NDJSON): keep a head and tail sample of
+ * records — each run through the same `shrinkJson` as the single-value branch —
+ * and collapse the middle into an omitted-record count. Reads the gutter-
+ * stripped content view so a host read listing (`N: ` prefix) still resolves.
+ * Returns null when the sampled envelope cannot fit the budget (or when there
+ * are too few records to omit anything), letting head/tail take over.
+ */
+function reduceJsonl(input: PreparedInput): ReducerOutput | null {
+  const recordLines: string[] = []
+  for (const line of input.contentText.split('\n')) {
+    const trimmed = line.trim()
+    if (trimmed !== '' && (trimmed.startsWith('{') || trimmed.startsWith('['))) recordLines.push(trimmed)
+  }
+  const total = recordLines.length
+  if (total < 2) return null
+  const parseRecord = (text: string): unknown => {
+    try {
+      return JSON.parse(text) as unknown
+    } catch {
+      return text
+    }
+  }
+  const headCount = Math.min(JSONL_HEAD_RECORDS, total)
+  const tailCount = total > headCount ? Math.min(JSONL_TAIL_RECORDS, total - headCount) : 0
+  const head = recordLines.slice(0, headCount).map(entry => shrinkJson(parseRecord(entry), 0))
+  const tail = tailCount > 0
+    ? recordLines.slice(total - tailCount).map(entry => shrinkJson(parseRecord(entry), 0))
+    : []
+  const omitted = total - headCount - tailCount
+  const envelope: Record<string, unknown> = {
+    $dsh_compression: {
+      kind: 'jsonl-preview',
+      source: input.sourceRef,
+      original_chars: codePointLength(input.text),
+      records: total,
+    },
+    head,
+  }
+  if (omitted > 0) envelope.$dsh_omitted_records = omitted
+  if (tail.length > 0) envelope.tail = tail
+  const text = JSON.stringify(envelope, null, 2)
+  if (codePointLength(text) >= codePointLength(input.text) || codePointLength(text) > input.budgetChars) return null
+  return { text, reducer: 'jsonl-structure-preview', lossy: true }
+}
+
+/**
+ * Detect JSONL/NDJSON: at least two non-empty lines, each of which parses on
+ * its own as a JSON object or array. A pretty-printed single JSON fails this
+ * (its interior lines are not standalone values), so the two forms never
+ * collide. Only a bounded prefix is validated to keep multi-MB streams cheap.
+ */
+function looksLikeJsonl(text: string): boolean {
+  let records = 0
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim()
+    if (trimmed === '') continue
+    if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) return false
+    try {
+      const parsed = JSON.parse(trimmed) as unknown
+      if (typeof parsed !== 'object' || parsed === null) return false
+      records += 1
+    } catch {
+      return false
+    }
+    if (records >= JSONL_DETECT_SCAN) break
+  }
+  return records >= 2
 }
 
 function shrinkJson(value: unknown, depth: number): unknown {
