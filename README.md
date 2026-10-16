@@ -15,6 +15,9 @@
 > [!IMPORTANT]
 > This project supports **DeepSeek models only**. Lossless measurement and lossy compression depend on the bundled official DeepSeek tokenizers (`deepseek-v4-flash`, `deepseek-v4-pro`, `deepseek-v4-flash-vision-exp`). Everything else fails open and keeps original tool results. See the [upstream README](https://github.com/WilliamShi666/dsh-context-compression-selector#model-support-and-safety) for the full safety model.
 
+> [!TIP]
+> **Recommended route: a custom Responses API endpoint.** When wiring up models, prefer an OpenAI-compatible custom endpoint (the API-key gateway's `/v1/responses`) over the official-account Messages API route. The official route has known resume-replay 400s (e.g. `tool_use` blocks without a matching `tool_result`) that cannot be repaired from the plugin side; the Responses route serializes through a different adapter and is unaffected.
+
 ## What it is
 
 Long-running agent tasks accumulate a large amount of tool output. This community plugin adds selectable, auditable policies for reducing that tool-result context without modifying DeepSeek Harness core:
@@ -45,6 +48,16 @@ Properties:
 Choose a compression profile, set the Auto Compact trigger level, and toggle code-skeleton compression in the same settings section. The toggle saves on change and shows the saved state on reload.
 
 ![Context Compression Selector settings UI](docs/assets/context-compression-selector-settings.png)
+
+## Monitoring UI
+
+While compression runs, the plugin gives you a live view of what it saves: a **compression monitor** panel — net/gross savings, offsets, context usage, cache-hit rate, cost estimate, and the turn-tail intent-summary state, with a per-session resume/disable override right in the panel — next to the session's context trend chart.
+
+![Compression monitor panel](assets/board.png)
+
+Context trend for a session under compression: per-step / per-turn token composition with a timing overlay; the scissors mark where reductions landed.
+
+![Context trend chart](assets/context.png)
 
 ## Install
 

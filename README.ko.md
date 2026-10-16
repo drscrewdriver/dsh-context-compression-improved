@@ -14,6 +14,9 @@
 > [!IMPORTANT]
 > 이 프로젝트는 **DeepSeek 모델만** 지원합니다. 손실 없는 측정과 손실 압축은 번들된 DeepSeek 공식 토크나이저(`deepseek-v4-flash`, `deepseek-v4-pro`, `deepseek-v4-flash-vision-exp`)에 의존합니다. 그외의 경우 fail-open으로 동작하며 원본 도구 결과를 유지합니다. 전체 안전 모델은 [업스트림 README](https://github.com/WilliamShi666/dsh-context-compression-selector#model-support-and-safety)를 참고하세요.
 
+> [!TIP]
+> **권장 라우트: 사용자 정의 Responses API 엔드포인트.** 모델 연결 시 공식 계정 Messages API 라우트 대신 OpenAI 호환 사용자 정의 엔드포인트(API-key 게이트웨이의 `/v1/responses`)를 사용하세요. 공식 라우트에는 플러그인 쪽에서 고칠 수 없는 알려진 resume-replay 400(예: 대응하는 `tool_result`가 없는 `tool_use` 블록)이 있습니다. Responses 라우트는 다른 어댑터에서 직렬화하므로 영향을 받지 않습니다.
+
 ## 이것은 무엇인가
 
 장시간 실행되는 에이전트 작업은 대량의 도구 출력을 축적합니다. 이커뮤니티 플러그인은 DeepSeek Harness 코어를 수정하지 않고, 선택 가능하고 감사 가능한 도구 결과 컨텍스트 압축 정책을 제공합니다:
@@ -44,6 +47,16 @@
 동일한 설정 섹션에서 압축 프로파일 선택, Auto Compact 트리거 레벨 조정, 코드 스켈레톤 압축 토글을 모두 처리할수있습니다. 토글은 변경시즉시 저장되며, 다시 불러올때저장된 상태가 표시됩니다.
 
 ![Context Compression Selector 설정 UI](docs/assets/context-compression-selector-settings.png)
+
+## 모니터링 UI
+
+압축 실행 중 플러그인은 절약량의 라이브 뷰를 제공합니다: **압축 모니터링** 패널(순/총 절약, 상계, 컨텍스트 점유, 캐시 적중률, 비용 추정, 턴 말미 의도 요약 상태를 표시하며 패널에서 현재 세션의 복구/비활성화 직접 가능)과 세션의 컨텍스트 추세 차트.
+
+![압축 모니터링 패널](assets/board.png)
+
+압축 중인 세션의 컨텍스트 추세: 단계/턴별 토큰 구성과 시간 오버레이. 가위 마커는 절감 착지점을 표시합니다.
+
+![컨텍스트 추세 차트](assets/context.png)
 
 ## 설치
 

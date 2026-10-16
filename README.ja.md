@@ -14,6 +14,9 @@
 > [!IMPORTANT]
 > 本プロジェクトは **DeepSeek モデルのみ**をサポートします。可逆的な計測と非可逆圧縮は、同梱の DeepSeek 公式トークナイザー（`deepseek-v4-flash`、`deepseek-v4-pro`、`deepseek-v4-flash-vision-exp`）に依存します。それ以外は fail-open で動作し、元のツール結果を保持します。安全モデルの詳細は[アップストリームの README](https://github.com/WilliamShi666/dsh-context-compression-selector#model-support-and-safety) を参照してください。
 
+> [!TIP]
+> **推奨ルート：カスタムの Responses API エンドポイント。** モデル接続は、公式アカウントの Messages API ルートではなく、OpenAI 互換のカスタムエンドポイント（API-key ゲートウェイの `/v1/responses`）の利用を推奨します。公式ルートにはプラグイン側では修復できない既知の resume-replay 400（例：対応する `tool_result` を欠く `tool_use` ブロック）があります。Responses ルートは別アダプターでシリアライズされるため影響を受けません。
+
 ## これは何か
 
 長時間稼働するエージェントタスクは大量のツール出力を蓄積します。本コミュニティプラグインは、DeepSeek Harness のコアを改変することなく、選択可能で監査可能なツール結果コンテキスト圧縮ポリシーを提供します：
@@ -44,6 +47,16 @@
 同じ設定セクションで、圧縮プロファイルの選択、Auto Compact トリガーレベルの調整、コードスケルトン圧縮のトグルが行えます。トグルは変更時に即保存され、再読み込み時には保存済みの状態が表示されます。
 
 ![Context Compression Selector 設定 UI](docs/assets/context-compression-selector-settings.png)
+
+## モニタリング UI
+
+圧縮の実行中、プラグインは節約量のライブビューを提供します：**圧縮モニター**パネル（純節約/総節約、相殺、コンテキスト占有、キャッシュヒット率、コスト見積もり、ターン末尾の意図サマリー状態を表示し、パネル内で現在のセッションの再開/無効化を上書き可能）と、セッションのコンテキストトレンドチャート。
+
+![圧縮モニターパネル](assets/board.png)
+
+圧縮中のセッションのコンテキストトレンド：ステップ/ターン別のトークン構成とタイミングオーバーレイ。ハサミマーカーは削減の着地点を示します。
+
+![コンテキストトレンドチャート](assets/context.png)
 
 ## インストール
 

@@ -15,6 +15,9 @@
 > [!IMPORTANT]
 > 本项目仅支持 **DeepSeek 模型**。无损测量与有损压缩依赖内置的 DeepSeek 官方 tokenizer（`deepseek-v4-flash`、`deepseek-v4-pro`、`deepseek-v4-flash-vision-exp`）。其余模型一律 fail-open 并保留原始工具结果。完整安全模型见[上游 README](https://github.com/WilliamShi666/dsh-context-compression-selector#model-support-and-safety)。
 
+> [!TIP]
+> **推荐接入方式：自定义 Responses API 端点。** 接入模型时建议走 OpenAI 兼容的自定义端点（API-key 网关的 `/v1/responses`），而不是官方账号的 Messages API 路由：官方路由存在已知、插件侧无法修复的 resume-replay 400（如 `tool_use` 缺少配对 `tool_result`）；Responses 路由经由另一套 adapter 序列化，不受影响。
+
 ## 它是什么
 
 长时运行的 agent 任务会积累大量工具输出。本社区插件在不修改 DeepSeek Harness 核心的前提下，提供可选、可审计的工具结果上下文压缩策略：
@@ -45,6 +48,16 @@
 在同一设置区内选择压缩 Profile、调整 Auto Compact 触发水位，并开关代码骨架压缩。开关即改即存，刷新后显示已保存状态。
 
 ![Context Compression Selector 设置界面](docs/assets/context-compression-selector-settings.png)
+
+## 监控界面
+
+压缩运行时，插件提供节省量的实时视图：**压缩监控**悬浮面板——净节省/毛节省/抵消/上下文占用/缓存命中率/成本估算/回合末意图摘要状态，面板内可直接对当前会话恢复或停用——以及会话的上下文趋势图。
+
+![压缩监控面板](assets/board.png)
+
+压缩会话的上下文趋势：逐步骤/轮次的 token 组成与耗时叠加，剪刀标记指示裁剪/折叠落点。
+
+![上下文趋势图](assets/context.png)
 
 ## 安装
 
