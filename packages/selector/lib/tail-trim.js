@@ -1,5 +1,28 @@
 import { r as hostGenerationSnapshot } from "./host-generation.js";
-import { createUserMessage } from "@deepseek-ai/dsh-llm";
+//#region src/compat/llm-messages.ts
+/** Recursive `Object.freeze` over own enumerable properties (arrays included). */
+function deepFreeze(value) {
+	if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+		Object.freeze(value);
+		for (const nested of Object.values(value)) deepFreeze(nested);
+	}
+	return value;
+}
+/**
+* Detach and deep-freeze a message whose identity already exists — the host
+* factory is `deepFreeze(structuredClone(message))`, byte-for-byte.
+*/
+function freezeMessage(message) {
+	return deepFreeze(structuredClone(message));
+}
+function createUserMessage(input) {
+	return deepFreeze(structuredClone({
+		...input,
+		role: "user",
+		id: crypto.randomUUID()
+	}));
+}
+//#endregion
 //#region src/runtime/session-events.ts
 /**
 * Read one immutable Session event snapshot.
@@ -208,4 +231,4 @@ function sameNumbers(left, right) {
 	return left !== void 0 && left.length === right.length && left.every((value, index) => value === right[index]);
 }
 //#endregion
-export { validatePublishedTailTrim as a, eventBySeq as c, tailTrimStub as i, sessionEvents as l, tailTrimMessage as n, compressionMessageSource as o, tailTrimRef as r, viewToolResult as s, parseTailTrimRef as t };
+export { validatePublishedTailTrim as a, eventBySeq as c, freezeMessage as d, tailTrimStub as i, sessionEvents as l, tailTrimMessage as n, compressionMessageSource as o, tailTrimRef as r, viewToolResult as s, parseTailTrimRef as t, createUserMessage as u };

@@ -11,7 +11,11 @@
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { createUserMessage, freezeMessage } from '@deepseek-ai/dsh-llm'
+// dsh-llm 是 optional peer：official-clone profile 的模块图解析不到它，静态
+// value import 在 ESM 链接期直接 ERR_MODULE_NOT_FOUND 拖死整个插件挂载（
+// packed-install e2e seedSettings 实证，2026-10-16）。工厂语义极小且稳定
+// （clone → brand id → deepFreeze），携带本地副本，与 0.9.3 SessionSeq 软取同族。
+import { createUserMessage, freezeMessage } from './compat/llm-messages.ts'
 import type { ContentBlock, ToolCallId, UserMessage } from '@deepseek-ai/dsh-llm'
 // ≤0.1.1 宿主 loader 模块表的 dsh-session 没有 SessionSeq 运行时导出——静态
 // named import 在 ESM 链接期即炸，loader entry（tool-result-pruner）mount 失败
