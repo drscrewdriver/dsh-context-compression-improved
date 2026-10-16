@@ -15,7 +15,7 @@
 > 本プロジェクトは **DeepSeek モデルのみ**をサポートします。可逆的な計測と非可逆圧縮は、同梱の DeepSeek 公式トークナイザー（`deepseek-v4-flash`、`deepseek-v4-pro`、`deepseek-v4-flash-vision-exp`）に依存します。それ以外は fail-open で動作し、元のツール結果を保持します。安全モデルの詳細は[アップストリームの README](https://github.com/WilliamShi666/dsh-context-compression-selector#model-support-and-safety) を参照してください。
 
 > [!TIP]
-> **推奨ルート：カスタムの Responses API エンドポイント。** モデル接続は、公式アカウントの Messages API ルートではなく、OpenAI 互換のカスタムエンドポイント（API-key ゲートウェイの `/v1/responses`）の利用を推奨します。公式ルートにはプラグイン側では修復できない既知の resume-replay 400（例：対応する `tool_result` を欠く `tool_use` ブロック）があります。Responses ルートは別アダプターでシリアライズされるため影響を受けません。
+> **推奨の接続方法：API-key で DeepSeek をカスタム Responses API 経由に接続する。** 公式アカウントの Messages API ルートではなく、カスタムの OpenAI 互換エンドポイント（`/v1/responses`）の利用を推奨します。Anthropic 形式のメッセージ・シリアライズを経由しないためメッセージ形式に起因する問題が発生せず、`tool_use`/`tool_result` のペアリング検証（公式ルートの resume-replay 400 はプラグイン側では修復不可）を回避できます。また、時間に応じてエンドポイントノードを切り替えてもセッションを継続できます。
 
 ## これは何か
 

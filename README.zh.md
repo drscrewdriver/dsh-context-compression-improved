@@ -16,7 +16,7 @@
 > 本项目仅支持 **DeepSeek 模型**。无损测量与有损压缩依赖内置的 DeepSeek 官方 tokenizer（`deepseek-v4-flash`、`deepseek-v4-pro`、`deepseek-v4-flash-vision-exp`）。其余模型一律 fail-open 并保留原始工具结果。完整安全模型见[上游 README](https://github.com/WilliamShi666/dsh-context-compression-selector#model-support-and-safety)。
 
 > [!TIP]
-> **推荐接入方式：自定义 Responses API 端点。** 接入模型时建议走 OpenAI 兼容的自定义端点（API-key 网关的 `/v1/responses`），而不是官方账号的 Messages API 路由：官方路由存在已知、插件侧无法修复的 resume-replay 400（如 `tool_use` 缺少配对 `tool_result`）；Responses 路由经由另一套 adapter 序列化，不受影响。
+> **推荐接入方式：用 API key 以自定义 Responses API 连接 DeepSeek。** 建议走自定义 OpenAI 兼容端点（`/v1/responses`）而不是官方账号的 Messages API 路由：前者不经过 Anthropic 风格的消息序列化，不会因为 message 格式而出现问题，可避开 `tool_use`/`tool_result` 配对校验限制（官方路由 resume-replay 时的 400 插件侧无法修复）；也便于按时间切换节点后接续会话。
 
 ## 它是什么
 

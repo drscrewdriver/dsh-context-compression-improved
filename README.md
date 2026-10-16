@@ -16,7 +16,7 @@
 > This project supports **DeepSeek models only**. Lossless measurement and lossy compression depend on the bundled official DeepSeek tokenizers (`deepseek-v4-flash`, `deepseek-v4-pro`, `deepseek-v4-flash-vision-exp`). Everything else fails open and keeps original tool results. See the [upstream README](https://github.com/WilliamShi666/dsh-context-compression-selector#model-support-and-safety) for the full safety model.
 
 > [!TIP]
-> **Recommended route: a custom Responses API endpoint.** When wiring up models, prefer an OpenAI-compatible custom endpoint (the API-key gateway's `/v1/responses`) over the official-account Messages API route. The official route has known resume-replay 400s (e.g. `tool_use` blocks without a matching `tool_result`) that cannot be repaired from the plugin side; the Responses route serializes through a different adapter and is unaffected.
+> **Recommended: connect DeepSeek with your own API key via a custom Responses API endpoint.** Prefer a custom OpenAI-compatible endpoint (`/v1/responses`) over the official-account Messages API route: it does not go through the Anthropic-style message serialization, so requests never trip message-format issues or `tool_use`/`tool_result` pairing validation (the official route's resume-replay 400s cannot be repaired from the plugin side), and you can switch endpoint nodes over time and keep existing sessions running.
 
 ## What it is
 

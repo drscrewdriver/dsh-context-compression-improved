@@ -15,7 +15,7 @@
 > 이 프로젝트는 **DeepSeek 모델만** 지원합니다. 손실 없는 측정과 손실 압축은 번들된 DeepSeek 공식 토크나이저(`deepseek-v4-flash`, `deepseek-v4-pro`, `deepseek-v4-flash-vision-exp`)에 의존합니다. 그외의 경우 fail-open으로 동작하며 원본 도구 결과를 유지합니다. 전체 안전 모델은 [업스트림 README](https://github.com/WilliamShi666/dsh-context-compression-selector#model-support-and-safety)를 참고하세요.
 
 > [!TIP]
-> **권장 라우트: 사용자 정의 Responses API 엔드포인트.** 모델 연결 시 공식 계정 Messages API 라우트 대신 OpenAI 호환 사용자 정의 엔드포인트(API-key 게이트웨이의 `/v1/responses`)를 사용하세요. 공식 라우트에는 플러그인 쪽에서 고칠 수 없는 알려진 resume-replay 400(예: 대응하는 `tool_result`가 없는 `tool_use` 블록)이 있습니다. Responses 라우트는 다른 어댑터에서 직렬화하므로 영향을 받지 않습니다.
+> **추천 연결 방식: API-key로 DeepSeek을 사용자 정의 Responses API에 연결하세요.** 공식 계정 Messages API 라우트 대신 사용자 정의 OpenAI 호환 엔드포인트(`/v1/responses`)를 사용하세요. Anthropic 스타일 메시지 직렬화를 거치지 않으므로 메시지 형식으로 인한 문제가 발생하지 않고, `tool_use`/`tool_result` 짝 검증 제한(공식 라우트의 resume-replay 400은 플러그인 쪽에서 수리 불가)을 회피할 수 있습니다. 또한 시간에 따라 엔드포인트 노드를 전환해도 세션을 이어서 사용할 수 있습니다.
 
 ## 이것은 무엇인가
 
