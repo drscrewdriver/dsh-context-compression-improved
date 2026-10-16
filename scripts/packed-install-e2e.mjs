@@ -838,10 +838,10 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
     // only). Install all three from the mock registry so the previous release
     // can link; the post-up legs run on the candidate and need none of them.
     for (const peer of ['@deepseek-ai/dsh-llm', '@deepseek-ai/dsh-session', '@deepseek-ai/dsh-tools']) {
-      await run('pnpm', ['add', '--no-frozen-lockfile',
+      await run('pnpm', ['add',
         `${peer}@${rootManifest.devDependencies[peer]}`,
         '--registry', registry,
-      ], { cwd: join(dshHome, 'profiles/web'), env: environment })
+      ], { cwd: join(dshHome, 'profiles/web'), env: { ...environment, npm_config_frozen_lockfile: 'false' } })
     }
     const beforeUp = profilePackages()
     if (beforeUp.selector.version !== upgradeFrom) {
