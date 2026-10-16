@@ -1,9 +1,8 @@
 import { B as decimalRateNanoUnits, F as recordIntentFold, H as resolveOfficialDeepSeekPrice, I as recordRecertified, L as recordScore, M as getSummaryOverride, N as invalidateOnTaskChange, O as evaluateIntentGate, P as observeIntentEnabled, T as observeContextUsage, U as getSavingsLedger, V as priceOfficialDeepSeekUsage, W as savingsHash, _ as resolveCustomPolicy, b as COMPRESSION_PROFILES, c as charsToTokens, d as isValidAutoCompactThresholdPercent, f as parseContextCompressionSettings, g as DEFAULT_CUSTOM_COMPRESSION_POLICY, h as CustomCompressionPolicySchema, i as DEFAULTS, k as getAdvisorState, l as codePointLength, m as resolvePolicy, n as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, o as PRUNE_MARKER, p as resolveConfig, r as ContextCompressionSettingsSchema, s as charsForTokens, t as AUTO_COMPACT_THRESHOLD_LIMITS, u as isCompressionProfile, v as assertNever, y as deepFreeze, z as DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION } from "./config.js";
-import { a as validatePublishedTailTrim, c as eventBySeq, i as tailTrimStub, l as sessionEvents, n as tailTrimMessage, o as compressionMessageSource, r as tailTrimRef, s as viewToolResult, t as parseTailTrimRef } from "./tail-trim.js";
+import { a as validatePublishedTailTrim, c as eventBySeq, d as freezeMessage, i as tailTrimStub, l as sessionEvents, n as tailTrimMessage, o as compressionMessageSource, r as tailTrimRef, s as viewToolResult, t as parseTailTrimRef, u as createUserMessage } from "./tail-trim.js";
 import z from "@deepseek-ai/schemastery";
 import { createHash } from "node:crypto";
 import { Service } from "@deepseek-ai/cordis";
-import { createUserMessage, freezeMessage } from "@deepseek-ai/dsh-llm";
 import * as dshSessionNamespace from "@deepseek-ai/dsh-session";
 import { readFileSync } from "node:fs";
 import { Tokenizer } from "@huggingface/tokenizers";
