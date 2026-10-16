@@ -829,22 +829,22 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
     if (upgradeFrom === undefined) throw new Error('release gate requires the previous published release for the official lifecycle')
     await dsh('plugin', '--profile', 'web', 'add',
       `dsh-context-compression-improved@${upgradeFrom}`, '--registry', registry)
-    // The published 0.9.x line statically imports three OPTIONAL host peers
-    // from its host-plane runtime (@deepseek-ai/dsh-llm, dsh-session, dsh-tools
-    // — the candidate no longer does; local compat factories since the
-    // ERR_MODULE_NOT_FOUND fix). Boot probes resolve them through the host
+    // The published 0.9.x line statically imports OPTIONAL host peers from
+    // its host-plane runtime (dsh-llm/dsh-session/dsh-tools, and their own
+    // peer closure pulls in more — dsh-scope etc.; the candidate no longer
+    // imports any of them — local compat factories since the
+    // ERR_MODULE_NOT_FOUND fix). Boot probes resolve peers through the host
     // loader, but the raw-node seed below resolves through the PROFILE tree,
     // where optional peers never land (pnpm auto-installs non-optional peers
-    // only). Install them from the mock registry so the previous release can
-    // link. cordis rides along because this add reifies the profile tree from
-    // its manifest and would otherwise prune the CLI's auto-installed peer
-    // phantom (the plugin's own up re-adds it for the post-up proofs).
-    for (const peer of ['@deepseek-ai/cordis', '@deepseek-ai/dsh-llm', '@deepseek-ai/dsh-session', '@deepseek-ai/dsh-tools']) {
-      await run('pnpm', ['add',
-        `${peer}@${rootManifest.devDependencies[peer]}`,
-        '--registry', registry,
-      ], { cwd: join(dshHome, 'profiles/web'), env: { ...environment, npm_config_frozen_lockfile: 'false' } })
-    }
+    // only). Mirror the consumer leg's proven pattern: install the full
+    // pinned @deepseek-ai/* host closure into the profile so the previous
+    // release can link. cordis rides along because this add reifies the tree
+    // from the manifest and would otherwise prune the CLI's auto-installed
+    // peer phantom (the plugin's own up re-adds it for the post-up proofs).
+    await run('pnpm', ['add', ...officialHostPackages, '--registry', registry], {
+      cwd: join(dshHome, 'profiles/web'),
+      env: { ...environment, npm_config_frozen_lockfile: 'false' },
+    })
     const beforeUp = profilePackages()
     if (beforeUp.selector.version !== upgradeFrom) {
       throw new Error(`official lifecycle started on ${String(beforeUp.selector.version)}, expected ${upgradeFrom}`)
