@@ -835,9 +835,11 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
     // ERR_MODULE_NOT_FOUND fix). Boot probes resolve them through the host
     // loader, but the raw-node seed below resolves through the PROFILE tree,
     // where optional peers never land (pnpm auto-installs non-optional peers
-    // only). Install all three from the mock registry so the previous release
-    // can link; the post-up legs run on the candidate and need none of them.
-    for (const peer of ['@deepseek-ai/dsh-llm', '@deepseek-ai/dsh-session', '@deepseek-ai/dsh-tools']) {
+    // only). Install them from the mock registry so the previous release can
+    // link. cordis rides along because this add reifies the profile tree from
+    // its manifest and would otherwise prune the CLI's auto-installed peer
+    // phantom (the plugin's own up re-adds it for the post-up proofs).
+    for (const peer of ['@deepseek-ai/cordis', '@deepseek-ai/dsh-llm', '@deepseek-ai/dsh-session', '@deepseek-ai/dsh-tools']) {
       await run('pnpm', ['add',
         `${peer}@${rootManifest.devDependencies[peer]}`,
         '--registry', registry,
