@@ -829,6 +829,20 @@ async function runOfficialCloneCliSmoke(referenceRoot, registry, upgradeFrom, ca
     if (upgradeFrom === undefined) throw new Error('release gate requires the previous published release for the official lifecycle')
     await dsh('plugin', '--profile', 'web', 'add',
       `dsh-context-compression-improved@${upgradeFrom}`, '--registry', registry)
+    // The published 0.9.x line statically imports three OPTIONAL host peers
+    // from its host-plane runtime (@deepseek-ai/dsh-llm, dsh-session, dsh-tools
+    // — the candidate no longer does; local compat factories since the
+    // ERR_MODULE_NOT_FOUND fix). Boot probes resolve them through the host
+    // loader, but the raw-node seed below resolves through the PROFILE tree,
+    // where optional peers never land (pnpm auto-installs non-optional peers
+    // only). Install all three from the mock registry so the previous release
+    // can link; the post-up legs run on the candidate and need none of them.
+    for (const peer of ['@deepseek-ai/dsh-llm', '@deepseek-ai/dsh-session', '@deepseek-ai/dsh-tools']) {
+      await run('pnpm', ['add', '--no-frozen-lockfile',
+        `${peer}@${rootManifest.devDependencies[peer]}`,
+        '--registry', registry,
+      ], { cwd: join(dshHome, 'profiles/web'), env: environment })
+    }
     const beforeUp = profilePackages()
     if (beforeUp.selector.version !== upgradeFrom) {
       throw new Error(`official lifecycle started on ${String(beforeUp.selector.version)}, expected ${upgradeFrom}`)
