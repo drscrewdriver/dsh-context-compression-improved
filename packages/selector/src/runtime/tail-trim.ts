@@ -1,6 +1,7 @@
 /** Plugin-owned TailTrim publication protocol over official Session events. */
 
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+// 本地消息工厂，理由同 pruner.ts 头部注释（optional peer 静态导入会炸 ESM 链接期）。
+import { createUserMessage } from '../compat/llm-messages.ts'
 import type { ContentBlock, UserMessage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { sessionEvents } from './session-events.ts'

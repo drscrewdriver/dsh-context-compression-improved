@@ -209,6 +209,18 @@ function asWebServer(value: unknown): WebServerLike | undefined {
 }
 
 /**
+ * `webServer.register` throws `duplicate exact route` when the same lib is
+ * mounted twice by the host (two plugin ids resolving to one module: the
+ * package-root manifest and the nested selector manifest). The other mount
+ * already owns every path in the batch, so the collision is a success from
+ * the plugin's point of view — without this, the losing arm logs a stack-
+ * heavy warn pair on every boot (observed 0.9.5 on 0.2.0-rc.2, savings and
+ * monitor).
+ */
+const isDuplicateRouteError = (error: unknown): boolean =>
+  String((error as Error)?.message ?? error).includes('duplicate exact route')
+
+/**
  * Serve `GET /api/dsh-context-compression-improved/estimator-catalog` — the
  * settings card's host-route dropdowns (live provider/model groups from the DSH
  * `llm` service plus the effective selection). Best effort: without the
@@ -285,6 +297,11 @@ function registerEstimatorCatalogRoute(ctx: Context): void {
       )
       log('info', 'context-compression estimator catalog route registered (%s): %s', channel, ESTIMATOR_CATALOG_ROUTES.join(', '))
     } catch (error) {
+      if (isDuplicateRouteError(error)) {
+        registered = true
+        log('info', 'context-compression estimator catalog route already registered by another mount (%s)', channel)
+        return
+      }
       log('warn', 'context-compression estimator catalog route registration failed (%s): %o', channel, error)
     }
   }
@@ -359,6 +376,11 @@ function registerSavingsRoute(ctx: Context): void {
       )
       log('info', 'context-compression savings route registered (%s): %s', channel, SAVINGS_ROUTES.join(', '))
     } catch (error) {
+      if (isDuplicateRouteError(error)) {
+        registered = true
+        log('info', 'context-compression savings route already registered by another mount (%s)', channel)
+        return
+      }
       log('warn', 'context-compression savings route registration failed (%s): %o', channel, error)
     }
   }
@@ -472,6 +494,11 @@ export function registerMonitorRoute(ctx: Context): void {
       )
       log('info', 'context-compression monitor route registered (%s): %s', channel, MONITOR_ROUTES.join(', '))
     } catch (error) {
+      if (isDuplicateRouteError(error)) {
+        registered = true
+        log('info', 'context-compression monitor route already registered by another mount (%s)', channel)
+        return
+      }
       log('warn', 'context-compression monitor route registration failed (%s): %o', channel, error)
     }
   }
