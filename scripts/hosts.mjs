@@ -2,8 +2,10 @@
  * hosts.mjs —— 宿主声明唯一事实源（enum-peer 家族范式，见
  * improve-dsh-plugins/enum-peer-migration/INDEX.md §A）。
  *
- * 15 rc 全量六线（0.1.0-rc.2 → 0.2.0-rc.2）。compat-legacy 单版本计划
- * （.agents/plans/cci-compat-legacy-15rc/）的 Gate 0 实跑结论：
+ * 16 rc 全量七线（0.1.0-rc.2 → 0.2.1-rc.1）。0.1.0→0.2.0 六线口径沿用
+ * compat-legacy 单版本计划（.agents/plans/cci-compat-legacy-15rc/）Gate 0 实跑结论；
+ * 0.2.1-rc.1 为七线补票（dsh-021-rc1-adapt），闸门只读 engines.dsh、peers 为
+ * 一致性面（optional），逐包存在域核对见适配计划 findings。
  *   - 0.1.0-rc.2 格 cci 0.8.0 + 探针 boot 绿（findings B2.3）——无 0.1.0 降级依据；
  *   - 三干净格证据目录 _tmp-audit/spike-cells/。
  *
@@ -27,6 +29,7 @@ export const supportedHosts = Object.freeze([
 	'0.1.7-rc.2',
 	'0.2.0-rc.1',
 	'0.2.0-rc.2',
+	'0.2.1-rc.1',
 ])
 export const peerRange = supportedHosts.join(' || ')
 /** 显式偏离：devDeps 钉 rc.1（见文件头）。 */

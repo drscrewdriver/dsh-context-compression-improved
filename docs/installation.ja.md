@@ -3,13 +3,13 @@
 > [English](installation.md) · [中文](installation.zh.md) · [日本語](installation.ja.md) · [한국어](installation.ko.md) · [Français](installation.fr.md) · [Deutsch](installation.de.md) · [Italiano](installation.it.md) · [Русский](installation.ru.md) · [Español](installation.es.md)
 
 このガイドではソースからフォークをインストールします。フォークは npm にも公開済みです（dist-tag
-`latest`（単一バージョンがサポート対象の全 Harness ライン 0.1.0-rc.2〜0.2.0-rc.2 をカバー））。パッケージ名は意図的に上流と同一です（`dsh-context-compression-improved` の単一パッケージで、
+`latest`（単一バージョンがサポート対象の全 Harness ライン 0.1.0-rc.2〜0.2.1-rc.1 をカバー））。パッケージ名は意図的に上流と同一です（`dsh-context-compression-improved` の単一パッケージで、
 以前は別パッケージだった runtime も同梱されます）。
 
 ## 前提条件
 
 - Node `^22.19.0 || >=24` と pnpm `11.7.0`（`corepack enable` で `packageManager` の固定バージョンが使われます）。
-- プラグインの 15-rc peer 列挙に含まれる DeepSeek Harness（`0.1.0-rc.2`〜`0.2.0-rc.2` のいずれか）。
+- プラグインの 16-rc peer 列挙に含まれる DeepSeek Harness（`0.1.0-rc.2`〜`0.2.1-rc.1` のいずれか）。
 - DeepSeek V4 モデルルート（`deepseek-v4-flash`、`deepseek-v4-pro`、`deepseek-v4-flash-vision-exp`）。コードスケルトンゲートを含む非可逆圧縮には同梱の正確なトークナイザーが必要で、その他のルートは fail-open で元のツール結果を保持します。
 - Git。
 
