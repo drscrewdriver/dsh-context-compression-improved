@@ -2,13 +2,13 @@
 
 > [English](installation.md) · [中文](installation.zh.md) · [日本語](installation.ja.md) · [한국어](installation.ko.md) · [Français](installation.fr.md) · [Deutsch](installation.de.md) · [Italiano](installation.it.md) · [Русский](installation.ru.md) · [Español](installation.es.md)
 
-本教程从源码安装 fork。fork 亦已发布到 npm，dist-tag 为 `latest`（单一版本通吃全部受支持的 Harness 线：0.1.0-rc.2 至 0.2.0-rc.2）；包名有意与上游保持一致：
+本教程从源码安装 fork。fork 亦已发布到 npm，dist-tag 为 `latest`（单一版本通吃全部受支持的 Harness 线：0.1.0-rc.2 至 0.2.1-rc.1）；包名有意与上游保持一致：
 `dsh-context-compression-improved`（单一包 —— 原先独立发布的 runtime 包已并入其中）。
 
 ## 前置条件
 
 - Node `^22.19.0 || >=24` 与 pnpm `11.7.0`（`corepack enable` 会按 `packageManager` 字段使用固定版本）。
-- 处于插件 15-rc peer 枚举范围内的 DeepSeek Harness 安装（`0.1.0-rc.2` 至 `0.2.0-rc.2` 任意一版）。
+- 处于插件 16-rc peer 枚举范围内的 DeepSeek Harness 安装（`0.1.0-rc.2` 至 `0.2.1-rc.1` 任意一版）。
 - DeepSeek 模型路由。有损压缩——包括代码骨架门——按字符基准决策，不再要求内建精确 tokenizer；存在内建 tokenizer 时其 exact 计数仅作遥测记录，其他路由 fail-open 并保留原始工具结果。
 - Git。
 
