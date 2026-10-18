@@ -3,13 +3,13 @@
 > [English](installation.md) · [中文](installation.zh.md) · [日本語](installation.ja.md) · [한국어](installation.ko.md) · [Français](installation.fr.md) · [Deutsch](installation.de.md) · [Italiano](installation.it.md) · [Русский](installation.ru.md) · [Español](installation.es.md)
 
 이 가이드는 소스에서 포크를 설치합니다. 포크는 npm에도 게시되어 있습니다(dist-tag
-`latest`(단일 버전이 지원되는 모든 Harness 라인 0.1.0-rc.2~0.2.1-rc.1를 커버)). 패키지 이름은 의도적으로 업스트림과 동일합니다(`dsh-context-compression-improved` 단일 패키지이며,
+`latest`(단일 버전이 지원되는 모든 Harness 라인 0.1.0-rc.2~0.2.1-rc.2를 커버)). 패키지 이름은 의도적으로 업스트림과 동일합니다(`dsh-context-compression-improved` 단일 패키지이며,
 예전에 별도 패키지였던 runtime이 함께 포함됩니다).
 
 ## 사전 요구 사항
 
 - Node `^22.19.0 || >=24` 및 pnpm `11.7.0`(`corepack enable`은 `packageManager`의 고정 버전을 사용합니다).
-- 플러그인의 16-rc peer 열거에 포함되는 DeepSeek Harness 설치(`0.1.0-rc.2`~`0.2.1-rc.1`).
+- 플러그인의 17-rc peer 열거에 포함되는 DeepSeek Harness 설치(`0.1.0-rc.2`~`0.2.1-rc.2`).
 - DeepSeek V4 모델 경로(`deepseek-v4-flash`, `deepseek-v4-pro`, `deepseek-v4-flash-vision-exp`). 코드 스켈레톤 게이트를 포함한 손실 압축은 번들된 정확한 토크나이저가 필요하며, 그 외의 경로는 fail-open으로 원본 도구 결과를 유지합니다.
 - Git.
 
