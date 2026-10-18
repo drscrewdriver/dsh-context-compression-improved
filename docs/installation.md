@@ -3,14 +3,14 @@
 > [English](installation.md) · [中文](installation.zh.md) · [日本語](installation.ja.md) · [한국어](installation.ko.md) · [Français](installation.fr.md) · [Deutsch](installation.de.md) · [Italiano](installation.it.md) · [Русский](installation.ru.md) · [Español](installation.es.md)
 
 This guide installs the fork from source. The fork is published to npm as
-`dsh-context-compression-improved` under the `latest` — one version serves every supported Harness line, `0.1.0-rc.2` through `0.2.1-rc.1` dist-tag; the package name
+`dsh-context-compression-improved` under the `latest` — one version serves every supported Harness line, `0.1.0-rc.2` through `0.2.1-rc.2` dist-tag; the package name
 intentionally stays upstream's. The runtime that used to be a second package is now part of
 it, so one install brings the whole stack.
 
 ## Prerequisites
 
 - Node `^22.19.0 || >=24` and pnpm `11.7.0` (`corepack enable` picks the pinned version from `packageManager`).
-- A DeepSeek Harness installation within the plugin's 16-rc peer enum (any of `0.1.0-rc.2` through `0.2.1-rc.1`).
+- A DeepSeek Harness installation within the plugin's 17-rc peer enum (any of `0.1.0-rc.2` through `0.2.1-rc.2`).
 - A DeepSeek model route. Lossy compression — including the code-skeleton gate — decides on the character basis, so no bundled-tokenizer route requirement remains; when a bundled tokenizer exists its exact counts are recorded as telemetry, and other routes fail open and keep original tool results.
 - Git.
 

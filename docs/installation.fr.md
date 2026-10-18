@@ -3,14 +3,14 @@
 > [English](installation.md) · [中文](installation.zh.md) · [日本語](installation.ja.md) · [한국어](installation.ko.md) · [Français](installation.fr.md) · [Deutsch](installation.de.md) · [Italiano](installation.it.md) · [Русский](installation.ru.md) · [Español](installation.es.md)
 
 Ce guide installe le fork depuis les sources. Le fork est aussi publié sur npm sous le
-nom `dsh-context-compression-improved` avec le dist-tag `latest` — une seule version couvre toutes les lignes Harness prises en charge (0.1.0-rc.2 à 0.2.1-rc.1) ; le nom du package
+nom `dsh-context-compression-improved` avec le dist-tag `latest` — une seule version couvre toutes les lignes Harness prises en charge (0.1.0-rc.2 à `0.2.1-rc.2`) ; le nom du package
 reste volontairement celui de l'amont. Le runtime, qui constituait autrefois un second
 package, en fait désormais partie : une seule installation apporte toute la pile.
 
 ## Prérequis
 
 - Node `^22.19.0 || >=24` et pnpm `11.7.0` (`corepack enable` retient la version épinglée du champ `packageManager`).
-- Une installation de DeepSeek Harness dans l'énumération peer 16-rc du plugin (`0.1.0-rc.2` à `0.2.1-rc.1`).
+- Une installation de DeepSeek Harness dans l'énumération peer 17-rc du plugin (`0.1.0-rc.2` à `0.2.1-rc.2`).
 - Une route de modèle DeepSeek. La compression avec perte — y compris la porte squelette de code — décide sur la base de caractères, de sorte qu'aucune exigence de route avec tokenizer fourni ne subsiste ; lorsqu'un tokenizer fourni existe, ses comptages exacts sont enregistrés comme télémétrie, et les autres routes échouent en mode ouvert (fail-open) et conservent les résultats d'outils originaux.
 - Git.
 
