@@ -1,11 +1,13 @@
-import { A as getLastIntentFold, C as estimateSavingsPricing, D as INTENT_GATE_GROWTH_TOKENS, E as INTENT_GATE_FLOOR_FRACTION, M as getSummaryOverride, R as setSummaryOverride, S as buildMonitorSnapshot, U as getSavingsLedger, a as DEFAULT_CONTEXT_COMPRESSION_SETTINGS, j as getObservedIntentEnabled, k as getAdvisorState, n as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, r as ContextCompressionSettingsSchema, w as isSessionOverrideAction, x as applySessionOverride } from "./config.js";
-import { i as noteResolvedSettingsService, n as detectHostGeneration, t as compatLog } from "./host-generation.js";
+import { C as resolveStatsDshHome, Ct as getAdvisorState, Et as getSummaryOverride, G as ContextCompressionSettingsSchema, It as resolveOfficialDeepSeekPrice, Lt as getSavingsLedger, Mt as setSummaryOverride, S as statsPersistenceState, Tt as getObservedIntentEnabled, W as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, _t as isSessionOverrideAction, a as getStatsBackfillStatus, b as ensureStatsStore, bt as INTENT_GATE_FLOOR_FRACTION, c as pauseStatsBackfill, dt as decodeSessionLogBytes, ft as deepSeekV4TokenizerForModel, gt as estimateSavingsPricing, h as getStatsActiveSessionId, ht as drsTotalsFragment, i as discoverBackfillSessionLogs, l as resumeStatsBackfill, mt as buildMonitorSnapshot, p as flushPendingUsageNow, pt as applySessionOverride, q as DEFAULT_CONTEXT_COMPRESSION_SETTINGS, r as configureStatsBackfillTrigger, s as kickStatsBackfillOnRouteHit, t as estimateIntegralMoney, u as cancelPendingUsageFlushes, ut as unavailableTokenCount, vt as mergeCompositionByComponent, wt as getLastIntentFold, x as getStatsStore, xt as INTENT_GATE_GROWTH_TOKENS, y as closeStatsStore } from "./savings-integral.js";
+import { a as noteResolvedSettingsService, i as detectHostGeneration, r as compatLog } from "./tool-result.js";
 import z from "@deepseek-ai/schemastery";
 import { createHash } from "node:crypto";
-import { AsyncLocalStorage } from "node:async_hooks";
-import { chmod, mkdtemp, readFile, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { chmod, mkdtemp, readFile, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { fileURLToPath } from "node:url";
 import { applyEntryPatches, entryListSchema } from "@deepseek-ai/cordis-plugin-include";
 import { dump, load } from "js-yaml";
@@ -76,9 +78,339 @@ async function buildEstimatorCatalog(deps) {
 	};
 }
 //#endregion
+//#region src/runtime/savings-verify.ts
+/**
+* /ccip verify 验算核心:按会话 jsonl 原文独立重算节省六值,与持久 claims 对账。
+*
+* 口径纪律(用户定标):长度 = DeepSeek V4 词表 token,不是字符;tokenizer 资产
+* 不可用时报 unavailable 退化 chars/4 并在 basis 如实标注,绝不冒充精确值。
+* 索引:session uuid × turn/step × token 长度(原始事件与替换事件成对)。
+* 公式:毛 = a−b(原文−替换);全文读回时净 = −b(foldRecall a−(b+R) 下限);
+* 没有小裁剪 = 0。投影核心与 live 路径同一引擎(projectSavingsCore)。
+* 只读纪律:与回填同款,绝不写会话文件。
+*
+* @module dsh-context-compression-improved/runtime/savings-verify
+*/
+const CHARS_PER_TOKEN = 4;
+/** 投影库目录:与 DRS 插件同约定(env DSH_REFERENCE_SESSION_COLLECTOR_DIR > ~/.dsh-reference-session-collector)。 */
+function resolveDrsIndexDir(env = process.env) {
+	const fromEnv = env["DSH_REFERENCE_SESSION_COLLECTOR_DIR"];
+	return fromEnv !== void 0 && fromEnv !== "" ? fromEnv : join(homedir(), ".dsh-reference-session-collector");
+}
+/**
+* 只读探一个会话的 DRS 投影对账值。纪律:DatabaseSync 只读打开,绝不写;
+* 库缺席/表不在/该会话未同步(无 sessions 行)一律 undefined,绝不抛——
+* DRS 未装/未同步时 verify 如实降级为无此行,不冒充数据。
+*/
+function readDrsProjectionTotals(input) {
+	let db;
+	try {
+		db = new DatabaseSync(join(input.indexDir ?? resolveDrsIndexDir(), "projection.db"), { readOnly: true });
+	} catch {
+		return;
+	}
+	try {
+		const session = db.prepare("SELECT basis, synced_at FROM sessions WHERE session_id = ?").get(input.sessionId);
+		if (session === void 0) return void 0;
+		const agg = db.prepare(`SELECT
+         COALESCE(SUM(CASE WHEN kind <> 'recall' AND live = 1 THEN a_tokens - b_tokens END), 0) AS gross_saved,
+         COALESCE(SUM(CASE WHEN kind = 'recall' THEN b_tokens END), 0) AS recall_tokens,
+         COALESCE(SUM(CASE WHEN kind <> 'recall' THEN 1 ELSE 0 END), 0) AS compress_pairs,
+         COALESCE(SUM(CASE WHEN kind = 'recall' THEN 1 ELSE 0 END), 0) AS recall_pairs
+       FROM replaces WHERE session_id = ?`).get(input.sessionId);
+		const grossSaved = typeof agg.gross_saved === "number" ? agg.gross_saved : Number(agg.gross_saved ?? 0);
+		const recallTokens = typeof agg.recall_tokens === "number" ? agg.recall_tokens : Number(agg.recall_tokens ?? 0);
+		return {
+			grossSaved,
+			recallTokens,
+			net: grossSaved - recallTokens,
+			compressPairs: Number(agg.compress_pairs ?? 0),
+			recallPairs: Number(agg.recall_pairs ?? 0),
+			basis: typeof session.basis === "string" && session.basis !== "" ? session.basis : "chars/4",
+			syncedAt: typeof session.synced_at === "string" ? session.synced_at : "?"
+		};
+	} catch {
+		return;
+	} finally {
+		db.close();
+	}
+}
+/** chars/4 兜底计数器(tokenizer 资产缺席时的如实降级)。 */
+function charsCounter() {
+	return () => unavailableTokenCount("chars/4 fallback (tokenizer asset unavailable)");
+}
+/** 解析 DS V4 tokenizer:flash → pro 逐个试,全缺席返回 undefined。 */
+function resolveDsTokenizer() {
+	for (const modelId of ["deepseek-v4-flash", "deepseek-v4-pro"]) {
+		const tokenizer = deepSeekV4TokenizerForModel(modelId);
+		if (tokenizer !== void 0) return (text) => tokenizer.countText(text);
+	}
+}
+/**
+* 单条事件的模型可见文本长度（DS token；富块按 0 计，与投影同款视界）。
+* 双臂视界（horizon v4，与 DRS modelTextBlocks 同形）：data.message.content[]
+* 缺席时退 data.content[]（user/message 与宿主 compact-checkpoint 替身形状；
+* 旧单臂把 checkpoint 摘要全计 0，b 侧漏记）。
+*/
+function eventTextTokens(event, counter) {
+	const data = event.data;
+	const messageContent = data?.message?.content;
+	const content = Array.isArray(messageContent) ? messageContent : Array.isArray(data?.content) ? data.content : void 0;
+	if (!Array.isArray(content)) return 0;
+	let total = 0;
+	for (const block of content) {
+		const text = block?.text;
+		if (typeof text === "string" && text !== "") {
+			const count = counter(text);
+			if (count.kind === "exact-tokenizer") total += count.tokens;
+			else total += Math.ceil(text.length / CHARS_PER_TOKEN);
+		}
+	}
+	return total;
+}
+/** 从目录发现里找目标会话的当前代产物并解码(只读)。 */
+function readTargetSessionEvents(dshHome, sessionId) {
+	const found = discoverBackfillSessionLogs(dshHome).find((entry) => entry.dirSessionId === sessionId);
+	if (found === void 0) return void 0;
+	try {
+		return decodeSessionLogBytes(readFileSync(found.artifact.path)).events;
+	} catch {
+		return;
+	}
+}
+/**
+* 直读一个会话的 DRS 结构索引(T6 深接:CCI 取 turn/step 结构与 token 量的
+* 主源)。纪律同 {@link readDrsProjectionTotals}:只读、库/会话缺席一律
+* undefined 绝不抛,调用方落 jsonl 兜底。
+*/
+function readDrsSessionIndex(input) {
+	let db;
+	try {
+		db = new DatabaseSync(join(input.indexDir ?? resolveDrsIndexDir(), "projection.db"), { readOnly: true });
+	} catch {
+		return;
+	}
+	try {
+		const session = db.prepare("SELECT basis, synced_at, max_seq, turn_count FROM sessions WHERE session_id = ?").get(input.sessionId);
+		if (session === void 0) return void 0;
+		const turnRows = db.prepare(`SELECT turn, COUNT(DISTINCT step) AS steps, SUM(tokens) AS tokens, COUNT(*) AS segments
+       FROM segments WHERE session_id = ? GROUP BY turn ORDER BY turn`).all(input.sessionId);
+		const pairRows = db.prepare("SELECT seq, start_seq, end_seq, a_tokens, b_tokens, kind, turn, step, live FROM replaces WHERE session_id = ? ORDER BY seq").all(input.sessionId);
+		const num = (value) => typeof value === "bigint" ? Number(value) : typeof value === "number" ? value : 0;
+		return {
+			sessionId: input.sessionId,
+			basis: typeof session.basis === "string" && session.basis !== "" ? session.basis : "chars/4",
+			syncedAt: typeof session.synced_at === "string" ? session.synced_at : "?",
+			maxSeq: num(session.max_seq),
+			turnCount: num(session.turn_count),
+			segments: turnRows.reduce((sum, row) => sum + num(row.segments), 0),
+			turns: turnRows.map((row) => ({
+				turn: num(row.turn),
+				steps: num(row.steps),
+				tokens: num(row.tokens),
+				segments: num(row.segments)
+			})),
+			pairs: pairRows.map((row) => ({
+				seq: num(row.seq),
+				startSeq: num(row.start_seq),
+				endSeq: num(row.end_seq),
+				aTokens: num(row.a_tokens),
+				bTokens: num(row.b_tokens),
+				kind: row.kind === "recall" ? "recall" : "compress",
+				turn: num(row.turn),
+				step: num(row.step),
+				live: num(row.live) === 1 ? 1 : 0
+			}))
+		};
+	} catch {
+		return;
+	} finally {
+		db.close();
+	}
+}
+/**
+* 验算一个会话:jsonl 原文 × DS token 口径独立重算,与 claims 对账。
+* @param input.sessionId - 显式指定;缺省 = 运行时活跃指针,再退 store 最近压缩。
+*/
+function verifySessionSavings(input = {}) {
+	const store = getStatsStore();
+	const source = input.sessionId !== void 0 ? "explicit" : getStatsActiveSessionId() !== void 0 ? "runtime-active" : "unresolved";
+	const sessionId = input.sessionId ?? getStatsActiveSessionId() ?? store?.latestActiveSessionId();
+	const empty = {
+		sessionId,
+		source,
+		turns: 0,
+		indexedEvents: 0,
+		pairs: [],
+		indexSource: "jsonl",
+		formulaGross: 0,
+		formulaOffsets: 0,
+		formulaNet: 0,
+		formulaBasis: "n/a",
+		claimsGross: 0,
+		claimsOffsets: 0,
+		claimsNet: 0,
+		claimsBasis: "n/a",
+		verdict: sessionId === void 0 ? "no-session" : "no-jsonl"
+	};
+	if (sessionId === void 0) return empty;
+	const drsIndex = readDrsSessionIndex({ sessionId });
+	const pairs = [];
+	let formulaGross = 0;
+	let formulaOffsets = 0;
+	let turns = 0;
+	let indexedEvents;
+	let formulaBasis;
+	let indexSource;
+	let turnStructure;
+	let drsTotals;
+	if (drsIndex !== void 0) {
+		indexSource = "drs";
+		formulaBasis = drsIndex.basis;
+		turns = drsIndex.turnCount;
+		indexedEvents = drsIndex.segments;
+		turnStructure = drsIndex.turns;
+		for (const pair of drsIndex.pairs) {
+			pairs.push({
+				turn: pair.turn,
+				step: pair.step,
+				seq: pair.seq,
+				originalTokens: pair.aTokens,
+				replacementTokens: pair.bTokens,
+				gross: pair.aTokens - pair.bTokens
+			});
+			if (pair.kind === "compress") {
+				if (pair.live === 1) formulaGross += pair.aTokens - pair.bTokens;
+			} else formulaOffsets += pair.bTokens;
+		}
+		drsTotals = {
+			grossSaved: formulaGross,
+			recallTokens: formulaOffsets,
+			net: formulaGross - formulaOffsets,
+			compressPairs: drsIndex.pairs.filter((pair) => pair.kind === "compress").length,
+			recallPairs: drsIndex.pairs.filter((pair) => pair.kind === "recall").length,
+			basis: drsIndex.basis,
+			syncedAt: drsIndex.syncedAt
+		};
+	} else {
+		indexSource = "jsonl";
+		const dshHome = resolveStatsDshHome(input);
+		const events = existsSync(dshHome) ? readTargetSessionEvents(dshHome, sessionId) : void 0;
+		if (events === void 0 || events.length === 0) return {
+			...empty,
+			verdict: "no-jsonl"
+		};
+		indexedEvents = events.length;
+		const tokenizer = resolveDsTokenizer();
+		const counter = tokenizer ?? charsCounter();
+		formulaBasis = tokenizer !== void 0 ? "ds-token" : "chars/4";
+		const tokensBySeq = /* @__PURE__ */ new Map();
+		let turn = 0;
+		let step = 0;
+		for (const event of events) {
+			const data = event.data;
+			if (event.type === "step/start" && data !== void 0) {
+				if (typeof data.turn === "number") turn = data.turn;
+				if (typeof data.step === "number") step = data.step;
+				turns = Math.max(turns, turn);
+			}
+			tokensBySeq.set(Number(event.seq), eventTextTokens(event, counter));
+		}
+		const covered = /* @__PURE__ */ new Set();
+		const rawPairs = [];
+		for (const event of events) {
+			const op = event.surfaceOp;
+			if (op === null || typeof op !== "object" || op.op !== "replace") continue;
+			const start = Number(op.startSeq);
+			const end = Number(op.endSeq);
+			if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
+			let a = 0;
+			for (let seq = start; seq <= end; seq += 1) a += tokensBySeq.get(seq) ?? 0;
+			const b = tokensBySeq.get(Number(event.seq)) ?? 0;
+			rawPairs.push({
+				seq: Number(event.seq),
+				a,
+				b
+			});
+			for (let seq = start; seq <= end; seq += 1) covered.add(seq);
+		}
+		for (const { seq, a, b } of rawPairs) {
+			if (b <= a) {
+				if (!covered.has(seq)) formulaGross += a - b;
+			} else formulaOffsets += b;
+			pairs.push({
+				turn,
+				step,
+				seq,
+				originalTokens: a,
+				replacementTokens: b,
+				gross: a - b
+			});
+		}
+	}
+	let claimsGross = 0;
+	let claimsOffsets = 0;
+	let claimsBasis = "n/a";
+	if (store !== null) {
+		const agg = store.perSessionAggregates().find((row) => row.sessionId === sessionId);
+		if (agg !== void 0) {
+			claimsGross = agg.gross.exact + agg.gross.estimated;
+			claimsOffsets = agg.offsets.exact + agg.offsets.estimated;
+			claimsBasis = agg.gross.exact > 0 ? "exact-tokenizer" : "chars/4";
+		}
+	}
+	const drs = drsTotals ?? readDrsProjectionTotals({ sessionId });
+	const verdict = claimsGross === 0 && claimsOffsets === 0 ? "no-claims" : formulaBasis === "chars/4" ? "cross-basis" : "match";
+	return {
+		sessionId,
+		source,
+		turns,
+		indexedEvents,
+		pairs,
+		indexSource,
+		formulaGross,
+		formulaOffsets,
+		formulaNet: formulaGross - formulaOffsets,
+		formulaBasis,
+		claimsGross,
+		claimsOffsets,
+		claimsNet: claimsGross - claimsOffsets,
+		claimsBasis,
+		...drs === void 0 ? {} : { drs },
+		...turnStructure === void 0 ? {} : { turnStructure },
+		verdict
+	};
+}
+/** 验算报告 → /ccip 文本行(紧凑,面板命令直接回显)。 */
+function formatVerifyReport(report) {
+	if (report.verdict === "no-session") return ["ccip verify: no session to verify"];
+	if (report.verdict === "no-jsonl") return [`ccip verify: session ${report.sessionId ?? "?"} jsonl not found/readable`];
+	const lines = [
+		`ccip verify ${report.sessionId ?? "?"} (${report.source})`,
+		`index(${report.indexSource}): ${report.indexedEvents} events · ${report.turns} turns · ${report.pairs.length} replacement pair(s)`,
+		...report.turnStructure === void 0 ? [] : [`drs turns: ${report.turnStructure.slice(0, 4).map((row) => `t${row.turn}·${row.tokens}tk·${row.steps}s`).join(" · ")}${report.turnStructure.length > 4 ? " · …" : ""}`],
+		...report.pairs.slice(0, 6).map((row) => `  t${row.turn}/s${row.step} seq${row.seq}: a=${row.originalTokens} − b=${row.replacementTokens} = +${row.gross} (${report.formulaBasis})`),
+		`formula(${report.formulaBasis}): gross=${report.formulaGross} recall-offset=${report.formulaOffsets} net=${report.formulaNet}`,
+		`claims(${report.claimsBasis}): gross=${report.claimsGross} recall-offset=${report.claimsOffsets} net=${report.claimsNet}`,
+		...report.drs === void 0 ? ["drs(projection): unavailable (projection.db absent or session not synced)"] : [`drs(projection): gross=${report.drs.grossSaved} recall-offset=${report.drs.recallTokens} net=${report.drs.net} (${report.drs.basis}, synced ${report.drs.syncedAt})`]
+	];
+	if (report.verdict === "no-claims") lines.push("verdict: claims empty for this session (nothing persisted yet)");
+	else if (report.verdict === "cross-basis") lines.push("verdict: tokenizer unavailable — formula fell back to chars/4; compare basis-by-basis only");
+	else {
+		const drift = Math.abs(report.formulaGross - report.claimsGross);
+		const tolerance = Math.max(8, Math.ceil(Math.max(report.formulaGross, 1) * .35));
+		lines.push(drift <= tolerance ? `verdict: match (drift ${drift} within cross-basis tolerance ±${tolerance})` : `verdict: cross-basis drift ${drift} (ds-token vs ${report.claimsBasis}; different metrics, both shown)`);
+	}
+	return lines;
+}
+/** 面板命令入口:解析 + 执行 + 文本化。 */
+function verifySessionSavingsLines(input = {}) {
+	return formatVerifyReport(verifySessionSavings(input));
+}
+//#endregion
 //#region src/runtime/summary-command.ts
 const SUMMARY_COMMAND_NAME = "ctx-summary";
-const USAGE = "Usage: /ctx-summary off|on|status";
+const USAGE$1 = "Usage: /ctx-summary off|on|status";
 /** Parse the raw argument string; `undefined` = unrecognized (usage error). */
 function parseSummaryCommandArgs(rawInput) {
 	const token = rawInput.trim().toLowerCase();
@@ -109,7 +441,7 @@ function sessionIdOf(agent) {
 	return String(session.id);
 }
 /** Best-effort `CommandDefinitionId` brand; `undefined` on stripped hosts (registered without it). */
-async function loadCommandDefinitionId() {
+async function loadCommandDefinitionId$1() {
 	try {
 		return (await import("@deepseek-ai/dsh-commands")).CommandDefinitionId;
 	} catch {
@@ -128,7 +460,7 @@ function registerSummaryCommand(ctx) {
 		if (commands === void 0 || typeof commands.register !== "function") return;
 		(async () => {
 			try {
-				const definitionId = await loadCommandDefinitionId();
+				const definitionId = await loadCommandDefinitionId$1();
 				await commands.register({
 					name: SUMMARY_COMMAND_NAME,
 					description: "Turn-tail intent summary: temporarily disable/resume or inspect status",
@@ -137,7 +469,7 @@ function registerSummaryCommand(ctx) {
 						const args = parseSummaryCommandArgs(typeof invocation.rawInput === "string" ? invocation.rawInput : "");
 						if (args === void 0) return {
 							kind: "error",
-							text: USAGE
+							text: USAGE$1
 						};
 						const sessionId = sessionIdOf(invocation.agent);
 						if (args === "status") {
@@ -368,6 +700,283 @@ function wireSettingsBridge(ctx) {
 		const webServer = asWebServer$1(injected.webServer);
 		if (webServer === void 0) return;
 		register(webServer, "inject");
+	});
+}
+//#endregion
+//#region src/runtime/display-prefs.ts
+/**
+* 面板显示偏好（spec T30）——`/ccip` 命令与 `/savings/sessions` 载荷共享的
+* 进程级状态，meta 表持久（跨重启恢复）。
+*
+* 设计：
+*  - 运行时单份内存状态，首次读取时从 stats meta 延迟加载（store 缺席 = 纯
+*    内存默认值，可见降级语义下偏好只是不持久，功能不受损）；
+*  - 写入走校验器（行开关布尔、mode 枚举、focusSessionId ≤512 或 null），
+*    非法输入静默忽略该字段——显示偏好绝不抛错打扰命令面；
+*  - session 级设置是冻结语义（savings.ts 惯例），面板偏好是进程级运行时
+*    状态（summary-command.ts 同款理由：实时开关无法走冻结设置）。
+*
+* @module dsh-context-compression-improved/runtime/display-prefs
+*/
+const META_KEY = "displayPrefs";
+const DEFAULTS = {
+	rows: {
+		stock: true,
+		total: true,
+		money: true
+	},
+	mode: "full",
+	focusSessionId: null
+};
+let current;
+function cloneDefaults() {
+	return {
+		rows: { ...DEFAULTS.rows },
+		mode: DEFAULTS.mode,
+		focusSessionId: DEFAULTS.focusSessionId
+	};
+}
+function parsePrefs(raw) {
+	if (typeof raw !== "string" || raw === "") return cloneDefaults();
+	try {
+		const parsed = JSON.parse(raw);
+		if (parsed === null || typeof parsed !== "object") return cloneDefaults();
+		const prefs = cloneDefaults();
+		if (parsed.rows !== void 0 && typeof parsed.rows === "object" && parsed.rows !== null) for (const key of [
+			"stock",
+			"total",
+			"money"
+		]) {
+			const value = parsed.rows[key];
+			if (typeof value === "boolean") prefs.rows[key] = value;
+		}
+		if (parsed.mode === "full" || parsed.mode === "compact") prefs.mode = parsed.mode;
+		if (parsed.focusSessionId === null) prefs.focusSessionId = null;
+		else if (typeof parsed.focusSessionId === "string" && parsed.focusSessionId.length > 0 && parsed.focusSessionId.length <= 512) prefs.focusSessionId = parsed.focusSessionId;
+		return prefs;
+	} catch {
+		return cloneDefaults();
+	}
+}
+/** 当前偏好（首次调用从 meta 延迟加载；store 缺席 = 默认值）。 */
+function getDisplayPrefs() {
+	if (current === void 0) current = parsePrefs(getStatsStore()?.getMeta(META_KEY));
+	return current;
+}
+/** 打补丁式更新：仅接受字段的合法值；成功即写 meta（store 缺席只改内存）。 */
+function setDisplayPrefs(patch) {
+	const prefs = getDisplayPrefs();
+	if (patch.rows !== void 0 && typeof patch.rows === "object" && patch.rows !== null) for (const key of [
+		"stock",
+		"total",
+		"money"
+	]) {
+		const value = patch.rows[key];
+		if (typeof value === "boolean") prefs.rows[key] = value;
+	}
+	if (patch.mode === "full" || patch.mode === "compact") prefs.mode = patch.mode;
+	if (patch.focusSessionId === null) prefs.focusSessionId = null;
+	else if (typeof patch.focusSessionId === "string" && patch.focusSessionId.length > 0 && patch.focusSessionId.length <= 512) prefs.focusSessionId = patch.focusSessionId;
+	try {
+		getStatsStore()?.setMeta(META_KEY, JSON.stringify(prefs));
+	} catch {}
+	return prefs;
+}
+//#endregion
+//#region src/runtime/panel-command.ts
+const PANEL_COMMAND_NAME = "ccip";
+const USAGE = [
+	"Usage: /ccip <subcommand>",
+	"  status",
+	"  rows stock|total|money on|off",
+	"  mode compact|full",
+	"  session <id|latest|off>",
+	"  flush",
+	"  backfill pause|resume|status"
+].join("\n");
+/** 解析原始参数串；undefined = 无法识别（回 usage）。 */
+function parsePanelCommandArgs(rawInput) {
+	const tokens = rawInput.trim().toLowerCase().split(/\s+/u).filter((token) => token !== "");
+	if (tokens.length === 0) return void 0;
+	const [head, ...rest] = tokens;
+	if (head === "status" && rest.length === 0) return { op: "status" };
+	if (head === "flush" && rest.length === 0) return { op: "flush" };
+	if (head === "rows" && rest.length === 2) {
+		const row = rest[0];
+		const on = rest[1];
+		if ((row === "stock" || row === "total" || row === "money") && (on === "on" || on === "off")) return {
+			op: "rows",
+			row,
+			on: on === "on"
+		};
+		return;
+	}
+	if (head === "mode" && rest.length === 1 && (rest[0] === "compact" || rest[0] === "full")) return {
+		op: "mode",
+		mode: rest[0]
+	};
+	if (head === "session" && rest.length === 1) {
+		const target = rest[0];
+		if (target === void 0) return void 0;
+		if (target === "off") return {
+			op: "session",
+			target: { kind: "off" }
+		};
+		if (target === "latest") return {
+			op: "session",
+			target: { kind: "latest" }
+		};
+		if (target.length <= 512) return {
+			op: "session",
+			target: {
+				kind: "id",
+				id: target
+			}
+		};
+		return;
+	}
+	if (head === "backfill" && rest.length === 1 && (rest[0] === "pause" || rest[0] === "resume" || rest[0] === "status")) return {
+		op: "backfill",
+		action: rest[0]
+	};
+	if (head === "verify" && rest.length <= 1) {
+		const target = rest[0];
+		if (target === void 0 || target === "latest") return { op: "verify" };
+		if (target.length <= 512) return {
+			op: "verify",
+			sessionId: target
+		};
+		return;
+	}
+}
+function persistedLine() {
+	const state = statsPersistenceState();
+	return state.persisted ? `persisted: yes (${state.driver})` : `persisted: no (${state.reason})`;
+}
+function backfillLine() {
+	const status = getStatsBackfillStatus();
+	const summary = status.lastSummary === void 0 ? "no pass yet" : `${status.lastSummary.backend}: sessions=${String(status.lastSummary.sessions)} claims+${String(status.lastSummary.claimsAdded)}`;
+	return `backfill: ${status.paused ? "paused" : status.running ? "running" : "idle"}, runs=${String(status.runs)}, last ${summary}`;
+}
+function formatStatus() {
+	const prefs = getDisplayPrefs();
+	return [
+		"ccip status:",
+		`  rows: stock=${prefs.rows.stock ? "on" : "off"} total=${prefs.rows.total ? "on" : "off"} money=${prefs.rows.money ? "on" : "off"}`,
+		`  mode: ${prefs.mode}`,
+		`  focus session: ${prefs.focusSessionId ?? "off"}`,
+		`  ${persistedLine()}`,
+		`  ${backfillLine()}`
+	].join("\n");
+}
+/** `/ccip` 无会话依赖（与 /ctx-summary 不同：面板偏好是进程级而非会话级）。 */
+function executePanelCommand(args) {
+	switch (args.op) {
+		case "status": return {
+			kind: "success",
+			text: formatStatus()
+		};
+		case "rows": {
+			const prefs = setDisplayPrefs({ rows: { [args.row]: args.on } });
+			return {
+				kind: "success",
+				text: `ccip: ${args.row} row ${args.on ? "on" : "off"} (stock=${String(prefs.rows.stock)} total=${String(prefs.rows.total)} money=${String(prefs.rows.money)})`
+			};
+		}
+		case "mode":
+			setDisplayPrefs({ mode: args.mode });
+			return {
+				kind: "success",
+				text: `ccip: panel mode ${args.mode}`
+			};
+		case "session": {
+			if (args.target.kind === "off") {
+				setDisplayPrefs({ focusSessionId: null });
+				return {
+					kind: "success",
+					text: "ccip: panel focus off"
+				};
+			}
+			if (args.target.kind === "id") {
+				setDisplayPrefs({ focusSessionId: args.target.id });
+				return {
+					kind: "success",
+					text: `ccip: panel focus ${args.target.id}`
+				};
+			}
+			const latest = getStatsStore()?.recentSessionIds(1)[0];
+			if (latest === void 0) return {
+				kind: "error",
+				text: "ccip: no known session yet (stats store empty)"
+			};
+			setDisplayPrefs({ focusSessionId: latest.sessionId });
+			return {
+				kind: "success",
+				text: `ccip: panel focus ${latest.sessionId} (latest)`
+			};
+		}
+		case "flush":
+			flushPendingUsageNow();
+			return {
+				kind: "success",
+				text: "ccip: pending usage flushed to stats store"
+			};
+		case "backfill":
+			if (args.action === "pause") {
+				pauseStatsBackfill();
+				return {
+					kind: "success",
+					text: "ccip: backfill paused"
+				};
+			}
+			if (args.action === "resume") {
+				resumeStatsBackfill();
+				return {
+					kind: "success",
+					text: "ccip: backfill resumed"
+				};
+			}
+			return {
+				kind: "success",
+				text: `ccip: ${backfillLine()}`
+			};
+		case "verify": return {
+			kind: "success",
+			text: args.sessionId === void 0 ? verifySessionSavingsLines().join("\n") : verifySessionSavingsLines({ sessionId: args.sessionId }).join("\n")
+		};
+	}
+}
+/** Best-effort `CommandDefinitionId` brand；stripped 宿主返回 undefined（不带 definitionId 注册）。 */
+async function loadCommandDefinitionId() {
+	try {
+		return (await import("@deepseek-ai/dsh-commands")).CommandDefinitionId;
+	} catch {
+		return;
+	}
+}
+/** 挂载 `/ccip`；永不抛错（无 commands 服务的宿主静默不挂载）。 */
+function registerPanelCommand(ctx) {
+	ctx.inject(["commands"], (injected) => {
+		const commands = injected.commands;
+		if (commands === void 0 || typeof commands.register !== "function") return;
+		(async () => {
+			try {
+				const definitionId = await loadCommandDefinitionId();
+				await commands.register({
+					name: PANEL_COMMAND_NAME,
+					description: "Context-compression panel: toggle rows/mode, focus a session, flush stats, pause backfill",
+					...definitionId === void 0 ? {} : { definitionId: definitionId("dsh-context-compression-improved/ccip") },
+					handler: async (invocation) => {
+						const args = parsePanelCommandArgs(typeof invocation.rawInput === "string" ? invocation.rawInput : "");
+						if (args === void 0) return {
+							kind: "error",
+							text: USAGE
+						};
+						return executePanelCommand(args);
+					}
+				});
+			} catch {}
+		})();
 	});
 }
 //#endregion
@@ -902,6 +1511,7 @@ const ESTIMATOR_CATALOG_ROUTES = ["/endpoint/dsh-context-compression-improved/es
 const ADVISOR_REPORT_ROUTES = ["/endpoint/dsh-context-compression-improved/advisor-report", "/api/dsh-context-compression-improved/advisor-report"];
 const SAVINGS_ROUTES = ["/endpoint/dsh-context-compression-improved/savings", "/api/dsh-context-compression-improved/savings"];
 const MONITOR_ROUTES = ["/endpoint/dsh-context-compression-improved/monitor", "/api/dsh-context-compression-improved/monitor"];
+const SAVINGS_SESSIONS_ROUTES = ["/endpoint/dsh-context-compression-improved/savings/sessions", "/api/dsh-context-compression-improved/savings/sessions"];
 function sessionFor(readService, sessionId) {
 	const agents = readService("agents");
 	return typeof agents?.get === "function" ? agents.get(sessionId)?.session : void 0;
@@ -1156,6 +1766,7 @@ function registerSavingsRoute(ctx) {
 		const handler = (req, res) => {
 			const resTyped = res;
 			if (typeof resTyped?.writeHead !== "function" || typeof resTyped?.end !== "function") return;
+			kickStatsBackfillOnRouteHit();
 			let sessionId;
 			try {
 				const raw = new URL(String(req?.url ?? "/"), "http://localhost").searchParams.get("sessionId");
@@ -1208,6 +1819,197 @@ function registerSavingsRoute(ctx) {
 	});
 }
 /**
+* Per-session savings ledger route (`GET .../savings/sessions?offset=&limit=&sessionId=…`)
+* — spec T24: paginated store aggregates ⊕ live residual merge + per-session
+* integral (Σ samples: "累计按 N 次 call") + cache-weighted money estimate +
+* persistence state and display prefs (T30) for `/ccip`'s real-time toggles.
+* The frozen `/savings` and `/monitor` contracts are untouched; everything new
+* lives on this endpoint only.
+*/
+function registerSavingsSessionsRoute(ctx) {
+	const readService = (name) => {
+		try {
+			return ctx.get(name);
+		} catch {
+			return;
+		}
+	};
+	const log = (level, message, ...args) => {
+		console[level](message, ...args);
+	};
+	let registered = false;
+	const register = (webServer, channel) => {
+		if (registered) return;
+		const handler = (req, res) => {
+			const resTyped = res;
+			if (typeof resTyped?.writeHead !== "function" || typeof resTyped?.end !== "function") return;
+			kickStatsBackfillOnRouteHit();
+			let offset = 0;
+			let limit = 20;
+			let sessionId;
+			try {
+				const url = new URL(String(req?.url ?? "/"), "http://localhost");
+				const rawOffset = Number(url.searchParams.get("offset") ?? "0");
+				if (Number.isFinite(rawOffset) && rawOffset >= 0) offset = Math.trunc(rawOffset);
+				const rawLimit = Number(url.searchParams.get("limit") ?? "20");
+				if (Number.isFinite(rawLimit)) limit = Math.min(100, Math.max(1, Math.trunc(rawLimit)));
+				const raw = url.searchParams.get("sessionId");
+				if (typeof raw === "string" && raw.length > 0 && raw.length <= 512) sessionId = raw;
+			} catch {}
+			const store = getStatsStore();
+			const ledger = getSavingsLedger();
+			const priceRecord = resolvePanelPriceRecord(readService);
+			const buildRow = (agg) => {
+				const integral = store === null ? {
+					netExact: 0,
+					netEstimated: 0,
+					cachedInput: 0,
+					uncachedInput: 0,
+					calls: 0
+				} : store.sumSamples(agg.sessionId);
+				const money = priceRecord === void 0 || integral.calls === 0 ? void 0 : estimateIntegralMoney({
+					cachedInput: integral.cachedInput,
+					uncachedInput: integral.uncachedInput,
+					record: priceRecord
+				});
+				const liveSnapshot = ledger.snapshot(agg.sessionId);
+				return {
+					sessionId: agg.sessionId,
+					gross: agg.gross,
+					offsets: agg.offsets,
+					net: agg.net,
+					source: store?.getSessionRecord(agg.sessionId)?.source ?? "live",
+					integral,
+					...money === void 0 ? {} : { money },
+					liveStock: liveSnapshot.sessions === 1 ? liveSnapshot.net : void 0
+				};
+			};
+			let total = 0;
+			const sessions = [];
+			if (store !== null) {
+				const all = store.perSessionAggregates();
+				const filtered = sessionId === void 0 ? all : all.filter((agg) => agg.sessionId === sessionId);
+				total = filtered.length;
+				for (const agg of filtered.slice(offset, offset + limit)) sessions.push(buildRow(agg));
+			}
+			const integralTotal = store === null ? {
+				netExact: 0,
+				netEstimated: 0,
+				cachedInput: 0,
+				uncachedInput: 0,
+				calls: 0
+			} : store.sumSamplesAll();
+			const integralMoney = priceRecord === void 0 || integralTotal.calls === 0 ? void 0 : estimateIntegralMoney({
+				cachedInput: integralTotal.cachedInput,
+				uncachedInput: integralTotal.uncachedInput,
+				record: priceRecord
+			});
+			const known = new Set(sessions.map((row) => row.sessionId));
+			const liveOnly = ledger.snapshot(void 0).perSession.filter((row) => !known.has(row.sessionId) && (sessionId === void 0 || row.sessionId === sessionId)).map((row) => ({
+				sessionId: row.sessionId,
+				net: row.net,
+				requests: row.requests,
+				cacheHitRate: row.cacheHitRate
+			}));
+			resTyped.writeHead(200, {
+				"content-type": "application/json; charset=utf-8",
+				"cache-control": "no-cache"
+			});
+			resTyped.end(JSON.stringify({
+				ok: true,
+				persisted: statsPersistenceState(),
+				displayPrefs: getDisplayPrefs(),
+				total,
+				offset,
+				limit,
+				integralTotal,
+				...integralMoney === void 0 ? {} : { integralMoney },
+				sessions,
+				liveOnly
+			}));
+		};
+		try {
+			const disposers = SAVINGS_SESSIONS_ROUTES.map((path) => webServer.register({
+				kind: "exact",
+				path,
+				handler
+			})).filter((off) => typeof off === "function");
+			registered = true;
+			ctx.effect(() => () => {
+				for (const off of disposers) off();
+			}, "contextCompressionSelector.savings sessions route");
+			log("info", "context-compression savings sessions route registered (%s): %s", channel, SAVINGS_SESSIONS_ROUTES.join(", "));
+		} catch (error) {
+			if (isDuplicateRouteError(error)) {
+				registered = true;
+				log("info", "context-compression savings sessions route already registered by another mount (%s)", channel);
+				return;
+			}
+			log("warn", "context-compression savings sessions route registration failed (%s): %o", channel, error);
+		}
+	};
+	const active = asWebServer(readService("webServer"));
+	if (active !== void 0) {
+		register(active, "direct");
+		if (registered) return;
+	}
+	ctx.inject(["webServer"], (injected) => {
+		const webServer = asWebServer(injected.webServer);
+		if (webServer === void 0) {
+			log("warn", "context-compression webServer exposes no register() — savings sessions route not registered");
+			return;
+		}
+		register(webServer, "inject");
+	});
+}
+/** 官方 deepseek-official 路由的现行定价记录（/ccip 面板省钱加权用）；fail-closed。 */
+function resolvePanelPriceRecord(readService) {
+	const selection = readService("agentDefaultModel")?.currentSelection?.();
+	const provider = typeof selection?.provider === "string" ? selection.provider : "";
+	const modelId = typeof selection?.model === "string" ? selection.model : "";
+	if (provider !== "deepseek-official") return void 0;
+	const resolution = resolveOfficialDeepSeekPrice({
+		provider,
+		baseUrlClass: "official-public",
+		apiRoute: "chat-completions",
+		modelId,
+		currency: "USD",
+		at: /* @__PURE__ */ new Date()
+	});
+	return resolution.kind === "priced" ? resolution.record : void 0;
+}
+/**
+* 浮窗统计块（/monitor 载荷附加字段，既有字段零改动）：只带最近压缩会话口径——
+* 宿主不给"正在查看的会话"（输入栏注入只在页面加载时发生，切会话不重注入，
+* 实测陈旧），所以服务端按 claims.at 最大者解析最近压缩会话并显式回带 id。
+* 全部会话/生命周期的聚合刻意不上浮窗（设置页账本负责）。
+* store 缺席 = 只剩 persisted，快照主结构不受影响。
+*/
+function monitorStatsBlock(viewSessionId) {
+	const store = getStatsStore();
+	if (store === null) return { persisted: statsPersistenceState() };
+	const currentSessionId = viewSessionId ?? getStatsActiveSessionId() ?? store.latestActiveSessionId();
+	const composition = currentSessionId === void 0 ? [] : mergeCompositionByComponent(store.sessionComponents(currentSessionId));
+	const drsIndex = currentSessionId === void 0 ? void 0 : readDrsSessionIndex({ sessionId: currentSessionId });
+	const drsFragment = drsIndex === void 0 ? void 0 : drsTotalsFragment(drsIndex);
+	const sessionTotals = drsFragment?.sessionTotals;
+	const lastDelta = drsFragment?.lastDelta;
+	const hasLastDelta = lastDelta !== void 0 && (lastDelta.saving !== void 0 || lastDelta.offset !== void 0);
+	return {
+		persisted: statsPersistenceState(),
+		...sessionTotals === void 0 ? {} : { sessionTotals: {
+			gross: sessionTotals.gross,
+			offsets: sessionTotals.offsets,
+			net: sessionTotals.net
+		} },
+		...hasLastDelta ? { lastDelta } : {},
+		...composition.length > 0 ? {
+			composition,
+			compositionSession: currentSessionId
+		} : {}
+	};
+}
+/**
 * Floating-panel monitor route (`GET|POST .../monitor?sessionId=…`):
 *  - GET → the monitor snapshot (savings aggregate + intent control block +
 *    pricing) — the payload shape the panel polls;
@@ -1235,6 +2037,7 @@ function registerMonitorRoute(ctx) {
 		const handler = (req, res) => {
 			const resTyped = res;
 			if (typeof resTyped?.writeHead !== "function" || typeof resTyped?.end !== "function") return;
+			kickStatsBackfillOnRouteHit();
 			let sessionId;
 			try {
 				const raw = new URL(String(req?.url ?? "/"), "http://localhost").searchParams.get("sessionId");
@@ -1301,7 +2104,8 @@ function registerMonitorRoute(ctx) {
 			resTyped.end(JSON.stringify({
 				ok: true,
 				...snapshot,
-				...pricing === void 0 ? {} : { pricing }
+				...pricing === void 0 ? {} : { pricing },
+				...monitorStatsBlock(sessionId)
 			}));
 		};
 		try {
@@ -1363,6 +2167,21 @@ function apply(ctx, config = {}) {
 		if (config.estimatorCatalogRoute === true) registerEstimatorCatalogRoute(ctx);
 		registerSavingsRoute(ctx);
 		registerMonitorRoute(ctx);
+		registerSavingsSessionsRoute(ctx);
+		registerPanelCommand(ctx);
+		ctx.effect(() => () => {
+			cancelPendingUsageFlushes();
+			closeStatsStore();
+		}, "contextCompressionSelector.stats db");
+		ensureStatsStore().catch(() => {});
+		configureStatsBackfillTrigger({ sessionQuery: () => {
+			try {
+				const face = ctx.get("sessionQuery");
+				return typeof face?.listSessions === "function" && typeof face?.readSession === "function" ? face : void 0;
+			} catch {
+				return;
+			}
+		} });
 		wireSettingsBridge(ctx);
 		if (config.advisorReportRoute === true) registerAdvisorReportRoute(ctx);
 		registerSummaryCommand(ctx);

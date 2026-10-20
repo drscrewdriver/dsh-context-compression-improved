@@ -1,735 +1,10 @@
-import { B as decimalRateNanoUnits, F as recordIntentFold, H as resolveOfficialDeepSeekPrice, I as recordRecertified, L as recordScore, M as getSummaryOverride, N as invalidateOnTaskChange, O as evaluateIntentGate, P as observeIntentEnabled, T as observeContextUsage, U as getSavingsLedger, V as priceOfficialDeepSeekUsage, W as savingsHash, _ as resolveCustomPolicy, b as COMPRESSION_PROFILES, c as charsToTokens, d as isValidAutoCompactThresholdPercent, f as parseContextCompressionSettings, g as DEFAULT_CUSTOM_COMPRESSION_POLICY, h as CustomCompressionPolicySchema, i as DEFAULTS, k as getAdvisorState, l as codePointLength, m as resolvePolicy, n as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, o as PRUNE_MARKER, p as resolveConfig, r as ContextCompressionSettingsSchema, s as charsForTokens, t as AUTO_COMPACT_THRESHOLD_LIMITS, u as isCompressionProfile, v as assertNever, y as deepFreeze, z as DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION } from "./config.js";
-import { a as validatePublishedTailTrim, c as eventBySeq, d as freezeMessage, i as tailTrimStub, l as sessionEvents, n as tailTrimMessage, o as compressionMessageSource, r as tailTrimRef, s as viewToolResult, t as parseTailTrimRef, u as createUserMessage } from "./tail-trim.js";
+import { $ as isValidAutoCompactThresholdPercent, A as officialRequestUsage, At as recordRecertified, B as unavailableCount, Ct as getAdvisorState, D as dedupePlaceholder, Dt as invalidateOnTaskChange, E as dedupeHash, Et as getSummaryOverride, F as onlyTextBlocks, Ft as priceOfficialDeepSeekUsage, G as ContextCompressionSettingsSchema, H as countOmittedLines, I as pressureCost, It as resolveOfficialDeepSeekPrice, J as PRUNE_MARKER, K as DEFAULTS, L as recoveryMarker, Lt as getSavingsLedger, M as emptyResult, N as nativePruneContent, Nt as DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION, O as flattenPlainText, Ot as observeIntentEnabled, P as onlyTextBlock, Pt as decimalRateNanoUnits, Q as isCompressionProfile, R as sameProviderMeasurementKey, St as evaluateIntentGate, T as DedupeTable, U as AUTO_COMPACT_THRESHOLD_LIMITS, V as CAPACITY_PRESSURE_RATIO, W as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, X as charsToTokens, Y as charsForTokens, Z as codePointLength, _ as scheduleUsageFlush, at as resolveCustomPolicy, ct as COMPRESSION_PROFILES, d as claimFromLand, et as parseContextCompressionSettings, f as claimOffset, ft as deepSeekV4TokenizerForModel, g as reclaimFromTailTrim, it as DEFAULT_CUSTOM_COMPRESSION_POLICY, j as countToolContent, jt as recordScore, k as measureForCompaction, kt as recordIntentFold, lt as countExactCanonicalTextFields, m as flushUsageOnDispose, n as sampleIntegralBoundary, nt as resolvePolicy, o as kickStatsBackfillOnDispose, ot as assertNever, rt as CustomCompressionPolicySchema, st as deepFreeze, tt as resolveConfig, v as setStatsLivePathBusy, w as projectSessionSavings, yt as observeContextUsage, z as summarize } from "./savings-integral.js";
+import { n as viewToolResult, o as eventBySeq, s as sessionEvents, t as compressionMessageSource } from "./tool-result.js";
+import { a as validatePublishedTailTrim, i as tailTrimStub, n as tailTrimMessage, o as createUserMessage, r as tailTrimRef, s as freezeMessage, t as parseTailTrimRef } from "./tail-trim.js";
 import z from "@deepseek-ai/schemastery";
-import { createHash } from "node:crypto";
-import { Service } from "@deepseek-ai/cordis";
 import * as dshSessionNamespace from "@deepseek-ai/dsh-session";
-import { readFileSync } from "node:fs";
-import { Tokenizer } from "@huggingface/tokenizers";
+import { Service } from "@deepseek-ai/cordis";
 import { defineTool } from "@deepseek-ai/dsh-tools";
-//#region src/deepseek-v4-tokenizer.ts
-/** Offline DeepSeek tokenizers backed by pinned official Hugging Face assets. */
-const TOKENIZER_ID = "deepseek-ai/DeepSeek-V4-Pro";
-const TOKENIZER_REVISION = "0e1a0e5e52aea73055f50fef6f2423db370265b6";
-const TOKENIZER_SHA256 = "8f9f37ca37fdc4f5fd36d5cf4d3b0e8392edb4e894fd10cc0d70b4957c8633cf";
-const CONFIG_SHA256 = "6ac8c8dc065ed118161d02dd532749ae3f52c243deac27872134fae2f50d8547";
-const VISION_TOKENIZER_ID = "deepseek-ai/DeepSeek-V4-Flash-Vision-Exp";
-const VISION_TOKENIZER_REVISION = "6821d6ad3681a4b137b066b76094fa82ebd0a380";
-const VISION_TOKENIZER_SHA256 = "c90dfa01249db1be4245780a052ede752e1361c612ac6d08e2bdada7d599476b";
-const VISION_CONFIG_SHA256 = "6ac8c8dc065ed118161d02dd532749ae3f52c243deac27872134fae2f50d8547";
-/** Auditable origin and compatibility mapping for the bundled V4 Pro tokenizer. */
-const DEEPSEEK_V4_TOKENIZER_ARTIFACT = Object.freeze({
-	repository: TOKENIZER_ID,
-	revision: TOKENIZER_REVISION,
-	license: "MIT",
-	tokenizerSha256: TOKENIZER_SHA256,
-	tokenizerConfigSha256: CONFIG_SHA256,
-	modelIds: Object.freeze(["deepseek-v4-flash", "deepseek-v4-pro"])
-});
-/**
-* Auditable origin and compatibility mapping for the bundled V4 Flash Vision
-* tokenizer. The vision repository ships a distinct `tokenizer.json` (it adds
-* the `<｜deepseek_image｜>` special token), so the vision model must never be
-* mapped onto the V4 Pro tokenizer as an alias.
-*/
-const DEEPSEEK_VISION_TOKENIZER_ARTIFACT = Object.freeze({
-	repository: VISION_TOKENIZER_ID,
-	revision: VISION_TOKENIZER_REVISION,
-	license: "MIT",
-	tokenizerSha256: VISION_TOKENIZER_SHA256,
-	tokenizerConfigSha256: VISION_CONFIG_SHA256,
-	modelIds: Object.freeze(["deepseek-v4-flash-vision-exp"])
-});
-/**
-* Every bundled artifact is registered with independent asset roots, integrity
-* manifests, and cache entries: one corrupted artifact must never disable the
-* tokenizer serving the other model family.
-*/
-const ARTIFACTS = Object.freeze([Object.freeze({
-	origin: DEEPSEEK_V4_TOKENIZER_ARTIFACT,
-	assetRoot: new URL("../assets/deepseek-v4/", import.meta.url),
-	integrity: Object.freeze({
-		tokenizer: Object.freeze({
-			bytes: 6367146,
-			sha256: TOKENIZER_SHA256
-		}),
-		config: Object.freeze({
-			bytes: 801,
-			sha256: CONFIG_SHA256
-		})
-	})
-}), Object.freeze({
-	origin: DEEPSEEK_VISION_TOKENIZER_ARTIFACT,
-	assetRoot: new URL("../assets/deepseek-v4-vision-exp/", import.meta.url),
-	integrity: Object.freeze({
-		tokenizer: Object.freeze({
-			bytes: 6367257,
-			sha256: VISION_TOKENIZER_SHA256
-		}),
-		config: Object.freeze({
-			bytes: 801,
-			sha256: VISION_CONFIG_SHA256
-		})
-	})
-})]);
-const registryCache = /* @__PURE__ */ new Map();
-function artifactForModel(modelId) {
-	return ARTIFACTS.find((artifact) => artifact.origin.modelIds.includes(modelId));
-}
-/**
-* Resolve the shared offline tokenizer for one compatible API model.
-* Unknown models and a cached asset/runtime failure return `undefined`; callers
-* must report unavailable instead of manufacturing a character estimate.
-* @param modelId - exact DeepSeek API wire model id.
-* @returns the shared verified tokenizer, or undefined when unsupported/unavailable.
-*/
-function deepSeekV4TokenizerForModel(modelId) {
-	const artifact = artifactForModel(modelId);
-	if (artifact === void 0) return void 0;
-	const cached = registryCache.get(artifact.origin);
-	if (cached !== void 0) return cached.tokenizer;
-	let entry;
-	try {
-		entry = { tokenizer: createDeepSeekV4TokenizerFromAssets(artifact.assetRoot, artifact.integrity, artifact.origin) };
-	} catch (error) {
-		entry = { failure: error instanceof Error ? error.message : String(error) };
-	}
-	registryCache.set(artifact.origin, entry);
-	return entry.tokenizer;
-}
-/**
-* Build a tokenizer from one local asset directory after byte/hash validation.
-* This provider-private seam exists so tests can prove every failure branch
-* without mutating the committed artifact.
-* @param assetRoot - local URL containing tokenizer.json and tokenizer_config.json.
-* @param integrity - expected byte length and SHA-256 for both files.
-* @param origin - auditable identity recorded on every returned count.
-* @returns a synchronous exact text counter.
-* @internal
-*/
-function createDeepSeekV4TokenizerFromAssets(assetRoot, integrity, origin = DEEPSEEK_V4_TOKENIZER_ARTIFACT) {
-	const tokenizerJson = readVerifiedJson(assetRoot, "tokenizer.json", integrity.tokenizer);
-	const tokenizerConfig = readVerifiedJson(assetRoot, "tokenizer_config.json", integrity.config);
-	const runtime = new Tokenizer(tokenizerJson, tokenizerConfig);
-	return Object.freeze({ countText(text) {
-		const tokens = runtime.encode(text, { add_special_tokens: false }).ids.length;
-		return Object.freeze({
-			kind: "exact-tokenizer",
-			tokens,
-			tokenizerId: origin.repository,
-			tokenizerRevision: origin.revision
-		});
-	} });
-}
-function readVerifiedJson(assetRoot, name, descriptor) {
-	const bytes = readFileSync(new URL(name, assetRoot));
-	if (bytes.byteLength !== descriptor.bytes) throw new Error(`DeepSeek tokenizer asset ${name} has ${String(bytes.byteLength)} bytes; expected ${String(descriptor.bytes)}`);
-	if (createHash("sha256").update(bytes).digest("hex") !== descriptor.sha256) throw new Error(`DeepSeek tokenizer asset ${name} failed SHA-256 verification`);
-	const parsed = JSON.parse(bytes.toString("utf8"));
-	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error(`DeepSeek tokenizer asset ${name} must contain a JSON object`);
-	return parsed;
-}
-//#endregion
-//#region src/runtime/deepseek-v4-vision-tokens.ts
-/**
-* Exact DeepSeek V4 Flash Vision image-token arithmetic.
-*
-* Every rule in this module is a line-by-line port of the official
-* `inference/image_processor.py` published by
-* `deepseek-ai/DeepSeek-V4-Flash-Vision-Exp` at the pinned immutable revision
-* recorded below. The golden fixtures in `tests/fixtures/vision-golden.json`
-* are generated by executing that official implementation, so any change here
-* must keep the Node counts byte-identical to the reference output.
-*
-* These arithmetic results back intrinsic-grid estimates, never exact counts
-* of the final request. The official expansion
-* depends on the absolute serialized prompt position (system prompt,
-* chat-template framing, adapter image handles) and on the adapter's final
-* request-image projection — including per-route pixel-budget or image-detail
-* overrides and byte-cap reprojection — none of which is published through a
-* public API, and a projected image can count FEWER tokens than its intrinsic
-* grid suggests. The measurement layer therefore labels image-bearing nodes
-* as estimates and keeps them outside exact rewrite proofs; the 640,000-pixel
-* budget below documents the adapter default rather than establishing
-* exactness.
-*/
-/** Official projection parameters pinned from the model repository config. */
-const DEEPSEEK_VISION_PROJECTION = Object.freeze({
-	sourceRepository: "deepseek-ai/DeepSeek-V4-Flash-Vision-Exp",
-	sourceRevision: "6821d6ad3681a4b137b066b76094fa82ebd0a380",
-	/** `vision_patch_size` from the official config. */
-	visionPatchSize: 14,
-	/** `vision_downsample_ratio` from the official config. */
-	visionDownsampleRatio: 3,
-	/** `vision_max_n_token`: post-preprocessing cap per image, not a fixed value. */
-	visionMaxNTokens: 384,
-	/** `vision_min_pixels`: tiny images are upscaled before patching. */
-	visionMinPixels: 147456,
-	/** `vision_max_wh_ratio`: wider-than-ratio images are width-clamped. */
-	visionMaxWhRatio: 8,
-	/**
-	* Default per-image pixel budget used by the DeepSeek adapter's normal
-	* attachment projection (`DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET` in
-	* `@deepseek-ai/dsh-llm-deepseek`). Route overrides remain unobservable to
-	* this estimator.
-	*/
-	requestImagePixelBudget: 64e4
-});
-/** Stable identity for the deliberately approximate image-token counter. */
-const DEEPSEEK_VISION_IMAGE_ESTIMATOR = Object.freeze({
-	id: `${DEEPSEEK_VISION_PROJECTION.sourceRepository}/image-token-estimate`,
-	revision: `${DEEPSEEK_VISION_PROJECTION.sourceRevision}:v1`
-});
-/** Official `COMPRESS_PAD_TO` alignment constant from image_processor.py. */
-const COMPRESS_PAD_TO = 4;
-/**
-* Estimate one image without claiming an exact serialized position or final
-* adapter projection. Valid intrinsic dimensions use the midpoint of the four
-* possible alignment residues. Invalid or unsafe metadata uses the documented
-* fixed fallback. In both cases the official per-image budget is retained as
-* a conservative upper bound.
-*/
-function estimateDeepSeekVisionImageTokens(width, height) {
-	if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width <= 0 || height <= 0 || !Number.isSafeInteger(width * height)) return Object.freeze({
-		tokens: 256,
-		upperBoundTokens: DEEPSEEK_VISION_PROJECTION.visionMaxNTokens,
-		source: "default"
-	});
-	try {
-		const grid = deepSeekVisionImageGrid(width, height);
-		const counts = [
-			0,
-			1,
-			2,
-			3
-		].map((position) => deepSeekVisionImageBlockTokens(grid.nLlmH, grid.nLlmW, position));
-		const paddingMinimumTokens = Math.min(...counts);
-		const paddingMaximumTokens = Math.max(...counts);
-		return Object.freeze({
-			tokens: Math.round((paddingMinimumTokens + paddingMaximumTokens) / 2),
-			upperBoundTokens: DEEPSEEK_VISION_PROJECTION.visionMaxNTokens,
-			source: "intrinsic-grid",
-			paddingMinimumTokens,
-			paddingMaximumTokens
-		});
-	} catch {
-		return Object.freeze({
-			tokens: 256,
-			upperBoundTokens: DEEPSEEK_VISION_PROJECTION.visionMaxNTokens,
-			source: "default"
-		});
-	}
-}
-/**
-* Resolve the aligner grid for one image's intrinsic dimensions.
-*
-* Port of the arithmetic path of the official `load_image`: aspect-ratio
-* clamp, minimum-pixel upscale, patch-grid ceiling, and the `safe_resize`
-* budget loop.
-*/
-function deepSeekVisionImageGrid(width, height) {
-	const { visionPatchSize: patch, visionMaxWhRatio, visionMinPixels } = DEEPSEEK_VISION_PROJECTION;
-	let effectiveWidth = width;
-	let effectiveHeight = height;
-	if (visionMaxWhRatio !== void 0 && effectiveWidth > effectiveHeight * visionMaxWhRatio) effectiveWidth = effectiveHeight * visionMaxWhRatio;
-	if (effectiveWidth * effectiveHeight > 0 && effectiveWidth * effectiveHeight < visionMinPixels) {
-		const ratio = (visionMinPixels / (effectiveWidth * effectiveHeight)) ** .5;
-		effectiveWidth = Math.trunc(effectiveWidth * ratio);
-		effectiveHeight = Math.trunc(effectiveHeight * ratio);
-	}
-	const bestWidth = Math.ceil(effectiveWidth / patch) * patch;
-	const bestHeight = Math.ceil(effectiveHeight / patch) * patch;
-	const resolved = safeResize(effectiveHeight, effectiveWidth, bestHeight, bestWidth);
-	return Object.freeze({ ...resolved });
-}
-/**
-* Token count of one expanded image block, port of `build_image_block` length.
-* @internal exported for direct golden-fixture comparison.
-*/
-function deepSeekVisionImageBlockTokens(nLlmH, nLlmW, startTokenPos) {
-	const compressPad = 3 - startTokenPos % COMPRESS_PAD_TO;
-	const rows = nLlmH + nLlmH % 2;
-	const rowLen = nLlmW + 1;
-	const padLast = Math.floor(rows / 2) * rowLen % 2 * 2;
-	return compressPad + 1 + rows * rowLen + padLast + 1;
-}
-/** Port of the official `grid_tokens` N-layout occupancy check. */
-function gridTokens(bestHeight, bestWidth) {
-	const { visionPatchSize: patch, visionDownsampleRatio: downsample } = DEEPSEEK_VISION_PROJECTION;
-	const nLlmH = Math.ceil(Math.floor(bestHeight / patch) / downsample);
-	const nLlmW = Math.ceil(Math.floor(bestWidth / patch) / downsample);
-	let numTokens = nLlmH * (nLlmW + 1) + 2;
-	if (nLlmH % 2 === 1) numTokens += nLlmW + 1;
-	numTokens += Math.floor((nLlmH + 1) / 2) * (nLlmW + 1) % 2 * 2;
-	return {
-		nLlmH,
-		nLlmW,
-		numTokens
-	};
-}
-/** Port of the official `solve_resize_ratio` budget solver. */
-function solveResizeRatio(height, width, maxNTokens) {
-	const { visionPatchSize: patch, visionDownsampleRatio: downsample } = DEEPSEEK_VISION_PROJECTION;
-	const ratio = height / width;
-	const maxWFloat = Math.sqrt((maxNTokens - 2) / ratio + .25) - .5;
-	const maxHFloat = maxWFloat * ratio;
-	let bestWidth;
-	let bestHeight;
-	if (maxWFloat < 1) {
-		const maxW = 1;
-		let maxH = Math.floor((maxNTokens - 2) / 2);
-		if (maxH % 2 === 1) maxH -= 1;
-		bestWidth = maxW * patch * downsample;
-		bestHeight = maxH * patch * downsample;
-	} else if (maxHFloat < 2) {
-		const maxH = 2;
-		const maxW = Math.floor((maxNTokens - 2) / maxH) - 1;
-		if (maxW <= 1) throw new Error("DeepSeek vision resize solver produced an invalid width");
-		bestWidth = maxW * patch * downsample;
-		bestHeight = maxH * patch * downsample;
-	} else {
-		const maxW = Math.floor(maxWFloat);
-		let maxH = Math.floor(maxHFloat);
-		if (maxH % 2 === 1) maxH -= 1;
-		const beta = Math.min(maxW * patch * downsample / width, maxH * patch * downsample / height);
-		bestWidth = Math.floor(width * beta / patch) * patch;
-		bestHeight = Math.floor(height * beta / patch) * patch;
-	}
-	const grid = gridTokens(bestHeight, bestWidth);
-	return {
-		nLlmH: grid.nLlmH,
-		nLlmW: grid.nLlmW,
-		bestHeight,
-		bestWidth
-	};
-}
-/** Port of the official `safe_resize` loop with the compress-pad budget. */
-function safeResize(height, width, initialBestHeight, initialBestWidth) {
-	const { visionMaxNTokens } = DEEPSEEK_VISION_PROJECTION;
-	let budget = visionMaxNTokens - 3;
-	let grid = gridTokens(initialBestHeight, initialBestWidth);
-	let bestHeight = initialBestHeight;
-	let bestWidth = initialBestWidth;
-	while (grid.numTokens > budget) {
-		const solved = solveResizeRatio(height, width, budget);
-		grid = gridTokens(solved.bestHeight, solved.bestWidth);
-		bestHeight = solved.bestHeight;
-		bestWidth = solved.bestWidth;
-		budget -= 1;
-	}
-	return {
-		nLlmH: grid.nLlmH,
-		nLlmW: grid.nLlmW,
-		bestHeight,
-		bestWidth
-	};
-}
-//#endregion
-//#region src/runtime/token-count.ts
-/** Build an explicit unavailable result without inventing an estimate. */
-function unavailableTokenCount(reason) {
-	if (reason.length === 0) throw new TypeError("unavailable token count requires a reason");
-	return Object.freeze({
-		kind: "unavailable",
-		reason
-	});
-}
-/** Sum independent canonical fields only when every count has one identity. */
-function countExactCanonicalTextFields(fields, counter, subject) {
-	if (subject.length === 0) throw new TypeError("canonical text field count requires a subject");
-	const values = fields.length === 0 ? [""] : fields;
-	let identity;
-	let tokens = 0;
-	for (const value of values) {
-		const count = counter(value);
-		if (count.kind !== "exact-tokenizer") return unavailableTokenCount(`${subject}: ${count.kind === "unavailable" ? count.reason : "canonical content requires an exact tokenizer count"}`);
-		if (identity !== void 0 && (identity.tokenizerId !== count.tokenizerId || identity.tokenizerRevision !== count.tokenizerRevision)) return unavailableTokenCount(`${subject}: tokenizer identity changed within one measurement`);
-		identity ??= count;
-		tokens += count.tokens;
-		if (!Number.isSafeInteger(tokens) || tokens < 0) return unavailableTokenCount(`${subject}: token sum is outside the safe integer range`);
-	}
-	if (identity === void 0) return unavailableTokenCount(`${subject}: no tokenizer identity`);
-	return Object.freeze({
-		...identity,
-		tokens
-	});
-}
-/** Count the lines present in the original but absent from the replacement. */
-function countOmittedLines(original, replacement) {
-	const omitted = original.split("\n").length - replacement.split("\n").length;
-	return omitted > 0 ? omitted : void 0;
-}
-/** Routed-context utilization required before capacity-pressure History may age sent history. */
-const CAPACITY_PRESSURE_RATIO = .7;
-//#endregion
-//#region src/pruner/content.ts
-function onlyTextBlock(blocks) {
-	return blocks.length === 1 && blocks[0]?.type === "text" ? blocks[0] : null;
-}
-function onlyTextBlocks(blocks) {
-	return blocks.every((block) => block.type === "text") ? blocks : null;
-}
-function countToolContent(blocks, view) {
-	const text = onlyTextBlocks(blocks);
-	if (text === null) return unavailableCount("tool result contains unsupported rich content");
-	return countExactCanonicalTextFields(text.map((block) => block.text), (candidate) => view.countCanonicalText(candidate), "tool result replacement");
-}
-function sameProviderMeasurementKey(left, right) {
-	return left.provider === right.provider && left.baseUrlClass === right.baseUrlClass && left.apiRoute === right.apiRoute && left.modelId === right.modelId && left.requestTemplateRevision === right.requestTemplateRevision && left.tokenizerRevision === right.tokenizerRevision && left.modality === right.modality;
-}
-function unavailableCount(reason) {
-	return Object.freeze({
-		kind: "unavailable",
-		reason
-	});
-}
-function recoveryMarker(sourceRef, label, startLine) {
-	return `\n\n[... ${label}; source=${sourceRef}; ${startLine === void 0 ? "use context_compression_retrieve with a query or narrow start_line/max_lines if needed (avoid re-reading the whole result)" : `retrieve with context_compression_retrieve({"ref":"${sourceRef}","start_line":${String(startLine)},"max_lines":80})`} ...]\n\n`;
-}
-/**
-* Measure text content in Unicode code points; non-text blocks cost zero.
-* @param blocks - tool-result content to measure.
-* @returns total Unicode code points across text blocks.
-*/
-function measureContent(blocks) {
-	let chars = 0;
-	for (const block of blocks) if (block.type === "text") chars += codePointLength(block.text);
-	return chars;
-}
-function pressureCost(blocks) {
-	let cost = 0;
-	for (const block of blocks) switch (block.type) {
-		case "text":
-		case "reasoning":
-			cost += codePointLength(block.text);
-			break;
-		case "tool-call":
-			cost += 256 + codePointLength(block.name) + codePointLength(block.arguments);
-			break;
-		default: {
-			const serialized = JSON.stringify(block);
-			cost += Math.max(256, codePointLength(serialized));
-		}
-	}
-	return cost;
-}
-function nativePruneContent(blocks, thresholdChars, headChars, tailChars, marker = PRUNE_MARKER) {
-	const totalChars = measureContent(blocks);
-	if (totalChars <= thresholdChars) return null;
-	const markerChars = codePointLength(typeof marker === "function" ? marker(1) : marker);
-	const safeHead = Math.max(0, Math.min(headChars, thresholdChars - markerChars));
-	const safeTail = Math.max(0, Math.min(tailChars, thresholdChars - markerChars - safeHead));
-	const removedStart = safeHead;
-	const removedEnd = totalChars - safeTail;
-	const pruned = [];
-	let consumed = 0;
-	let markerInserted = false;
-	let newlinesBefore = 0;
-	for (const block of blocks) {
-		if (block.type !== "text") {
-			pruned.push(block);
-			newlinesBefore += 1;
-			continue;
-		}
-		const points = Array.from(block.text);
-		const blockStart = consumed;
-		const blockEnd = blockStart + points.length;
-		const headEnd = Math.min(points.length, Math.max(0, removedStart - blockStart));
-		const tailStart = Math.min(points.length, Math.max(0, removedEnd - blockStart));
-		const intersectsRemoved = blockStart < removedEnd && blockEnd > removedStart;
-		const headText = points.slice(0, headEnd).join("");
-		const insertion = intersectsRemoved && !markerInserted && typeof marker === "function" ? marker(1 + newlinesBefore + headText.split("\n").length - 1) : intersectsRemoved && !markerInserted ? marker : "";
-		if (insertion !== "") markerInserted = true;
-		const text = points.slice(0, headEnd).join("") + insertion + points.slice(tailStart).join("");
-		if (text !== "") pruned.push({
-			...block,
-			text
-		});
-		newlinesBefore += block.text.split("\n").length - 1 + 1;
-		consumed = blockEnd;
-	}
-	if (!markerInserted) return null;
-	const charsAfter = measureContent(pruned);
-	return charsAfter <= thresholdChars && charsAfter < totalChars ? pruned : null;
-}
-function summarize(entries) {
-	return {
-		pruned: entries,
-		charsRemoved: entries.reduce((sum, entry) => sum + entry.charsBefore - entry.charsAfter, 0),
-		tokensRemoved: entries.reduce((sum, entry) => sum + entry.tokensBefore - entry.tokensAfter, 0)
-	};
-}
-function emptyResult() {
-	return {
-		pruned: [],
-		charsRemoved: 0,
-		tokensRemoved: 0
-	};
-}
-//#endregion
-//#region src/runtime/measurement.ts
-const dshSessionSoft$1 = dshSessionNamespace;
-const deriveEventMessage = dshSessionSoft$1.deriveEventMessage ?? dshSessionSoft$1.default?.deriveEventMessage ?? (() => null);
-/**
-* Character pressure of one model-visible content array, measured on the same
-* level `SnapshotCandidate.characterPressure` uses: a tool/result message is
-* measured by its inner tool-result content, never by the wrapper block, so the
-* node-level and candidate-level figures stay directly comparable.
-* @param content - the node's model-visible content blocks.
-* @returns character pressure in Unicode code points, plus rich-block costs.
-*/
-function nodeCharacterPressure(content) {
-	return pressureCost(content);
-}
-const VISION_MODEL_ID = DEEPSEEK_VISION_TOKENIZER_ARTIFACT.modelIds[0];
-/**
-* Capture one route-bound view without calling patched Harness methods.
-* Official `measure()` remains authoritative for request pressure; the bundled
-* tokenizer supplies exact canonical content counts used by safe rewrites.
-*/
-function measureForCompaction(ctx, session) {
-	const header = session.requestHeader();
-	const measurement = ctx.tokenMeter.measure(session, header);
-	const target = header?.config;
-	const counter = bindCounter(target?.provider, target?.model);
-	const events = sessionEvents(session);
-	const eventsBySeq = new Map(events.map((event) => [Number(event.seq), event]));
-	const measuredNodes = measurement.nodes.map((node) => {
-		const event = eventsBySeq.get(Number(node.seq));
-		if (event === void 0) return {
-			seq: node.seq,
-			count: unavailableTokenCount(`surface node ${String(node.seq)} is missing`),
-			characterPressure: 0
-		};
-		const message = deriveEventMessage(event);
-		if (message === null) return {
-			seq: node.seq,
-			count: unavailableTokenCount(`surface node ${String(node.seq)} is not model-visible`),
-			characterPressure: 0
-		};
-		const count = countCanonicalContent(message.content, counter, `surface node ${String(node.seq)}`);
-		const intrinsicImageBlockEstimate = count.kind === "tokenizer-estimate" ? intrinsicImageDiagnostic(message.content, target) : void 0;
-		return {
-			seq: node.seq,
-			count,
-			characterPressure: nodeCharacterPressure(message.content),
-			...intrinsicImageBlockEstimate === void 0 ? {} : { intrinsicImageBlockEstimate }
-		};
-	});
-	const currentSurface = countSurfaceCounts(measuredNodes.map((node) => node.count), "current surface");
-	const currentSurfaceChars = measuredNodes.reduce((sum, node) => sum + node.characterPressure, 0);
-	const intrinsicImageBlockEstimateTokens = measuredNodes.reduce((sum, node) => sum + (node.intrinsicImageBlockEstimate?.paddingMinimumTokens ?? 0), 0);
-	return Object.freeze({
-		...measurement,
-		...target === void 0 ? {} : {
-			providerRoute: target.provider,
-			modelId: target.model
-		},
-		measuredNodes: Object.freeze(measuredNodes),
-		currentSurface,
-		currentSurfaceChars,
-		intrinsicImageBlockEstimateTokens,
-		countCanonicalText: counter.countText
-	});
-}
-/** Request-level usage exposed by official TokenMeter, without invented route attribution. */
-function officialRequestUsage(view) {
-	return view.baseline.kind === "usage" ? view.baseline.usage : void 0;
-}
-/**
-* Count one canonical content walk in canonical field order.
-*
-* Text, reasoning, tool-call names/arguments, and nested text tool results are
-* counted exactly with one tokenizer identity. Image blocks produce a bounded
-* estimate because the absolute prompt position and the adapter's final
-* projection are not publicly observable. A mixed text/image node is therefore
-* an estimate and never qualifies for an exact rewrite proof.
-*/
-function countCanonicalContent(blocks, counter, subject) {
-	let identity;
-	let estimateIdentity;
-	let tokens = 0;
-	let upperBoundTokens = 0;
-	let firstRefusal;
-	const absorb = (count) => {
-		if (count.kind === "unavailable") {
-			firstRefusal ??= count;
-			return false;
-		}
-		if (count.kind === "exact-tokenizer") {
-			if (identity !== void 0 && (identity.tokenizerId !== count.tokenizerId || identity.tokenizerRevision !== count.tokenizerRevision)) {
-				firstRefusal ??= unavailableTokenCount(`${subject}: tokenizer identity changed within one measurement`);
-				return false;
-			}
-			identity ??= count;
-			tokens += count.tokens;
-			upperBoundTokens += count.tokens;
-		} else {
-			if (estimateIdentity !== void 0 && (estimateIdentity.estimatorId !== count.estimatorId || estimateIdentity.estimatorRevision !== count.estimatorRevision)) {
-				firstRefusal ??= unavailableTokenCount(`${subject}: image estimator identity changed within one measurement`);
-				return false;
-			}
-			estimateIdentity ??= {
-				estimatorId: count.estimatorId,
-				estimatorRevision: count.estimatorRevision
-			};
-			tokens += count.tokens;
-			upperBoundTokens += count.upperBoundTokens;
-		}
-		return Number.isSafeInteger(tokens) && tokens >= 0 && Number.isSafeInteger(upperBoundTokens) && upperBoundTokens >= tokens;
-	};
-	const walk = (content) => {
-		for (const block of content) switch (block.type) {
-			case "text":
-			case "reasoning":
-				if (!absorb(counter.countText(block.text))) return false;
-				break;
-			case "tool-call":
-				if (!absorb(counter.countText(block.name))) return false;
-				if (!absorb(counter.countText(block.arguments))) return false;
-				break;
-			case "image":
-				if (!absorb(counter.countImage(block.attachment))) return false;
-				break;
-			default:
-				firstRefusal ??= unavailableTokenCount(`${subject}: contains an unsupported content block`);
-				return false;
-		}
-		return true;
-	};
-	if (!walk(blocks)) {
-		if (firstRefusal?.kind === "unavailable") return unavailableTokenCount(`${subject}: ${firstRefusal.reason}`);
-		return unavailableTokenCount(`${subject}: contains content the canonical counter cannot count exactly`);
-	}
-	if (identity === void 0 && estimateIdentity === void 0) {
-		const empty = counter.countText("");
-		if (empty.kind !== "exact-tokenizer") return empty;
-		return empty;
-	}
-	if (!Number.isSafeInteger(tokens) || tokens < 0) return unavailableTokenCount(`${subject}: invalid token sum`);
-	if (estimateIdentity !== void 0) return Object.freeze({
-		kind: "tokenizer-estimate",
-		...estimateIdentity,
-		tokens,
-		upperBoundTokens
-	});
-	if (identity === void 0) return unavailableTokenCount(`${subject}: no tokenizer identity`);
-	return Object.freeze({
-		...identity,
-		tokens
-	});
-}
-function bindCounter(provider, model) {
-	if (provider === void 0 || model === void 0) {
-		const unavailable = () => unavailableTokenCount("canonical text: no durable provider/model request header");
-		return {
-			countText: unavailable,
-			countImage: () => unavailableTokenCount("canonical image: no durable provider/model request header")
-		};
-	}
-	if (provider !== "deepseek" && provider !== "deepseek-official") {
-		const reason = `canonical text: provider "${provider}" is not the supported DeepSeek route`;
-		return {
-			countText: () => unavailableTokenCount(reason),
-			countImage: () => unavailableTokenCount(`canonical image: provider "${provider}" is not the supported DeepSeek route`)
-		};
-	}
-	const tokenizer = deepSeekV4TokenizerForModel(model);
-	if (tokenizer === void 0) {
-		const reason = `canonical text: no verified bundled tokenizer for model "${model}"`;
-		return {
-			countText: () => unavailableTokenCount(reason),
-			countImage: (attachment) => countCanonicalImage(model, attachment)
-		};
-	}
-	return {
-		countText: (text) => tokenizer.countText(text),
-		countImage: (attachment) => countCanonicalImage(model, attachment)
-	};
-}
-/**
-* Images never claim an exact count. The official expansion depends on the
-* absolute prompt position (system prompt, chat-template framing, adapter
-* image handles) and on the adapter's final request-image projection, neither
-* of which is exposed through a public API; a route may even override the
-* pixel budget or re-project under the byte cap. Valid dimensions therefore
-* use the midpoint of the four alignment residues as a bounded estimate;
-* malformed dimensions use a fixed default. Estimate-bearing nodes remain
-* ineligible for exact rewrite proofs.
-*/
-function countCanonicalImage(model, attachment) {
-	if (model !== VISION_MODEL_ID) return unavailableTokenCount(`canonical image: model "${model}" has no vision image counter`);
-	const estimate = estimateDeepSeekVisionImageTokens(attachment.width, attachment.height);
-	return Object.freeze({
-		kind: "tokenizer-estimate",
-		tokens: estimate.tokens,
-		upperBoundTokens: estimate.upperBoundTokens,
-		estimatorId: DEEPSEEK_VISION_IMAGE_ESTIMATOR.id,
-		estimatorRevision: DEEPSEEK_VISION_IMAGE_ESTIMATOR.revision
-	});
-}
-/**
-* Intrinsic-grid diagnostic for one content walk: the official block
-* arithmetic on intrinsic dimensions at both alignment extremes. Only images
-* on the pinned DeepSeek vision route with usable metadata contribute.
-*/
-function intrinsicImageDiagnostic(blocks, target) {
-	if (target === void 0 || target.provider !== "deepseek" && target.provider !== "deepseek-official" || target.model !== VISION_MODEL_ID) return void 0;
-	let paddingMinimumTokens = 0;
-	let paddingMaximumTokens = 0;
-	let seen = false;
-	const walk = (content) => {
-		for (const block of content) if (block.type === "image") {
-			const { width, height } = block.attachment;
-			const estimate = estimateDeepSeekVisionImageTokens(width, height);
-			if (estimate.source !== "intrinsic-grid" || estimate.paddingMinimumTokens === void 0 || estimate.paddingMaximumTokens === void 0) continue;
-			paddingMinimumTokens += estimate.paddingMinimumTokens;
-			paddingMaximumTokens += estimate.paddingMaximumTokens;
-			seen = true;
-		}
-	};
-	walk(blocks);
-	return seen ? Object.freeze({
-		paddingMinimumTokens,
-		paddingMaximumTokens
-	}) : void 0;
-}
-function countSurfaceCounts(counts, subject) {
-	if (counts.length === 0) return unavailableTokenCount(`${subject}: no surface nodes`);
-	let identity;
-	let estimateIdentity;
-	let tokens = 0;
-	let upperBoundTokens = 0;
-	for (const count of counts) {
-		if (count.kind === "unavailable") return unavailableTokenCount(`${subject}: ${count.reason}`);
-		if (count.kind === "exact-tokenizer") {
-			if (identity !== void 0 && (identity.tokenizerId !== count.tokenizerId || identity.tokenizerRevision !== count.tokenizerRevision)) return unavailableTokenCount(`${subject}: tokenizer identity changed within one measurement`);
-			identity ??= count;
-			tokens += count.tokens;
-			upperBoundTokens += count.tokens;
-		} else {
-			if (estimateIdentity !== void 0 && (estimateIdentity.estimatorId !== count.estimatorId || estimateIdentity.estimatorRevision !== count.estimatorRevision)) return unavailableTokenCount(`${subject}: image estimator identity changed within one measurement`);
-			estimateIdentity ??= {
-				estimatorId: count.estimatorId,
-				estimatorRevision: count.estimatorRevision
-			};
-			tokens += count.tokens;
-			upperBoundTokens += count.upperBoundTokens;
-		}
-	}
-	if (!Number.isSafeInteger(tokens) || tokens < 0 || !Number.isSafeInteger(upperBoundTokens) || upperBoundTokens < tokens) return unavailableTokenCount(`${subject}: invalid token sum`);
-	if (estimateIdentity !== void 0) return Object.freeze({
-		kind: "tokenizer-estimate",
-		...estimateIdentity,
-		tokens,
-		upperBoundTokens
-	});
-	if (identity === void 0) return unavailableTokenCount(`${subject}: no tokenizer identity`);
-	return Object.freeze({
-		...identity,
-		tokens
-	});
-}
 z.object({
 	maxChars: z.number().step(1).min(1).default(12e3),
 	maxScanChars: z.number().step(1).min(1).default(25e4),
@@ -793,20 +68,25 @@ function installContextCompressionRetrieve(ctx, config = {}) {
 			const match = REF_PATTERN.exec(args.ref);
 			const tailTrimRef = parseTailTrimRef(args.ref);
 			if (match === null && tailTrimRef === null) throw new Error("context_compression_retrieve: ref must be session://<session-id>/(event|tailtrim)/<seq>");
-			if ((match?.[1] ?? tailTrimRef?.sessionId) !== String(exec.agent.id)) throw new Error("context_compression_retrieve: a compression reference may only read the caller's current session");
+			if ((match?.[1] ?? tailTrimRef?.sessionId) !== String(exec.agent.session.id)) throw new Error("context_compression_retrieve: a compression reference may only read the caller's current session");
 			if (tailTrimRef !== null) {
-				const sessionId = String(exec.agent.id);
+				const sessionId = String(exec.agent.session.id);
 				return Promise.resolve(recoverTailTrim(exec.agent.session, args.ref, tailTrimRef.manifestSeq, args.query, args.start_line, args.max_lines, {
 					maxChars,
 					maxScanChars,
 					maxQueryChars
 				})).then((text) => {
-					getSavingsLedger().recordOffset({
+					const offsetTokens = Math.ceil(codePointLength$1(text) / 4);
+					getSavingsLedger().foldRecall(sessionId, tailTrimRef.manifestSeq, offsetTokens, "characters", {
+						component: "tailtrim-retrieve",
+						note: `tailtrim/${tailTrimRef.manifestSeq} 回读`
+					});
+					claimOffset({
 						sessionId,
 						component: "tailtrim-retrieve",
-						tokens: Math.ceil(codePointLength$1(text) / 4),
+						tokens: offsetTokens,
 						basis: "characters",
-						note: `tailtrim/${tailTrimRef.manifestSeq} 回读`
+						sourceSeq: tailTrimRef.manifestSeq
 					});
 					return text;
 				});
@@ -833,12 +113,17 @@ function installContextCompressionRetrieve(ctx, config = {}) {
 				selected.omitted ? query === void 0 || query === "" ? "note: additional source lines were omitted" : "note: additional matching or neighboring lines were omitted" : "",
 				"--- original tool result ---"
 			].filter(Boolean).join("\n")}\n${selected.text}`, maxChars);
-			getSavingsLedger().recordOffset({
-				sessionId: String(exec.agent.id),
+			const offsetTokens = Math.ceil(codePointLength$1(bounded) / 4);
+			getSavingsLedger().foldRecall(String(exec.agent.session.id), seq, offsetTokens, "characters", {
 				component: "retrieve",
-				tokens: Math.ceil(codePointLength$1(bounded) / 4),
-				basis: "characters",
 				note: `event/${String(seq)} 回读`
+			});
+			claimOffset({
+				sessionId: String(exec.agent.session.id),
+				component: "retrieve",
+				tokens: offsetTokens,
+				basis: "characters",
+				sourceSeq: seq
 			});
 			return Promise.resolve(bounded);
 		}
@@ -3842,236 +3127,6 @@ function renderIntentFoldBlock(pending, seq) {
 	return `${INTENT_FOLD_MARKER} folded into the batch summary above (seq ${start}..${end})] ${face}`;
 }
 //#endregion
-//#region src/runtime/tokenpilot/dedup.ts
-/**
-* TokenPilot-inspired A1: byte-identical repeated tool-result dedup.
-*
-* Pure helpers behind the ToolResultPruner fresh pass. The per-session table
-* maps a canonical-content SHA-256 to the first surface seq that produced it;
-* later identical results may be replaced with a pointer placeholder that the
-* recovery tool can resolve back to the original full text via the append-only
-* session log. Only hash+seq metadata is stored — never content.
-*/
-/** Per-session dedup index with insertion-order eviction. */
-var DedupeTable = class {
-	maxEntries;
-	entries = /* @__PURE__ */ new Map();
-	constructor(maxEntries = 2048) {
-		this.maxEntries = maxEntries;
-	}
-	/** Look up the first occurrence for one canonical hash, if any. */
-	get(hash) {
-		return this.entries.get(hash);
-	}
-	/** Record a first occurrence; existing hashes only refresh insertion order. */
-	record(hash, entry) {
-		if (this.entries.has(hash)) return;
-		while (this.entries.size >= this.maxEntries) {
-			const oldest = this.entries.keys().next().value;
-			if (oldest === void 0) break;
-			this.entries.delete(oldest);
-		}
-		this.entries.set(hash, entry);
-	}
-};
-/** Canonicalize tool-result text for hashing. */
-function canonicalizeForDedupe(text, mode) {
-	if (mode === "exact") return text;
-	return text.replace(/[ \t]+\r?\n/g, "\n").replace(/(^\s+)|(\s+$)/g, "");
-}
-/** SHA-256 hex of the canonicalized text. */
-function dedupeHash(text, mode) {
-	return createHash("sha256").update(canonicalizeForDedupe(text, mode), "utf8").digest("hex");
-}
-/** Concatenated text of an all-text content block list; null when rich. */
-function flattenPlainText(content) {
-	let text = "";
-	for (const block of content) {
-		if (block.type !== "text") return void 0;
-		text += block.text;
-	}
-	return text;
-}
-/** Pointer placeholder pointing at the first occurrence's original event. */
-function dedupePlaceholder(entry, originalChars) {
-	return [
-		`[... identical to the earlier ${entry.toolName} result; first seen at ${entry.sourceRef};`,
-		`original_chars=${String(originalChars)};`,
-		"retrieve with context_compression_retrieve({\"ref\":\"" + entry.sourceRef + "\",\"start_line\":1}) if the omitted evidence is necessary.]"
-	].join(" ");
-}
-//#endregion
-//#region src/runtime/savings-projection.ts
-const EMPTY = Object.freeze({
-	savings: [],
-	offsets: [],
-	registry: []
-});
-function blocksOf(event) {
-	if (event.type !== "tool/result") return void 0;
-	return viewToolResult(event.data.message).blocks;
-}
-function textOf(event) {
-	const blocks = blocksOf(event);
-	return blocks === void 0 ? void 0 : flattenPlainText(blocks);
-}
-/** 与 pruner 的 `plan()` 同口径定价：全文本块可精确，否则字符口径。 */
-function priceEvent(event, countText) {
-	const blocks = blocksOf(event);
-	if (blocks === void 0) return void 0;
-	const chars = pressureCost(blocks);
-	if (chars <= 0) return void 0;
-	const texts = blocks.map((block) => block.type === "text" ? block.text : void 0);
-	if (texts.every((text) => text !== void 0)) {
-		const count = countExactCanonicalTextFields(texts, countText, "savings projection");
-		if (count.kind === "exact-tokenizer") return {
-			tokens: count.tokens,
-			basis: "exact-tokenizer",
-			chars
-		};
-	}
-	return {
-		tokens: Math.max(1, charsToTokens(chars)),
-		basis: "characters",
-		chars
-	};
-}
-/** 替换事件的被替换 span；非替换节点（或畸形 op）返回 undefined。 */
-function replacedSpan(event) {
-	const op = event.surfaceOp;
-	if (typeof op !== "object" || op === null || op.op !== "replace") return void 0;
-	const start = Number(op.startSeq);
-	const end = Number(op.endSeq);
-	if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return void 0;
-	return {
-		start,
-		end
-	};
-}
-function originalText(bySeq, span) {
-	const parts = [];
-	for (let seq = span.start; seq <= span.end; seq++) {
-		const event = bySeq.get(seq);
-		const text = event === void 0 ? void 0 : textOf(event);
-		if (text !== void 0 && text.length > 0) parts.push(text);
-	}
-	return parts.join("\n");
-}
-/**
-* 一个替换节点"压掉了多少"（与实时 `plan()` 同口径：差额>0 才算）。
-* 原始价 = span 内原始事件之和；替换价 = 替换事件。
-*/
-function computeDelta(bySeq, replacement, span, counter) {
-	const after = priceEvent(replacement, counter);
-	if (after === void 0) return void 0;
-	let beforeChars = 0;
-	let beforeExactTokens = 0;
-	let beforeExact = true;
-	let any = false;
-	for (let seq = span.start; seq <= span.end; seq++) {
-		const original = bySeq.get(seq);
-		const priced = original === void 0 ? void 0 : priceEvent(original, counter);
-		if (priced === void 0) continue;
-		any = true;
-		beforeChars += priced.chars;
-		beforeExactTokens += priced.tokens;
-		if (priced.basis !== "exact-tokenizer") beforeExact = false;
-	}
-	if (!any) return void 0;
-	const exact = after.basis === "exact-tokenizer" && beforeExact;
-	const basis = exact ? "exact-tokenizer" : "characters";
-	const delta = (exact ? beforeExactTokens : charsToTokens(beforeChars)) - (exact ? after.tokens : charsToTokens(after.chars));
-	if (delta <= 0) return void 0;
-	return {
-		tokens: delta,
-		basis
-	};
-}
-/**
-* 纯核心：给定事件流、当前 surface 节点与计价计数器，重算节省投影。
-* @param input - events/surfaceNodes/counter，均为实时路径的只读快照。
-* @returns savings（当前生效毛节省）/ offsets（每次重读惩罚）/ registry（原文配对键）。
-*/
-function projectSavingsCore(input) {
-	const { events, surfaceNodes, counter } = input;
-	if (events.length === 0) return EMPTY;
-	const bySeq = /* @__PURE__ */ new Map();
-	for (const event of events) bySeq.set(Number(event.seq), event);
-	const savings = [];
-	for (const rawSeq of surfaceNodes) {
-		const seq = Number(rawSeq);
-		const replacement = bySeq.get(seq);
-		if (replacement === void 0) continue;
-		const span = replacedSpan(replacement);
-		if (span === void 0) continue;
-		const delta = computeDelta(bySeq, replacement, span, counter);
-		if (delta === void 0) continue;
-		savings.push({
-			component: "projection",
-			tokens: delta.tokens,
-			basis: delta.basis,
-			at: Number(replacement.time) || 0,
-			replacementSeq: seq
-		});
-	}
-	const offsets = [];
-	const registry = [];
-	const owned = /* @__PURE__ */ new Map();
-	for (const event of events) {
-		if (event.type !== "tool/result") continue;
-		const span = replacedSpan(event);
-		if (span !== void 0) {
-			const groupText = originalText(bySeq, span);
-			if (groupText.length === 0) continue;
-			const delta = computeDelta(bySeq, event, span, counter);
-			if (delta === void 0) continue;
-			const hash = savingsHash(groupText);
-			owned.set(hash, {
-				claimedTokens: delta.tokens,
-				basis: delta.basis,
-				sourceSeq: span.start
-			});
-			registry.push({
-				hash,
-				claimedTokens: delta.tokens,
-				basis: delta.basis,
-				sourceSeq: span.start
-			});
-			continue;
-		}
-		const text = textOf(event);
-		if (text === void 0 || text.length === 0) continue;
-		const hit = owned.get(savingsHash(text));
-		if (hit === void 0) continue;
-		const priced = priceEvent(event, counter);
-		if (priced === void 0) continue;
-		offsets.push({
-			component: "full-read",
-			tokens: priced.tokens,
-			basis: priced.basis,
-			at: Number(event.time) || 0,
-			note: `#${hit.sourceSeq} 的原文被全文重读(投影重建)`
-		});
-	}
-	return {
-		savings,
-		offsets,
-		registry
-	};
-}
-/**
-* 从会话快照投影节省账。`measureForCompaction` 提供与实时同口径的 tokenizer
-* 计数器；失败时向上抛，由调用方 fail-open。
-*/
-function projectSessionSavings(ctx, session) {
-	const view = measureForCompaction(ctx, session);
-	return projectSavingsCore({
-		events: sessionEvents(session),
-		surfaceNodes: session.surface.nodes,
-		counter: (candidate) => view.countCanonicalText(candidate)
-	});
-}
-//#endregion
 //#region src/runtime/adaptive-cost.ts
 /**
 * Bound Adaptive's benefit and cache-loss exposure without attributing the
@@ -4202,6 +3257,10 @@ function emitCompressionAudit(logger, record) {
 		logger.info(formatCompressionAudit(record));
 	} catch {}
 }
+function sanitizeAuditMessage(error) {
+	const collapsed = ((error instanceof Error ? error.message : String(error)).split(/\r?\n/u, 1)[0] ?? "").replace(/[\p{Cc}]/gu, " ").trim();
+	return collapsed.length > 200 ? collapsed.slice(0, 200) : collapsed;
+}
 //#endregion
 //#region src/pruner.ts
 /**
@@ -4301,6 +3360,8 @@ var ToolResultPruner = class extends Service {
 		try {
 			ctx.on("session/disposed", (session) => {
 				try {
+					flushUsageOnDispose(session);
+					kickStatsBackfillOnDispose();
 					const line = getSavingsLedger().sessionSummaryLine(String(session.id));
 					if (line.includes("requests=0") === false || line.includes("net=0(exact)/0(est)") === false) ctx.logger.info("context-compression session savings (%s): %s", String(session.id), line);
 				} catch {}
@@ -4388,9 +3449,24 @@ var ToolResultPruner = class extends Service {
 		const profile = policy.profile;
 		const view = measureForCompaction(this.ctx, session);
 		if (stage === "fresh") {
-			const usage = officialRequestUsage(view);
-			if (usage !== void 0) getSavingsLedger().recordUsage(String(session.id), usage);
-			return this.decideFreshStep(session, options, policy, view);
+			setStatsLivePathBusy(true);
+			try {
+				const usage = officialRequestUsage(view);
+				if (usage !== void 0) getSavingsLedger().recordUsage(String(session.id), usage);
+				scheduleUsageFlush(session);
+				try {
+					const integralSessionId = String(session.id);
+					sampleIntegralBoundary({
+						sessionId: integralSessionId,
+						session,
+						net: getSavingsLedger().snapshot(integralSessionId).net,
+						usage
+					});
+				} catch {}
+				return this.decideFreshStep(session, options, policy, view);
+			} finally {
+				setStatsLivePathBusy(false);
+			}
 		}
 		if (profile === "off") return emptyResult();
 		const landed = [];
@@ -5356,7 +4432,8 @@ var ToolResultPruner = class extends Service {
 		let head = this.state.config.headChars;
 		let tail = this.state.config.tailChars;
 		for (let attempt = 0; attempt < 10; attempt += 1) {
-			const content = nativePruneContent(resultContent, head + codePointLength(marker(1)) + tail, head, tail, marker);
+			const threshold = head + codePointLength(marker(1)) + tail;
+			const content = nativePruneContent(resultContent, threshold, head, tail, marker);
 			if (content !== null) {
 				const plan = this.plan(candidate, content, sourceSeq, "native-head-tail", stage, "native-tool-result", void 0, view);
 				if (plan !== null && plan.tokensAfter <= policy.nativeTargetTokens) return plan;
@@ -5774,16 +4851,25 @@ var ToolResultPruner = class extends Service {
 				tokenizerRevision: exact === true && exactSurface !== void 0 ? exactSurface.tokenizerRevision : "chars-per-token-4.0"
 			});
 			const groupText = shadowedSeqs.map((seq) => sessionEvents(session)[seq]).filter((event) => event?.type === "tool/result").map((event) => flattenPlainText(viewToolResult(event.data.message).blocks)).filter((text) => text !== void 0).join("\n");
-			if (groupText.length > 0) getSavingsLedger().recordSaving({
-				sessionId: String(session.id),
-				component: "tail-trim",
-				tokensBefore,
-				tokensAfter,
-				basis: exact ? "exact-tokenizer" : "characters",
-				sourceSeq: manifestSeq,
-				replacementSeq: Number(replacement.seq),
-				originalText: groupText
-			});
+			if (groupText.length > 0) {
+				getSavingsLedger().recordSaving({
+					sessionId: String(session.id),
+					component: "tail-trim",
+					tokensBefore,
+					tokensAfter,
+					basis: exact ? "exact-tokenizer" : "characters",
+					sourceSeq: manifestSeq,
+					replacementSeq: Number(replacement.seq),
+					originalText: groupText
+				});
+				reclaimFromTailTrim({
+					sessionId: String(session.id),
+					tokensBefore,
+					tokensAfter,
+					basis: exact ? "exact-tokenizer" : "characters",
+					replacementSeq: Number(replacement.seq)
+				});
+			}
 			return;
 		}
 		this.auditComponent(session, policy, "tail-trim", "pressure", "skipped", "no-safe-eligible-tool-group", {
@@ -5926,6 +5012,14 @@ var ToolResultPruner = class extends Service {
 			replacementSeq: Number(replacement.seq),
 			...pairedOriginal === void 0 ? {} : { originalText: pairedOriginal }
 		});
+		claimFromLand({
+			sessionId: String(session.id),
+			component: plan.component,
+			tokensBefore: plan.tokensBefore,
+			tokensAfter: plan.tokensAfter,
+			basis: plan.measurementBasis,
+			replacementSeq: Number(replacement.seq)
+		});
 		return {
 			originalSeq: candidate.seq,
 			sourceSeq: plan.sourceSeq,
@@ -6063,7 +5157,7 @@ var ToolResultPruner = class extends Service {
 			stage,
 			operation,
 			errorName: error instanceof Error ? error.name : "UnknownError",
-			errorMessage: error instanceof Error ? error.message : String(error)
+			errorMessage: sanitizeAuditMessage(error)
 		});
 	}
 	auditPublicationFailure(session, stage, component, manifestSeq, error) {

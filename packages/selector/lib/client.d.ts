@@ -81,6 +81,14 @@ declare const zh: {
   'monitor.panel.net': string;
   'monitor.panel.gross': string;
   'monitor.panel.offsets': string;
+  'monitor.panel.totalNet': string;
+  'monitor.panel.totalGross': string;
+  'monitor.panel.totalOffsets': string;
+  'monitor.panel.compositionBackfill': string;
+  'monitor.panel.cumulative': string;
+  'monitor.panel.money': string;
+  'monitor.panel.composition': string;
+  'monitor.panel.compositionScope': string;
   'monitor.panel.context': string;
   'monitor.panel.suggest': string;
   'monitor.panel.cacheHit': string;
@@ -145,6 +153,14 @@ declare const zh: {
   'savings.actualCost': string;
   'savings.savedMoney': string;
   'savings.perSession': string;
+  'savings.focus': string;
+  'savings.degraded': string;
+  'savings.persisted': string;
+  'savings.pageNext': string;
+  'savings.pagePrev': string;
+  'savings.sessions': string;
+  'savings.money': string;
+  'savings.cumulative': string;
 };
 /** Locale keys that every context-compression selector dictionary must provide. */
 type ContextCompressionLocaleKey = keyof typeof zh;

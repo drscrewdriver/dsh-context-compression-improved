@@ -1125,19 +1125,27 @@ window.__ModuleLoader__.load({
 		//#endregion
 		//#region src/client/savings-card.tsx
 		/**
-		* 节省统计卡片(设置分节内,只读):净/毛/抵消 + 分项条。
-		* 数据源 = `/api/.../savings` 只读快照路由(忙 2s / 闲 5s 自调度轮询,
-		* 失败静默——统计卡片永不打扰设置页主功能)。
+		* 节省统计卡片(设置分节内,只读):存量(本进程口径) + 累计(按 N 次 call) +
+		* 省钱估计三行并存(T26),会话账本服务端分页(T24 数据面),持久化徽标与降级
+		* 标注,显示偏好经载荷 displayPrefs 实时拾取(T32,/ccip 的落点)。
+		* 数据源 = `/api/.../savings`(存量)与 `/api/.../savings/sessions`(分页面板),
+		* 5s 自调度轮询,失败静默——统计卡片永不打扰设置页主功能。
 		*
 		* @module dsh-context-compression-improved/client/savings-card
 		*/
 		const SAVINGS_ROUTE = "/api/dsh-context-compression-improved/savings";
+		const SESSIONS_ROUTE = "/api/dsh-context-compression-improved/savings/sessions";
+		const PAGE_SIZE = 20;
 		function fmt(n) {
 			return n.toLocaleString("en-US");
 		}
-		/** 节省统计卡片:口径分列(精确 tokenizer vs chars/4 估算),永不混算。 */
+		/** 节省统计卡片:存量/累计双口径 + 会话账本分页;口径分列永不混算。 */
 		function SavingsCard({ t }) {
 			const [snap, setSnap] = (0, react.useState)(null);
+			const [panel, setPanel] = (0, react.useState)(null);
+			const [offset, setOffset] = (0, react.useState)(0);
+			const offsetRef = (0, react.useRef)(0);
+			offsetRef.current = offset;
 			const stopped = (0, react.useRef)(false);
 			(0, react.useEffect)(() => {
 				stopped.current = false;
@@ -1149,65 +1157,116 @@ window.__ModuleLoader__.load({
 							if (data?.startedAt !== void 0 && !stopped.current) setSnap(data);
 						}
 					} catch {}
+					try {
+						const response = await fetch(`${SESSIONS_ROUTE}?offset=${String(offsetRef.current)}&limit=${String(PAGE_SIZE)}`, { headers: { "cache-control": "no-cache" } });
+						if (response.ok) {
+							const data = await response.json();
+							if (data?.ok === true && !stopped.current) setPanel(data);
+						}
+					} catch {}
 					if (!stopped.current) setTimeout(tick, 5e3);
 				};
 				tick();
 				return () => {
 					stopped.current = true;
 				};
-			}, []);
-			if (snap === null || snap.gross.exact + snap.gross.estimated === 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+			}, [offset]);
+			const prefs = panel?.displayPrefs;
+			const stockVisible = prefs?.rows.stock !== false;
+			const totalVisible = prefs?.rows.total !== false;
+			const moneyVisible = prefs?.rows.money !== false;
+			const compact = prefs?.mode === "compact";
+			const focus = prefs?.focusSessionId ?? null;
+			const persisted = panel?.persisted?.persisted === true;
+			const integral = panel?.integralTotal;
+			const stockEmpty = snap === null || snap.gross.exact + snap.gross.estimated === 0;
+			const integralEmpty = integral === void 0 || integral.calls === 0;
+			const panelSessions = panel?.sessions ?? [];
+			const panelLiveOnly = panel?.liveOnly ?? [];
+			const ledgerReady = panelSessions.length > 0 || panelLiveOnly.length > 1;
+			if (stockEmpty && integralEmpty && !ledgerReady) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 				className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.pricing,
 				children: t("savings.empty")
 			});
-			const hasExact = snap.gross.exact > 0 || snap.offsets.exact > 0;
-			const hasEstimated = snap.gross.estimated > 0 || snap.offsets.estimated > 0;
-			const netTone = snap.net.exact + snap.net.estimated >= 0 ? _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsNetPositive : _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsNetNegative;
+			const hasExact = snap !== null && (snap.gross.exact > 0 || snap.offsets.exact > 0);
+			const hasEstimated = snap !== null && (snap.gross.estimated > 0 || snap.offsets.estimated > 0);
+			const netTone = snap !== null && snap.net.exact + snap.net.estimated >= 0 ? _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsNetPositive : _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsNetNegative;
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: `${_dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsCard}`,
 				"data-testid": "savings-card",
 				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsRow,
-						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("savings.title") })
-					}),
-					hasExact ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: `${_dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsRow} ${netTone}`,
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("savings.netExact") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: fmt(snap.net.exact) })]
-					}) : null,
-					hasEstimated ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsRow,
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("savings.netEstimated") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: fmt(snap.net.estimated) })]
-					}) : null,
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsRow,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("savings.title") }), panel === null ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
+							"data-testid": "savings-persisted",
+							children: persisted ? `✓ ${t("savings.persisted")}` : `⚠ ${t("savings.degraded")}`
+						})]
+					}),
+					stockVisible && snap !== null ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+						hasExact ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: `${_dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsRow} ${netTone}`,
+							"data-testid": "savings-stock-exact",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("savings.netExact") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: fmt(snap.net.exact) })]
+						}) : null,
+						hasEstimated ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsRow,
+							"data-testid": "savings-stock-estimated",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("savings.netEstimated") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: fmt(snap.net.estimated) })]
+						}) : null,
+						!compact ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsRow,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
+								children: t("savings.gross")
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
+								children: [
+									hasExact ? `✓ ${fmt(snap.gross.exact)}` : "",
+									hasExact && hasEstimated ? " · " : "",
+									hasEstimated ? `≈ ${fmt(snap.gross.estimated)}` : ""
+								]
+							})]
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsRow,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
+								children: t("savings.offsets")
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
+								children: [
+									hasExact ? `−${fmt(snap.offsets.exact)}` : "",
+									hasExact && hasEstimated ? " · " : "",
+									hasEstimated ? `−${fmt(snap.offsets.estimated)}` : ""
+								]
+							})]
+						})] }) : null
+					] }) : null,
+					totalVisible && integral !== void 0 && integral.calls > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsRow,
+						"data-testid": "savings-cumulative",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("savings.cumulative").replace("N", fmt(integral.calls)) }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("strong", { children: [
+							integral.netExact !== 0 ? fmt(integral.netExact) : "",
+							integral.netExact !== 0 && integral.netEstimated !== 0 ? " · " : "",
+							integral.netEstimated !== 0 ? `≈ ${fmt(integral.netEstimated)}` : ""
+						] })]
+					}) : null,
+					moneyVisible && panel?.integralMoney !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsRow,
+						"data-testid": "savings-money",
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
-							children: t("savings.gross")
+							children: t("savings.money")
 						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
 							children: [
-								hasExact ? `✓ ${fmt(snap.gross.exact)}` : "",
-								hasExact && hasEstimated ? " · " : "",
-								hasEstimated ? `≈ ${fmt(snap.gross.estimated)}` : ""
+								panel.integralMoney.currency,
+								" ",
+								panel.integralMoney.decimal
 							]
 						})]
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsRow,
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
-							children: t("savings.offsets")
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
-							children: [
-								hasExact ? `−${fmt(snap.offsets.exact)}` : "",
-								hasExact && hasEstimated ? " · " : "",
-								hasEstimated ? `−${fmt(snap.offsets.estimated)}` : ""
-							]
-						})]
-					}),
-					snap.usage !== void 0 && snap.usage.requests > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+					}) : null,
+					stockVisible && snap !== null && !compact && snap.usage !== void 0 && snap.usage.requests > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsRow,
 							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
@@ -1257,26 +1316,69 @@ window.__ModuleLoader__.load({
 							})]
 						}) : null
 					] }) : null,
-					snap.perSession !== void 0 && snap.perSession.length > 1 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					ledgerReady ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsBreakdown,
-						children: snap.perSession.slice(0, 5).map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsRow,
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-								className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
-								children: [
-									t("savings.perSession"),
-									" · ",
-									row.sessionId.slice(0, 8),
-									"…",
-									row.requests > 0 ? ` · ${t("savings.cacheHit")} ${row.cacheHitRate === null ? "–" : `${Math.round(row.cacheHitRate * 100)}%`}` : ""
-								]
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
-								children: fmt(row.net.exact)
-							})]
-						}, row.sessionId))
+						"data-testid": "savings-session-list",
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsRow,
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
+									children: [t("savings.sessions"), panel !== null && panel.total > 0 ? ` (${fmt(panel.total)})` : ""]
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
+									children: [panel !== null && (panel.total > panelSessions.length || panel.offset > 0) ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("a", {
+										href: "#",
+										"data-testid": "savings-page-prev",
+										onClick: (event) => {
+											event.preventDefault();
+											setOffset((value) => Math.max(0, value - PAGE_SIZE));
+										},
+										children: t("savings.pagePrev")
+									}), " · "] }) : null, panel !== null && panel.offset + panelSessions.length < panel.total ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("a", {
+										href: "#",
+										"data-testid": "savings-page-next",
+										onClick: (event) => {
+											event.preventDefault();
+											setOffset((value) => value + PAGE_SIZE);
+										},
+										children: t("savings.pageNext")
+									}) : null]
+								})]
+							}),
+							panelSessions.slice(0, 8).map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsRow,
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
+									children: [
+										row.sessionId === focus ? `◎ ${t("savings.focus")} · ` : "",
+										row.sessionId.slice(0, 8),
+										"… · ",
+										fmt(row.integral.calls),
+										" calls"
+									]
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
+									children: [fmt(row.net.exact), row.money !== void 0 ? ` · ${row.money.currency} ${row.money.decimal}` : ""]
+								})]
+							}, row.sessionId)),
+							panelLiveOnly.slice(0, 3).map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsRow,
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
+									children: [
+										row.sessionId.slice(0, 8),
+										"… · ",
+										t("savings.netEstimated")
+									]
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsMuted,
+									children: fmt(row.net.exact + row.net.estimated)
+								})]
+							}, row.sessionId))
+						]
 					}) : null,
-					snap.perComponent.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					stockVisible && snap !== null && !compact && snap.perComponent.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsBreakdown,
 						children: snap.perComponent.slice(0, 6).map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.savingsRow,
@@ -1575,6 +1677,11 @@ window.__ModuleLoader__.load({
   <button data-overoff class="ghost">${t("monitor.panel.disable")}</button></div>
 <div class="row muted" data-fold style="display:none"></div>
 <div class="stale" data-stale>${t("monitor.panel.stale")}</div>
+<div data-compwrap style="display:none">
+  <div class="row"><span class="label">${t("monitor.panel.composition")}</span></div>
+  <div class="row muted" data-compscope style="display:none"></div>
+  <div class="recent" data-comp></div>
+</div>
 <div class="recent" data-recent></div>
 `;
 			document.body.append(fab, panel);
@@ -1685,10 +1792,16 @@ window.__ModuleLoader__.load({
 				};
 			};
 			const render = (snap) => {
-				const net = num(snap.net?.exact) + num(snap.net?.estimated);
+				const stockSource = (kind) => snap.sessionTotals?.[kind];
+				const fmtArm = (source, negative) => {
+					if (source === void 0) return "–";
+					const l = lead(source.exact, source.estimated);
+					if (!negative) return l.est ? `${fmtTokens(l.v)} est` : fmtTokens(l.v);
+					return l.v === 0 ? "0" : l.est ? `-${fmtTokens(l.v)} est` : `-${fmtTokens(l.v)}`;
+				};
+				const net = num(stockSource("net")?.exact) + num(stockSource("net")?.estimated);
 				const netEl = panel.querySelector("[data-net]");
-				const netLead = lead(snap.net?.exact, snap.net?.estimated);
-				netEl.textContent = netLead.est ? `${fmtTokens(netLead.v)} est` : fmtTokens(netLead.v);
+				netEl.textContent = fmtArm(stockSource("net"), false);
 				netEl.classList.toggle("neg", net < 0);
 				const suggest = snap.suggestion?.suggest === true;
 				fab.classList.toggle("lit", suggest || net < 0);
@@ -1698,10 +1811,31 @@ window.__ModuleLoader__.load({
 					hint.textContent = t("monitor.panel.suggest").replace("{pct}", String(pct ?? "–"));
 					hint.classList.add("show");
 				} else hint.classList.remove("show");
-				const grossLead = lead(snap.gross?.exact, snap.gross?.estimated);
-				panel.querySelector("[data-gross]").textContent = grossLead.est ? `${fmtTokens(grossLead.v)} est` : fmtTokens(grossLead.v);
-				const offLead = lead(snap.offsets?.exact, snap.offsets?.estimated);
-				panel.querySelector("[data-offsets]").textContent = offLead.est ? `-${fmtTokens(offLead.v)} est` : `-${fmtTokens(offLead.v)}`;
+				panel.querySelector("[data-gross]").textContent = fmtArm(stockSource("gross"), false);
+				panel.querySelector("[data-offsets]").textContent = fmtArm(stockSource("offsets"), true);
+				const deltaSeg = (tokens, sign) => {
+					const value = num(tokens);
+					return value === 0 ? "" : ` · Δ${sign > 0 ? "+" : "-"}${fmtTokens(Math.abs(value))}`;
+				};
+				const lastSaving = snap.lastDelta?.saving;
+				const lastOffset = snap.lastDelta?.offset;
+				const netDelta = lastSaving === void 0 && lastOffset === void 0 ? "" : num(lastSaving?.seq) >= num(lastOffset?.seq) ? deltaSeg(lastSaving?.tokens, 1) : deltaSeg(lastOffset?.tokens, -1);
+				netEl.textContent += netDelta;
+				panel.querySelector("[data-gross]").textContent += deltaSeg(lastSaving?.tokens, 1);
+				panel.querySelector("[data-offsets]").textContent += deltaSeg(lastOffset?.tokens, -1);
+				const compRows = Array.isArray(snap.composition) ? snap.composition.slice(0, 5) : [];
+				panel.querySelector("[data-compwrap]").style.display = compRows.length === 0 ? "none" : "";
+				const scopeEl = panel.querySelector("[data-compscope]");
+				const scopeId = typeof snap.compositionSession === "string" ? snap.compositionSession.replace(/^session-/, "").slice(0, 8) : "";
+				scopeEl.style.display = scopeId !== "" ? "" : "none";
+				if (scopeId !== "") scopeEl.textContent = `${t("monitor.panel.compositionScope")} ${scopeId}`;
+				if (compRows.length > 0) panel.querySelector("[data-comp]").textContent = compRows.map((row) => {
+					const e = row;
+					const est = e.basis === "exact-tokenizer" || e.basis === "mixed" ? "" : " est";
+					return `${e.component === "projection" ? `${t("monitor.panel.compositionBackfill")}(projection)` : String(e.component ?? "–")}: +${fmtTokens(e.tokens)}${est} · ${String(e.events ?? "–")}×`;
+				}).join("\n");
+				const h4El = panel.querySelector("h4");
+				h4El.textContent = t("monitor.panel.title") + (snap.persisted?.persisted === false ? " ⚠" : "");
 				const ctxBar = panel.querySelector("[data-ctxbar]");
 				const ctxPct = panel.querySelector("[data-ctxpct]");
 				const ctxPctNum = typeof snap.context?.pct === "number" ? snap.context.pct : null;
@@ -1853,9 +1987,17 @@ window.__ModuleLoader__.load({
 			"intentSummary.enabled.off": "关（默认）",
 			"monitor.fab.title": "压缩监控",
 			"monitor.panel.title": "压缩监控",
-			"monitor.panel.net": "净节省",
-			"monitor.panel.gross": "毛节省",
-			"monitor.panel.offsets": "抵消",
+			"monitor.panel.net": "会话干净节省 Δ",
+			"monitor.panel.gross": "会话毛节省 Δ",
+			"monitor.panel.offsets": "召回重查抵消 Δ",
+			"monitor.panel.totalNet": "总净节省(全部会话)",
+			"monitor.panel.totalGross": "总毛节省(全部会话)",
+			"monitor.panel.totalOffsets": "总抵消(全部会话)",
+			"monitor.panel.compositionBackfill": "回填估算",
+			"monitor.panel.cumulative": "累计(按 N 次 call)",
+			"monitor.panel.money": "省钱估计",
+			"monitor.panel.composition": "怎么省的(按压缩路径)",
+			"monitor.panel.compositionScope": "最近压缩会话",
 			"monitor.panel.context": "上下文占用",
 			"monitor.panel.suggest": "上下文占用已达 {pct}%——临近灾难性遗忘区，建议压缩或裁剪历史",
 			"monitor.panel.cacheHit": "缓存命中率",
@@ -1871,7 +2013,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.lastFold": "最近折叠",
 			"monitor.panel.stale": "快照不可达——显示上次数据",
 			"monitorPanel.title": "压缩监控悬浮面板",
-			"monitorPanel.description": "开启后，输入区旁出现可拖拽的悬浮球，点开即监控当前压缩状态：净节省（精确口径）、缓存命中率、成本估算、回合末意图摘要门控与最近抵消；面板内可临时覆盖当前会话的意图摘要开关。账本为进程内口径（宿主重启归零）。",
+			"monitorPanel.description": "开启后，输入区旁出现可拖拽的悬浮球，点开即监控当前压缩状态：净节省（精确口径）、缓存命中率、成本估算、回合末意图摘要门控与最近抵消；面板内可临时覆盖当前会话的意图摘要开关。统计经 SQLite 持久化，跨宿主重启保留。",
 			"monitorPanel.enabled": "悬浮面板",
 			"monitorPanel.enabled.on": "开",
 			"monitorPanel.enabled.off": "关（默认）",
@@ -1919,7 +2061,15 @@ window.__ModuleLoader__.load({
 			"savings.cacheHit": "缓存命中率",
 			"savings.actualCost": "实际成本(官方牌价)",
 			"savings.savedMoney": "估算节省金额(按输入价)",
-			"savings.perSession": "会话"
+			"savings.perSession": "会话",
+			"savings.focus": "聚焦",
+			"savings.degraded": "持久化降级——统计仅内存",
+			"savings.persisted": "已持久化",
+			"savings.pageNext": "下一页",
+			"savings.pagePrev": "上一页",
+			"savings.sessions": "会话账本",
+			"savings.money": "省钱估计(缓存分权)",
+			"savings.cumulative": "累计(按 N 次 call)"
 		};
 		/** English copy matching every simplified Chinese selector key. */
 		const en = {
@@ -1992,9 +2142,17 @@ window.__ModuleLoader__.load({
 			"intentSummary.enabled.off": "Off (default)",
 			"monitor.fab.title": "Compression monitor",
 			"monitor.panel.title": "Compression monitor",
-			"monitor.panel.net": "Net savings",
-			"monitor.panel.gross": "Gross savings",
-			"monitor.panel.offsets": "Offsets",
+			"monitor.panel.net": "Net Δ",
+			"monitor.panel.gross": "Gross Δ",
+			"monitor.panel.offsets": "Recall-recheck Δ",
+			"monitor.panel.totalNet": "Total net (all sessions)",
+			"monitor.panel.totalGross": "Total gross (all sessions)",
+			"monitor.panel.totalOffsets": "Total offsets (all sessions)",
+			"monitor.panel.compositionBackfill": "backfill est.",
+			"monitor.panel.cumulative": "Cumulative (by N calls)",
+			"monitor.panel.money": "Money estimate",
+			"monitor.panel.composition": "How it saves (by path)",
+			"monitor.panel.compositionScope": "Latest compressed session",
 			"monitor.panel.context": "Context occupancy",
 			"monitor.panel.suggest": "Context occupancy reached {pct}% — nearing the catastrophic-forgetting zone; consider compressing or trimming history",
 			"monitor.panel.cacheHit": "Cache hit rate",
@@ -2010,7 +2168,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.lastFold": "Last fold",
 			"monitor.panel.stale": "Snapshot unreachable — showing last data",
 			"monitorPanel.title": "Compression monitor panel",
-			"monitorPanel.description": "When on, a draggable floating bubble appears next to the input area — open it to watch live compression state: net savings (exact basis), cache hit rate, cost estimate, the turn-tail intent-summary gate and recent offsets. The panel can temporarily override the current session's intent-summary switch. The ledger is per-process (reset when the host restarts).",
+			"monitorPanel.description": "When on, a draggable floating bubble appears next to the input area — open it to watch live compression state: net savings (exact basis), cache hit rate, cost estimate, the turn-tail intent-summary gate and recent offsets. The panel can temporarily override the current session's intent-summary switch. Stats persist in SQLite and survive host restarts.",
 			"monitorPanel.enabled": "Monitor panel",
 			"monitorPanel.enabled.on": "On",
 			"monitorPanel.enabled.off": "Off (default)",
@@ -2058,7 +2216,15 @@ window.__ModuleLoader__.load({
 			"savings.cacheHit": "Cache hit rate",
 			"savings.actualCost": "Actual cost (official prices)",
 			"savings.savedMoney": "Estimated saved cost (input price)",
-			"savings.perSession": "Session"
+			"savings.perSession": "Session",
+			"savings.focus": "focus",
+			"savings.degraded": "Persistence degraded — stats are in-memory only",
+			"savings.persisted": "Persisted",
+			"savings.pageNext": "Next",
+			"savings.pagePrev": "Prev",
+			"savings.sessions": "Session ledger",
+			"savings.money": "Money saved (cache-weighted)",
+			"savings.cumulative": "Cumulative (across N calls)"
 		};
 		//#endregion
 		//#region src/client/locales/de.ts
@@ -2133,9 +2299,17 @@ window.__ModuleLoader__.load({
 			"intentSummary.enabled.off": "Aus (Standard)",
 			"monitor.fab.title": "Komprimierungs-Monitor",
 			"monitor.panel.title": "Komprimierungs-Monitor",
-			"monitor.panel.net": "Nettoeinsparung",
-			"monitor.panel.gross": "Bruttoeinsparung",
-			"monitor.panel.offsets": "Ausgleiche",
+			"monitor.panel.net": "Sitzung Netto Δ",
+			"monitor.panel.gross": "Sitzung Brutto Δ",
+			"monitor.panel.offsets": "Ausgleiche Δ",
+			"monitor.panel.totalNet": "Gesamt netto (alle)",
+			"monitor.panel.totalGross": "Gesamt brutto (alle)",
+			"monitor.panel.totalOffsets": "Gesamt Ausgleiche (alle)",
+			"monitor.panel.compositionBackfill": "Backfill-Schätzung",
+			"monitor.panel.cumulative": "Kumuliert (N Calls)",
+			"monitor.panel.money": "Geldschätzung",
+			"monitor.panel.composition": "Einsparung nach Pfad",
+			"monitor.panel.compositionScope": "Zuletzt komprimierte Sitzung",
 			"monitor.panel.context": "Kontextbelegung",
 			"monitor.panel.suggest": "Kontextbelegung bei {pct}% — nahe der katastrophalen Vergessenszone; Komprimieren oder Kürzen des Verlaufs empfohlen",
 			"monitor.panel.cacheHit": "Cache-Trefferquote",
@@ -2151,7 +2325,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.lastFold": "Letzte Faltung",
 			"monitor.panel.stale": "Snapshot nicht erreichbar — letzte Daten",
 			"monitorPanel.title": "Komprimierungs-Monitorpanel",
-			"monitorPanel.description": "Aktiviert erscheint neben dem Eingabebereich eine ziehbare Schwebekugel — öffne sie, um den Live-Komprimierungszustand zu beobachten: Nettoeinsparung (exakte Basis), Cache-Trefferquote, Kostenschätzung, das Turn-Tail-Gate und letzte Ausgleiche. Das Panel kann den Intent-Zusammenfassungsschalter der aktuellen Sitzung temporär übersteuern. Das Konto ist prozesslokal (Reset bei Host-Neustart).",
+			"monitorPanel.description": "Aktiviert erscheint neben dem Eingabebereich eine ziehbare Schwebekugel — öffne sie, um den Live-Komprimierungszustand zu beobachten: Nettoeinsparung (exakte Basis), Cache-Trefferquote, Kostenschätzung, das Turn-Tail-Gate und letzte Ausgleiche. Das Panel kann den Intent-Zusammenfassungsschalter der aktuellen Sitzung temporär übersteuern. Statistiken werden in SQLite persistiert und überstehen Host-Neustarts.",
 			"monitorPanel.enabled": "Monitorpanel",
 			"monitorPanel.enabled.on": "Ein",
 			"monitorPanel.enabled.off": "Aus (Standard)",
@@ -2199,7 +2373,15 @@ window.__ModuleLoader__.load({
 			"savings.cacheHit": "Cache hit rate",
 			"savings.actualCost": "Actual cost (official prices)",
 			"savings.savedMoney": "Estimated saved cost (input price)",
-			"savings.perSession": "Session"
+			"savings.perSession": "Session",
+			"savings.focus": "Fokus",
+			"savings.degraded": "Persistierung degradiert — Statistiken nur im Speicher",
+			"savings.persisted": "Persistiert",
+			"savings.pageNext": "Weiter",
+			"savings.pagePrev": "Zurück",
+			"savings.sessions": "Sitzungskonto",
+			"savings.money": "Geld gespart (cache-gewichtet)",
+			"savings.cumulative": "Kumuliert (über N Calls)"
 		};
 		//#endregion
 		//#region src/client/locales/es.ts
@@ -2274,9 +2456,17 @@ window.__ModuleLoader__.load({
 			"intentSummary.enabled.off": "No (predeterminado)",
 			"monitor.fab.title": "Monitor de compresión",
 			"monitor.panel.title": "Monitor de compresión",
-			"monitor.panel.net": "Ahorro neto",
-			"monitor.panel.gross": "Ahorro bruto",
-			"monitor.panel.offsets": "Compensaciones",
+			"monitor.panel.net": "Sesión neto Δ",
+			"monitor.panel.gross": "Sesión bruto Δ",
+			"monitor.panel.offsets": "Compensaciones Δ",
+			"monitor.panel.totalNet": "Neto total (todo)",
+			"monitor.panel.totalGross": "Bruto total (todo)",
+			"monitor.panel.totalOffsets": "Compensaciones totales",
+			"monitor.panel.compositionBackfill": "est. retroactiva",
+			"monitor.panel.cumulative": "Acumulado (N llamadas)",
+			"monitor.panel.money": "Est. de ahorro",
+			"monitor.panel.composition": "Cómo ahorra (por ruta)",
+			"monitor.panel.compositionScope": "Sesión comprimida reciente",
 			"monitor.panel.context": "Ocupación del contexto",
 			"monitor.panel.suggest": "La ocupación del contexto alcanzó el {pct} % — cerca de la zona de olvido catastrófico; se recomienda comprimir o recortar el historial",
 			"monitor.panel.cacheHit": "Tasa de acierto de caché",
@@ -2292,7 +2482,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.lastFold": "Último plegado",
 			"monitor.panel.stale": "Instantánea inalcanzable — se muestran los últimos datos",
 			"monitorPanel.title": "Panel de monitor de compresión",
-			"monitorPanel.description": "Al activarlo, junto al área de entrada aparece una burbuja flotante arrastrable — ábrela para observar el estado de compresión en vivo: ahorro neto (base exacta), tasa de acierto de caché, estimación de coste, la puerta de resumen de intención del turno y compensaciones recientes. El panel puede invalidar temporalmente el interruptor de resumen de intención de la sesión actual. El libro es por proceso (se reinicia al rearrancar el host).",
+			"monitorPanel.description": "Al activarlo, junto al área de entrada aparece una burbuja flotante arrastrable — ábrela para observar el estado de compresión en vivo: ahorro neto (base exacta), tasa de acierto de caché, estimación de coste, la puerta de resumen de intención del turno y compensaciones recientes. El panel puede invalidar temporalmente el interruptor de resumen de intención de la sesión actual. Las estadísticas se persisten en SQLite y sobreviven al reinicio del host.",
 			"monitorPanel.enabled": "Panel de monitor",
 			"monitorPanel.enabled.on": "Sí",
 			"monitorPanel.enabled.off": "No (predeterminado)",
@@ -2340,7 +2530,15 @@ window.__ModuleLoader__.load({
 			"savings.cacheHit": "Cache-Trefferquote",
 			"savings.actualCost": "Tatsächliche Kosten (offizielle Preise)",
 			"savings.savedMoney": "Geschätzte Einsparung (Eingabepreis)",
-			"savings.perSession": "Sitzung"
+			"savings.perSession": "Sitzung",
+			"savings.focus": "foco",
+			"savings.degraded": "Persistencia degradada — estadísticas solo en memoria",
+			"savings.persisted": "Persistido",
+			"savings.pageNext": "Siguiente",
+			"savings.pagePrev": "Anterior",
+			"savings.sessions": "Libro de sesiones",
+			"savings.money": "Dinero ahorrado (ponderado por caché)",
+			"savings.cumulative": "Acumulado (en N llamadas)"
 		};
 		//#endregion
 		//#region src/client/locales/fr.ts
@@ -2415,9 +2613,17 @@ window.__ModuleLoader__.load({
 			"intentSummary.enabled.off": "Désactivé (par défaut)",
 			"monitor.fab.title": "Monitor de compression",
 			"monitor.panel.title": "Monitor de compression",
-			"monitor.panel.net": "Économie nette",
-			"monitor.panel.gross": "Économie brute",
-			"monitor.panel.offsets": "Compensations",
+			"monitor.panel.net": "Session net Δ",
+			"monitor.panel.gross": "Session brut Δ",
+			"monitor.panel.offsets": "Compensations Δ",
+			"monitor.panel.totalNet": "Net total (tout)",
+			"monitor.panel.totalGross": "Brut total (tout)",
+			"monitor.panel.totalOffsets": "Compensations totales",
+			"monitor.panel.compositionBackfill": "est. rétroactif",
+			"monitor.panel.cumulative": "Cumul (N appels)",
+			"monitor.panel.money": "Est. économies",
+			"monitor.panel.composition": "Économies par chemin",
+			"monitor.panel.compositionScope": "Dernière session compressée",
 			"monitor.panel.context": "Occupation du contexte",
 			"monitor.panel.suggest": "Occupation du contexte à {pct} % — zone de perte de contexte imminente ; pensez à lancer une compression ou à réduire les anciens échanges",
 			"monitor.panel.cacheHit": "Taux de réussite du cache",
@@ -2433,7 +2639,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.lastFold": "Dernier pliage",
 			"monitor.panel.stale": "Instantané injoignable — dernières données",
 			"monitorPanel.title": "Panneau de monitorage de compression",
-			"monitorPanel.description": "Activé, une bulle flottante déplaçable apparaît près de la zone de saisie — ouvrez-la pour observer l'état de compression en direct : économie nette (base exacte), taux de réussite du cache, estimation de coût, la porte de résumé d'intention du tour et les compensations récentes. Le panneau peut contourner temporairement l'interrupteur de résumé d'intention de la session courante. Le registre est propre au processus (remis à zéro au redémarrage de l'hôte).",
+			"monitorPanel.description": "Activé, une bulle flottante déplaçable apparaît près de la zone de saisie — ouvrez-la pour observer l'état de compression en direct : économie nette (base exacte), taux de réussite du cache, estimation de coût, la porte de résumé d'intention du tour et les compensations récentes. Le panneau peut contourner temporairement l'interrupteur de résumé d'intention de la session courante. Les statistiques sont persistées en SQLite et survivent au redémarrage de l'hôte.",
 			"monitorPanel.enabled": "Panneau de monitorage",
 			"monitorPanel.enabled.on": "Activé",
 			"monitorPanel.enabled.off": "Désactivé (par défaut)",
@@ -2481,7 +2687,15 @@ window.__ModuleLoader__.load({
 			"savings.cacheHit": "Tasa de aciertos de caché",
 			"savings.actualCost": "Coste real (precios oficiales)",
 			"savings.savedMoney": "Ahorro estimado (precio de entrada)",
-			"savings.perSession": "Sesión"
+			"savings.perSession": "Sesión",
+			"savings.focus": "focus",
+			"savings.degraded": "Persistance dégradée — statistiques en mémoire uniquement",
+			"savings.persisted": "Persisté",
+			"savings.pageNext": "Suivant",
+			"savings.pagePrev": "Précédent",
+			"savings.sessions": "Registre des sessions",
+			"savings.money": "Argent économisé (pondéré cache)",
+			"savings.cumulative": "Cumulé (sur N appels)"
 		};
 		//#endregion
 		//#region src/client/locales/it.ts
@@ -2556,9 +2770,17 @@ window.__ModuleLoader__.load({
 			"intentSummary.enabled.off": "Off (predefinito)",
 			"monitor.fab.title": "Monitor compressione",
 			"monitor.panel.title": "Monitor compressione",
-			"monitor.panel.net": "Risparmio netto",
-			"monitor.panel.gross": "Risparmio lordo",
-			"monitor.panel.offsets": "Compensazioni",
+			"monitor.panel.net": "Sessione netto Δ",
+			"monitor.panel.gross": "Sessione lordo Δ",
+			"monitor.panel.offsets": "Compensazioni Δ",
+			"monitor.panel.totalNet": "Netto totale (tutto)",
+			"monitor.panel.totalGross": "Lordo totale (tutto)",
+			"monitor.panel.totalOffsets": "Compensazioni totali",
+			"monitor.panel.compositionBackfill": "stima retroattiva",
+			"monitor.panel.cumulative": "Cumulato (N chiamate)",
+			"monitor.panel.money": "Stima risparmio",
+			"monitor.panel.composition": "Come risparmia (per percorso)",
+			"monitor.panel.compositionScope": "Sessione compressa recente",
 			"monitor.panel.context": "Occupazione del contesto",
 			"monitor.panel.suggest": "Occupazione del contesto al {pct}% — vicini alla zona di dimenticanza catastrofica; consigliato comprimere o tagliare la cronologia",
 			"monitor.panel.cacheHit": "Tasso di hit della cache",
@@ -2574,7 +2796,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.lastFold": "Ultima piegatura",
 			"monitor.panel.stale": "Snapshot non raggiungibile — ultimi dati",
 			"monitorPanel.title": "Pannello di monitoraggio compressione",
-			"monitorPanel.description": "Quando attivo, accanto all'area di input appare una bolla flottante trascinabile — aprila per osservare lo stato di compressione in tempo reale: risparmio netto (base esatta), tasso di hit della cache, stima dei costi, la soglia del riepilogo di intento del turno e le compensazioni recenti. Il pannello può ignorare temporaneamente l'interruttore del riepilogo di intento della sessione corrente. Il registro è per processo (azzerato al riavvio dell'host).",
+			"monitorPanel.description": "Quando attivo, accanto all'area di input appare una bolla flottante trascinabile — aprila per osservare lo stato di compressione in tempo reale: risparmio netto (base esatta), tasso di hit della cache, stima dei costi, la soglia del riepilogo di intento del turno e le compensazioni recenti. Il pannello può ignorare temporaneamente l'interruttore del riepilogo di intento della sessione corrente. Le statistiche sono persistite in SQLite e sopravvivono al riavvio dell'host.",
 			"monitorPanel.enabled": "Pannello di monitoraggio",
 			"monitorPanel.enabled.on": "On",
 			"monitorPanel.enabled.off": "Off (predefinito)",
@@ -2622,7 +2844,15 @@ window.__ModuleLoader__.load({
 			"savings.cacheHit": "Taux de cache",
 			"savings.actualCost": "Coût réel (tarifs officiels)",
 			"savings.savedMoney": "Économie estimée (prix d’entrée)",
-			"savings.perSession": "Session"
+			"savings.perSession": "Session",
+			"savings.focus": "focus",
+			"savings.degraded": "Persistenza degradata — statistiche solo in memoria",
+			"savings.persisted": "Persistito",
+			"savings.pageNext": "Avanti",
+			"savings.pagePrev": "Indietro",
+			"savings.sessions": "Registro sessioni",
+			"savings.money": "Denaro risparmiato (ponderato cache)",
+			"savings.cumulative": "Cumulato (su N chiamate)"
 		};
 		//#endregion
 		//#region src/client/locales/ja.ts
@@ -2697,9 +2927,17 @@ window.__ModuleLoader__.load({
 			"intentSummary.enabled.off": "オフ（既定）",
 			"monitor.fab.title": "圧縮モニター",
 			"monitor.panel.title": "圧縮モニター",
-			"monitor.panel.net": "正味節約",
-			"monitor.panel.gross": "総節約",
-			"monitor.panel.offsets": "相殺",
+			"monitor.panel.net": "セッション純節約 Δ",
+			"monitor.panel.gross": "セッション粗節約 Δ",
+			"monitor.panel.offsets": "再検索相殺 Δ",
+			"monitor.panel.totalNet": "総純節約(全セッション)",
+			"monitor.panel.totalGross": "総粗節約(全セッション)",
+			"monitor.panel.totalOffsets": "総相殺(全セッション)",
+			"monitor.panel.compositionBackfill": "バックフィル推定",
+			"monitor.panel.cumulative": "累計(N call)",
+			"monitor.panel.money": "節約見積",
+			"monitor.panel.composition": "内訳(圧縮経路別)",
+			"monitor.panel.compositionScope": "最新の圧縮セッション",
 			"monitor.panel.context": "コンテキスト占有",
 			"monitor.panel.suggest": "コンテキスト占有が {pct}% に達しました——壊滅的忘却ゾーンに近づいています。圧縮または履歴の削減を推奨",
 			"monitor.panel.cacheHit": "キャッシュ ヒット率",
@@ -2715,7 +2953,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.lastFold": "最後の折り畳み",
 			"monitor.panel.stale": "スナップショット到達不能——前回データを表示",
 			"monitorPanel.title": "圧縮モニター パネル",
-			"monitorPanel.description": "有効にすると、入力欄のそばにドラッグできるフローティング バブルが現れます。開くとライブの圧縮状態を監視できます。正味節約（正確 basis）、キャッシュ ヒット率、コスト概算、ターン末尾インテント要約ゲート、最近の相殺。パネルから現セッションのインテント要約スイッチを一時的に上書きできます。台帳はプロセス単位（ホスト再起動でリセット）。",
+			"monitorPanel.description": "有効にすると、入力欄のそばにドラッグできるフローティング バブルが現れます。開くとライブの圧縮状態を監視できます。正味節約（正確 basis）、キャッシュ ヒット率、コスト概算、ターン末尾インテント要約ゲート、最近の相殺。パネルから現セッションのインテント要約スイッチを一時的に上書きできます。統計は SQLite に永続化され、ホスト再起動後も保持されます。",
 			"monitorPanel.enabled": "モニター パネル",
 			"monitorPanel.enabled.on": "オン",
 			"monitorPanel.enabled.off": "オフ（既定）",
@@ -2763,7 +3001,15 @@ window.__ModuleLoader__.load({
 			"savings.cacheHit": "Tasso di cache",
 			"savings.actualCost": "Costo reale (prezzi ufficiali)",
 			"savings.savedMoney": "Risparmio stimato (prezzo di input)",
-			"savings.perSession": "Sessione"
+			"savings.perSession": "Sessione",
+			"savings.focus": "フォーカス",
+			"savings.degraded": "永続化が降級中 — 統計はメモリのみ",
+			"savings.persisted": "永続化済み",
+			"savings.pageNext": "次へ",
+			"savings.pagePrev": "前へ",
+			"savings.sessions": "セッション台帳",
+			"savings.money": "節約金額（キャッシュ加重）",
+			"savings.cumulative": "累計（N コール）"
 		};
 		//#endregion
 		//#region src/client/locales/ko.ts
@@ -2838,9 +3084,17 @@ window.__ModuleLoader__.load({
 			"intentSummary.enabled.off": "끄기(기본)",
 			"monitor.fab.title": "압축 모니터",
 			"monitor.panel.title": "압축 모니터",
-			"monitor.panel.net": "순 절감",
-			"monitor.panel.gross": "총 절감",
-			"monitor.panel.offsets": "상쇄",
+			"monitor.panel.net": "세션 순절감 Δ",
+			"monitor.panel.gross": "세션 총절감 Δ",
+			"monitor.panel.offsets": "재검색 상쇄 Δ",
+			"monitor.panel.totalNet": "총 순절감(전체)",
+			"monitor.panel.totalGross": "전체 총절감",
+			"monitor.panel.totalOffsets": "전체 상쇄",
+			"monitor.panel.compositionBackfill": "백필 추정",
+			"monitor.panel.cumulative": "누적(N call)",
+			"monitor.panel.money": "절감 추정",
+			"monitor.panel.composition": "절감 내역(경로별)",
+			"monitor.panel.compositionScope": "최근 압축 세션",
 			"monitor.panel.context": "컨텍스트 점유",
 			"monitor.panel.suggest": "컨텍스트 점유가 {pct}%에 도달——치명적 망각 구간에 근접, 압축이나 기록 정리를 권장",
 			"monitor.panel.cacheHit": "캐시 적중률",
@@ -2856,7 +3110,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.lastFold": "마지막 접기",
 			"monitor.panel.stale": "스냅샷 도달 불가——이전 데이터 표시",
 			"monitorPanel.title": "압축 모니터 패널",
-			"monitorPanel.description": "켜면 입력 영역 옆에 드래그 가능한 플로팅 버블이 나타납니다. 열면 라이브 압축 상태를 볼 수 있습니다. 순 절감(정확 기준), 캐시 적중률, 비용 추정, 턴 말머리 인텐트 요약 게이트, 최근 상쇄. 패널에서 현재 세션의 인텐트 요약 스위치를 임시로 전환할 수 있습니다. 장부는 프로세스 단위(호스트 재시작 시 초기화).",
+			"monitorPanel.description": "켜면 입력 영역 옆에 드래그 가능한 플로팅 버블이 나타납니다. 열면 라이브 압축 상태를 볼 수 있습니다. 순 절감(정확 기준), 캐시 적중률, 비용 추정, 턴 말머리 인텐트 요약 게이트, 최근 상쇄. 패널에서 현재 세션의 인텐트 요약 스위치를 임시로 전환할 수 있습니다. 통계는 SQLite에 영속화되어 호스트 재시작 후에도 유지됩니다.",
 			"monitorPanel.enabled": "모니터 패널",
 			"monitorPanel.enabled.on": "켜기",
 			"monitorPanel.enabled.off": "끄기(기본)",
@@ -2904,7 +3158,15 @@ window.__ModuleLoader__.load({
 			"savings.cacheHit": "キャッシュ ヒット率",
 			"savings.actualCost": "実際コスト(公式価格)",
 			"savings.savedMoney": "推定節約額(入力価格)",
-			"savings.perSession": "セッション"
+			"savings.perSession": "セッション",
+			"savings.focus": "포커스",
+			"savings.degraded": "영속화 강등 — 통계는 메모리만",
+			"savings.persisted": "영속화됨",
+			"savings.pageNext": "다음",
+			"savings.pagePrev": "이전",
+			"savings.sessions": "세션 장부",
+			"savings.money": "절약 금액(캐시 가중)",
+			"savings.cumulative": "누적(N회 호출)"
 		};
 		//#endregion
 		//#region src/client/locales/ru.ts
@@ -2979,9 +3241,17 @@ window.__ModuleLoader__.load({
 			"intentSummary.enabled.off": "Выкл (по умолчанию)",
 			"monitor.fab.title": "Монитор сжатия",
 			"monitor.panel.title": "Монитор сжатия",
-			"monitor.panel.net": "Чистая экономия",
-			"monitor.panel.gross": "Валовая экономия",
-			"monitor.panel.offsets": "Компенсации",
+			"monitor.panel.net": "Сессия чистое Δ",
+			"monitor.panel.gross": "Сессия валовое Δ",
+			"monitor.panel.offsets": "Компенсации Δ",
+			"monitor.panel.totalNet": "Чистое итого (все)",
+			"monitor.panel.totalGross": "Валовое итого (все)",
+			"monitor.panel.totalOffsets": "Компенсации итого (все)",
+			"monitor.panel.compositionBackfill": "ретро-оценка",
+			"monitor.panel.cumulative": "Накоплено (N вызовов)",
+			"monitor.panel.money": "Оценка экономии",
+			"monitor.panel.composition": "Как экономит (по путям)",
+			"monitor.panel.compositionScope": "Последняя сжатая сессия",
 			"monitor.panel.context": "Заполнение контекста",
 			"monitor.panel.suggest": "Заполнение контекста достигло {pct}% — близко к зоне катастрофического забывания; рекомендуется сжать или обрезать историю",
 			"monitor.panel.cacheHit": "Процент попаданий кэша",
@@ -2997,7 +3267,7 @@ window.__ModuleLoader__.load({
 			"monitor.panel.lastFold": "Последняя свёртка",
 			"monitor.panel.stale": "Снимок недоступен — показаны последние данные",
 			"monitorPanel.title": "Панель мониторинга сжатия",
-			"monitorPanel.description": "При включении рядом с областью ввода появляется перетаскиваемый плавающий шарик — откройте его, чтобы следить за состоянием сжатия в реальном времени: чистая экономия (точная база), процент попаданий кэша, оценка стоимости, шлюз итогов намерения хода и последние компенсации. Панель может временно переключить тумблер итогов намерения текущей сессии. Реестр живёт в процессе (обнуляется при перезапуске хоста).",
+			"monitorPanel.description": "При включении рядом с областью ввода появляется перетаскиваемый плавающий шарик — откройте его, чтобы следить за состоянием сжатия в реальном времени: чистая экономия (точная база), процент попаданий кэша, оценка стоимости, шлюз итогов намерения хода и последние компенсации. Панель может временно переключить тумблер итогов намерения текущей сессии. Статистика персистентна в SQLite и переживает перезапуск хоста.",
 			"monitorPanel.enabled": "Панель мониторинга",
 			"monitorPanel.enabled.on": "Вкл",
 			"monitorPanel.enabled.off": "Выкл (по умолчанию)",
@@ -3045,7 +3315,15 @@ window.__ModuleLoader__.load({
 			"savings.cacheHit": "캐시 적중률",
 			"savings.actualCost": "실제 비용(공식 가격)",
 			"savings.savedMoney": "추정 절감액(입력 가격)",
-			"savings.perSession": "세션"
+			"savings.perSession": "세션",
+			"savings.focus": "фокус",
+			"savings.degraded": "Персистентность деградировала — статистика только в памяти",
+			"savings.persisted": "Персистентно",
+			"savings.pageNext": "Далее",
+			"savings.pagePrev": "Назад",
+			"savings.sessions": "Журнал сессий",
+			"savings.money": "Сэкономлено (взвешено по кэшу)",
+			"savings.cumulative": "Накоплено (за N вызовов)"
 		};
 		//#endregion
 		//#region src/client/preset-options.ts
@@ -3309,11 +3587,11 @@ window.__ModuleLoader__.load({
 			let nativeMonitorReady = false;
 			/** 浮动监控面板(FAB): body 级幂等单例。enabled 读数走双臂 scope 的投影缓存。 */
 			let readMonitorPanelEnabled = () => monitorPanelEnabledCache;
-			let latestSessionId;
+			let clientViewSessionId;
 			try {
 				initMonitorFab({
 					t: tNav,
-					sessionIdOf: () => latestSessionId,
+					sessionIdOf: () => clientViewSessionId,
 					enabledOf: () => readMonitorPanelEnabled(),
 					fetchSnapshot: async (sessionId) => {
 						const query = sessionId === void 0 ? "" : `?sessionId=${encodeURIComponent(sessionId)}`;
@@ -3485,14 +3763,13 @@ window.__ModuleLoader__.load({
 				ctx.slots.inject("conversation.input.left", () => ctx.slots.register({
 					name: "conversation.input.left",
 					id: "context-compression-session-bind",
-					order: 170,
-					inject: (sessionId) => {
-						latestSessionId = sessionId;
-						return {};
-					}
-				}, () => null));
+					order: 170
+				}, (props) => {
+					clientViewSessionId = typeof props?.sessionId === "string" && props.sessionId !== "" ? props.sessionId : void 0;
+					return null;
+				}));
 			} catch (error) {
-				console.warn("[dsh-context-compression-improved] conversation.input.left 注册失败(旧宿主无该槽,浮动面板保持聚合口径):", error);
+				console.warn("[dsh-context-compression-improved] conversation.input.left 注册失败(旧宿主无该槽,浮动面板回退运行时指针):", error);
 			}
 			try {
 				ctx.slots.inject("plugins.bundle.config", () => ctx.slots.register({
