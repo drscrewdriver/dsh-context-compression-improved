@@ -70,3 +70,6 @@ overrides:
   # next release. GHSA-2883-xcg3-v3hh: js-yaml < 4.3.2 does not bound CPU use for
   # empty merge sources.
   'js-yaml@<4.3.2': '^4.3.2'
+
+minimumReleaseAgeExclude:
+  - dsh-reference-session-collector@0.1.0
