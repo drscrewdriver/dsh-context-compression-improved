@@ -40,6 +40,22 @@ export interface MonitorSnapshotPayload {
   context?: { liveTokens?: unknown; contextWindow?: unknown; pct?: unknown }
   suggestion?: { suggest?: unknown; thresholdPct?: unknown; occupancyPct?: unknown }
   recentOffsets?: Array<{ component?: unknown; tokens?: unknown }>
+  /** /monitor 附加统计块:只带当前会话——组成按压缩路径(无数据省略)+持久化状态。 */
+  persisted?: { persisted?: unknown; driver?: unknown; reason?: unknown }
+  composition?: Array<{ component?: unknown; basis?: unknown; tokens?: unknown; events?: unknown }>
+  /** 组成归属的会话(服务端解析的最近压缩会话,回带以正名)。 */
+  compositionSession?: unknown
+  /** 会话三值(毛/抵消/净,该会话持久 claims 聚合 = jsonl 公式口径)。 */
+  sessionTotals?: {
+    gross?: { exact?: unknown; estimated?: unknown }
+    offsets?: { exact?: unknown; estimated?: unknown }
+    net?: { exact?: unknown; estimated?: unknown }
+  }
+  /** 每类目「最后的 Δ」(claims 账本内 saving/offset 各自 seq 最大一行)。 */
+  lastDelta?: {
+    saving?: { tokens?: unknown; seq?: unknown }
+    offset?: { tokens?: unknown; seq?: unknown }
+  }
   sessionScope?: string | null
 }
 
@@ -126,6 +142,11 @@ export function initMonitorFab(deps: MonitorFabDeps): void {
   <button data-overoff class="ghost">${t('monitor.panel.disable')}</button></div>
 <div class="row muted" data-fold style="display:none"></div>
 <div class="stale" data-stale>${t('monitor.panel.stale')}</div>
+<div data-compwrap style="display:none">
+  <div class="row"><span class="label">${t('monitor.panel.composition')}</span></div>
+  <div class="row muted" data-compscope style="display:none"></div>
+  <div class="recent" data-comp></div>
+</div>
 <div class="recent" data-recent></div>
 `;
   document.body.append(fab, panel);
@@ -225,10 +246,20 @@ export function initMonitorFab(deps: MonitorFabDeps): void {
   };
 
   const render = (snap: MonitorSnapshotPayload): void => {
-    const net = num(snap.net?.exact) + num(snap.net?.estimated);
+    // 单一来源(用户定标):Δ 三行只认服务端下发的会话三值(DRS 投影每次全量
+    // 重导:毛=Σ(a−b) 仅压缩对,抵消=Σb 仅召回对,净=毛−抵消)。无下发 = 「–」
+    // ——不回退 live/claims 账本,杜绝双源串数;长度新鲜度由 DRS 同步负责。
+    const stockSource = (kind: 'net' | 'gross' | 'offsets'): { exact?: unknown; estimated?: unknown } | undefined =>
+      snap.sessionTotals?.[kind] as { exact?: unknown; estimated?: unknown } | undefined;
+    const fmtArm = (source: { exact?: unknown; estimated?: unknown } | undefined, negative: boolean): string => {
+      if (source === undefined) return '–';
+      const l = lead(source.exact, source.estimated);
+      if (!negative) return l.est ? `${fmtTokens(l.v)} est` : fmtTokens(l.v);
+      return l.v === 0 ? '0' : l.est ? `-${fmtTokens(l.v)} est` : `-${fmtTokens(l.v)}`;
+    };
+    const net = num(stockSource('net')?.exact) + num(stockSource('net')?.estimated);
     const netEl = panel.querySelector('[data-net]') as HTMLElement;
-    const netLead = lead(snap.net?.exact, snap.net?.estimated);
-    netEl.textContent = netLead.est ? `${fmtTokens(netLead.v)} est` : fmtTokens(netLead.v);
+    netEl.textContent = fmtArm(stockSource('net'), false);
     netEl.classList.toggle('neg', net < 0);
     const suggest = snap.suggestion?.suggest === true;
     fab.classList.toggle('lit', suggest || net < 0);
@@ -242,10 +273,44 @@ export function initMonitorFab(deps: MonitorFabDeps): void {
     } else {
       hint.classList.remove('show');
     }
-    const grossLead = lead(snap.gross?.exact, snap.gross?.estimated);
-    (panel.querySelector('[data-gross]') as HTMLElement).textContent = grossLead.est ? `${fmtTokens(grossLead.v)} est` : fmtTokens(grossLead.v);
-    const offLead = lead(snap.offsets?.exact, snap.offsets?.estimated);
-    (panel.querySelector('[data-offsets]') as HTMLElement).textContent = offLead.est ? `-${fmtTokens(offLead.v)} est` : `-${fmtTokens(offLead.v)}`;
+    (panel.querySelector('[data-gross]') as HTMLElement).textContent = fmtArm(stockSource('gross'), false);
+    (panel.querySelector('[data-offsets]') as HTMLElement).textContent = fmtArm(stockSource('offsets'), true);
+    // 「汇总 · Δ最后」两段式:主数与 Δ 段同一来源(DRS 投影下发的 lastDelta,
+    // 压缩/召回各自 seq 最大一行,saving 为正、offset 为负);无记录不加段。
+    const deltaSeg = (tokens: unknown, sign: 1 | -1): string => {
+      const value = num(tokens);
+      return value === 0 ? '' : ` · Δ${sign > 0 ? '+' : '-'}${fmtTokens(Math.abs(value))}`;
+    };
+    const lastSaving = snap.lastDelta?.saving;
+    const lastOffset = snap.lastDelta?.offset;
+    const netDelta = lastSaving === undefined && lastOffset === undefined
+      ? ''
+      : num(lastSaving?.seq) >= num(lastOffset?.seq)
+        ? deltaSeg(lastSaving?.tokens, 1)
+        : deltaSeg(lastOffset?.tokens, -1);
+    netEl.textContent += netDelta;
+    (panel.querySelector('[data-gross]') as HTMLElement).textContent += deltaSeg(lastSaving?.tokens, 1);
+    (panel.querySelector('[data-offsets]') as HTMLElement).textContent += deltaSeg(lastOffset?.tokens, -1);
+    // 「怎么省的」:本会话 saving claims 按压缩路径聚合(top5)
+    const compRows = Array.isArray(snap.composition) ? snap.composition.slice(0, 5) : [];
+    (panel.querySelector('[data-compwrap]') as HTMLElement).style.display = compRows.length === 0 ? 'none' : '';
+    const scopeEl = panel.querySelector('[data-compscope]') as HTMLElement;
+    const scopeId = typeof snap.compositionSession === 'string' ? snap.compositionSession.replace(/^session-/, '').slice(0, 8) : '';
+    scopeEl.style.display = scopeId !== '' ? '' : 'none';
+    if (scopeId !== '') scopeEl.textContent = `${t('monitor.panel.compositionScope')} ${scopeId}`;
+    if (compRows.length > 0) {
+      (panel.querySelector('[data-comp]') as HTMLElement).textContent = compRows
+        .map((row) => {
+          const e = row as { component?: unknown; basis?: unknown; tokens?: unknown; events?: unknown };
+          // exact / mixed(跨口径合并) 任一含精确即不打 est;回填投影如实改名
+          const est = e.basis === 'exact-tokenizer' || e.basis === 'mixed' ? '' : ' est';
+          const name = e.component === 'projection' ? `${t('monitor.panel.compositionBackfill')}(projection)` : String(e.component ?? '–');
+          return `${name}: +${fmtTokens(e.tokens)}${est} · ${String(e.events ?? '–')}×`;
+        })
+        .join('\n');
+    }
+    const h4El = panel.querySelector('h4') as HTMLElement;
+    h4El.textContent = t('monitor.panel.title') + (snap.persisted?.persisted === false ? ' ⚠' : '');
     const ctxBar = panel.querySelector('[data-ctxbar]') as HTMLElement;
     const ctxPct = panel.querySelector('[data-ctxpct]') as HTMLElement;
     const ctxPctNum = typeof snap.context?.pct === 'number' ? snap.context.pct : null;
@@ -281,15 +346,20 @@ export function initMonitorFab(deps: MonitorFabDeps): void {
     } else {
       foldEl.style.display = 'none';
     }
+    // 最近抵消(压缩后再读全文的负项) top3：无记录整行隐藏——旧空态文案
+    // 「尚无压缩记录」与上方组成块自相矛盾(无抵消≠无压缩，回填投影明明在)，
+    // savings.empty 的真正空态职责在设置页账本(savings-card)。
     const recent = Array.isArray(snap.recentOffsets) ? snap.recentOffsets.slice(0, 3) : [];
-    (panel.querySelector('[data-recent]') as HTMLElement).textContent = recent.length === 0
-      ? t('savings.empty')
-      : recent
+    const recentEl = panel.querySelector('[data-recent]') as HTMLElement;
+    recentEl.style.display = recent.length === 0 ? 'none' : '';
+    if (recent.length > 0) {
+      recentEl.textContent = recent
           .map((entry: { component?: unknown; tokens?: unknown }) => {
             const e = entry as { component?: unknown; tokens?: unknown };
             return `${String(e.component ?? '–')}: ${fmtTokens(e.tokens)}`;
           })
           .join('\n');
+    }
     for (const [selector, action] of [
       ['[data-overon]', 'on'],
       ['[data-overoff]', 'off'],

@@ -1862,7 +1862,9 @@ window.__ModuleLoader__.load({
 					foldEl.textContent = `${t("monitor.panel.lastFold")} turn ${String(fold.turn ?? "–")}, seq ${String(fold.startSeq ?? "–")}..${String(fold.endSeq ?? "–")}`;
 				} else foldEl.style.display = "none";
 				const recent = Array.isArray(snap.recentOffsets) ? snap.recentOffsets.slice(0, 3) : [];
-				panel.querySelector("[data-recent]").textContent = recent.length === 0 ? t("savings.empty") : recent.map((entry) => {
+				const recentEl = panel.querySelector("[data-recent]");
+				recentEl.style.display = recent.length === 0 ? "none" : "";
+				if (recent.length > 0) recentEl.textContent = recent.map((entry) => {
 					const e = entry;
 					return `${String(e.component ?? "–")}: ${fmtTokens(e.tokens)}`;
 				}).join("\n");
