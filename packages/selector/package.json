@@ -1,6 +1,6 @@
 {
   "name": "dsh-context-compression-improved",
-  "version": "0.9.8-local.12",
+  "version": "0.9.8-local.18",
   "description": "One-install context-compression selector bundle for DeepSeek Harness",
   "type": "module",
   "main": "lib/index.js",
@@ -47,7 +47,10 @@
     },
     "bundle": {
       "patch": "./cordis.patch.yml"
-    }
+    },
+    "pluginDependencies": [
+      "dsh-reference-session-collector"
+    ]
   },
   "scripts": {
     "bundle": "tsdown --config tsdown.config.ts && tsdown --config tsdown.client.config.ts",
