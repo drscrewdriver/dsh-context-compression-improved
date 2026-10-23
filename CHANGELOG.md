@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+
+## 0.10.0 (2026-10-24)
+
+- hosts: 0.2.1-rc.3 declaration-level enum addendum (18 rc; contract plane zero diff per host source-analysis) — shipped together with the stats feature below.
+
 
 - stats: per-session 面板与持久化——节省统计三层口径（存量仪表 / 累计按 N 次 call 积分 / 缓存分权省钱估计）落 SQLite（`~/.dsh/storages/dsh-context-compression/stats.sqlite`，双驱动：better-sqlite3 optional → `node:sqlite`，缺席可见降级）；claims 以 (session_id, 绝对 seq, kind, component, basis) 复合主键幂等入库（BC #2671 双教训防御断言），原文与自由文本绝不落库；召回记账修复（offset 按存活面收敛、同 basis 翻负折叠 a−(b+R) 下限 −b、环形缓冲驱逐保护在面条目）；旧会话 jsonl 行为回填（sessionQuery 服务面优先 + 只读代次解码 fallback，分块调度、水位幂等、绝不写会话文件）；新增 `GET /savings/sessions` 分页面板端点（/savings 与 /monitor 契约冻结不动）；`/ccip` 面板实时控制命令（rows/mode/session/flush/backfill，optional commands 注入六线安全）；9 语面板键新增与"重启归零"文案替换；审计 errorMessage 首行+截断净化（自由文本不入持久面）。
 

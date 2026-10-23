@@ -1,5 +1,7 @@
 # 更新日志（fork 新增条目）
 
+0.10.0：功能版——per-session 统计面板 + SQLite 持久化（claims 幂等、原文不落库）+ 旧会话 jsonl 回填 + `/ccip` 面板命令 + 记账口径修复；同版含宿主枚举补票 DSH 0.2.1-rc.3（18 rc，契约面零改动）。
+
 > 完整历史（含上游 0.1.0 及更早版本）见 [CHANGELOG.md](CHANGELOG.md)。本文件只翻译本 fork 的新增条目。 · [English](CHANGELOG.md) · [日本語](CHANGELOG.ja.md) · [한국어](CHANGELOG.ko.md)
 
 ## 0.9.0 - 2026-10-08
