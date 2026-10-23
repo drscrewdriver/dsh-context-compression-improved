@@ -301,3 +301,20 @@ export function emitCompressionAudit(
     // Swallow logger failures: audit publication must not roll back a committed rewrite.
   }
 }
+
+/**
+ * errorMessage 审计净化（spec T33）：首行 + 控制字符折叠 + 定长截断。
+ *
+ * 错误消息是审计面唯一的自由文本通道——审计经宿主 logger 落盘，而统计持久层
+ * 的隐私红线是"自由文本绝不入表"。本净化让这条通道从源头受限：多行堆栈、
+ * 控制字符、超长消息（可能夹带内容碎片）在进入任何记录面前先被压平。
+ * errorName 保持结构化（Error.name / UnknownError），不经过本净化。
+ */
+export const AUDIT_MESSAGE_MAX_CHARS = 200
+
+export function sanitizeAuditMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error)
+  const firstLine = raw.split(/\r?\n/u, 1)[0] ?? ''
+  const collapsed = firstLine.replace(/[\p{Cc}]/gu, ' ').trim()
+  return collapsed.length > AUDIT_MESSAGE_MAX_CHARS ? collapsed.slice(0, AUDIT_MESSAGE_MAX_CHARS) : collapsed
+}

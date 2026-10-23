@@ -28,6 +28,7 @@ export interface AgentDefaultModelLike {
 
 import { priceOfficialDeepSeekUsage } from './deepseek-official-pricing.ts'
 import { getSavingsLedger, type SavingsLedger, type SavingsSnapshot } from './savings.ts'
+import type { DrsSessionIndex } from './savings-verify.ts'
 import {
   getLastIntentFold,
   getObservedIntentEnabled,
@@ -132,6 +133,32 @@ export interface ContextUsageObservation {
 const contextUsageBySession = new Map<string, ContextUsageObservation & { at: number; seq: number }>()
 const CONTEXT_USAGE_CAP = 64
 
+/** 「怎么省的」组成行(浮窗)。 */
+export interface CompositionRow {
+  component: string
+  basis: string
+  tokens: number
+  events: number
+}
+
+/**
+ * 组成按压缩路径去重合并:同路径跨口径(mixed = 精确+估算混合)一行,
+ * tokens 降序。重复行是口径拆分的产物,不是两条不同路径。
+ */
+export function mergeCompositionByComponent(rows: readonly CompositionRow[]): CompositionRow[] {
+  const byComponent = new Map<string, CompositionRow>()
+  for (const row of rows) {
+    const found = byComponent.get(row.component)
+    if (found === undefined) byComponent.set(row.component, { ...row })
+    else {
+      found.tokens += row.tokens
+      found.events += row.events
+      if (found.basis !== row.basis) found.basis = 'mixed'
+    }
+  }
+  return [...byComponent.values()].sort((a, b) => b.tokens - a.tokens)
+}
+
 /**
  * 由 pruner 的 turn-tail postflight 调用:记录该会话最近的 liveTokens/
  * contextWindow,供 monitor 快照的占用条消费。空会话 id 忽略。
@@ -231,5 +258,53 @@ export function estimateSavingsPricing(readService: (name: string) => unknown, s
     currency: 'USD',
     ...(actual.kind === 'unpriced' ? {} : { actualCost: decimalOf(actual) }),
     ...(saved === undefined || saved.kind === 'unpriced' ? {} : { estimatedSavedCost: decimalOf(saved) }),
+  }
+}
+
+/** DRS 主源的浮窗三值块:sessionTotals(exact/estimated 按 basis 归臂)+ 每类目最后 Δ。 */
+export interface DrsTotalsFragment {
+  sessionTotals: {
+    gross: { exact: number; estimated: number }
+    offsets: { exact: number; estimated: number }
+    net: { exact: number; estimated: number }
+  }
+  lastDelta?: {
+    saving?: { tokens: number; seq: number }
+    offset?: { tokens: number; seq: number }
+  }
+}
+
+/**
+ * 「每次从头开始计算」(用户定标):三值与最后 Δ 全量重导自 DRS 投影替换对——
+ * 毛 = Σ(a−b) 仅压缩对(不含回吐);抵消 = Σb 仅召回对;净 = 毛 − 抵消(含回吐,
+ * 有召回时净必异于毛)。basis=ds-token 落 exact 臂;chars/4 落 estimated 臂
+ * (浮窗 est 标注如实)。同会话同对子,输出确定——单一来源,不再与 claims 残账分裂。
+ */
+export function drsTotalsFragment(index: DrsSessionIndex): DrsTotalsFragment {
+  let gross = 0
+  let recall = 0
+  let saving: { tokens: number; seq: number } | undefined
+  let offset: { tokens: number; seq: number } | undefined
+  for (const pair of index.pairs) {
+    if (pair.kind === 'compress') {
+      gross += pair.aTokens - pair.bTokens
+      if (saving === undefined || pair.seq > saving.seq) saving = { tokens: pair.aTokens - pair.bTokens, seq: pair.seq }
+    } else {
+      recall += pair.bTokens
+      if (offset === undefined || pair.seq > offset.seq) offset = { tokens: pair.bTokens, seq: pair.seq }
+    }
+  }
+  const exact = index.basis === 'ds-token'
+  const arm = (value: number): { exact: number; estimated: number } =>
+    exact ? { exact: value, estimated: 0 } : { exact: 0, estimated: value }
+  const lastDelta = saving === undefined && offset === undefined
+    ? undefined
+    : {
+        ...(saving === undefined ? {} : { saving }),
+        ...(offset === undefined ? {} : { offset }),
+      }
+  return {
+    sessionTotals: { gross: arm(gross), offsets: arm(recall), net: arm(gross - recall) },
+    ...(lastDelta === undefined ? {} : { lastDelta }),
   }
 }

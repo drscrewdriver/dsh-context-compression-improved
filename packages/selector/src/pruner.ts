@@ -126,6 +126,9 @@ import {
   flattenPlainText,
 } from './runtime/tokenpilot/dedup.ts'
 import { getSavingsLedger } from './runtime/savings.ts'
+import { claimFromLand, flushUsageOnDispose, reclaimFromTailTrim, scheduleUsageFlush, setStatsLivePathBusy } from './runtime/stats-sync.ts'
+import { kickStatsBackfillOnDispose } from './runtime/stats-backfill.ts'
+import { sampleIntegralBoundary } from './runtime/savings-integral.ts'
 import { projectSessionSavings } from './runtime/savings-projection.ts'
 
 /** 节省统计配对键用原文(纯文本块才可配对;富内容返回 undefined)。 */
@@ -169,7 +172,7 @@ import {
   priceOfficialDeepSeekUsage,
   resolveOfficialDeepSeekPrice,
 } from './runtime/deepseek-official-pricing.ts'
-import { emitCompressionAudit } from './runtime/audit.ts'
+import { emitCompressionAudit, sanitizeAuditMessage } from './runtime/audit.ts'
 import { assertNever, deepFreeze } from './runtime/value.ts'
 import type {
   CompressionAuditComponent,
@@ -329,6 +332,11 @@ export class ToolResultPruner extends Service {
         'session/disposed',
         (session) => {
           try {
+            // T9:dispose 是 usage 残量出口——取消在途 debounce、立即 flush 并
+            // 标 source=live;老代际不发该事件时随写随刷路径不受影响。
+            flushUsageOnDispose(session)
+            // T21:dispose 后低频回填 kick(调度器内部节流,最多 10 分钟一次)。
+            kickStatsBackfillOnDispose()
             const line = getSavingsLedger().sessionSummaryLine(String(session.id))
             if (line.includes('requests=0') === false || line.includes('net=0(exact)/0(est)') === false) {
               ctx.logger.info('context-compression session savings (%s): %s', String(session.id), line)
@@ -472,13 +480,32 @@ export class ToolResultPruner extends Service {
     const profile = policy.profile
     const view = measureForCompaction(this.ctx, session)
     if (stage === 'fresh') {
-      // 真实 usage 聚合(monitor 口径):官方 TokenMeter 的上一已完成请求,
-      // 每 fresh 边界入账一次;pressure pass 读到同一 baseline,不重复计。
-      const usage = officialRequestUsage(view)
-      if (usage !== undefined) {
-        getSavingsLedger().recordUsage(String(session.id), usage)
+      // 前台优先:整个 fresh 压缩窗口置 busy,回填调度器在 chunk 间让路
+      setStatsLivePathBusy(true)
+      try {
+        // 真实 usage 聚合(monitor 口径):官方 TokenMeter 的上一已完成请求,
+        // 每 fresh 边界入账一次;pressure pass 读到同一 baseline,不重复计。
+        const usage = officialRequestUsage(view)
+        if (usage !== undefined) {
+          getSavingsLedger().recordUsage(String(session.id), usage)
+        }
+        // T8:持久 usage 走事件日志 data.usage 按科目入账,一秒 debounce 合并扫描。
+        scheduleUsageFlush(session)
+        // T15:按 call 积分采样(fresh 边界 = recordUsage 同点)——存量净快照 +
+        // 该次 usage 拆分,累计"按 N 次 call"的真节省;前向口径,失败静默不碰请求。
+        try {
+          const integralSessionId = String(session.id)
+          sampleIntegralBoundary({
+            sessionId: integralSessionId,
+            session,
+            net: getSavingsLedger().snapshot(integralSessionId).net,
+            usage,
+          })
+        } catch { /* 采样失败静默:积分口径停更,不阻塞请求 */ }
+        return this.decideFreshStep(session, options, policy, view)
+      } finally {
+        setStatsLivePathBusy(false)
       }
-      return this.decideFreshStep(session, options, policy, view)
     }
     if (profile === 'off') return emptyResult()
 
@@ -2417,6 +2444,14 @@ export class ToolResultPruner extends Service {
           replacementSeq: Number(replacement.seq),
           originalText: groupText,
         })
+        // T6 接线:tail-trim 组回收的持久 saving claim(与内存账本同点同值)。
+        reclaimFromTailTrim({
+          sessionId: String(session.id),
+          tokensBefore,
+          tokensAfter,
+          basis: exact ? 'exact-tokenizer' : 'characters',
+          replacementSeq: Number(replacement.seq),
+        })
       }
       return
     }
@@ -2586,6 +2621,16 @@ export class ToolResultPruner extends Service {
       sourceSeq: plan.sourceSeq,
       replacementSeq: Number(replacement.seq),
       ...(pairedOriginal === undefined ? {} : { originalText: pairedOriginal }),
+    })
+    // T6 接线:主 land 的持久 saving claim——随写随刷同步小事务,失败仅门闩
+    // warn 不阻断压缩主路径(stats-sync 内部兜异常)。
+    claimFromLand({
+      sessionId: String(session.id),
+      component: plan.component,
+      tokensBefore: plan.tokensBefore,
+      tokensAfter: plan.tokensAfter,
+      basis: plan.measurementBasis,
+      replacementSeq: Number(replacement.seq),
     })
     return {
       originalSeq: candidate.seq,
@@ -2806,7 +2851,8 @@ export class ToolResultPruner extends Service {
       stage,
       operation,
       errorName: error instanceof Error ? error.name : 'UnknownError',
-      errorMessage: error instanceof Error ? error.message : String(error),
+      // T33:错误消息是审计面唯一自由文本——首行+截断净化后再进任何记录面。
+      errorMessage: sanitizeAuditMessage(error),
     })
   }
 

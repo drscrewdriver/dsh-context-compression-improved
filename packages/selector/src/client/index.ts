@@ -137,12 +137,15 @@ let nativeMonitorReady = false
 
 /** 浮动监控面板(FAB): body 级幂等单例。enabled 读数走双臂 scope 的投影缓存。 */
 let readMonitorPanelEnabled = (): boolean => monitorPanelEnabledCache
-  // 浮动面板会话绑定:跟随输入栏座位的 inject 回调(裸 sessionId,pm longtask 同款)。
-  let latestSessionId: string | undefined
+  // 「当前页面会话」绑定:conversation.input.left 是 session 作用域槽
+  // (ui-conversation contract slots.ts:201),组件每换会话拿到响应式
+  // sessionId prop——之前只消费 inject 回调(inject 面只在装载时发一次)
+  // 才陈旧。组件 prop 是活指针;无会话视图时回退运行时/最近压缩指针。
+  let clientViewSessionId: string | undefined
   try {
     initMonitorFab({
     t: tNav,
-    sessionIdOf: () => latestSessionId,
+    sessionIdOf: () => clientViewSessionId,
     enabledOf: () => readMonitorPanelEnabled(),
     fetchSnapshot: async (sessionId) => {
       const query = sessionId === undefined ? '' : `?sessionId=${encodeURIComponent(sessionId)}`
@@ -377,21 +380,21 @@ let readMonitorPanelEnabled = (): boolean => monitorPanelEnabledCache
     console.warn('[dsh-context-compression-improved] settings.section 注册失败(宿主无该槽,静默缺席):', error)
   }
 
-  // 输入栏左座(0.1.5+ 宿主):组件刻意空渲染——注册此座位只为接收宿主的
-  // sessionId 注入回调,供浮动监控面板绑定会话(pm longtask 同款)。旧宿主
-  // 未声明该槽时激活期会抛错,try/catch 守卫(同上双槽冗余先例)。
+  // 输入栏左座(conversation.input.left = session 作用域槽,ui-conversation
+  // contract slots.ts:201):不可见组件只消费 sessionId 标准 prop——该 prop 由
+  // 宿主按「当前页面所在会话」响应式下发,是绑定当前视图的正规通道。
+  // (inject 回调只在装载时发一次,不能作绑定源——陈旧绑定教训。)
   try {
     ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
       name: 'conversation.input.left',
       id: 'context-compression-session-bind',
       order: 170,
-      inject: (sessionId: string) => {
-        latestSessionId = sessionId
-        return {}
-      },
-    }, () => null))
+    }, (props: { sessionId?: string }) => {
+      clientViewSessionId = typeof props?.sessionId === 'string' && props.sessionId !== '' ? props.sessionId : undefined
+      return null
+    }))
   } catch (error) {
-    console.warn('[dsh-context-compression-improved] conversation.input.left 注册失败(旧宿主无该槽,浮动面板保持聚合口径):', error)
+    console.warn('[dsh-context-compression-improved] conversation.input.left 注册失败(旧宿主无该槽,浮动面板回退运行时指针):', error)
   }
 
   // Bundle 详情页设置卡(0.1.7+):plugins.bundle.config keyed 槽,key=包名整卡平铺

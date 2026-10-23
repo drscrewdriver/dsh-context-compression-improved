@@ -7,10 +7,13 @@ import { getSavingsLedger } from './runtime/savings.ts'
 import {
   applySessionOverride,
   buildMonitorSnapshot,
+  drsTotalsFragment,
   estimateSavingsPricing,
   isSessionOverrideAction,
+  mergeCompositionByComponent,
   type AgentDefaultModelLike,
 } from './runtime/monitor.ts'
+import { readDrsSessionIndex } from './runtime/savings-verify.ts'
 import type { ContextCompressionSettings } from './profiles.ts'
 import {
   CONTEXT_COMPRESSION_SETTINGS_NAMESPACE,
@@ -20,6 +23,13 @@ import {
 import { getAdvisorState } from './runtime/tokenpilot/advisor-state.ts'
 import { registerSummaryCommand } from './runtime/summary-command.ts'
 import { wireSettingsBridge } from './settings-bridge.ts'
+import { closeStatsStore, ensureStatsStore, getStatsStore, statsPersistenceState } from './runtime/stats-db.ts'
+import { cancelPendingUsageFlushes, getStatsActiveSessionId } from './runtime/stats-sync.ts'
+import { configureStatsBackfillTrigger, kickStatsBackfillOnRouteHit } from './runtime/stats-backfill.ts'
+import { getDisplayPrefs } from './runtime/display-prefs.ts'
+import { estimateIntegralMoney } from './runtime/savings-integral.ts'
+import { registerPanelCommand } from './runtime/panel-command.ts'
+import { resolveOfficialDeepSeekPrice, type OfficialDeepSeekPriceRecord } from './runtime/deepseek-official-pricing.ts'
 
 // The settings namespace literal and the settings schema are owned by the
 // runtime config module. Both were once inlined/replaced here to dodge a
@@ -56,6 +66,12 @@ const SAVINGS_ROUTES = [
 const MONITOR_ROUTES = [
   '/endpoint/dsh-context-compression-improved/monitor',
   '/api/dsh-context-compression-improved/monitor',
+] as const
+
+// Per-session savings ledger (T24): paginated store view ⊕ live residual.
+const SAVINGS_SESSIONS_ROUTES = [
+  '/endpoint/dsh-context-compression-improved/savings/sessions',
+  '/api/dsh-context-compression-improved/savings/sessions',
 ] as const
 
 /** Minimal face of the agents service: session id → agent (carrying the session). */
@@ -352,6 +368,8 @@ function registerSavingsRoute(ctx: Context): void {
         end: (body?: string) => void
       }
       if (typeof resTyped?.writeHead !== 'function' || typeof resTyped?.end !== 'function') return
+      // T21:面板首命中最先发生的读路由——回填调度器的一次性 kick(内部闸幂等)。
+      kickStatsBackfillOnRouteHit()
       let sessionId: string | undefined
       try {
         const url = new URL(String((req as { url?: string })?.url ?? '/'), 'http://localhost')
@@ -402,6 +420,195 @@ function registerSavingsRoute(ctx: Context): void {
 }
 
 /**
+ * Per-session savings ledger route (`GET .../savings/sessions?offset=&limit=&sessionId=…`)
+ * — spec T24: paginated store aggregates ⊕ live residual merge + per-session
+ * integral (Σ samples: "累计按 N 次 call") + cache-weighted money estimate +
+ * persistence state and display prefs (T30) for `/ccip`'s real-time toggles.
+ * The frozen `/savings` and `/monitor` contracts are untouched; everything new
+ * lives on this endpoint only.
+ */
+function registerSavingsSessionsRoute(ctx: Context): void {
+  const readService = (name: string): unknown => {
+    try {
+      return (ctx as unknown as { get: (service: string) => unknown }).get(name)
+    } catch {
+      return undefined
+    }
+  }
+  const log = (level: 'info' | 'warn', message: string, ...args: unknown[]): void => {
+    console[level](message, ...args)
+  }
+
+  let registered = false
+  const register = (webServer: WebServerLike, channel: 'direct' | 'inject'): void => {
+    if (registered) return
+    const handler = (req: unknown, res: unknown): void => {
+      const resTyped = res as {
+        writeHead: (code: number, headers?: Record<string, string>) => void
+        end: (body?: string) => void
+      }
+      if (typeof resTyped?.writeHead !== 'function' || typeof resTyped?.end !== 'function') return
+      kickStatsBackfillOnRouteHit()
+      let offset = 0
+      let limit = 20
+      let sessionId: string | undefined
+      try {
+        const url = new URL(String((req as { url?: string })?.url ?? '/'), 'http://localhost')
+        const rawOffset = Number(url.searchParams.get('offset') ?? '0')
+        if (Number.isFinite(rawOffset) && rawOffset >= 0) offset = Math.trunc(rawOffset)
+        const rawLimit = Number(url.searchParams.get('limit') ?? '20')
+        if (Number.isFinite(rawLimit)) limit = Math.min(100, Math.max(1, Math.trunc(rawLimit)))
+        const raw = url.searchParams.get('sessionId')
+        if (typeof raw === 'string' && raw.length > 0 && raw.length <= 512) sessionId = raw
+      } catch {
+        /* 无法解析的查询串 = 默认第一页 */
+      }
+      const store = getStatsStore()
+      const ledger = getSavingsLedger()
+      const priceRecord = resolvePanelPriceRecord(readService)
+      const buildRow = (agg: { sessionId: string; gross: { exact: number; estimated: number }; offsets: { exact: number; estimated: number }; net: { exact: number; estimated: number } }) => {
+        const integral = store === null
+          ? { netExact: 0, netEstimated: 0, cachedInput: 0, uncachedInput: 0, calls: 0 }
+          : store.sumSamples(agg.sessionId)
+        const money = priceRecord === undefined || integral.calls === 0
+          ? undefined
+          : estimateIntegralMoney({ cachedInput: integral.cachedInput, uncachedInput: integral.uncachedInput, record: priceRecord })
+        const liveSnapshot = ledger.snapshot(agg.sessionId)
+        return {
+          sessionId: agg.sessionId,
+          gross: agg.gross,
+          offsets: agg.offsets,
+          net: agg.net,
+          source: store?.getSessionRecord(agg.sessionId)?.source ?? 'live',
+          integral,
+          ...(money === undefined ? {} : { money }),
+          // 当前存量(observeActive 收敛口径)——该会话在本进程内存账本中才非空
+          liveStock: liveSnapshot.sessions === 1 ? liveSnapshot.net : undefined,
+        }
+      }
+      let total = 0
+      const sessions: ReturnType<typeof buildRow>[] = []
+      if (store !== null) {
+        const all = store.perSessionAggregates()
+        const filtered = sessionId === undefined ? all : all.filter(agg => agg.sessionId === sessionId)
+        total = filtered.length
+        for (const agg of filtered.slice(offset, offset + limit)) sessions.push(buildRow(agg))
+      }
+      // 全会话积分总行（"累计（按 N 次 call）"）+ 省钱加权
+      const integralTotal = store === null
+        ? { netExact: 0, netEstimated: 0, cachedInput: 0, uncachedInput: 0, calls: 0 }
+        : store.sumSamplesAll()
+      const integralMoney = priceRecord === undefined || integralTotal.calls === 0
+        ? undefined
+        : estimateIntegralMoney({ cachedInput: integralTotal.cachedInput, uncachedInput: integralTotal.uncachedInput, record: priceRecord })
+      // live-only 补充:内存账本 top-8 中不在 store 分页里的会话(降级态/未落库
+      // /store 缺席),只带存量与 usage 口径,不占分页 total。
+      const known = new Set(sessions.map(row => row.sessionId))
+      const liveOnly = ledger.snapshot(undefined).perSession
+        .filter(row => !known.has(row.sessionId) && (sessionId === undefined || row.sessionId === sessionId))
+        .map(row => ({ sessionId: row.sessionId, net: row.net, requests: row.requests, cacheHitRate: row.cacheHitRate }))
+      resTyped.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-cache' })
+      resTyped.end(JSON.stringify({
+        ok: true,
+        persisted: statsPersistenceState(),
+        displayPrefs: getDisplayPrefs(),
+        total,
+        offset,
+        limit,
+        integralTotal,
+        ...(integralMoney === undefined ? {} : { integralMoney }),
+        sessions,
+        liveOnly,
+      }))
+    }
+    try {
+      const disposers = SAVINGS_SESSIONS_ROUTES
+        .map(path => webServer.register({ kind: 'exact', path, handler }))
+        .filter((off): off is () => void => typeof off === 'function')
+      registered = true
+      ctx.effect(
+        () => () => { for (const off of disposers) off() },
+        'contextCompressionSelector.savings sessions route',
+      )
+      log('info', 'context-compression savings sessions route registered (%s): %s', channel, SAVINGS_SESSIONS_ROUTES.join(', '))
+    } catch (error) {
+      if (isDuplicateRouteError(error)) {
+        registered = true
+        log('info', 'context-compression savings sessions route already registered by another mount (%s)', channel)
+        return
+      }
+      log('warn', 'context-compression savings sessions route registration failed (%s): %o', channel, error)
+    }
+  }
+
+  const active = asWebServer(readService('webServer'))
+  if (active !== undefined) {
+    register(active, 'direct')
+    if (registered) return
+  }
+
+  ctx.inject(['webServer'], (injected) => {
+    const webServer = asWebServer((injected as { webServer?: unknown }).webServer)
+    if (webServer === undefined) {
+      log('warn', 'context-compression webServer exposes no register() — savings sessions route not registered')
+      return
+    }
+    register(webServer, 'inject')
+  })
+}
+
+/** 官方 deepseek-official 路由的现行定价记录（/ccip 面板省钱加权用）；fail-closed。 */
+function resolvePanelPriceRecord(readService: (name: string) => unknown): OfficialDeepSeekPriceRecord | undefined {
+  const defaults = readService('agentDefaultModel') as { currentSelection?: () => { provider?: unknown; model?: unknown } } | undefined
+  const selection = defaults?.currentSelection?.()
+  const provider = typeof selection?.provider === 'string' ? selection.provider : ''
+  const modelId = typeof selection?.model === 'string' ? selection.model : ''
+  if (provider !== 'deepseek-official') return undefined
+  const resolution = resolveOfficialDeepSeekPrice({
+    provider,
+    baseUrlClass: 'official-public',
+    apiRoute: 'chat-completions',
+    modelId,
+    currency: 'USD',
+    at: new Date(),
+  })
+  return resolution.kind === 'priced' ? resolution.record : undefined
+}
+
+/**
+ * 浮窗统计块（/monitor 载荷附加字段，既有字段零改动）：只带最近压缩会话口径——
+ * 宿主不给"正在查看的会话"（输入栏注入只在页面加载时发生，切会话不重注入，
+ * 实测陈旧），所以服务端按 claims.at 最大者解析最近压缩会话并显式回带 id。
+ * 全部会话/生命周期的聚合刻意不上浮窗（设置页账本负责）。
+ * store 缺席 = 只剩 persisted，快照主结构不受影响。
+ */
+function monitorStatsBlock(viewSessionId?: string): Record<string, unknown> {
+  const store = getStatsStore()
+  if (store === null) return { persisted: statsPersistenceState() }
+  // 当前会话解析优先级:客户端「页面所在会话」(session 作用域槽响应式下发)
+  // > 运行时活跃指针(请求边界) > store 最近压缩会话。
+  const currentSessionId = viewSessionId ?? getStatsActiveSessionId() ?? store.latestActiveSessionId()
+  const composition = currentSessionId === undefined ? [] : mergeCompositionByComponent(store.sessionComponents(currentSessionId))
+  // 会话三值(毛/抵消/净,持久口径 = jsonl 公式产物):最近压缩会话的 claims 聚合,
+  // 浮窗 Δ 三行据此填充(内存残量由客户端回退兜底)。
+  // 单一来源(用户定标):长度只认 DRS 投影,每次从替换对全量重导(毛=Σ(a−b)
+  // 仅压缩对,不含回吐;抵消=Σb 仅召回对;净=毛−抵消)。投影缺席/未同步该会话
+  // = 不下发三值(浮窗显示「–」),绝不以 claims/live 账本冒充第二来源;长度
+  // 新鲜度由 DRS 的 interval 同步负责(DRS 自己保证尽量跟上 jsonl)。
+  const drsIndex = currentSessionId === undefined ? undefined : readDrsSessionIndex({ sessionId: currentSessionId })
+  const drsFragment = drsIndex === undefined ? undefined : drsTotalsFragment(drsIndex)
+  const sessionTotals = drsFragment?.sessionTotals
+  const lastDelta = drsFragment?.lastDelta
+  const hasLastDelta = lastDelta !== undefined && (lastDelta.saving !== undefined || lastDelta.offset !== undefined)
+  return {
+    persisted: statsPersistenceState(),
+    ...(sessionTotals === undefined ? {} : { sessionTotals: { gross: sessionTotals.gross, offsets: sessionTotals.offsets, net: sessionTotals.net } }),
+    ...(hasLastDelta ? { lastDelta } : {}),
+    ...(composition.length > 0 ? { composition, compositionSession: currentSessionId } : {}),
+  }
+}
+
+/**
  * Floating-panel monitor route (`GET|POST .../monitor?sessionId=…`):
  *  - GET → the monitor snapshot (savings aggregate + intent control block +
  *    pricing) — the payload shape the panel polls;
@@ -433,6 +640,8 @@ export function registerMonitorRoute(ctx: Context): void {
         end: (body?: string) => void
       }
       if (typeof resTyped?.writeHead !== 'function' || typeof resTyped?.end !== 'function') return
+      // T21:悬浮球轮询的 /monitor 与 /savings 同为首次命中触发源(闸幂等)。
+      kickStatsBackfillOnRouteHit()
       let sessionId: string | undefined
       try {
         const url = new URL(String((req as { url?: string })?.url ?? '/'), 'http://localhost')
@@ -481,7 +690,7 @@ export function registerMonitorRoute(ctx: Context): void {
       const snapshot = buildMonitorSnapshot(sessionId)
       const pricing = estimateSavingsPricing(readService, snapshot)
       resTyped.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-cache' })
-      resTyped.end(JSON.stringify({ ok: true, ...snapshot, ...(pricing === undefined ? {} : { pricing }) }))
+      resTyped.end(JSON.stringify({ ok: true, ...snapshot, ...(pricing === undefined ? {} : { pricing }), ...monitorStatsBlock(sessionId) }))
     }
     try {
       const disposers = MONITOR_ROUTES
@@ -594,6 +803,32 @@ export function apply(ctx: Context, config: Config = {}): void {
     // 节省统计路由:只读快照,无 opt-in 门槛(无敏感数据,纯 token 计数)。
     registerSavingsRoute(ctx)
     registerMonitorRoute(ctx)
+    // T24:per-session 分页面板数据面;/ccip(T29)实时控制命令。
+    registerSavingsSessionsRoute(ctx)
+    registerPanelCommand(ctx)
+
+    // 持久层主干生命周期(spec T5):open 后台 arm 不阻塞 apply(WAL 半事务
+    // 由 SQLite 在 open 时自动恢复,故 recover 并入 open);close 挂 ctx.effect
+    // 同缝清理,热重载/卸载不泄 fd。无驱动/拒开/损坏 → stats-db 内部 warn 恰
+    // 一次 + statsPersistenceState() 导出 persisted:false,绝不向宿主抛错。
+    ctx.effect(() => () => { cancelPendingUsageFlushes(); closeStatsStore() }, 'contextCompressionSelector.stats db')
+    void ensureStatsStore().catch(() => { /* ensureStatsStore 内部已吞错并降级为可见状态;此 catch 仅兜意外拒绝 */ })
+    // T21:回填触发源装配——sessionQuery 服务惰性解析(缺服务/老线宿主返回
+    // undefined,调度器自动走后端 B);路由 kick 在 savings/monitor 处理器内。
+    configureStatsBackfillTrigger({
+      sessionQuery: () => {
+        try {
+          const face = (ctx as unknown as { get: (service: string) => unknown }).get('sessionQuery') as
+            | { listSessions?: unknown; readSession?: unknown }
+            | undefined
+          return typeof face?.listSessions === 'function' && typeof face?.readSession === 'function'
+            ? face as unknown as import('./runtime/stats-backfill.ts').BackfillSessionQueryFace
+            : undefined
+        } catch {
+          return undefined
+        }
+      },
+    })
 
     // compat-legacy 单版本：legacy 宿主（0.1.0–0.1.5，settings.register 仍在）
     // 上租约注册压缩命名空间 + 全线挂 settings 桥路由（旧线 client 的唯一数据面；

@@ -42,6 +42,8 @@ export interface ProjectedOffset {
   tokens: number
   basis: SavingsBasis
   at: number
+  /** 重读事件的绝对 seq（持久 claims 主键需要；投影条目靠它定位到日志行）。 */
+  seq: number
   note: string
 }
 export interface ProjectedRegistryItem {
@@ -205,6 +207,7 @@ export function projectSavingsCore(input: {
       tokens: priced.tokens,
       basis: priced.basis,
       at: Number(event.time) || 0,
+      seq: Number(event.seq),
       note: `#${hit.sourceSeq} 的原文被全文重读(投影重建)`,
     })
   }

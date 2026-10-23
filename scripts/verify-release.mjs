@@ -49,11 +49,14 @@ const INSTALLATION_PROVIDED_RUNTIME = new Set([
 // The client-plane entry loads in the web bundler, which carries the client
 // stack (`react`, the ui-slot packages); its requires are reviewed from the
 // built artifact further down instead.
+// Clean-build output set (tsdown entries + shared chunks). `lib/config.js` and
+// `lib/host-generation.js` were stale committed artifacts of an older entry
+// table — the current bundle no longer emits them; keep this list equal to the
+// real `lib/*.js` set or the scan below dies on ENOENT.
 const HOST_PLANE_ENTRIES = [
-  'lib/config.js',
   'lib/index.js',
-  'lib/invariant.js',
   'lib/pruner.js',
+  'lib/invariant.js',
   'lib/tail-trim.js',
 ]
 const RUNTIME_IMPORT = /(?:^|[^.\w])(?:import|export)\s[^;]*?from\s*['"]([^'"]+)['"]|(?:^|[^.\w])(?:import|require)\s*\(\s*['"]([^'"]+)['"]\s*\)/gmu

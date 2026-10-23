@@ -20,6 +20,7 @@ import {
 } from './tail-trim.ts'
 import { sessionEvents } from './session-events.ts'
 import { getSavingsLedger } from './savings.ts'
+import { claimOffset } from './stats-sync.ts'
 import { viewToolResult } from '../compat/tool-result.ts'
 
 export const name = 'context-compression-retrieve'
@@ -93,11 +94,13 @@ export function installContextCompressionRetrieve(ctx: Context, config: Config =
         throw new Error('context_compression_retrieve: ref must be session://<session-id>/(event|tailtrim)/<seq>')
       }
       const sessionId = match?.[1] ?? tailTrimRef?.sessionId
-      if (sessionId !== String(exec.agent.id)) {
+      // 身份键一律用 session.id(与 pruner 落账/占位符 sourceRef 同键);旧版这里
+      // 用 exec.agent.id,两键不一致时抵消会记到另一本账上。
+      if (sessionId !== String(exec.agent.session.id)) {
         throw new Error('context_compression_retrieve: a compression reference may only read the caller\'s current session')
       }
       if (tailTrimRef !== null) {
-        const sessionId = String(exec.agent.id)
+        const sessionId = String(exec.agent.session.id)
         return Promise.resolve(recoverTailTrim(
           exec.agent.session,
           args.ref,
@@ -107,14 +110,22 @@ export function installContextCompressionRetrieve(ctx: Context, config: Config =
           args.max_lines,
           { maxChars, maxScanChars, maxQueryChars },
         )).then((text: string) => {
-          // 节省统计:回读内容重新进入上下文 = 对该组原声称节省的抵消
-          // (chars/4 估算口径;retrieve 不持有精确 counter 身份,分列不混算)。
-          getSavingsLedger().recordOffset({
+          // 节省统计:回读内容重新进入上下文 = 对该组原声称节省的抵消。
+          // 同 basis(chars/4 估算口径;retrieve 不持有精确 counter 身份,
+          // 分列不混算)经 foldRecall 折进源条目翻负;跨基退化带 sourceSeq 的收敛 offset。
+          const offsetTokens = Math.ceil(codePointLength(text) / 4)
+          getSavingsLedger().foldRecall(sessionId, tailTrimRef.manifestSeq, offsetTokens, 'characters', {
+            component: 'tailtrim-retrieve',
+            note: `tailtrim/${tailTrimRef.manifestSeq} 回读`,
+          })
+          // T6 接线:持久 offset claim(流水审计层);幂等键含 manifestSeq,
+          // 同源反复召回首次入账、重放去重(定键口径见 stats-sync 头注)。
+          claimOffset({
             sessionId,
             component: 'tailtrim-retrieve',
-            tokens: Math.ceil(codePointLength(text) / 4),
+            tokens: offsetTokens,
             basis: 'characters',
-            note: `tailtrim/${tailTrimRef.manifestSeq} 回读`,
+            sourceSeq: tailTrimRef.manifestSeq,
           })
           return text
         })
@@ -159,13 +170,21 @@ export function installContextCompressionRetrieve(ctx: Context, config: Config =
       ].filter(Boolean).join('\n')
       const output = `${header}\n${selected.text}`
       const bounded = boundCodePoints(output, maxChars)
-      // 节省统计:retrieve 产物重新进入上下文 = 抵消(chars/4 估算口径)。
-      getSavingsLedger().recordOffset({
-        sessionId: String(exec.agent.id),
+      // 节省统计:retrieve 产物重新进入上下文 = 抵消(chars/4 估算口径);
+      // 同 basis 折进源条目翻负,R = boundCodePoints 后的实测值,跨基退化为
+      // 带 sourceSeq(event/N)的收敛 offset。落账键用 session.id 与 pruner 统一。
+      const offsetTokens = Math.ceil(codePointLength(bounded) / 4)
+      getSavingsLedger().foldRecall(String(exec.agent.session.id), seq, offsetTokens, 'characters', {
         component: 'retrieve',
-        tokens: Math.ceil(codePointLength(bounded) / 4),
-        basis: 'characters',
         note: `event/${String(seq)} 回读`,
+      })
+      // T6 接线:持久 offset claim;幂等键 (session_id, 源事件绝对 seq, …)。
+      claimOffset({
+        sessionId: String(exec.agent.session.id),
+        component: 'retrieve',
+        tokens: offsetTokens,
+        basis: 'characters',
+        sourceSeq: seq,
       })
       return Promise.resolve(bounded)
     },

@@ -18,6 +18,9 @@ const LEGACY_ROUTE = '/endpoint/dsh-context-compression-improved/estimator-catal
 const SAVINGS_ROUTE = '/api/dsh-context-compression-improved/savings'
 const SAVINGS_LEGACY_ROUTE = '/endpoint/dsh-context-compression-improved/savings'
 const MONITOR_ROUTE = '/api/dsh-context-compression-improved/monitor'
+// T24: per-session paginated ledger route rides the same always-on plane.
+const SAVINGS_SESSIONS_ROUTE = '/api/dsh-context-compression-improved/savings/sessions'
+const SAVINGS_SESSIONS_LEGACY_ROUTE = '/endpoint/dsh-context-compression-improved/savings/sessions'
 
 // compat-legacy: the settings bridge rides the same always-on plane — its
 // two routes (both prefixes) register wherever savings/monitor do.
@@ -113,7 +116,7 @@ describe('estimator catalog route registration', () => {
     apply(runtime, { estimatorCatalogRoute: true })
     await settle()
 
-    expect(routes.map(route => route.path)).toEqual([LEGACY_ROUTE, CATALOG_ROUTE, SAVINGS_LEGACY_ROUTE, SAVINGS_ROUTE, MONITOR_LEGACY_ROUTE, MONITOR_ROUTE, SETTINGS_LEGACY_ROUTE, SETTINGS_ROUTE])
+    expect(routes.map(route => route.path)).toEqual([LEGACY_ROUTE, CATALOG_ROUTE, SAVINGS_LEGACY_ROUTE, SAVINGS_ROUTE, MONITOR_LEGACY_ROUTE, MONITOR_ROUTE, SAVINGS_SESSIONS_LEGACY_ROUTE, SAVINGS_SESSIONS_ROUTE, SETTINGS_LEGACY_ROUTE, SETTINGS_ROUTE])
     expect(routes.every(route => route.kind === 'exact')).toBe(true)
   })
 
@@ -129,7 +132,7 @@ describe('estimator catalog route registration', () => {
     await mountWebServer(runtime, routes)
     await settle()
 
-    expect(routes.map(route => route.path)).toEqual([LEGACY_ROUTE, CATALOG_ROUTE, SAVINGS_LEGACY_ROUTE, SAVINGS_ROUTE, MONITOR_LEGACY_ROUTE, MONITOR_ROUTE, SETTINGS_LEGACY_ROUTE, SETTINGS_ROUTE])
+    expect(routes.map(route => route.path)).toEqual([LEGACY_ROUTE, CATALOG_ROUTE, SAVINGS_LEGACY_ROUTE, SAVINGS_ROUTE, MONITOR_LEGACY_ROUTE, MONITOR_ROUTE, SAVINGS_SESSIONS_LEGACY_ROUTE, SAVINGS_SESSIONS_ROUTE, SETTINGS_LEGACY_ROUTE, SETTINGS_ROUTE])
   })
 
   it('registers nothing twice when the estimator services arrive later', async () => {
@@ -194,6 +197,6 @@ describe('estimator catalog route registration', () => {
     apply(runtime, { presetOverlay: false })
     await settle()
 
-    expect(routes.map(route => route.path)).toEqual([SAVINGS_LEGACY_ROUTE, SAVINGS_ROUTE, MONITOR_LEGACY_ROUTE, MONITOR_ROUTE, SETTINGS_LEGACY_ROUTE, SETTINGS_ROUTE])
+    expect(routes.map(route => route.path)).toEqual([SAVINGS_LEGACY_ROUTE, SAVINGS_ROUTE, MONITOR_LEGACY_ROUTE, MONITOR_ROUTE, SAVINGS_SESSIONS_LEGACY_ROUTE, SAVINGS_SESSIONS_ROUTE, SETTINGS_LEGACY_ROUTE, SETTINGS_ROUTE])
   })
 })

@@ -70,14 +70,14 @@ function collectRegistrations(
   return { declared, registrations }
 }
 
-describe('settings-seat contract (standalone settings.section + input-bar session binder)', () => {
+describe('settings-seat contract (settings.section + input-bar session view binder + bundle detail card)', () => {
   it('declares the services apply consumes (cordis waits; no lazy-get race)', () => {
     // compat-legacy 单版本（B8）：顶层只声明六线通用服务；数据面由 scoped
     // sub-inject 双臂选择（桥默认 + configForms 升级），不再出现在顶层表。
     expect(inject).toEqual(['slots', 'locale'])
   })
 
-  it('injects exactly three seats: the settings.section panel + the input-bar session binder + the 0.1.7+ bundle detail card', () => {
+  it('injects exactly three seats: the settings.section panel + the input-bar session view binder + the 0.1.7+ bundle detail card', () => {
     const { declared, registrations } = collectRegistrations()
     expect(declared).toEqual(['settings.section', 'conversation.input.left', 'plugins.bundle.config'])
     expect(registrations).toHaveLength(3)
@@ -86,6 +86,18 @@ describe('settings-seat contract (standalone settings.section + input-bar sessio
     expect(registrations[2]!.slot).toBe('plugins.bundle.config')
     // bundle 卡 keyed=包名,0.1.x 宿主无此槽时由 registerThrows 分支另行覆盖
     expect(registrations[2]!.options['key']).toBe('dsh-context-compression-improved')
+  })
+
+  it('pins the input-bar view binder: invisible component consumes the reactive sessionId standard prop', () => {
+    // 绑定源 = session 作用域槽的 sessionId 标准 prop(宿主按当前页面会话
+    // 响应式下发);inject 回调只在装载时发一次,不作绑定源(陈旧教训)。
+    const { registrations } = collectRegistrations()
+    const inputSeat = registrations[1]!
+    expect(inputSeat.options['id']).toBe('context-compression-session-bind')
+    expect(inputSeat.options['order']).toBe(170)
+    const component = inputSeat.component as ((props: { sessionId?: string }) => unknown) | undefined
+    expect(typeof component).toBe('function')
+    expect(component?.({ sessionId: 'sess-view-1' })).toBeNull()
   })
 
   it('no longer claims a shell.overlay float (the review panel it served is gone)', () => {
@@ -104,17 +116,6 @@ describe('settings-seat contract (standalone settings.section + input-bar sessio
     const face = (options['inject'] as () => Record<string, unknown>)()
     expect(Object.keys(face).sort()).toEqual(['hooks', 'saveAutoCompact', 'saveCodeSkeleton', 'saveCustom', 'saveIntentSummary', 'saveMonitorPanel', 'savePresetOptions', 'select', 'resetCustom'].sort())
     expect(component).toBe(ContextCompressionSettingsSection)
-  })
-
-  it('pins the input-bar binder: invisible component, inject captures the bare sessionId', () => {
-    const { registrations } = collectRegistrations()
-    const inputSeat = registrations[1]!
-    expect(inputSeat.options['id']).toBe('context-compression-session-bind')
-    expect(inputSeat.options['order']).toBe(170)
-    expect(typeof inputSeat.options['inject']).toBe('function')
-    const face = (inputSeat.options['inject'] as (sessionId: string) => Record<string, unknown>)('sess-42')
-    expect(face).toEqual({})
-    expect(inputSeat.component).toBeTypeOf('function')
   })
 
   it('never adds a Plugins-section card or tab alongside the standalone section', () => {
@@ -203,8 +204,7 @@ describe('settings-seat contract (standalone settings.section + input-bar sessio
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       const { declared } = collectRegistrations({ registerThrows: true })
-      // It tried all three seats (so the degradation is "loud", not a silent
-      // no-op)…
+      // It tried all three seats (so the degradation is "loud", not a silent no-op)…
       expect(declared).toEqual(['settings.section', 'conversation.input.left', 'plugins.bundle.config'])
       // …and the rejection never escaped apply().
       expect(warn).toHaveBeenCalled()

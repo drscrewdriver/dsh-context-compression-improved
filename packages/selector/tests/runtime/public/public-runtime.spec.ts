@@ -460,7 +460,6 @@ describe('standalone runtime on published Harness APIs', () => {
     })
 
     const record = rewrites(audit.records()).find(entry => entry.component === 'fresh')
-    // eslint-disable-next-line no-console
     console.log('QWEN_FRESH pruned=', result.pruned.length, 'reducer=', record?.reducer ?? 'none', 'basis=', record?.measurementBasis ?? 'none')
     expect(result.pruned.length).toBeGreaterThanOrEqual(1)
   })

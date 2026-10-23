@@ -3,11 +3,13 @@ import { parseContextCompressionSettings, DEFAULT_CONTEXT_COMPRESSION_SETTINGS }
 import { SavingsLedger } from '../../src/runtime/savings.ts'
 import {
   applySessionOverride,
+  drsTotalsFragment,
   MONITOR_SUGGEST_PCT,
   observeContextUsage,
   buildMonitorSnapshot,
   estimateSavingsPricing,
   isSessionOverrideAction,
+  mergeCompositionByComponent,
 } from '../../src/runtime/monitor.ts'
 import { getSummaryOverride } from '../../src/runtime/tokenpilot/advisor-state.ts'
 
@@ -299,3 +301,54 @@ describe('catastrophic-forgetting suggestion (task: 建议压缩)', () => {
   })
 })
 
+describe('mergeCompositionByComponent (浮窗组成去重合并)', () => {
+  it('同路径跨口径合并一行(mixed),跨路径保留,tokens 降序', () => {
+    const merged = mergeCompositionByComponent([
+      { component: 'projection', basis: 'characters', tokens: 200_000, events: 30 },
+      { component: 'fresh', basis: 'exact-tokenizer', tokens: 5_000, events: 2 },
+      { component: 'projection', basis: 'exact-tokenizer', tokens: 103_698, events: 8 },
+    ])
+    expect(merged).toEqual([
+      { component: 'projection', basis: 'mixed', tokens: 303_698, events: 38 },
+      { component: 'fresh', basis: 'exact-tokenizer', tokens: 5_000, events: 2 },
+    ])
+  })
+  it('空输入 = 空输出;不改动输入数组', () => {
+    const input: { component: string; basis: string; tokens: number; events: number }[] = []
+    expect(mergeCompositionByComponent(input)).toEqual([])
+    const single = [{ component: 'fresh', basis: 'characters', tokens: 1, events: 1 }]
+    const out = mergeCompositionByComponent(single)
+    expect(out).toHaveLength(1)
+    expect(out[0]).not.toBe(single[0])
+  })
+})
+
+describe('drsTotalsFragment(浮窗三值 DRS 主源,每次全量重导)', () => {
+  const index = {
+    sessionId: 's1', basis: 'ds-token', syncedAt: 'x', maxSeq: 100, turnCount: 2, segments: 5, turns: [],
+    pairs: [
+      { seq: 8, startSeq: 1, endSeq: 3, aTokens: 500, bTokens: 100, kind: 'compress' as const, turn: 1, step: 1 },
+      { seq: 20, startSeq: 12, endSeq: 14, aTokens: 300, bTokens: 40, kind: 'compress' as const, turn: 1, step: 2 },
+      { seq: 30, startSeq: 18, endSeq: 18, aTokens: 0, bTokens: 60, kind: 'recall' as const, turn: 2, step: 1 },
+    ],
+  }
+
+  it('毛仅压缩对(不含回吐)、抵消仅召回对、净=毛−抵消;ds-token 落 exact 臂', () => {
+    const fragment = drsTotalsFragment(index)
+    expect(fragment.sessionTotals.gross).toEqual({ exact: 660, estimated: 0 }) // (500−100)+(300−40)
+    expect(fragment.sessionTotals.offsets).toEqual({ exact: 60, estimated: 0 })
+    expect(fragment.sessionTotals.net).toEqual({ exact: 600, estimated: 0 }) // 有召回 → 净异于毛
+    expect(fragment.lastDelta).toEqual({ saving: { tokens: 260, seq: 20 }, offset: { tokens: 60, seq: 30 } })
+  })
+
+  it('chars/4 口径落 estimated 臂;零对 → 全零且无 Δ 段(不伪造)', () => {
+    const charsIndex = { ...index, basis: 'chars/4', pairs: [] }
+    const fragment = drsTotalsFragment(charsIndex)
+    expect(fragment.sessionTotals).toEqual({
+      gross: { exact: 0, estimated: 0 },
+      offsets: { exact: 0, estimated: 0 },
+      net: { exact: 0, estimated: 0 },
+    })
+    expect(fragment.lastDelta).toBeUndefined()
+  })
+})
