@@ -327,9 +327,9 @@ describe('drsTotalsFragment(浮窗三值 DRS 主源,每次全量重导)', () => 
   const index = {
     sessionId: 's1', basis: 'ds-token', syncedAt: 'x', maxSeq: 100, turnCount: 2, segments: 5, turns: [],
     pairs: [
-      { seq: 8, startSeq: 1, endSeq: 3, aTokens: 500, bTokens: 100, kind: 'compress' as const, turn: 1, step: 1 },
-      { seq: 20, startSeq: 12, endSeq: 14, aTokens: 300, bTokens: 40, kind: 'compress' as const, turn: 1, step: 2 },
-      { seq: 30, startSeq: 18, endSeq: 18, aTokens: 0, bTokens: 60, kind: 'recall' as const, turn: 2, step: 1 },
+      { seq: 8, startSeq: 1, endSeq: 3, aTokens: 500, bTokens: 100, kind: 'compress' as const, turn: 1, step: 1, live: 1 as const },
+      { seq: 20, startSeq: 12, endSeq: 14, aTokens: 300, bTokens: 40, kind: 'compress' as const, turn: 1, step: 2, live: 1 as const },
+      { seq: 30, startSeq: 18, endSeq: 18, aTokens: 0, bTokens: 60, kind: 'recall' as const, turn: 2, step: 1, live: 1 as const },
     ],
   }
 
