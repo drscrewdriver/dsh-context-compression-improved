@@ -3833,6 +3833,7 @@ function claimSaving(input) {
 		at: Date.now()
 	};
 	withStoreWrite("claim saving", (store) => {
+		store.setSessionWatermark(input.sessionId, row.seq, { source: "live" });
 		store.recordClaims(input.sessionId, [row]);
 	});
 }
@@ -3868,6 +3869,7 @@ function claimOffset(input) {
 		at: Date.now()
 	};
 	withStoreWrite("claim offset", (store) => {
+		store.setSessionWatermark(input.sessionId, row.seq, { source: "live" });
 		store.recordClaims(input.sessionId, [row]);
 	});
 }
