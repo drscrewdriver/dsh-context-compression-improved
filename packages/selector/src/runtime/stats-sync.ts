@@ -105,6 +105,9 @@ function claimSaving(input: {
     at: Date.now(),
   }
   withStoreWrite('claim saving', store => {
+    // 同事务抢 source='live' 标记：isLiveOwned 回填护栏自第一条 saving 起生效，
+    // 封死「live 已 land 但 sessions 行缺席 → 回填投影另键双计」的竞态窗口（审查 M2）。
+    store.setSessionWatermark(input.sessionId, row.seq, { source: 'live' })
     store.recordClaims(input.sessionId, [row])
   })
 }
@@ -162,6 +165,8 @@ export function claimOffset(input: {
     at: Date.now(),
   }
   withStoreWrite('claim offset', store => {
+    // 与 claimSaving 同纪律：offset 也先抢 source='live'，护栏不依赖 usage 水位（审查 M2）。
+    store.setSessionWatermark(input.sessionId, row.seq, { source: 'live' })
     store.recordClaims(input.sessionId, [row])
   })
 }

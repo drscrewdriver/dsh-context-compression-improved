@@ -15,7 +15,8 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import zlib from 'node:zlib'
-import { StatsStore, openStatsDatabase } from '../../src/runtime/stats-db.ts'
+import { StatsStore, openStatsDatabase, ensureStatsStore, closeStatsStore } from '../../src/runtime/stats-db.ts'
+import { claimFromLand } from '../../src/runtime/stats-sync.ts'
 import {
   backfillViaSessionFiles,
   backfillViaSessionQuery,
@@ -184,6 +185,26 @@ describe('stats-backfill 双后端一致性与幂等(T23)', () => {
     expect(record?.source).toBe('live')
     expect(record?.version).toBeGreaterThanOrEqual(2)
     bag.store.close()
+  })
+
+  it('护栏自 land 点生效（审查 M2 回归）：claimFromLand 后无 usage 也拦停回填双计', async () => {
+    const feed = buildFeed()
+    const dir = tempDir('land-guard')
+    const store = await ensureStatsStore(join(dir, 'stats.sqlite'))
+    if (store === null) throw new Error('no sqlite driver in this environment')
+    // 旧实现：此路径不写 sessions 行 → 回填以 component='projection' 另键双计；新实现 land 同点抢 source='live'。
+    claimFromLand({ sessionId: 's1', component: 'fresh', tokensBefore: 500, tokensAfter: 100, basis: 'characters', replacementSeq: 2 })
+    const res = await backfillViaSessionQuery(store, fakeSessionQuery(new Map([['s1', { version: 6, events: feed }]])))
+    expect(res.sessions).toBe(0)
+    expect(res.claimsAdded).toBe(0)
+    expect(res.skipped).toBe(1)
+    // claims 仅剩 live 那一条（投影零污染）
+    const rows = dumpClaims(join(dir, 'stats.sqlite'))
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ kind: 'saving', component: 'fresh' })
+    const record = store.getSessionRecord('s1')
+    expect(record?.source).toBe('live')
+    closeStatsStore()
   })
 
   it('回填只读：会话源文件 mtime/size 与目录内容不因回填变化', async () => {
