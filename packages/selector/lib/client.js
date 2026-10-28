@@ -1587,6 +1587,56 @@ window.__ModuleLoader__.load({
 			} : void 0;
 		}
 		//#endregion
+		//#region src/client/fab-pos.ts
+		const clamp01 = (v) => Math.max(0, Math.min(1, v));
+		const isFin = (v) => typeof v === "number" && Number.isFinite(v);
+		/** 除法结果的归一化兜底：±Infinity 夹到 1/0，NaN 视为无效。 */
+		const divClamp = (px, vpSize) => {
+			const q = px / vpSize;
+			if (q === Infinity) return 1;
+			if (q === -Infinity) return 0;
+			if (!Number.isFinite(q)) return null;
+			return clamp01(q);
+		};
+		/**
+		* 读入 localStorage 存量形状并归一为比例态：
+		* - {fx,fy} 均有限 → 夹回 [0,1] 直用；
+		* - 否则 {x,y} 均有限（旧像素格式）→ 按当前视口除法换算（±Infinity 夹 1/0，NaN 拒）；
+		* - 其余（非对象/数组/字段缺失/脏值）→ null，由调用方走默认位。
+		*/
+		function normalizeStored(raw, vp) {
+			if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
+			const r = raw;
+			if (isFin(r.fx) && isFin(r.fy)) return {
+				fx: clamp01(r.fx),
+				fy: clamp01(r.fy)
+			};
+			if (!isFin(r.x) || !isFin(r.y)) return null;
+			const fx = divClamp(r.x, vp.vw);
+			const fy = divClamp(r.y, vp.vh);
+			if (fx === null || fy === null) return null;
+			return {
+				fx,
+				fy
+			};
+		}
+		/** 像素 → 比例，4 位小数舍入；像素本身可为 clamp 后越内值（先夹再存）。 */
+		function toRatio(pos, vp) {
+			const fx = divClamp(pos.x, vp.vw);
+			const fy = divClamp(pos.y, vp.vh);
+			return {
+				fx: fx === null ? 0 : fx,
+				fy: fy === null ? 0 : fy
+			};
+		}
+		/** 比例 → 像素（不做 clamp——落位后由接线层既有 clamp 收边）。 */
+		function fromRatio(r, vp) {
+			return {
+				x: Math.round(clamp01(r.fx) * vp.vw),
+				y: Math.round(clamp01(r.fy) * vp.vh)
+			};
+		}
+		//#endregion
 		//#region src/client/monitor-fab.ts
 		/**
 		* 压缩监控浮动球 + 面板(task: cci-monitor-fab;骨架整编自 pm 撤下的
@@ -1685,26 +1735,37 @@ window.__ModuleLoader__.load({
 <div class="recent" data-recent></div>
 `;
 			document.body.append(fab, panel);
-			let pos;
+			const vpFab = () => ({
+				vw: window.innerWidth,
+				vh: window.innerHeight,
+				w: 42,
+				h: 42
+			});
+			let ratio;
 			try {
-				pos = JSON.parse(localStorage.getItem(POS_KEY) ?? "null") ?? {
-					x: Math.max(8, window.innerWidth - 66),
-					y: Math.max(8, Math.round(window.innerHeight * .6))
-				};
+				ratio = normalizeStored(JSON.parse(localStorage.getItem(POS_KEY) ?? "null"), vpFab());
 			} catch {
-				pos = {
-					x: Math.max(8, window.innerWidth - 66),
-					y: Math.max(8, Math.round(window.innerHeight * .6))
-				};
+				ratio = null;
 			}
+			let pos = ratio !== null ? fromRatio(ratio, vpFab()) : {
+				x: Math.max(8, window.innerWidth - 66),
+				y: Math.max(8, Math.round(window.innerHeight * .6))
+			};
 			const clamp = (p) => ({
 				x: Math.max(8, Math.min(window.innerWidth - 50, p.x)),
 				y: Math.max(8, Math.min(window.innerHeight - 50, p.y))
 			});
-			const place = () => {
+			/** 像素态直接落位: clamp → 镜像回 ratio → 写 style（拖拽帧专用，不回推 ratio）。 */
+			const paint = () => {
 				pos = clamp(pos);
+				ratio = toRatio(pos, vpFab());
 				fab.style.left = `${pos.x}px`;
 				fab.style.top = `${pos.y}px`;
+			};
+			/** 从存储比例全量重推导（init + resize）: 角落随视口缩放跟随，再夹回屏内。 */
+			const place = () => {
+				if (ratio !== null) pos = fromRatio(ratio, vpFab());
+				paint();
 			};
 			place();
 			window.addEventListener("resize", place);
@@ -1740,12 +1801,12 @@ window.__ModuleLoader__.load({
 					});
 					if (Math.abs(next.x - pos.x) > 2 || Math.abs(next.y - pos.y) > 2) moved = true;
 					pos = key === "fab" ? next : pos;
-					if (key === "fab") place();
+					if (key === "fab") paint();
 				});
 				el.addEventListener("pointerup", () => {
 					active = false;
 					if (moved && key === "fab") try {
-						localStorage.setItem(POS_KEY, JSON.stringify(pos));
+						localStorage.setItem(POS_KEY, JSON.stringify(ratio ?? toRatio(pos, vpFab())));
 					} catch {}
 				});
 				el.addEventListener("pointercancel", () => {

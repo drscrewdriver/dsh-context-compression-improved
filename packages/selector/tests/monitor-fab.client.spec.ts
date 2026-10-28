@@ -210,11 +210,31 @@ describe('monitor fab (body-level overlay)', () => {
     expect((document.querySelector('[data-offsets]') as HTMLElement).textContent).toBe('-1,200')
   })
 
-  it('position persists across drag-free re-init via localStorage', () => {
-    localStorage.setItem('dsh.cci.monitor.pos', JSON.stringify({ x: 40, y: 60 }))
+  it('position persists across drag-free re-init via localStorage (fraction format)', () => {
+    localStorage.setItem('dsh.cci.monitor.pos', JSON.stringify({ fx: 0.5, fy: 0.5 }))
     initMonitorFab(makeDeps())
     const fab = document.getElementById(FAB_ID) as HTMLElement
-    expect(fab.style.left).toBe('40px')
-    expect(fab.style.top).toBe('60px')
+    // jsdom 视口 1024x768 → 512/384（均在既有 clamp [8, vw-50]/[8, vh-50] 内）
+    expect(fab.style.left).toBe('512px')
+    expect(fab.style.top).toBe('384px')
+  })
+
+  it('legacy pixel {x,y} archive normalizes against current viewport without throwing', () => {
+    localStorage.setItem('dsh.cci.monitor.pos', JSON.stringify({ x: 512, y: 384 }))
+    initMonitorFab(makeDeps())
+    const fab = document.getElementById(FAB_ID) as HTMLElement
+    expect(fab.style.left).toBe('512px')
+    expect(fab.style.top).toBe('384px')
+  })
+
+  it('ball re-derives from its fraction on resize (corner follows viewport)', () => {
+    localStorage.setItem('dsh.cci.monitor.pos', JSON.stringify({ fx: 0.5, fy: 0.5 }))
+    initMonitorFab(makeDeps())
+    const fab = document.getElementById(FAB_ID) as HTMLElement
+    expect(fab.style.left).toBe('512px')
+    Object.defineProperty(window, 'innerWidth', { value: 2048, writable: true, configurable: true })
+    window.dispatchEvent(new Event('resize'))
+    // 比例不变→横坐标随视口翻倍（旧像素模型会停在 512px 不跟角）
+    expect(fab.style.left).toBe('1024px')
   })
 })

@@ -1,6 +1,11 @@
 # Changelog
 
 
+## 0.10.2 (2026-10-28)
+
+- fab: monitor floating ball position persistence switched to viewport-fraction ({fx,fy}, 4-dec) — corner-follow promise on restart/maximize/resolution change, replacing the absolute-pixel model that only *looked* fine because resize-clamp kept it on-screen. Legacy {x,y} archives normalize on load (zero migration). Pure layout module `src/client/fab-pos.ts` is byte-identical with dsh-browser-cdp's (dual-side sync discipline); pinned by fab-pos.client.spec.ts (6) + rewritten monitor-fab position specs (fraction persist / legacy normalize / resize re-derive).
+
+
 ## 0.10.0 (2026-10-24)
 
 - hosts: 0.2.1-rc.3 declaration-level enum addendum (18 rc; contract plane zero diff per host source-analysis) — shipped together with the stats feature below.

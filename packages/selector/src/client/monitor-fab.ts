@@ -16,6 +16,9 @@
  * 口径),覆盖作用于默认会话;会话级绑定待 cci 有输入栏座位后另行接线。
  */
 
+import { fromRatio, normalizeStored, toRatio } from './fab-pos';
+import type { RatioPos, Viewport } from './fab-pos';
+
 const FAB_ID = 'dsh-cci-monitor-fab';
 const PANEL_ID = 'dsh-cci-monitor-panel';
 const STYLE_ID = 'dsh-cci-monitor-style';
@@ -151,24 +154,33 @@ export function initMonitorFab(deps: MonitorFabDeps): void {
 `;
   document.body.append(fab, panel);
 
-  // 位置:localStorage 恢复 + 视口夹紧(pm 骨架原样)
-  let pos: { x: number; y: number };
+  // 位置:视口比例(百分位)持久化 —— ratio 是存储真源, pos 是像素缓存;
+  // 读/写边界换算, 既有像素 clamp 继续兑底(与 browser-cdp 球区同构, issue #4 根治)
+  const vpFab = (): Viewport => ({ vw: window.innerWidth, vh: window.innerHeight, w: 42, h: 42 });
+  let ratio: RatioPos | null;
   try {
-    pos = JSON.parse(localStorage.getItem(POS_KEY) ?? 'null') ?? {
-      x: Math.max(8, window.innerWidth - 66),
-      y: Math.max(8, Math.round(window.innerHeight * 0.6)),
-    };
+    ratio = normalizeStored(JSON.parse(localStorage.getItem(POS_KEY) ?? 'null'), vpFab());
   } catch {
-    pos = { x: Math.max(8, window.innerWidth - 66), y: Math.max(8, Math.round(window.innerHeight * 0.6)) };
+    ratio = null;
   }
+  let pos: { x: number; y: number } = ratio !== null
+    ? fromRatio(ratio, vpFab())
+    : { x: Math.max(8, window.innerWidth - 66), y: Math.max(8, Math.round(window.innerHeight * 0.6)) };
   const clamp = (p: { x: number; y: number }): { x: number; y: number } => ({
     x: Math.max(8, Math.min(window.innerWidth - 50, p.x)),
     y: Math.max(8, Math.min(window.innerHeight - 50, p.y)),
   });
-  const place = (): void => {
+  /** 像素态直接落位: clamp → 镜像回 ratio → 写 style（拖拽帧专用，不回推 ratio）。 */
+  const paint = (): void => {
     pos = clamp(pos);
+    ratio = toRatio(pos, vpFab());
     fab.style.left = `${pos.x}px`;
     fab.style.top = `${pos.y}px`;
+  };
+  /** 从存储比例全量重推导（init + resize）: 角落随视口缩放跟随，再夹回屏内。 */
+  const place = (): void => {
+    if (ratio !== null) pos = fromRatio(ratio, vpFab());
+    paint();
   };
   place();
   window.addEventListener('resize', place);
@@ -192,12 +204,12 @@ export function initMonitorFab(deps: MonitorFabDeps): void {
       const next = clamp({ x: startPos.x + (e.clientX - origin.x), y: startPos.y + (e.clientY - origin.y) });
       if (Math.abs(next.x - pos.x) > 2 || Math.abs(next.y - pos.y) > 2) moved = true;
       pos = key === 'fab' ? next : pos;
-      if (key === 'fab') place();
+      if (key === 'fab') paint();
     });
     el.addEventListener('pointerup', () => {
       active = false;
       if (moved && key === 'fab') {
-        try { localStorage.setItem(POS_KEY, JSON.stringify(pos)); } catch { /* 隐私模式:位置不持久化 */ }
+        try { localStorage.setItem(POS_KEY, JSON.stringify(ratio ?? toRatio(pos, vpFab()))); } catch { /* 隐私模式:位置不持久化 */ }
       }
     });
     el.addEventListener('pointercancel', () => {
