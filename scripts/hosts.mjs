@@ -30,7 +30,7 @@ export const supportedHosts = Object.freeze([
 	'0.2.0-rc.1',
 	'0.2.0-rc.2',
 	'0.2.1-rc.1',
-	'0.2.1-rc.2', '0.2.1-rc.3', '0.2.1-rc.4',
+	'0.2.1-rc.2', '0.2.1-rc.3', '0.2.1-rc.4', '0.2.1-rc.5',
 ])
 export const peerRange = supportedHosts.join(' || ')
 /** 显式偏离：devDeps 钉 rc.1（见文件头）。 */

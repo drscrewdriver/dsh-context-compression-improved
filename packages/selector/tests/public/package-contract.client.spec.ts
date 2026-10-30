@@ -23,8 +23,8 @@ describe('standalone package contract', () => {
       .toBe(selector.engines?.dsh)
     expect(selector.peerDependencies?.['@deepseek-ai/dsh-command-compact'])
       .toBe(selector.engines?.dsh)
-    // compat-legacy 七线：dsh-* peer 与 engines.dsh 同为 19rc 枚举（hosts.mjs 口径，rc.4 已补票）。
-    expect(selector.engines?.dsh?.split(' || ')).toHaveLength(19)
+    // compat-legacy 七线：dsh-* peer 与 engines.dsh 同为 20rc 枚举（hosts.mjs 口径，rc.5 已补票）。
+    expect(selector.engines?.dsh?.split(' || ')).toHaveLength(20)
     expect(selector.publishConfig?.tag).toBe('latest')
     expect(existsSync(resolve(root, '../runtime/package.json'))).toBe(false)
   })
@@ -51,8 +51,8 @@ describe('standalone package contract', () => {
       '@deepseek-ai/dsh-client-ui-slots',
       '@deepseek-ai/dsh-client-ui-settings',
     ])
-    // compat-legacy 七线：root=安装面，engines 与全部 peer 同为 19rc 枚举（闸门口径）。
-    expect(rootManifest.engines?.dsh?.split(' || ')).toHaveLength(19)
+    // compat-legacy 七线：root=安装面，engines 与全部 peer 同为 20rc 枚举（闸门口径）。
+    expect(rootManifest.engines?.dsh?.split(' || ')).toHaveLength(20)
     for (const range of Object.values(rootManifest.peerDependencies ?? {})) {
       expect(range).toBe(rootManifest.engines?.dsh)
     }
