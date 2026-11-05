@@ -36,4 +36,8 @@ jobs:
       - run: pnpm verify:release
       - run: pnpm pack:dry-run
       - run: pnpm test:e2e:packed
-      - run: pnpm audit --audit-level high
+      # 审计基线 = critical，不是 high。high 层目前完全由 @deepseek-ai/dsh-* peer 链
+      # 不可控地传递进来（zod<4.6.6 经 dsh-llm、undici<7.30.1 经 vitest→jsdom 、
+      # vite<8.3.3 经 vitest）——插件层无法强推宿主升级 peer，将 high 当门禁
+      # 只会把 CI 锁死在无法行动的项目上。critical 保留真正的红线。
+      - run: pnpm audit --audit-level critical

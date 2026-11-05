@@ -341,7 +341,9 @@ describe('stats-backfill 提取核心原语', () => {
   })
 
   it('D7 字面量守卫：stats-backfill 源文本不含被禁的裸文件名/版本常量', () => {
-    const source = readFileSync(join(process.cwd(), 'packages/selector/src/runtime/stats-backfill.ts'), 'utf8')
+    // 相对 spec 自身解析，不依赖 process.cwd()（pnpm --filter 将 cwd 带至 packages/selector，
+    // 旧写法会拼出 packages/selector/packages/selector/... 双重前缀而抛 ENOENT）。
+    const source = readFileSync(new URL('../../src/runtime/stats-backfill.ts', import.meta.url), 'utf8')
     const banned: readonly RegExp[] = [/session\.jsonl/iu, /SESSION_FORMAT_VERSION/u, /sessionFormatVersion/u]
     for (const pattern of banned) expect(pattern.test(source)).toBe(false)
   })
