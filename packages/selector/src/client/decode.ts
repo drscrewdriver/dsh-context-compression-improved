@@ -9,6 +9,7 @@ import {
   decodeIntentSummarySettings,
   decodeMonitorPanelSettings,
   decodePresetOptionsSettings,
+  decodeSedimentSettings,
   isCustomCompressionPolicy,
   isPlainRecord,
   type CompressionProfile,
@@ -28,7 +29,7 @@ import {
 export function decodeSettings(value: unknown): ContextCompressionSettings | undefined {
   if (!isPlainRecord(value)) return undefined
   const keys = Object.keys(value)
-  if (keys.some(key => key !== 'profile' && key !== 'custom' && key !== 'ptcCustom' && key !== 'autoCompact' && key !== 'codeSkeleton' && key !== 'intentSummary' && key !== 'monitorPanel' && key !== 'presetOptions')) {
+  if (keys.some(key => key !== 'profile' && key !== 'custom' && key !== 'ptcCustom' && key !== 'autoCompact' && key !== 'codeSkeleton' && key !== 'intentSummary' && key !== 'monitorPanel' && key !== 'sediment' && key !== 'presetOptions')) {
     return undefined
   }
   const profile = (value as { profile?: unknown }).profile
@@ -41,6 +42,7 @@ export function decodeSettings(value: unknown): ContextCompressionSettings | und
   const codeSkeleton = decodeCodeSkeletonSettings((value as { codeSkeleton?: unknown }).codeSkeleton)
   const intentSummary = decodeIntentSummarySettings((value as { intentSummary?: unknown }).intentSummary)
   const monitorPanel = decodeMonitorPanelSettings((value as { monitorPanel?: unknown }).monitorPanel)
+  const sediment = decodeSedimentSettings((value as { sediment?: unknown }).sediment)
   const presetOptions = decodePresetOptionsSettings((value as { presetOptions?: unknown }).presetOptions)
   return typeof profile === 'string'
     && (COMPRESSION_PROFILES as readonly string[]).includes(profile)
@@ -50,6 +52,7 @@ export function decodeSettings(value: unknown): ContextCompressionSettings | und
     && codeSkeleton !== undefined
     && intentSummary !== undefined
     && monitorPanel !== undefined
+    && sediment !== undefined
     ? {
         profile: profile as CompressionProfile,
         custom: canonicalizeCustomPolicy(custom),
@@ -58,6 +61,7 @@ export function decodeSettings(value: unknown): ContextCompressionSettings | und
         codeSkeleton,
         intentSummary,
         ...monitorPanel === undefined ? {} : { monitorPanel },
+        sediment,
         ...presetOptions === undefined ? {} : { presetOptions },
       }
     : undefined

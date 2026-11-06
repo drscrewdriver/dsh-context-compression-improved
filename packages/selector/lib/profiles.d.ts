@@ -79,6 +79,30 @@ interface IntentSummarySettings {
 interface MonitorPanelSettings {
   enabled: boolean;
 }
+/**
+ * Orthogonal turn-tail sedimentation gate (plan cci-sedimentation-triage,
+ * R1/R13): whole-turn atomic replacement primary, span as the oversized-turn
+ * split and cache-strict fallback granularity. Default OFF; absent inherits
+ * the off defaults exactly like `monitorPanel`. Session-frozen like every
+ * selector setting: edits affect newly observed sessions only.
+ */
+interface SedimentSettings {
+  enabled: boolean;
+  /** Replacement granularity; `span` also serves as the cache-strict fallback. */
+  granularity: 'turn' | 'span';
+  /** Closing-summary qualification floor (tokens); below it the three-tier narrative fallback engages (R13). */
+  minClosingTokens: number;
+  /** Rewrite guard: a cut must save at least tail-rewrite × ratio (community 1:15 evidence, findings F2). */
+  rewriteGuardRatio: number;
+  /** Upper bound for one whole-turn replacement span before it splits (oversized turns). */
+  maxTurnSpanTokens: number;
+  /**
+   * Append-only extra failure-signal patterns (R2 extension slot). Merging
+   * NEVER replaces the built-in base set; invalid regex entries reject the
+   * whole section (never silently dropped).
+   */
+  extraSignalPatterns?: string[];
+}
 /** Browser-safe mirror of the runtime presetOptions section. */
 interface PresetOptionsSettings {
   readonly dedupeToolResults?: boolean;
@@ -115,6 +139,8 @@ interface ContextCompressionSettings {
   intentSummary: IntentSummarySettings;
   /** Floating compression-monitor panel (FAB); absent inherits hidden. */
   monitorPanel?: MonitorPanelSettings;
+  /** Turn-tail sedimentation gate (plan cci-sedimentation-triage); absent inherits the off defaults. */
+  sediment?: SedimentSettings;
   /** Optional tokenpilot-inspired sub-capability overrides (presence-validated only). */
   presetOptions?: PresetOptionsSettings;
 }

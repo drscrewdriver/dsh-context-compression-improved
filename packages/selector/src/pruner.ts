@@ -60,6 +60,8 @@ import {
   tailTrimStub,
 } from './runtime/tail-trim.ts'
 import { installContextCompressionRetrieve } from './runtime/retrieve.ts'
+import { SedimentOrchestrator } from './runtime/sediment.ts'
+import { estimateTokens } from './runtime/sediment-card.ts'
 import { RUNTIME_TOOL_NAMES } from './runtime/tool-names.ts'
 import type { PrunerState } from './pruner/state.ts'
 import { countOmittedLines, CAPACITY_PRESSURE_RATIO } from './pruner/tuning.ts'
@@ -131,6 +133,21 @@ import { claimFromLand, flushUsageOnDispose, reclaimFromTailTrim, scheduleUsageF
 import { kickStatsBackfillOnDispose } from './runtime/stats-backfill.ts'
 import { sampleIntegralBoundary } from './runtime/savings-integral.ts'
 import { projectSessionSavings } from './runtime/savings-projection.ts'
+
+/** Flatten the visible text of any surface event for sediment accounting. */
+function sedimentEventText(event: Record<string, any> | undefined): string {
+  if (event === undefined) return ''
+  const message = event.data?.message ?? event.data
+  const content = message?.content
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    return content
+      .filter((block: any) => block?.type === 'text' && typeof block.text === 'string')
+      .map((block: any) => block.text as string)
+      .join('\n')
+  }
+  return ''
+}
 
 /** 节省统计配对键用原文(纯文本块才可配对;富内容返回 undefined)。 */
 function originalTextForSavings(candidate: SnapshotCandidate): string | undefined {
@@ -366,6 +383,17 @@ export class ToolResultPruner extends Service {
         } catch (error: unknown) {
           this.auditFailure(session, 'pressure', 'summary-locator', error)
           ctx.logger.warn('context-compression summary locator failed open: %o', error)
+        }
+      }
+      if (event.type === 'turn/end') {
+        // Sedimentation (plan cci-sedimentation-triage): the enabled gate is
+        // the first check inside — with default-off settings this returns
+        // without touching the orchestrator, the event reader, or the ledger.
+        try {
+          this.sedimentTurnEnd(session)
+        } catch (error: unknown) {
+          this.auditFailure(session, 'pressure', 'sediment', error)
+          ctx.logger.warn('context-compression sediment pass failed open: %o', error)
         }
       }
     })
@@ -650,6 +678,124 @@ export class ToolResultPruner extends Service {
       deploymentConfig: this.state.config,
     })
     return snapshot
+  }
+
+  private readonly sedimentOrchestrators = new WeakMap<Session, SedimentOrchestrator>()
+
+  /**
+   * Sedimentation entry (plan cci-sedimentation-triage T3.6): whole-turn
+   * replacement decided at `turn/end`, inside the quiet seam before the next
+   * request derives. Disabled sessions exit at the settings gate with zero
+   * downstream work; committed cards flush like any other surface write.
+   */
+  private sedimentTurnEnd(session: Session): void {
+    const settings = this.activeSettings(session).sediment
+    if (settings === undefined || settings.enabled !== true) return
+    const events = sessionEvents(session)
+    let turn: number | undefined
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      const candidate = events[index]
+      if (candidate?.type === 'turn/end') {
+        const value = (candidate.data as { turn?: unknown }).turn
+        if (typeof value === 'number') { turn = value; break }
+      }
+    }
+    if (turn === undefined) return
+    const orchestrator = this.sedimentOrchestratorFor(session, settings)
+    let officialCheckpointSeq: number | undefined
+    for (const seq of [...session.surface.nodes].reverse()) {
+      const event = events[seq]
+      if (event?.type !== 'user/message') continue
+      const kind = (event.data as { source?: { kind?: unknown } }).source?.kind
+      if (kind === 'compact-checkpoint') { officialCheckpointSeq = seq; break }
+    }
+    let compactionOpen = false
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      const type = events[index]?.type
+      if (type === 'compaction/end') break
+      if (type === 'compaction/start') { compactionOpen = true; break }
+    }
+    const outcome = orchestrator.handleTurnEnd(session as never, turn, {
+      lastEventType: 'turn/end',
+      inFlightRequest: this.state.activeRequestBoundaries.get(session) !== undefined,
+      compactionOpen,
+      officialCheckpointSeq,
+      resumeFirstBatch: false,
+    })
+    if (outcome.committed) {
+      try {
+        void (this.ctx as { sessions?: { flush?: (s: Session) => unknown } }).sessions?.flush?.(session)
+      } catch {
+        /* flush failure leaves the card durable in the event log; next flush picks it up */
+      }
+    }
+  }
+
+  private sedimentOrchestratorFor(session: Session, settings: NonNullable<ContextCompressionSettings['sediment']>): SedimentOrchestrator {
+    let orchestrator = this.sedimentOrchestrators.get(session)
+    if (orchestrator !== undefined) return orchestrator
+    orchestrator = new SedimentOrchestrator({
+      settingsFor: () => this.activeSettings(session).sediment,
+      eventsFor: (_s, turn) => (sessionEvents(session) as unknown as Array<{ seq: number; type: string; data?: Record<string, any> }>).filter(
+        (event) => event?.data?.turn === turn,
+      ),
+      callInfoFor: () => {
+        const map = new Map<string, { name: string; argsJson: string }>()
+        for (const event of sessionEvents(session) as unknown as Array<Record<string, any>>) {
+          if (event?.type !== 'assistant/message') continue
+          for (const block of event.data?.message?.content ?? []) {
+            if (block?.type === 'tool-call' && typeof block.id === 'string') {
+              map.set(block.id, {
+                name: String(block.name ?? 'tool'),
+                argsJson: typeof block.arguments === 'string' ? block.arguments : JSON.stringify(block.arguments ?? {}),
+              })
+            }
+          }
+        }
+        return (callId: string | undefined) => (callId === undefined ? undefined : map.get(callId))
+      },
+      tailTokensFor: (_s, endSeq) => {
+        let tail = 0
+        for (const event of sessionEvents(session) as unknown as Array<Record<string, any>>) {
+          if (typeof event?.seq !== 'number' || event.seq <= endSeq) continue
+          tail += estimateTokens(sedimentEventText(event))
+        }
+        return tail
+      },
+      onLanded: (sessionId, savedTokens, tier, result) => {
+        this.ctx.logger.info(
+          'context-compression sediment landed (%s): turn saved %d tok via %s narrative',
+          sessionId, savedTokens, tier,
+        )
+        // 节省统计与 tail-trim 同口径：从 manifest 事件回取 shadowed 原文配对键。
+        const manifestEvent = (sessionEvents(session) as unknown as Array<Record<string, any>>)
+          .find(event => event?.seq === result.manifestSeq)
+        const shadowedSeqs: number[] = (manifestEvent?.data as { shadowedSeqs?: number[] })?.shadowedSeqs ?? []
+        const originalText = shadowedSeqs
+          .map(seq => sedimentEventText((sessionEvents(session) as unknown as Array<Record<string, any>>)[seq]))
+          .join('\n')
+        const tokensBefore = (manifestEvent?.data as { shadowedTokenCount?: number })?.shadowedTokenCount ?? savedTokens
+        if (originalText.length > 0) {
+          getSavingsLedger().recordSaving({
+            sessionId,
+            component: 'sediment',
+            tokensBefore,
+            tokensAfter: Math.max(0, tokensBefore - savedTokens),
+            basis: 'characters',
+            sourceSeq: result.manifestSeq ?? 0,
+            replacementSeq: result.replacementSeq ?? 0,
+            originalText,
+          })
+        }
+      },
+      onSkip: (sessionId, reason) => {
+        this.ctx.logger.debug?.(
+          'context-compression sediment skipped (%s): %s', sessionId, reason,
+        )
+      },
+    })
+    this.sedimentOrchestrators.set(session, orchestrator)
+    return orchestrator
   }
 
   /**
@@ -2843,6 +2989,7 @@ export class ToolResultPruner extends Service {
       | 'terminal-pass'
       | 'policy-resolution'
       | 'summary-locator'
+      | 'sediment'
       | 'publication',
     error: unknown,
   ): void {

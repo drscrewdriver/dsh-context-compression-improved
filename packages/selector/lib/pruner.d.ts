@@ -148,6 +148,20 @@ interface MonitorPanelSettings {
   enabled: boolean;
 }
 /**
+ * Turn-tail sedimentation gate (plan cci-sedimentation-triage). Whole-turn
+ * atomic replacement primary, span as oversized-turn split and cache-strict
+ * fallback. Default off; mirrored browser-side in profiles.ts.
+ */
+interface SedimentSettings {
+  enabled: boolean;
+  granularity: 'turn' | 'span';
+  minClosingTokens: number;
+  rewriteGuardRatio: number;
+  maxTurnSpanTokens: number;
+  /** Append-only extra failure-signal patterns; never replaces the base set. */
+  extraSignalPatterns?: string[];
+}
+/**
  * Persisted sub-capability overrides for the `tokenpilot-inspired` preset.
  * Absent fields inherit the preset defaults; the section is only meaningful
  * while the resolved profile is `tokenpilot-inspired`.
@@ -188,6 +202,8 @@ interface ContextCompressionSettings {
   autoCompact: AutoCompactSettings;
   /** Code-skeleton reducer gate snapped independently of `profile`. */
   codeSkeleton: CodeSkeletonSettings;
+  /** Turn-tail sedimentation gate; absent inherits the off defaults (optional section like `monitorPanel`). */
+  sediment?: SedimentSettings;
   /** Turn-tail intent-summary gate snapped independently of `profile`. */
   intentSummary: IntentSummarySettings;
   /** Floating compression-monitor panel (FAB); absent inherits hidden. */

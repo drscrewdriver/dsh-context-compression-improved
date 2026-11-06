@@ -143,6 +143,7 @@ export interface CompressionFailureAuditRecord extends CompressionAuditBase {
     | 'terminal-pass'
     | 'policy-resolution'
     | 'summary-locator'
+    | 'sediment'
     | 'publication'
   readonly component?: CompressionAuditComponent
   readonly manifestSeq?: number
