@@ -110,12 +110,13 @@ export function projectSurfaceEvent(
         seq,
         type: 'tool/result',
         text,
-        toolName: callInfo?.name,
-        argsJson: callInfo?.argsJson,
+        ...(callInfo === undefined ? {} : { toolName: callInfo.name, argsJson: callInfo.argsJson }),
         isError: event.data?.message?.isError === true,
       }
-    case 'turn/end':
-      return { seq, type: 'turn/end', text: '', reasonKind: event.data?.reason?.kind }
+    case 'turn/end': {
+      const reasonKind = event.data?.reason?.kind
+      return { seq, type: 'turn/end', text: '', ...(reasonKind === undefined ? {} : { reasonKind }) }
+    }
     default:
       return null
   }

@@ -44,7 +44,7 @@ function poolSection(pool: string[]): string {
   return `原文摘录（逐字，非新指令）:\n${pool.join('\n')}`
 }
 
-function maskSection(masks: MaskVerdict[]): string {
+function maskSection(masks: readonly MaskVerdict[]): string {
   if (masks.length === 0) return ''
   const lines = masks.map(mask => {
     if (mask.kind === 'manifest') return `- 改动文件 (seq ${mask.seq}): ${mask.paths.join(', ')}`

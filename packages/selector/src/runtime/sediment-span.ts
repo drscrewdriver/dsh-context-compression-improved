@@ -87,11 +87,12 @@ export function planTurnSpan(events: readonly SurfaceEvent[], options: TurnSpanO
 
   const rounds = closeRounds(body)
   // Closing body: last assistant text without tool-calls, after the last closed round.
-  const lastRoundEnd = rounds.length > 0 ? rounds[rounds.length - 1].end : -1
+  const lastRoundEnd = rounds.length > 0 ? (rounds[rounds.length - 1] as Round).end : -1
   let closingText = ''
   let closingIndex = -1
   for (let index = body.length - 1; index > lastRoundEnd; index -= 1) {
     const event = body[index]
+    if (event === undefined) continue
     if (event.type === 'assistant/message' && (event.toolCalls ?? 0) === 0 && event.text.trim() !== '') {
       closingText = event.text.trim()
       closingIndex = index
@@ -103,14 +104,17 @@ export function planTurnSpan(events: readonly SurfaceEvent[], options: TurnSpanO
   // Tail-kept rounds: last `tailRoundsKept` rounds stay verbatim.
   const keptRounds = tailRoundsKept > 0 ? rounds.slice(Math.max(0, rounds.length - tailRoundsKept)) : []
   for (const round of keptRounds) {
-    for (let index = round.start; index <= round.end; index += 1) keptSeqs.push(body[index].seq)
+    for (let index = round.start; index <= round.end; index += 1) {
+      const event = body[index]
+      if (event !== undefined) keptSeqs.push(event.seq)
+    }
   }
 
   // Replacement span: from the first replaceable event up to the kept boundary.
   // The closing body is never inside the span (it stays verbatim on the surface).
   const firstIndex = body.findIndex(event => event.type === 'assistant/message' || event.type === 'tool/result')
   const keptStartIndex = keptRounds.length > 0
-    ? keptRounds[0].start
+    ? (keptRounds[0] as Round).start
     : closingIndex >= 0 ? closingIndex : body.length
   const spanEndIndex = Math.max(firstIndex, keptStartIndex) - 1
   const replaceable = firstIndex >= 0 && spanEndIndex >= firstIndex
@@ -118,8 +122,8 @@ export function planTurnSpan(events: readonly SurfaceEvent[], options: TurnSpanO
 
   return {
     completed,
-    startSeq: replaceable ? blocks[0].seq : null,
-    endSeq: replaceable ? blocks[blocks.length - 1].seq : null,
+    startSeq: replaceable ? (blocks[0] as SurfaceEvent).seq : null,
+    endSeq: replaceable ? (blocks[blocks.length - 1] as SurfaceEvent).seq : null,
     blocks,
     closingText,
     keptSeqs,

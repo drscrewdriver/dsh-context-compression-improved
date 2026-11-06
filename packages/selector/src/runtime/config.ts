@@ -7,6 +7,7 @@ import type {
   CompressionPolicy,
   IntentSummarySettings,
   MonitorPanelSettings,
+  SedimentSettings,
   CompressionProfile,
   CustomCompressionPolicy,
   PresetOptions,
@@ -159,6 +160,73 @@ function parseMonitorPanelSettings(value: unknown): MonitorPanelSettings {
   return { enabled }
 }
 
+/** Off defaults for the sediment gate; mirrored browser-side in profiles.ts DEFAULT_SEDIMENT_SETTINGS. */
+export const DEFAULT_SEDIMENT_SETTINGS: SedimentSettings = {
+  enabled: false,
+  granularity: 'turn',
+  minClosingTokens: 120,
+  rewriteGuardRatio: 3,
+  maxTurnSpanTokens: 32_000,
+}
+
+const SEDIMENT_KEYS: ReadonlySet<string> = new Set([
+  'enabled', 'granularity', 'minClosingTokens', 'rewriteGuardRatio', 'maxTurnSpanTokens', 'extraSignalPatterns',
+])
+
+function isSafeSignalPatternSource(entry: unknown): boolean {
+  return typeof entry === 'string' && entry.length > 0 && entry.length <= 200
+    && (() => { try { new RegExp(entry); return true } catch { return false } })()
+}
+
+/**
+ * Strictly parse the persisted sediment section (plan cci-sedimentation-triage
+ * T0.2/T0.3): absent inherits the off defaults; present-but-invalid values
+ * throw — never coerced, never silently dropped.
+ */
+function parseSedimentSettings(value: unknown): SedimentSettings {
+  if (value === undefined) return { ...DEFAULT_SEDIMENT_SETTINGS }
+  if (!isPlainRecord(value)) {
+    throw new TypeError('Context-compression sediment must be a plain object')
+  }
+  const unknownKey = Object.keys(value).find(key => !SEDIMENT_KEYS.has(key))
+  if (unknownKey !== undefined) {
+    throw new TypeError(`Context-compression sediment: unknown key "${unknownKey}"`)
+  }
+  if (value.enabled !== undefined && typeof value.enabled !== 'boolean') {
+    throw new TypeError('Context-compression sediment.enabled must be a boolean')
+  }
+  if (value.granularity !== undefined && value.granularity !== 'turn' && value.granularity !== 'span') {
+    throw new TypeError('Context-compression sediment.granularity must be "turn" or "span"')
+  }
+  const bounded: Array<[string, unknown, number, number]> = [
+    ['minClosingTokens', value.minClosingTokens, 40, 2_000],
+    ['rewriteGuardRatio', value.rewriteGuardRatio, 1, 10],
+    ['maxTurnSpanTokens', value.maxTurnSpanTokens, 4_000, 64_000],
+  ]
+  for (const [name, entry, min, max] of bounded) {
+    if (entry !== undefined
+      && (typeof entry !== 'number' || !Number.isSafeInteger(entry) || entry < min || entry > max)) {
+      throw new TypeError(`Context-compression sediment.${name} must be an integer in [${min}, ${max}]`)
+    }
+  }
+  if (value.extraSignalPatterns !== undefined) {
+    if (!Array.isArray(value.extraSignalPatterns)
+      || value.extraSignalPatterns.some(entry => !isSafeSignalPatternSource(entry))) {
+      throw new TypeError('Context-compression sediment.extraSignalPatterns must be parseable non-empty patterns')
+    }
+  }
+  return {
+    enabled: value.enabled as boolean | undefined ?? DEFAULT_SEDIMENT_SETTINGS.enabled,
+    granularity: value.granularity as 'turn' | 'span' | undefined ?? DEFAULT_SEDIMENT_SETTINGS.granularity,
+    minClosingTokens: value.minClosingTokens as number | undefined ?? DEFAULT_SEDIMENT_SETTINGS.minClosingTokens,
+    rewriteGuardRatio: value.rewriteGuardRatio as number | undefined ?? DEFAULT_SEDIMENT_SETTINGS.rewriteGuardRatio,
+    maxTurnSpanTokens: value.maxTurnSpanTokens as number | undefined ?? DEFAULT_SEDIMENT_SETTINGS.maxTurnSpanTokens,
+    ...value.extraSignalPatterns === undefined
+      ? {}
+      : { extraSignalPatterns: [...value.extraSignalPatterns as string[]] },
+  }
+}
+
 /**
  * Parse the optional tokenpilot-inspired preset sub-capability section. Absent
  * inherits the preset defaults; present-but-invalid is rejected, mirroring the
@@ -302,6 +370,7 @@ export const DEFAULT_CONTEXT_COMPRESSION_SETTINGS: ContextCompressionSettings = 
   codeSkeleton: { enabled: false },
   intentSummary: { enabled: false },
   monitorPanel: { enabled: false },
+  sediment: { ...DEFAULT_SEDIMENT_SETTINGS },
 }
 
 /**
@@ -339,7 +408,7 @@ export const ContextCompressionSettingsSchema: z<ContextCompressionSettings> = z
     // remain valid and inherit their defaults; the sections themselves stay
     // strictly shaped.
     const unknown = Object.keys(candidate).find(key =>
-      key !== 'profile' && key !== 'custom' && key !== 'ptcCustom' && key !== 'autoCompact' && key !== 'codeSkeleton' && key !== 'intentSummary' && key !== 'monitorPanel' && key !== 'presetOptions')
+      key !== 'profile' && key !== 'custom' && key !== 'ptcCustom' && key !== 'autoCompact' && key !== 'codeSkeleton' && key !== 'intentSummary' && key !== 'monitorPanel' && key !== 'sediment' && key !== 'presetOptions')
     if (unknown !== undefined) {
       throw new TypeError(`Context-compression settings: unknown key "${unknown}"`)
     }
@@ -354,6 +423,7 @@ export const ContextCompressionSettingsSchema: z<ContextCompressionSettings> = z
     const codeSkeleton = parseCodeSkeletonSettings(candidate.codeSkeleton)
     const intentSummary = parseIntentSummarySettings(candidate.intentSummary)
     const monitorPanel = parseMonitorPanelSettings(candidate.monitorPanel)
+    const sediment = parseSedimentSettings(candidate.sediment)
     const presetOptions = parsePresetOptionsSettings(candidate.presetOptions)
     return {
       ...contextCompressionSettingsInputSchema(candidate),
@@ -361,6 +431,7 @@ export const ContextCompressionSettingsSchema: z<ContextCompressionSettings> = z
       codeSkeleton,
       intentSummary,
       monitorPanel,
+      sediment,
       ...presetOptions === undefined ? {} : { presetOptions },
     }
   },
