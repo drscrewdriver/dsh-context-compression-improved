@@ -140,6 +140,88 @@ export interface MonitorPanelSettings {
 }
 
 /**
+ * Orthogonal turn-tail sedimentation gate (plan cci-sedimentation-triage,
+ * R1/R13): whole-turn atomic replacement primary, span as the oversized-turn
+ * split and cache-strict fallback granularity. Default OFF; absent inherits
+ * the off defaults exactly like `monitorPanel`. Session-frozen like every
+ * selector setting: edits affect newly observed sessions only.
+ */
+export interface SedimentSettings {
+  enabled: boolean
+  /** Replacement granularity; `span` also serves as the cache-strict fallback. */
+  granularity: 'turn' | 'span'
+  /** Closing-summary qualification floor (tokens); below it the three-tier narrative fallback engages (R13). */
+  minClosingTokens: number
+  /** Rewrite guard: a cut must save at least tail-rewrite × ratio (community 1:15 evidence, findings F2). */
+  rewriteGuardRatio: number
+  /** Upper bound for one whole-turn replacement span before it splits (oversized turns). */
+  maxTurnSpanTokens: number
+  /**
+   * Append-only extra failure-signal patterns (R2 extension slot). Merging
+   * NEVER replaces the built-in base set; invalid regex entries reject the
+   * whole section (never silently dropped).
+   */
+  extraSignalPatterns?: string[]
+}
+
+/** Off-defaults mirrored browser-safe from the runtime sediment section. */
+export const DEFAULT_SEDIMENT_SETTINGS: SedimentSettings = {
+  enabled: false,
+  granularity: 'turn',
+  minClosingTokens: 120,
+  rewriteGuardRatio: 3,
+  maxTurnSpanTokens: 32_000,
+}
+
+/**
+ * Browser-safe mirror of the runtime sediment section (absent inherits the off
+ * defaults). Strict like the other gates: unknown keys, wrong types, or an
+ * unparseable extra pattern invalidate the whole section — never coerced.
+ */
+export function decodeSedimentSettings(value: unknown): SedimentSettings | undefined {
+  if (value === undefined) return { ...DEFAULT_SEDIMENT_SETTINGS }
+  if (!isPlainRecord(value)) return undefined
+  const allowed = new Set(['enabled', 'granularity', 'minClosingTokens', 'rewriteGuardRatio', 'maxTurnSpanTokens', 'extraSignalPatterns'])
+  if (Object.keys(value).some(key => !allowed.has(key))) return undefined
+  if (value.enabled !== undefined && typeof value.enabled !== 'boolean') return undefined
+  if (value.granularity !== undefined && value.granularity !== 'turn' && value.granularity !== 'span') return undefined
+  const bounded: Array<[unknown, number, number]> = [
+    [value.minClosingTokens, 40, 2_000],
+    [value.rewriteGuardRatio, 1, 10],
+    [value.maxTurnSpanTokens, 4_000, 64_000],
+  ]
+  for (const [entry, min, max] of bounded) {
+    if (entry !== undefined
+      && (typeof entry !== 'number' || !Number.isSafeInteger(entry) || entry < min || entry > max)) return undefined
+  }
+  if (value.extraSignalPatterns !== undefined) {
+    if (!Array.isArray(value.extraSignalPatterns)
+      || value.extraSignalPatterns.some(entry => typeof entry !== 'string' || !isSafeSignalPattern(entry))) return undefined
+  }
+  return {
+    enabled: (value.enabled as boolean | undefined) ?? DEFAULT_SEDIMENT_SETTINGS.enabled,
+    granularity: (value.granularity as 'turn' | 'span' | undefined) ?? DEFAULT_SEDIMENT_SETTINGS.granularity,
+    minClosingTokens: (value.minClosingTokens as number | undefined) ?? DEFAULT_SEDIMENT_SETTINGS.minClosingTokens,
+    rewriteGuardRatio: (value.rewriteGuardRatio as number | undefined) ?? DEFAULT_SEDIMENT_SETTINGS.rewriteGuardRatio,
+    maxTurnSpanTokens: (value.maxTurnSpanTokens as number | undefined) ?? DEFAULT_SEDIMENT_SETTINGS.maxTurnSpanTokens,
+    ...value.extraSignalPatterns === undefined
+      ? {}
+      : { extraSignalPatterns: [...value.extraSignalPatterns as string[]] },
+  }
+}
+
+/** Accept only parseable, length-bounded patterns; caps keep one scan linear. */
+function isSafeSignalPattern(entry: string): boolean {
+  if (entry.length === 0 || entry.length > 200) return false
+  try {
+    new RegExp(entry)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
  * Decode the persisted codeSkeleton section with exactly the runtime schema's
  * strictness: absent means the lossless off default; present values must be a
  * plain object carrying only a boolean `enabled`. Anything else is invalid,
@@ -346,6 +428,8 @@ export interface ContextCompressionSettings {
   intentSummary: IntentSummarySettings
   /** Floating compression-monitor panel (FAB); absent inherits hidden. */
   monitorPanel?: MonitorPanelSettings
+  /** Turn-tail sedimentation gate (plan cci-sedimentation-triage); absent inherits the off defaults. */
+  sediment?: SedimentSettings
   /** Optional tokenpilot-inspired sub-capability overrides (presence-validated only). */
   presetOptions?: PresetOptionsSettings
 }
