@@ -9,6 +9,7 @@ export const COMPRESSION_PROFILES = [
   'savings',
   'adaptive',
   'tokenpilot-inspired',
+  'ptc',
   'custom',
 ] as const
 
@@ -182,6 +183,8 @@ export interface ContextCompressionSettings {
   profile: CompressionProfile
   /** Versioned Custom policy snapped with `profile` for a newly observed Session. */
   custom: CustomCompressionPolicy
+  /** PTC profile's own editable policy, seeded from the ptc defaults and independent of `custom`. Optional like `monitorPanel`/`presetOptions`: schema-defaulted, always present after parse. */
+  ptcCustom?: CustomCompressionPolicy
   /** Auto Compact trigger preference snapped with `profile` for a newly observed Session. */
   autoCompact: AutoCompactSettings
   /** Code-skeleton reducer gate snapped independently of `profile`. */

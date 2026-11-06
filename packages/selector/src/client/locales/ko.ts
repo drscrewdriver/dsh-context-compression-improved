@@ -17,6 +17,8 @@ export const ko = {
   'profile.savings': '절약',
   'profile.adaptive': 'Adaptive(보수적 비용)',
   'profile.tokenpilot-inspired': 'TokenPilot 모드',
+  'profile.ptc': 'PTC / 코드 모드(절대)',
+  'detail.ptc': '코드 모드와 작은 결과가 많은 세션을 위한 창 독립적 절대 워터마크. 실시간 결과가 임계값을 넘으면 기록 정리가 시작되며, 임계값은 개별 편집 가능',
   'estimator.title': '추정기(선택 사항)',
   'estimator.description': '소형 보조 모델이 오래된 파일 읽기에 아직 참조 가치가 있는지 제로샷으로 판단합니다. 이력 에이징을 돕는 자문 전용 채널이며, 미설정 또는 실패 시 자동으로 규칙 전용 경로로 되돌아가므로 본 흐름에 영향을 주지 않습니다.',
   'estimator.mode': '채널',

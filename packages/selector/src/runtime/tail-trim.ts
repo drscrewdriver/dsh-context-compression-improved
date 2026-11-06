@@ -6,6 +6,7 @@ import type { ContentBlock, UserMessage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { sessionEvents } from './session-events.ts'
 import { compressionMessageSource, viewToolResult } from '../compat/tool-result.ts'
+import { RUNTIME_TOOL_NAMES } from './tool-names.ts'
 
 const TAIL_TRIM_REF_PATTERN = /^session:\/\/([^/]+)\/tailtrim\/(\d+)$/
 const MAX_ROOTS = 64
@@ -48,7 +49,7 @@ export function tailTrimStub(
     `ref: ${ref}`,
     `tools: ${toolNames.join(', ')}`,
     `source_event_seqs: ${sourceEventSeqs.join(', ')}`,
-    'use context_compression_retrieve with this TailTrim ref if needed',
+    `use ${RUNTIME_TOOL_NAMES.RETRIEVE} with this TailTrim ref if needed`,
   ].join('\n')
   return Array.from(stub).length <= MAX_STUB_CODE_POINTS ? stub : null
 }

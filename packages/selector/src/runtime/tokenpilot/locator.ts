@@ -10,6 +10,7 @@
  * skipped entirely when it would locate nothing concrete.
  */
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { RUNTIME_TOOL_NAMES } from '../tool-names.ts'
 
 /** One resolved compaction transaction to annotate. */
 export interface CompactionTrace {
@@ -118,7 +119,7 @@ export function buildLocatorBlock(
     `- seq range: ${String(shadowedRange.start)}-${String(shadowedRange.end)}`,
     ...[...spillFiles].map(path => `- spill file: ${path}`),
     ...[...touchedFiles].map(path => `- file touched: ${path}`),
-    '(Use `read <spill file>` or `context_compression_retrieve` with a `session://` source — pass start_line/max_lines to window the text — to restore exact text.)',
+    `(Use \`read <spill file>\` or \`${RUNTIME_TOOL_NAMES.RETRIEVE}\` with a \`session://\` source — pass start_line/max_lines to window the text — to restore exact text.)`,
   ]
   return {
     text: lines.join('\n'),

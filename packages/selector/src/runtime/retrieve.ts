@@ -22,6 +22,7 @@ import { sessionEvents } from './session-events.ts'
 import { getSavingsLedger } from './savings.ts'
 import { claimOffset } from './stats-sync.ts'
 import { viewToolResult } from '../compat/tool-result.ts'
+import { PTC_BINDING_NOTE, RUNTIME_TOOL_NAMES } from './tool-names.ts'
 
 export const name = 'context-compression-retrieve'
 export const inject = ['tools', 'systemPrompt']
@@ -48,12 +49,13 @@ const MAX_LINES = 1_000
 const DEFAULT_MAX_CHARS = 12_000
 const DEFAULT_MAX_SCAN_CHARS = 250_000
 const DEFAULT_MAX_QUERY_CHARS = 256
-const TRUNCATION_MARKER = '\n[context_compression_retrieve output truncated; reported lines describe the selected source range]\n'
+const TRUNCATION_MARKER = `\n[${RUNTIME_TOOL_NAMES.RETRIEVE} output truncated; reported lines describe the selected source range]\n`
 const PROMPT = 'When a compacted tool result contains a session://<session-id>/event/<seq> reference, '
-  + 'or TailTrim contains a session://<session-id>/tailtrim/<seq> reference, use context_compression_retrieve with that exact ref '
+  + `or TailTrim contains a session://<session-id>/tailtrim/<seq> reference, use ${RUNTIME_TOOL_NAMES.RETRIEVE} with that exact ref `
   + 'and a narrow line range or query if the omitted evidence is necessary. '
   + 'Prefer a query or a tight start_line/max_lines over re-reading the whole result: every recovery re-enters the context and is charged against the savings, so a targeted slice keeps the rest of the reduction. '
-  + 'The returned event content comes from the append-only session log, which is the source of truth.'
+  + 'The returned event content comes from the append-only session log, which is the source of truth. '
+  + PTC_BINDING_NOTE
 
 const OUTPUT = {
   schema: { type: 'string' as const },
@@ -76,8 +78,8 @@ export function installContextCompressionRetrieve(ctx: Context, config: Config =
   )
   ctx.systemPrompt.section({ name: 'tool:context-compression-retrieve', order: 114, text: PROMPT })
   ctx.tools.register(defineTool({
-    name: 'context_compression_retrieve',
-    description: 'Recover exact content from one compacted tool result or TailTrim group using its current-session session:// reference.',
+    name: RUNTIME_TOOL_NAMES.RETRIEVE,
+    description: `Recover exact content from one compacted tool result or TailTrim group using its current-session session:// reference. ${PTC_BINDING_NOTE}`,
     parameters: {
       ref: { type: 'string', required: true, description: 'Exact session://<current-session-id>/event/<seq> or /tailtrim/<seq> reference from a placeholder.' },
       query: { type: 'string', description: 'Optional case-insensitive text to search for inside the original result.' },
@@ -87,17 +89,17 @@ export function installContextCompressionRetrieve(ctx: Context, config: Config =
     output: OUTPUT,
     isConcurrencySafe: () => true,
     execute(args, exec) {
-      if (exec.agent === undefined) throw new Error('context_compression_retrieve requires an agent session')
+      if (exec.agent === undefined) throw new Error(`${RUNTIME_TOOL_NAMES.RETRIEVE} requires an agent session`)
       const match = REF_PATTERN.exec(args.ref)
       const tailTrimRef = parseTailTrimRef(args.ref)
       if (match === null && tailTrimRef === null) {
-        throw new Error('context_compression_retrieve: ref must be session://<session-id>/(event|tailtrim)/<seq>')
+        throw new Error(`${RUNTIME_TOOL_NAMES.RETRIEVE}: ref must be session://<session-id>/(event|tailtrim)/<seq>`)
       }
       const sessionId = match?.[1] ?? tailTrimRef?.sessionId
       // 身份键一律用 session.id(与 pruner 落账/占位符 sourceRef 同键);旧版这里
       // 用 exec.agent.id,两键不一致时抵消会记到另一本账上。
       if (sessionId !== String(exec.agent.session.id)) {
-        throw new Error('context_compression_retrieve: a compression reference may only read the caller\'s current session')
+        throw new Error(`${RUNTIME_TOOL_NAMES.RETRIEVE}: a compression reference may only read the caller's current session`)
       }
       if (tailTrimRef !== null) {
         const sessionId = String(exec.agent.session.id)
@@ -133,7 +135,7 @@ export function installContextCompressionRetrieve(ctx: Context, config: Config =
       const seq = Number(match?.[2])
       const event = sessionEvents(exec.agent.session)[seq]
       if (event?.type !== 'tool/result') {
-        throw new Error(`context_compression_retrieve: event ${String(seq)} is not a tool/result in the current session`)
+        throw new Error(`${RUNTIME_TOOL_NAMES.RETRIEVE}: event ${String(seq)} is not a tool/result in the current session`)
       }
       const maxLines = resolveMaxLines(args.max_lines)
       // Generation-gated triple view: content blocks / error flag / call id
@@ -145,7 +147,7 @@ export function installContextCompressionRetrieve(ctx: Context, config: Config =
       const query = args.query
       if (query !== undefined && exceedsCodePointLimit(query, maxQueryChars)) {
         throw new Error(
-          `context_compression_retrieve: query must be at most ${String(maxQueryChars)} Unicode code points`,
+          `${RUNTIME_TOOL_NAMES.RETRIEVE}: query must be at most ${String(maxQueryChars)} Unicode code points`,
         )
       }
       const selected = query === undefined || query === ''
@@ -202,11 +204,11 @@ function recoverTailTrim(
 ): string {
   const published = validatePublishedTailTrim(session, manifestSeq)
   if (published === null || published.ref !== ref) {
-    throw new Error('context_compression_retrieve: ref is not a valid published TailTrim group')
+    throw new Error(`${RUNTIME_TOOL_NAMES.RETRIEVE}: ref is not a valid published TailTrim group`)
   }
   if (query !== undefined && exceedsCodePointLimit(query, bounds.maxQueryChars)) {
     throw new Error(
-      `context_compression_retrieve: query must be at most ${String(bounds.maxQueryChars)} Unicode code points`,
+      `${RUNTIME_TOOL_NAMES.RETRIEVE}: query must be at most ${String(bounds.maxQueryChars)} Unicode code points`,
     )
   }
   const fixedHeader = [
@@ -272,7 +274,7 @@ function resolvePositiveInteger(name: string, value: number | undefined, fallbac
 function resolveMaxLines(value: number | undefined): number {
   const resolved = value ?? 200
   if (!Number.isSafeInteger(resolved) || resolved < 1 || resolved > MAX_LINES) {
-    throw new Error(`context_compression_retrieve: max_lines must be an integer from 1 to ${String(MAX_LINES)}`)
+    throw new Error(`${RUNTIME_TOOL_NAMES.RETRIEVE}: max_lines must be an integer from 1 to ${String(MAX_LINES)}`)
   }
   return resolved
 }
@@ -352,7 +354,7 @@ function* jsonTokens(value: unknown): Generator<string> {
       return
     }
     default:
-    throw new TypeError('context_compression_retrieve: source content is not JSON-serializable')
+    throw new TypeError(`${RUNTIME_TOOL_NAMES.RETRIEVE}: source content is not JSON-serializable`)
   }
 }
 
@@ -387,11 +389,11 @@ function directSlice(
   partialTail: boolean,
 ): Selection {
   if (!Number.isSafeInteger(startLine) || startLine < 1) {
-    throw new Error('context_compression_retrieve: start_line must be a positive safe integer')
+    throw new Error(`${RUNTIME_TOOL_NAMES.RETRIEVE}: start_line must be a positive safe integer`)
   }
   if (startLine > lines.length) {
     const reason = scanComplete ? 'outside the source line range' : 'beyond the source scan limit'
-    throw new Error(`context_compression_retrieve: start_line ${String(startLine)} is ${reason}`)
+    throw new Error(`${RUNTIME_TOOL_NAMES.RETRIEVE}: start_line ${String(startLine)} is ${reason}`)
   }
   const startIndex = startLine - 1
   const selected = lines.slice(startIndex, startIndex + maxLines)

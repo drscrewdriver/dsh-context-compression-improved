@@ -19,6 +19,7 @@ import { COMPRESSION_PROFILES } from './types.ts'
 import {
   CustomCompressionPolicySchema,
   DEFAULT_CUSTOM_COMPRESSION_POLICY,
+  DEFAULT_PTC_COMPRESSION_POLICY,
   resolveCustomPolicy,
   type CustomPolicyResolutionOptions,
 } from './custom-policy.ts'
@@ -266,6 +267,7 @@ export function parsePresetOptionsSettings(value: unknown): PresetOptionsSetting
 const contextCompressionSettingsInputSchema = z.object({
   profile: z.union([...COMPRESSION_PROFILES]).default('balanced'),
   custom: CustomCompressionPolicySchema.default(DEFAULT_CUSTOM_COMPRESSION_POLICY),
+  ptcCustom: CustomCompressionPolicySchema.default(DEFAULT_PTC_COMPRESSION_POLICY),
 })
 
 /**
@@ -277,7 +279,7 @@ const contextCompressionSettingsInputSchema = z.object({
  */
 function assertPresentSection(
   candidate: Record<string, unknown>,
-  key: 'profile' | 'custom',
+  key: 'profile' | 'custom' | 'ptcCustom',
   valid: (value: unknown) => boolean,
 ): void {
   if (!Object.hasOwn(candidate, key)) return
@@ -295,6 +297,7 @@ const isUsableCustomDocument = (value: unknown): boolean =>
 export const DEFAULT_CONTEXT_COMPRESSION_SETTINGS: ContextCompressionSettings = {
   profile: 'balanced',
   custom: structuredClone(DEFAULT_CUSTOM_COMPRESSION_POLICY),
+  ptcCustom: structuredClone(DEFAULT_PTC_COMPRESSION_POLICY),
   autoCompact: { thresholdPercent: AUTO_COMPACT_THRESHOLD_LIMITS.default },
   codeSkeleton: { enabled: false },
   intentSummary: { enabled: false },
@@ -336,7 +339,7 @@ export const ContextCompressionSettingsSchema: z<ContextCompressionSettings> = z
     // remain valid and inherit their defaults; the sections themselves stay
     // strictly shaped.
     const unknown = Object.keys(candidate).find(key =>
-      key !== 'profile' && key !== 'custom' && key !== 'autoCompact' && key !== 'codeSkeleton' && key !== 'intentSummary' && key !== 'monitorPanel' && key !== 'presetOptions')
+      key !== 'profile' && key !== 'custom' && key !== 'ptcCustom' && key !== 'autoCompact' && key !== 'codeSkeleton' && key !== 'intentSummary' && key !== 'monitorPanel' && key !== 'presetOptions')
     if (unknown !== undefined) {
       throw new TypeError(`Context-compression settings: unknown key "${unknown}"`)
     }
@@ -346,6 +349,7 @@ export const ContextCompressionSettingsSchema: z<ContextCompressionSettings> = z
     // Only genuinely absent sections (internal partial fallbacks) may inherit.
     assertPresentSection(candidate, 'profile', isSupportedProfile)
     assertPresentSection(candidate, 'custom', isUsableCustomDocument)
+    assertPresentSection(candidate, 'ptcCustom', isUsableCustomDocument)
     const autoCompact = parseAutoCompactSettings(candidate.autoCompact)
     const codeSkeleton = parseCodeSkeletonSettings(candidate.codeSkeleton)
     const intentSummary = parseIntentSummarySettings(candidate.intentSummary)
@@ -623,9 +627,60 @@ export function resolvePolicy(
   profile: CompressionProfile,
   custom: CustomCompressionPolicy = DEFAULT_CUSTOM_COMPRESSION_POLICY,
   options: CustomPolicyResolutionOptions = {},
+  ptcCustom: CustomCompressionPolicy = DEFAULT_PTC_COMPRESSION_POLICY,
 ): CompressionPolicy {
   if (profile === 'custom') return resolveCustomPolicy(custom, options)
-  const presets: Record<Exclude<CompressionProfile, 'custom'>, Omit<CompressionPolicy, 'profile'>> = {
+  if (profile === 'ptc') {
+    const resolved = resolveCustomPolicy(ptcCustom, options)
+    const policy: CompressionPolicy = {
+      ...resolved,
+      profile: 'ptc',
+      freshTriggerTokens: config.freshTriggerTokens ?? resolved.freshTriggerTokens,
+      freshTargetTokens: config.freshTargetTokens ?? resolved.freshTargetTokens,
+      aggregateTriggerTokens: config.aggregateTriggerTokens ?? resolved.aggregateTriggerTokens,
+      aggregateTargetTokens: config.aggregateTargetTokens ?? resolved.aggregateTargetTokens,
+      historyTriggerTokens: config.historyTriggerTokens ?? resolved.historyTriggerTokens,
+      historyKeepRecentToolCalls: config.historyKeepRecentToolCalls ?? resolved.historyKeepRecentToolCalls,
+      historyKeepRecentTokens: config.historyKeepRecentTokens ?? resolved.historyKeepRecentTokens,
+      historyMinReclaimTokens: config.historyMinReclaimTokens ?? resolved.historyMinReclaimTokens,
+      ...config.readInputCapChars === undefined ? {} : { readInputCapChars: config.readInputCapChars },
+    }
+    if (policy.freshTargetTokens >= policy.freshTriggerTokens && policy.freshEnabled) {
+      throw new Error('context compression policy: fresh target must be below trigger')
+    }
+    if (policy.aggregateTargetTokens >= policy.aggregateTriggerTokens && policy.aggregateEnabled) {
+      throw new Error('context compression policy: aggregate target must be below trigger')
+    }
+    if (policy.readInputCapChars !== undefined && policy.readInputCapChars <= policy.freshTriggerTokens * 4.0) {
+      throw new Error('context compression policy: read input cap would silence the fresh path')
+    }
+    return deepFreeze(policy)
+  }
+  if (profile === 'tokenpilot-inspired') {
+    const resolved = resolveCustomPolicy(custom, options)
+    const policy: CompressionPolicy = {
+      ...resolved,
+      profile: 'tokenpilot-inspired',
+      freshTriggerTokens: config.freshTriggerTokens ?? resolved.freshTriggerTokens,
+      freshTargetTokens: config.freshTargetTokens ?? resolved.freshTargetTokens,
+      aggregateTriggerTokens: config.aggregateTriggerTokens ?? resolved.aggregateTriggerTokens,
+      aggregateTargetTokens: config.aggregateTargetTokens ?? resolved.aggregateTargetTokens,
+      historyTriggerTokens: config.historyTriggerTokens ?? resolved.historyTriggerTokens,
+      historyKeepRecentToolCalls: config.historyKeepRecentToolCalls ?? resolved.historyKeepRecentToolCalls,
+      historyKeepRecentTokens: config.historyKeepRecentTokens ?? resolved.historyKeepRecentTokens,
+      historyMinReclaimTokens: config.historyMinReclaimTokens ?? resolved.historyMinReclaimTokens,
+      ...config.readInputCapChars === undefined ? {} : { readInputCapChars: config.readInputCapChars },
+      presetOptions: mergePresetOptions(config.presetOptions),
+    }
+    if (policy.freshTargetTokens >= policy.freshTriggerTokens && policy.freshEnabled) {
+      throw new Error('context compression policy: fresh target must be below trigger')
+    }
+    if (policy.aggregateTargetTokens >= policy.aggregateTriggerTokens && policy.aggregateEnabled) {
+      throw new Error('context compression policy: aggregate target must be below trigger')
+    }
+    return deepFreeze(policy)
+  }
+  const presets: Record<Exclude<CompressionProfile, 'custom' | 'tokenpilot-inspired' | 'ptc'>, Omit<CompressionPolicy, 'profile'>> = {
     off: {
       nativeToolResultEnabled: false, freshEnabled: false, aggregateEnabled: false, historyMode: 'disabled',
       nativeTriggerTokens: Number.MAX_SAFE_INTEGER, nativeTargetTokens: Number.MAX_SAFE_INTEGER,
@@ -674,14 +729,6 @@ export function resolvePolicy(
       historyTriggerTokens: 500_000, historyKeepRecentToolCalls: 10,
       historyKeepRecentTokens: 64_000, historyMinReclaimTokens: 96_000,
     },
-    'tokenpilot-inspired': {
-      nativeToolResultEnabled: false, freshEnabled: true, aggregateEnabled: true, historyMode: 'routine',
-      nativeTriggerTokens: Number.MAX_SAFE_INTEGER, nativeTargetTokens: Number.MAX_SAFE_INTEGER,
-      freshTriggerTokens: 4_096, freshTargetTokens: 1_536,
-      aggregateTriggerTokens: 32_768, aggregateTargetTokens: 12_288,
-      historyTriggerTokens: 500_000, historyKeepRecentToolCalls: 10,
-      historyKeepRecentTokens: 64_000, historyMinReclaimTokens: 96_000,
-    },
   }
   const preset = presets[profile]
   const linkage = resolveAutoCompactLinkage(profile, options)
@@ -706,9 +753,6 @@ export function resolvePolicy(
       autoCompactTokens: linkage.autoCompactTokens,
       microDeadlineTokens: linkage.microDeadlineTokens,
     },
-    ...profile === 'tokenpilot-inspired' ? {
-      presetOptions: mergePresetOptions(config.presetOptions),
-    } : {},
   }
   if (policy.nativeTargetTokens >= policy.nativeTriggerTokens && profile === 'native') {
     throw new Error('context compression policy: native target must be below trigger')

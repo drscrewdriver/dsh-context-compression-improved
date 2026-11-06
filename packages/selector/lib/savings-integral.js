@@ -1,4 +1,4 @@
-import { n as viewToolResult, s as sessionEvents } from "./tool-result.js";
+import { l as sessionEvents, n as viewToolResult, s as RUNTIME_TOOL_NAMES } from "./tool-result.js";
 import z from "@deepseek-ai/schemastery";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -1778,6 +1778,7 @@ const COMPRESSION_PROFILES = [
 	"savings",
 	"adaptive",
 	"tokenpilot-inspired",
+	"ptc",
 	"custom"
 ];
 //#endregion
@@ -1913,6 +1914,38 @@ const DEFAULT_CUSTOM_COMPRESSION_POLICY = deepFreeze({
 		keepRecentToolCalls: 10,
 		keepRecentTokens: 64e3,
 		minReclaim: 96e3
+	},
+	prefixPolicy: "pressure-break",
+	tailTrim: {
+		enabled: false,
+		trigger: 7e5
+	}
+});
+/**
+* PTC/code-mode default policy: window-independent absolute watermarks tuned
+* for many-small-result sessions. `ptc` seeds its own editable `ptcCustom`
+* document from this value, so editing `ptcCustom` never touches `custom` /
+* `tokenpilot-inspired`.
+*/
+const DEFAULT_PTC_COMPRESSION_POLICY = deepFreeze({
+	version: 3,
+	unit: "tokens",
+	fresh: {
+		enabled: true,
+		trigger: 4096,
+		target: 1536
+	},
+	aggregate: {
+		enabled: true,
+		trigger: 16384,
+		target: 4096
+	},
+	history: {
+		enabled: true,
+		trigger: 2e4,
+		keepRecentToolCalls: 8,
+		keepRecentTokens: 8e3,
+		minReclaim: 6e3
 	},
 	prefixPolicy: "pressure-break",
 	tailTrim: {
@@ -2257,7 +2290,8 @@ function parsePresetOptionsSettings(value) {
 /** Settings schema used by the user-facing profile selector. */
 const contextCompressionSettingsInputSchema = z.object({
 	profile: z.union([...COMPRESSION_PROFILES]).default("balanced"),
-	custom: CustomCompressionPolicySchema.default(DEFAULT_CUSTOM_COMPRESSION_POLICY)
+	custom: CustomCompressionPolicySchema.default(DEFAULT_CUSTOM_COMPRESSION_POLICY),
+	ptcCustom: CustomCompressionPolicySchema.default(DEFAULT_PTC_COMPRESSION_POLICY)
 });
 /**
 * Reject a section that is PRESENT but not a usable value. Schemastery
@@ -2275,6 +2309,7 @@ const isUsableCustomDocument = (value) => isPlainRecord(value);
 const DEFAULT_CONTEXT_COMPRESSION_SETTINGS = {
 	profile: "balanced",
 	custom: structuredClone(DEFAULT_CUSTOM_COMPRESSION_POLICY),
+	ptcCustom: structuredClone(DEFAULT_PTC_COMPRESSION_POLICY),
 	autoCompact: { thresholdPercent: AUTO_COMPACT_THRESHOLD_LIMITS.default },
 	codeSkeleton: { enabled: false },
 	intentSummary: { enabled: false },
@@ -2296,10 +2331,11 @@ const ContextCompressionSettingsSchema = z.transform(z.any().required(), (value)
 	if (!isPlainRecord(value)) throw new TypeError("Context-compression settings must be a plain object");
 	assertPlainDataTree(value);
 	const candidate = structuredClone(value);
-	const unknown = Object.keys(candidate).find((key) => key !== "profile" && key !== "custom" && key !== "autoCompact" && key !== "codeSkeleton" && key !== "intentSummary" && key !== "monitorPanel" && key !== "presetOptions");
+	const unknown = Object.keys(candidate).find((key) => key !== "profile" && key !== "custom" && key !== "ptcCustom" && key !== "autoCompact" && key !== "codeSkeleton" && key !== "intentSummary" && key !== "monitorPanel" && key !== "presetOptions");
 	if (unknown !== void 0) throw new TypeError(`Context-compression settings: unknown key "${unknown}"`);
 	assertPresentSection(candidate, "profile", isSupportedProfile);
 	assertPresentSection(candidate, "custom", isUsableCustomDocument);
+	assertPresentSection(candidate, "ptcCustom", isUsableCustomDocument);
 	const autoCompact = parseAutoCompactSettings(candidate.autoCompact);
 	const codeSkeleton = parseCodeSkeletonSettings(candidate.codeSkeleton);
 	const intentSummary = parseIntentSummarySettings(candidate.intentSummary);
@@ -2546,8 +2582,48 @@ function resolveAutoCompactLinkage(profile, options) {
 * to resolve context-percent Custom values and standard-profile linkage.
 * @returns the effective deterministic compression policy.
 */
-function resolvePolicy(config, profile, custom = DEFAULT_CUSTOM_COMPRESSION_POLICY, options = {}) {
+function resolvePolicy(config, profile, custom = DEFAULT_CUSTOM_COMPRESSION_POLICY, options = {}, ptcCustom = DEFAULT_PTC_COMPRESSION_POLICY) {
 	if (profile === "custom") return resolveCustomPolicy(custom, options);
+	if (profile === "ptc") {
+		const resolved = resolveCustomPolicy(ptcCustom, options);
+		const policy = {
+			...resolved,
+			profile: "ptc",
+			freshTriggerTokens: config.freshTriggerTokens ?? resolved.freshTriggerTokens,
+			freshTargetTokens: config.freshTargetTokens ?? resolved.freshTargetTokens,
+			aggregateTriggerTokens: config.aggregateTriggerTokens ?? resolved.aggregateTriggerTokens,
+			aggregateTargetTokens: config.aggregateTargetTokens ?? resolved.aggregateTargetTokens,
+			historyTriggerTokens: config.historyTriggerTokens ?? resolved.historyTriggerTokens,
+			historyKeepRecentToolCalls: config.historyKeepRecentToolCalls ?? resolved.historyKeepRecentToolCalls,
+			historyKeepRecentTokens: config.historyKeepRecentTokens ?? resolved.historyKeepRecentTokens,
+			historyMinReclaimTokens: config.historyMinReclaimTokens ?? resolved.historyMinReclaimTokens,
+			...config.readInputCapChars === void 0 ? {} : { readInputCapChars: config.readInputCapChars }
+		};
+		if (policy.freshTargetTokens >= policy.freshTriggerTokens && policy.freshEnabled) throw new Error("context compression policy: fresh target must be below trigger");
+		if (policy.aggregateTargetTokens >= policy.aggregateTriggerTokens && policy.aggregateEnabled) throw new Error("context compression policy: aggregate target must be below trigger");
+		if (policy.readInputCapChars !== void 0 && policy.readInputCapChars <= policy.freshTriggerTokens * 4) throw new Error("context compression policy: read input cap would silence the fresh path");
+		return deepFreeze(policy);
+	}
+	if (profile === "tokenpilot-inspired") {
+		const resolved = resolveCustomPolicy(custom, options);
+		const policy = {
+			...resolved,
+			profile: "tokenpilot-inspired",
+			freshTriggerTokens: config.freshTriggerTokens ?? resolved.freshTriggerTokens,
+			freshTargetTokens: config.freshTargetTokens ?? resolved.freshTargetTokens,
+			aggregateTriggerTokens: config.aggregateTriggerTokens ?? resolved.aggregateTriggerTokens,
+			aggregateTargetTokens: config.aggregateTargetTokens ?? resolved.aggregateTargetTokens,
+			historyTriggerTokens: config.historyTriggerTokens ?? resolved.historyTriggerTokens,
+			historyKeepRecentToolCalls: config.historyKeepRecentToolCalls ?? resolved.historyKeepRecentToolCalls,
+			historyKeepRecentTokens: config.historyKeepRecentTokens ?? resolved.historyKeepRecentTokens,
+			historyMinReclaimTokens: config.historyMinReclaimTokens ?? resolved.historyMinReclaimTokens,
+			...config.readInputCapChars === void 0 ? {} : { readInputCapChars: config.readInputCapChars },
+			presetOptions: mergePresetOptions(config.presetOptions)
+		};
+		if (policy.freshTargetTokens >= policy.freshTriggerTokens && policy.freshEnabled) throw new Error("context compression policy: fresh target must be below trigger");
+		if (policy.aggregateTargetTokens >= policy.aggregateTriggerTokens && policy.aggregateEnabled) throw new Error("context compression policy: aggregate target must be below trigger");
+		return deepFreeze(policy);
+	}
 	const preset = {
 		off: {
 			nativeToolResultEnabled: false,
@@ -2644,22 +2720,6 @@ function resolvePolicy(config, profile, custom = DEFAULT_CUSTOM_COMPRESSION_POLI
 			historyKeepRecentToolCalls: 10,
 			historyKeepRecentTokens: 64e3,
 			historyMinReclaimTokens: 96e3
-		},
-		"tokenpilot-inspired": {
-			nativeToolResultEnabled: false,
-			freshEnabled: true,
-			aggregateEnabled: true,
-			historyMode: "routine",
-			nativeTriggerTokens: Number.MAX_SAFE_INTEGER,
-			nativeTargetTokens: Number.MAX_SAFE_INTEGER,
-			freshTriggerTokens: 4096,
-			freshTargetTokens: 1536,
-			aggregateTriggerTokens: 32768,
-			aggregateTargetTokens: 12288,
-			historyTriggerTokens: 5e5,
-			historyKeepRecentToolCalls: 10,
-			historyKeepRecentTokens: 64e3,
-			historyMinReclaimTokens: 96e3
 		}
 	}[profile];
 	const linkage = resolveAutoCompactLinkage(profile, options);
@@ -2680,8 +2740,7 @@ function resolvePolicy(config, profile, custom = DEFAULT_CUSTOM_COMPRESSION_POLI
 		...linkage === void 0 ? {} : {
 			autoCompactTokens: linkage.autoCompactTokens,
 			microDeadlineTokens: linkage.microDeadlineTokens
-		},
-		...profile === "tokenpilot-inspired" ? { presetOptions: mergePresetOptions(config.presetOptions) } : {}
+		}
 	};
 	if (policy.nativeTargetTokens >= policy.nativeTriggerTokens && profile === "native") throw new Error("context compression policy: native target must be below trigger");
 	if (policy.freshTargetTokens >= policy.freshTriggerTokens && policy.freshEnabled) throw new Error("context compression policy: fresh target must be below trigger");
@@ -2729,7 +2788,7 @@ function unavailableCount(reason) {
 	});
 }
 function recoveryMarker(sourceRef, label, startLine) {
-	return `\n\n[... ${label}; source=${sourceRef}; ${startLine === void 0 ? "use context_compression_retrieve with a query or narrow start_line/max_lines if needed (avoid re-reading the whole result)" : `retrieve with context_compression_retrieve({"ref":"${sourceRef}","start_line":${String(startLine)},"max_lines":80})`} ...]\n\n`;
+	return `\n\n[... ${label}; source=${sourceRef}; ${startLine === void 0 ? `use ${RUNTIME_TOOL_NAMES.RETRIEVE} with a query or narrow start_line/max_lines if needed (avoid re-reading the whole result)` : `retrieve with ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${sourceRef}","start_line":${String(startLine)},"max_lines":80})`} ...]\n\n`;
 }
 /**
 * Measure text content in Unicode code points; non-text blocks cost zero.
@@ -3131,7 +3190,7 @@ function dedupePlaceholder(entry, originalChars) {
 	return [
 		`[... identical to the earlier ${entry.toolName} result; first seen at ${entry.sourceRef};`,
 		`original_chars=${String(originalChars)};`,
-		"retrieve with context_compression_retrieve({\"ref\":\"" + entry.sourceRef + "\",\"start_line\":1}) if the omitted evidence is necessary.]"
+		`retrieve with ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${entry.sourceRef}","start_line":1}) if the omitted evidence is necessary.]`
 	].join(" ");
 }
 //#endregion

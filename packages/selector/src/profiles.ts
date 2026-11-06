@@ -7,6 +7,7 @@ export const COMPRESSION_PROFILES = [
   'savings',
   'adaptive',
   'tokenpilot-inspired',
+  'ptc',
   'custom',
 ] as const
 
@@ -90,6 +91,23 @@ export const DEFAULT_CUSTOM_COMPRESSION_POLICY: CustomCompressionPolicyV3 = {
     keepRecentToolCalls: 10,
     keepRecentTokens: 64_000,
     minReclaim: 96_000,
+  },
+  prefixPolicy: 'pressure-break',
+  tailTrim: { enabled: false, trigger: 700_000 },
+}
+
+/** Browser-safe mirror of the runtime PTC default policy (absolute, window-independent). */
+export const DEFAULT_PTC_COMPRESSION_POLICY: CustomCompressionPolicyV3 = {
+  version: 3,
+  unit: 'tokens',
+  fresh: { enabled: true, trigger: 4_096, target: 1_536 },
+  aggregate: { enabled: true, trigger: 16_384, target: 4_096 },
+  history: {
+    enabled: true,
+    trigger: 20_000,
+    keepRecentToolCalls: 8,
+    keepRecentTokens: 8_000,
+    minReclaim: 6_000,
   },
   prefixPolicy: 'pressure-break',
   tailTrim: { enabled: false, trigger: 700_000 },
@@ -318,6 +336,8 @@ export interface ContextCompressionSettings {
   profile: CompressionProfile
   /** Complete canonical policy captured with `profile` when the runtime first observes a Session. */
   custom: CustomCompressionPolicy
+  /** PTC profile's own editable policy, seeded from the ptc defaults; independent of `custom`. Optional like `monitorPanel`/`presetOptions`: schema-defaulted, always present after parse. */
+  ptcCustom?: CustomCompressionPolicy
   /** Auto Compact trigger captured with `profile` when the runtime first observes a Session. */
   autoCompact: AutoCompactSettings
   /** Code-skeleton reducer gate captured independently of `profile`. */

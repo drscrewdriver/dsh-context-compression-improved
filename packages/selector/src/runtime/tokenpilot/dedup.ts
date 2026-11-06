@@ -9,6 +9,7 @@
  */
 import { createHash } from 'node:crypto'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import { RUNTIME_TOOL_NAMES } from '../tool-names.ts'
 
 /** Canonicalization modes for content hashing. */
 export type DedupeNormalization = 'trim-eol' | 'exact'
@@ -76,6 +77,6 @@ export function dedupePlaceholder(entry: DedupeTableEntry, originalChars: number
   return [
     `[... identical to the earlier ${entry.toolName} result; first seen at ${entry.sourceRef};`,
     `original_chars=${String(originalChars)};`,
-    'retrieve with context_compression_retrieve({"ref":"' + entry.sourceRef + '","start_line":1}) if the omitted evidence is necessary.]',
+    `retrieve with ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${entry.sourceRef}","start_line":1}) if the omitted evidence is necessary.]`,
   ].join(' ')
 }

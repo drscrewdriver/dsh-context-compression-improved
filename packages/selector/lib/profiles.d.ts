@@ -1,6 +1,6 @@
 //#region src/profiles.d.ts
 /** Public context-compression choices shared by the Host schema and browser selector. */
-declare const COMPRESSION_PROFILES: readonly ["off", "native", "balanced", "cache-strict", "savings", "adaptive", "tokenpilot-inspired", "custom"];
+declare const COMPRESSION_PROFILES: readonly ["off", "native", "balanced", "cache-strict", "savings", "adaptive", "tokenpilot-inspired", "ptc", "custom"];
 /** One supported context-compression profile. */
 type CompressionProfile = typeof COMPRESSION_PROFILES[number];
 /** Single canonical unit stored by a version-1 browser Custom document. */
@@ -105,6 +105,8 @@ interface ContextCompressionSettings {
   profile: CompressionProfile;
   /** Complete canonical policy captured with `profile` when the runtime first observes a Session. */
   custom: CustomCompressionPolicy;
+  /** PTC profile's own editable policy, seeded from the ptc defaults; independent of `custom`. Optional like `monitorPanel`/`presetOptions`: schema-defaulted, always present after parse. */
+  ptcCustom?: CustomCompressionPolicy;
   /** Auto Compact trigger captured with `profile` when the runtime first observes a Session. */
   autoCompact: AutoCompactSettings;
   /** Code-skeleton reducer gate captured independently of `profile`. */

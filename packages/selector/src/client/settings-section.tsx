@@ -26,7 +26,7 @@ export function ContextCompressionSettingsSection(props: CompressionProfileSelec
 }
 
 export function SettingsCompressionProfileControls({
-  useCompression, select, saveCustom, resetCustom, saveAutoCompact, saveCodeSkeleton, saveIntentSummary, saveMonitorPanel,
+  useCompression, select, saveCustom, resetCustom, savePtcCustom, resetPtcCustom, saveAutoCompact, saveCodeSkeleton, saveIntentSummary, saveMonitorPanel,
   savePresetOptions, t,
 }: CompressionProfileSelectorProps) {
   const state = useCompression(snapshot => snapshot)
@@ -36,11 +36,16 @@ export function SettingsCompressionProfileControls({
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [draft, setDraft] = useState<CustomCompressionPolicyV3 | null>(null)
+  const [ptcDraft, setPtcDraft] = useState<CustomCompressionPolicyV3 | null>(null)
   const current = state.value?.profile ?? 'balanced'
   useEffect(() => {
     const custom = state.value?.custom
-    setDraft(current === 'custom' && custom !== undefined ? editableCustom(custom) : null)
+    setDraft((current === 'custom' || current === 'tokenpilot-inspired') && custom !== undefined ? editableCustom(custom) : null)
   }, [current, state.value?.custom])
+  useEffect(() => {
+    const ptcCustom = state.value?.ptcCustom
+    setPtcDraft(current === 'ptc' && ptcCustom !== undefined ? editableCustom(ptcCustom) : null)
+  }, [current, state.value?.ptcCustom])
   if (state.status === 'unavailable') return null
 
   const busy = state.status === 'loading' || saving
@@ -130,9 +135,13 @@ export function SettingsCompressionProfileControls({
       )}
       <SavingsCard t={t} />
       <div className={css.pricing}>{t('pricing.disclosure')}</div>
-      {current !== 'custom' || draft === null || !selectorAvailable ? null : (
+      {current !== 'custom' && current !== 'tokenpilot-inspired' || draft === null || !selectorAvailable ? null : (
         <CustomPolicyEditor value={draft} disabled={busy || !state.writable} setValue={setDraft}
           save={() => saveCustom(structuredClone(draft))} reset={resetCustom} settle={settle} t={t} />
+      )}
+      {current !== 'ptc' || ptcDraft === null || !selectorAvailable ? null : (
+        <CustomPolicyEditor value={ptcDraft} disabled={busy || !state.writable} setValue={setPtcDraft}
+          save={() => savePtcCustom(structuredClone(ptcDraft))} reset={resetPtcCustom} settle={settle} t={t} />
       )}
       {saveError === null ? null : <div className={css.error} role="alert">{saveError}</div>}
     </section>

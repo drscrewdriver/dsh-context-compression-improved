@@ -17,6 +17,8 @@ export const ja = {
   'profile.savings': '節約',
   'profile.adaptive': 'Adaptive(コスト重視)',
   'profile.tokenpilot-inspired': 'TokenPilot モード',
+  'profile.ptc': 'PTC / コードモード（絶対）',
+  'detail.ptc': 'コードモードや小さな結果が多いセッション向けの、ウィンドウ非依存の絶対水位。履歴の圧縮は存量がしきい値を超えると開始し、しきい値は個別に編集可能',
   'estimator.title': 'エスティメーター(任意)',
   'estimator.description': '小規模な補助モデルが、古いファイル読み取りにまだ参照価値があるかをゼロショットで判定します。履歴エージングの補助 only で、未設定や障害時は自動的にルールのみの経路へ戻り、本流には影響しません。',
   'estimator.mode': 'チャネル',

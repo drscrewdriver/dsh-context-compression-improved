@@ -17,6 +17,8 @@ export const it = {
   'profile.savings': 'Risparmio',
   'profile.adaptive': 'Adattivo (costo prudente)',
   'profile.tokenpilot-inspired': 'Ispirato a TokenPilot',
+  'profile.ptc': 'PTC / modalità codice (assoluto)',
+  'detail.ptc': 'Soglie assolute indipendenti dalla finestra per la modalità codice e sessioni con molti risultati piccoli; l’invecchiamento della cronologia parte al superamento della soglia, soglie modificabili separatamente',
   'estimator.title': 'Stimatore (opzionale)',
   'estimator.description': 'Un piccolo modello ausiliario stima senza esempi se le vecchie letture di file sono probabilmente ancora referenziate; solo consultivo per l’invecchiamento della cronologia. Senza configurazione o in caso di errore si ripiega sul solo comportamento a regole.',
   'estimator.mode': 'Canale',

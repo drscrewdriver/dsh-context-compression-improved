@@ -17,6 +17,7 @@ window.__ModuleLoader__.load({
 			"savings",
 			"adaptive",
 			"tokenpilot-inspired",
+			"ptc",
 			"custom"
 		];
 		/** Browser-safe mirror of the Host's Balanced-equivalent Custom default. */
@@ -39,6 +40,33 @@ window.__ModuleLoader__.load({
 				keepRecentToolCalls: 10,
 				keepRecentTokens: 64e3,
 				minReclaim: 96e3
+			},
+			prefixPolicy: "pressure-break",
+			tailTrim: {
+				enabled: false,
+				trigger: 7e5
+			}
+		};
+		/** Browser-safe mirror of the runtime PTC default policy (absolute, window-independent). */
+		const DEFAULT_PTC_COMPRESSION_POLICY = {
+			version: 3,
+			unit: "tokens",
+			fresh: {
+				enabled: true,
+				trigger: 4096,
+				target: 1536
+			},
+			aggregate: {
+				enabled: true,
+				trigger: 16384,
+				target: 4096
+			},
+			history: {
+				enabled: true,
+				trigger: 2e4,
+				keepRecentToolCalls: 8,
+				keepRecentTokens: 8e3,
+				minReclaim: 6e3
 			},
 			prefixPolicy: "pressure-break",
 			tailTrim: {
@@ -1420,16 +1448,21 @@ window.__ModuleLoader__.load({
 		function ContextCompressionSettingsSection(props) {
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SettingsCompressionProfileControls, { ...props });
 		}
-		function SettingsCompressionProfileControls({ useCompression, select, saveCustom, resetCustom, saveAutoCompact, saveCodeSkeleton, saveIntentSummary, saveMonitorPanel, savePresetOptions, t }) {
+		function SettingsCompressionProfileControls({ useCompression, select, saveCustom, resetCustom, savePtcCustom, resetPtcCustom, saveAutoCompact, saveCodeSkeleton, saveIntentSummary, saveMonitorPanel, savePresetOptions, t }) {
 			const state = useCompression((snapshot) => snapshot);
 			const [saving, setSaving] = (0, react.useState)(false);
 			const [saveError, setSaveError] = (0, react.useState)(null);
 			const [draft, setDraft] = (0, react.useState)(null);
+			const [ptcDraft, setPtcDraft] = (0, react.useState)(null);
 			const current = state.value?.profile ?? "balanced";
 			(0, react.useEffect)(() => {
 				const custom = state.value?.custom;
-				setDraft(current === "custom" && custom !== void 0 ? editableCustom(custom) : null);
+				setDraft((current === "custom" || current === "tokenpilot-inspired") && custom !== void 0 ? editableCustom(custom) : null);
 			}, [current, state.value?.custom]);
+			(0, react.useEffect)(() => {
+				const ptcCustom = state.value?.ptcCustom;
+				setPtcDraft(current === "ptc" && ptcCustom !== void 0 ? editableCustom(ptcCustom) : null);
+			}, [current, state.value?.ptcCustom]);
 			if (state.status === "unavailable") return null;
 			const busy = state.status === "loading" || saving;
 			const selectProfile = (profile) => {
@@ -1536,12 +1569,21 @@ window.__ModuleLoader__.load({
 						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.pricing,
 						children: t("pricing.disclosure")
 					}),
-					current !== "custom" || draft === null || false ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CustomPolicyEditor, {
+					current !== "custom" && current !== "tokenpilot-inspired" || draft === null || false ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CustomPolicyEditor, {
 						value: draft,
 						disabled: busy || !state.writable,
 						setValue: setDraft,
 						save: () => saveCustom(structuredClone(draft)),
 						reset: resetCustom,
+						settle,
+						t
+					}),
+					current !== "ptc" || ptcDraft === null || false ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CustomPolicyEditor, {
+						value: ptcDraft,
+						disabled: busy || !state.writable,
+						setValue: setPtcDraft,
+						save: () => savePtcCustom(structuredClone(ptcDraft)),
+						reset: resetPtcCustom,
 						settle,
 						t
 					}),
@@ -1568,17 +1610,20 @@ window.__ModuleLoader__.load({
 		*/
 		function decodeSettings(value) {
 			if (!isPlainRecord(value)) return void 0;
-			if (Object.keys(value).some((key) => key !== "profile" && key !== "custom" && key !== "autoCompact" && key !== "codeSkeleton" && key !== "intentSummary" && key !== "monitorPanel" && key !== "presetOptions")) return;
+			if (Object.keys(value).some((key) => key !== "profile" && key !== "custom" && key !== "ptcCustom" && key !== "autoCompact" && key !== "codeSkeleton" && key !== "intentSummary" && key !== "monitorPanel" && key !== "presetOptions")) return;
 			const profile = value.profile;
 			const custom = value.custom;
+			const ptcCustomRaw = value.ptcCustom;
+			const ptcCustom = ptcCustomRaw === void 0 ? DEFAULT_PTC_COMPRESSION_POLICY : isCustomCompressionPolicy(ptcCustomRaw) ? canonicalizeCustomPolicy(ptcCustomRaw) : void 0;
 			const autoCompact = decodeAutoCompactSettings(value.autoCompact);
 			const codeSkeleton = decodeCodeSkeletonSettings(value.codeSkeleton);
 			const intentSummary = decodeIntentSummarySettings(value.intentSummary);
 			const monitorPanel = decodeMonitorPanelSettings(value.monitorPanel);
 			const presetOptions = decodePresetOptionsSettings(value.presetOptions);
-			return typeof profile === "string" && COMPRESSION_PROFILES.includes(profile) && isCustomCompressionPolicy(custom) && autoCompact !== void 0 && codeSkeleton !== void 0 && intentSummary !== void 0 && monitorPanel !== void 0 ? {
+			return typeof profile === "string" && COMPRESSION_PROFILES.includes(profile) && isCustomCompressionPolicy(custom) && ptcCustom !== void 0 && autoCompact !== void 0 && codeSkeleton !== void 0 && intentSummary !== void 0 && monitorPanel !== void 0 ? {
 				profile,
 				custom: canonicalizeCustomPolicy(custom),
+				ptcCustom,
 				autoCompact,
 				codeSkeleton,
 				intentSummary,
@@ -1996,6 +2041,8 @@ window.__ModuleLoader__.load({
 			"profile.savings": "节省模式",
 			"profile.adaptive": "Adaptive（保守成本）",
 			"profile.tokenpilot-inspired": "TokenPilot 启发模式",
+			"profile.ptc": "PTC 模式（绝对水位）",
+			"detail.ptc": "为代码模式与大量小结果会话提供与窗口无关的绝对水位；存量越过阈值即触发历史老化，阈值可在设置中独立编辑",
 			"estimator.title": "估计器（可选）",
 			"estimator.description": "辅助小模型零样本判断旧文件读取是否仍有引用价值，仅建议性加速历史清理；未配置或失败时自动退回纯规则通道，不影响主流程。",
 			"estimator.mode": "通道",
@@ -2151,6 +2198,8 @@ window.__ModuleLoader__.load({
 			"profile.savings": "Savings",
 			"profile.adaptive": "Adaptive (conservative cost)",
 			"profile.tokenpilot-inspired": "TokenPilot-inspired",
+			"profile.ptc": "PTC / Code-mode (absolute)",
+			"detail.ptc": "Window-independent absolute watermarks for code-mode and many-small-result sessions; history aging starts once live results cross the threshold, and the thresholds stay independently editable",
 			"estimator.title": "Estimator (optional)",
 			"estimator.description": "A small auxiliary model zero-shots whether old file reads are still likely referenced, advisory-only for history aging; unconfigured or failing endpoints fall back to rule-only behavior.",
 			"estimator.mode": "Channel",
@@ -2308,6 +2357,8 @@ window.__ModuleLoader__.load({
 			"profile.savings": "Sparen",
 			"profile.adaptive": "Adaptiv (kostenbewusst)",
 			"profile.tokenpilot-inspired": "TokenPilot-inspiriert",
+			"profile.ptc": "PTC / Codemodus (absolut)",
+			"detail.ptc": "Fensterunabhängige absolute Wasserstände für den Codemodus und Sitzungen mit vielen kleinen Ergebnissen; die Historienalterung startet, sobald der Umfang die Schwelle überschreitet, Schwellen separat editierbar",
 			"estimator.title": "Schätzer (optional)",
 			"estimator.description": "Ein kleines Hilfsmodell schätzt ohne Beispiele, ob alte Datei-Lesevorgänge wahrscheinlich noch referenziert werden; nur beratend für das Altern des Verlaufs. Ohne Konfiguration oder bei Fehlern greift reines Regelverhalten.",
 			"estimator.mode": "Kanal",
@@ -2465,6 +2516,8 @@ window.__ModuleLoader__.load({
 			"profile.savings": "Ahorro",
 			"profile.adaptive": "Adaptativo (costo conservador)",
 			"profile.tokenpilot-inspired": "Inspirado en TokenPilot",
+			"profile.ptc": "PTC / modo código (absoluto)",
+			"detail.ptc": "Marcas de agua absolutas independientes de la ventana para el modo código y sesiones con muchos resultados pequeños; el envejecimiento del historial se activa al superar el umbral, umbrales editables por separado",
 			"estimator.title": "Estimador (opcional)",
 			"estimator.description": "Un pequeño modelo auxiliar estima sin ejemplos si las lecturas antiguas de archivos probablemente aún se referencian; solo consultivo para el envejecimiento del historial. Sin configuración o ante fallos, se vuelve al comportamiento basado solo en reglas.",
 			"estimator.mode": "Canal",
@@ -2622,6 +2675,8 @@ window.__ModuleLoader__.load({
 			"profile.savings": "Économies",
 			"profile.adaptive": "Adaptatif (coût prudent)",
 			"profile.tokenpilot-inspired": "Inspiré de TokenPilot",
+			"profile.ptc": "PTC / mode code (absolu)",
+			"detail.ptc": "Repères absolus indépendants de la fenêtre pour le mode code et les sessions à nombreux petits résultats ; l’ancienneté de l’historique démarre dès que le volume dépasse le seuil, seuils modifiables séparément",
 			"estimator.title": "Estimateur (optionnel)",
 			"estimator.description": "Un petit modèle auxiliaire estime sans exemples si les anciennes lectures de fichiers ont encore des chances d’être référencées ; indicatif seulement, pour le vieillissement de l’historique. Sans configuration ou en cas d’échec, retour aux règles seules.",
 			"estimator.mode": "Canal",
@@ -2779,6 +2834,8 @@ window.__ModuleLoader__.load({
 			"profile.savings": "Risparmio",
 			"profile.adaptive": "Adattivo (costo prudente)",
 			"profile.tokenpilot-inspired": "Ispirato a TokenPilot",
+			"profile.ptc": "PTC / modalità codice (assoluto)",
+			"detail.ptc": "Soglie assolute indipendenti dalla finestra per la modalità codice e sessioni con molti risultati piccoli; l’invecchiamento della cronologia parte al superamento della soglia, soglie modificabili separatamente",
 			"estimator.title": "Stimatore (opzionale)",
 			"estimator.description": "Un piccolo modello ausiliario stima senza esempi se le vecchie letture di file sono probabilmente ancora referenziate; solo consultivo per l’invecchiamento della cronologia. Senza configurazione o in caso di errore si ripiega sul solo comportamento a regole.",
 			"estimator.mode": "Canale",
@@ -2936,6 +2993,8 @@ window.__ModuleLoader__.load({
 			"profile.savings": "節約",
 			"profile.adaptive": "Adaptive(コスト重視)",
 			"profile.tokenpilot-inspired": "TokenPilot モード",
+			"profile.ptc": "PTC / コードモード（絶対）",
+			"detail.ptc": "コードモードや小さな結果が多いセッション向けの、ウィンドウ非依存の絶対水位。履歴の圧縮は存量がしきい値を超えると開始し、しきい値は個別に編集可能",
 			"estimator.title": "エスティメーター(任意)",
 			"estimator.description": "小規模な補助モデルが、古いファイル読み取りにまだ参照価値があるかをゼロショットで判定します。履歴エージングの補助 only で、未設定や障害時は自動的にルールのみの経路へ戻り、本流には影響しません。",
 			"estimator.mode": "チャネル",
@@ -3093,6 +3152,8 @@ window.__ModuleLoader__.load({
 			"profile.savings": "절약",
 			"profile.adaptive": "Adaptive(보수적 비용)",
 			"profile.tokenpilot-inspired": "TokenPilot 모드",
+			"profile.ptc": "PTC / 코드 모드(절대)",
+			"detail.ptc": "코드 모드와 작은 결과가 많은 세션을 위한 창 독립적 절대 워터마크. 실시간 결과가 임계값을 넘으면 기록 정리가 시작되며, 임계값은 개별 편집 가능",
 			"estimator.title": "추정기(선택 사항)",
 			"estimator.description": "소형 보조 모델이 오래된 파일 읽기에 아직 참조 가치가 있는지 제로샷으로 판단합니다. 이력 에이징을 돕는 자문 전용 채널이며, 미설정 또는 실패 시 자동으로 규칙 전용 경로로 되돌아가므로 본 흐름에 영향을 주지 않습니다.",
 			"estimator.mode": "채널",
@@ -3250,6 +3311,8 @@ window.__ModuleLoader__.load({
 			"profile.savings": "Экономия",
 			"profile.adaptive": "Адаптивный (консервативная цена)",
 			"profile.tokenpilot-inspired": "По мотивам TokenPilot",
+			"profile.ptc": "PTC / режим кода (абсолютный)",
+			"detail.ptc": "Абсолютные независящие от окна пороги для режима кода и сессий с множеством мелких результатов; старение истории начинается при превышении порога, пороги можно менять отдельно",
 			"estimator.title": "Оценщик (опционально)",
 			"estimator.description": "Небольшая вспомогательная модель без примеров оценивает, вероятно ли старое чтение файла всё ещё востребовано; только рекомендация для старения истории. Без настройки или при сбое — режим только правил.",
 			"estimator.mode": "Канал",
@@ -3778,6 +3841,8 @@ window.__ModuleLoader__.load({
 					select: (profile) => writeAndConfirm(() => scope.set("profile", profile), (settings) => settings.profile === profile),
 					saveCustom: (custom) => writeAndConfirm(() => scope.set("custom", custom), (settings) => isCustomCompressionPolicy(settings.custom) && sameCustomPolicy(settings.custom, custom)),
 					resetCustom: () => writeAndConfirm(() => scope.set("custom", structuredClone(DEFAULT_CUSTOM_COMPRESSION_POLICY)), (settings) => isCustomCompressionPolicy(settings.custom) && sameCustomPolicy(settings.custom, DEFAULT_CUSTOM_COMPRESSION_POLICY)),
+					savePtcCustom: (custom) => writeAndConfirm(() => scope.set("ptcCustom", custom), (settings) => isCustomCompressionPolicy(settings.ptcCustom) && sameCustomPolicy(settings.ptcCustom, custom)),
+					resetPtcCustom: () => writeAndConfirm(() => scope.set("ptcCustom", structuredClone(DEFAULT_PTC_COMPRESSION_POLICY)), (settings) => isCustomCompressionPolicy(settings.ptcCustom) && sameCustomPolicy(settings.ptcCustom, DEFAULT_PTC_COMPRESSION_POLICY)),
 					saveAutoCompact: (thresholdPercent) => writeAndConfirm(() => scope.set("autoCompact", { thresholdPercent }), (settings) => settings.autoCompact.thresholdPercent === thresholdPercent),
 					saveCodeSkeleton: (enabled) => writeAndConfirm(() => scope.set("codeSkeleton", { enabled }), (settings) => settings.codeSkeleton.enabled === enabled),
 					saveIntentSummary: (enabled) => writeAndConfirm(() => scope.set("intentSummary", { enabled }), (settings) => settings.intentSummary.enabled === enabled),

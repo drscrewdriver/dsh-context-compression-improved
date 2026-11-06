@@ -1,5 +1,5 @@
 import { $ as isValidAutoCompactThresholdPercent, A as officialRequestUsage, At as recordRecertified, B as unavailableCount, Ct as getAdvisorState, D as dedupePlaceholder, Dt as invalidateOnTaskChange, E as dedupeHash, Et as getSummaryOverride, F as onlyTextBlocks, Ft as priceOfficialDeepSeekUsage, G as ContextCompressionSettingsSchema, H as countOmittedLines, I as pressureCost, It as resolveOfficialDeepSeekPrice, J as PRUNE_MARKER, K as DEFAULTS, L as recoveryMarker, Lt as getSavingsLedger, M as emptyResult, N as nativePruneContent, Nt as DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION, O as flattenPlainText, Ot as observeIntentEnabled, P as onlyTextBlock, Pt as decimalRateNanoUnits, Q as isCompressionProfile, R as sameProviderMeasurementKey, St as evaluateIntentGate, T as DedupeTable, U as AUTO_COMPACT_THRESHOLD_LIMITS, V as CAPACITY_PRESSURE_RATIO, W as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, X as charsToTokens, Y as charsForTokens, Z as codePointLength, _ as scheduleUsageFlush, at as resolveCustomPolicy, ct as COMPRESSION_PROFILES, d as claimFromLand, et as parseContextCompressionSettings, f as claimOffset, ft as deepSeekV4TokenizerForModel, g as reclaimFromTailTrim, it as DEFAULT_CUSTOM_COMPRESSION_POLICY, j as countToolContent, jt as recordScore, k as measureForCompaction, kt as recordIntentFold, lt as countExactCanonicalTextFields, m as flushUsageOnDispose, n as sampleIntegralBoundary, nt as resolvePolicy, o as kickStatsBackfillOnDispose, ot as assertNever, rt as CustomCompressionPolicySchema, st as deepFreeze, tt as resolveConfig, v as setStatsLivePathBusy, w as projectSessionSavings, yt as observeContextUsage, z as summarize } from "./savings-integral.js";
-import { n as viewToolResult, o as eventBySeq, s as sessionEvents, t as compressionMessageSource } from "./tool-result.js";
+import { c as eventBySeq, l as sessionEvents, n as viewToolResult, o as PTC_BINDING_NOTE, s as RUNTIME_TOOL_NAMES, t as compressionMessageSource } from "./tool-result.js";
 import { a as validatePublishedTailTrim, i as tailTrimStub, n as tailTrimMessage, o as createUserMessage, r as tailTrimRef, s as freezeMessage, t as parseTailTrimRef } from "./tail-trim.js";
 import z from "@deepseek-ai/schemastery";
 import * as dshSessionNamespace from "@deepseek-ai/dsh-session";
@@ -15,8 +15,8 @@ const MAX_LINES = 1e3;
 const DEFAULT_MAX_CHARS = 12e3;
 const DEFAULT_MAX_SCAN_CHARS = 25e4;
 const DEFAULT_MAX_QUERY_CHARS = 256;
-const TRUNCATION_MARKER = "\n[context_compression_retrieve output truncated; reported lines describe the selected source range]\n";
-const PROMPT = "When a compacted tool result contains a session://<session-id>/event/<seq> reference, or TailTrim contains a session://<session-id>/tailtrim/<seq> reference, use context_compression_retrieve with that exact ref and a narrow line range or query if the omitted evidence is necessary. Prefer a query or a tight start_line/max_lines over re-reading the whole result: every recovery re-enters the context and is charged against the savings, so a targeted slice keeps the rest of the reduction. The returned event content comes from the append-only session log, which is the source of truth.";
+const TRUNCATION_MARKER = `\n[${RUNTIME_TOOL_NAMES.RETRIEVE} output truncated; reported lines describe the selected source range]\n`;
+const PROMPT = `When a compacted tool result contains a session://<session-id>/event/<seq> reference, or TailTrim contains a session://<session-id>/tailtrim/<seq> reference, use ${RUNTIME_TOOL_NAMES.RETRIEVE} with that exact ref and a narrow line range or query if the omitted evidence is necessary. Prefer a query or a tight start_line/max_lines over re-reading the whole result: every recovery re-enters the context and is charged against the savings, so a targeted slice keeps the rest of the reduction. The returned event content comes from the append-only session log, which is the source of truth. ` + PTC_BINDING_NOTE;
 const OUTPUT = {
 	schema: { type: "string" },
 	render: (_args, value) => [{
@@ -40,8 +40,8 @@ function installContextCompressionRetrieve(ctx, config = {}) {
 		text: PROMPT
 	});
 	ctx.tools.register(defineTool({
-		name: "context_compression_retrieve",
-		description: "Recover exact content from one compacted tool result or TailTrim group using its current-session session:// reference.",
+		name: RUNTIME_TOOL_NAMES.RETRIEVE,
+		description: `Recover exact content from one compacted tool result or TailTrim group using its current-session session:// reference. ${PTC_BINDING_NOTE}`,
 		parameters: {
 			ref: {
 				type: "string",
@@ -64,11 +64,11 @@ function installContextCompressionRetrieve(ctx, config = {}) {
 		output: OUTPUT,
 		isConcurrencySafe: () => true,
 		execute(args, exec) {
-			if (exec.agent === void 0) throw new Error("context_compression_retrieve requires an agent session");
+			if (exec.agent === void 0) throw new Error(`${RUNTIME_TOOL_NAMES.RETRIEVE} requires an agent session`);
 			const match = REF_PATTERN.exec(args.ref);
 			const tailTrimRef = parseTailTrimRef(args.ref);
-			if (match === null && tailTrimRef === null) throw new Error("context_compression_retrieve: ref must be session://<session-id>/(event|tailtrim)/<seq>");
-			if ((match?.[1] ?? tailTrimRef?.sessionId) !== String(exec.agent.session.id)) throw new Error("context_compression_retrieve: a compression reference may only read the caller's current session");
+			if (match === null && tailTrimRef === null) throw new Error(`${RUNTIME_TOOL_NAMES.RETRIEVE}: ref must be session://<session-id>/(event|tailtrim)/<seq>`);
+			if ((match?.[1] ?? tailTrimRef?.sessionId) !== String(exec.agent.session.id)) throw new Error(`${RUNTIME_TOOL_NAMES.RETRIEVE}: a compression reference may only read the caller's current session`);
 			if (tailTrimRef !== null) {
 				const sessionId = String(exec.agent.session.id);
 				return Promise.resolve(recoverTailTrim(exec.agent.session, args.ref, tailTrimRef.manifestSeq, args.query, args.start_line, args.max_lines, {
@@ -93,14 +93,14 @@ function installContextCompressionRetrieve(ctx, config = {}) {
 			}
 			const seq = Number(match?.[2]);
 			const event = sessionEvents(exec.agent.session)[seq];
-			if (event?.type !== "tool/result") throw new Error(`context_compression_retrieve: event ${String(seq)} is not a tool/result in the current session`);
+			if (event?.type !== "tool/result") throw new Error(`${RUNTIME_TOOL_NAMES.RETRIEVE}: event ${String(seq)} is not a tool/result in the current session`);
 			const maxLines = resolveMaxLines(args.max_lines);
 			const resultView = viewToolResult(event.data.message);
 			const scan = scanBlocks(resultView.blocks, maxScanChars);
 			const scannedLines = splitScannedLines(scan);
 			const lines = scannedLines.lines;
 			const query = args.query;
-			if (query !== void 0 && exceedsCodePointLimit(query, maxQueryChars)) throw new Error(`context_compression_retrieve: query must be at most ${String(maxQueryChars)} Unicode code points`);
+			if (query !== void 0 && exceedsCodePointLimit(query, maxQueryChars)) throw new Error(`${RUNTIME_TOOL_NAMES.RETRIEVE}: query must be at most ${String(maxQueryChars)} Unicode code points`);
 			const selected = query === void 0 || query === "" ? directSlice(lines, args.start_line ?? 1, maxLines, scan.complete, scannedLines.partialTail) : querySlice(lines, query, maxLines, scan.complete, scannedLines.partialTail);
 			const total = scan.complete ? String(lines.length) : `at least ${String(lines.length)}`;
 			const bounded = boundCodePoints(`${[
@@ -131,8 +131,8 @@ function installContextCompressionRetrieve(ctx, config = {}) {
 }
 function recoverTailTrim(session, ref, manifestSeq, query, startLine, requestedMaxLines, bounds) {
 	const published = validatePublishedTailTrim(session, manifestSeq);
-	if (published === null || published.ref !== ref) throw new Error("context_compression_retrieve: ref is not a valid published TailTrim group");
-	if (query !== void 0 && exceedsCodePointLimit(query, bounds.maxQueryChars)) throw new Error(`context_compression_retrieve: query must be at most ${String(bounds.maxQueryChars)} Unicode code points`);
+	if (published === null || published.ref !== ref) throw new Error(`${RUNTIME_TOOL_NAMES.RETRIEVE}: ref is not a valid published TailTrim group`);
+	if (query !== void 0 && exceedsCodePointLimit(query, bounds.maxQueryChars)) throw new Error(`${RUNTIME_TOOL_NAMES.RETRIEVE}: query must be at most ${String(bounds.maxQueryChars)} Unicode code points`);
 	const fixedHeader = [
 		`source: ${ref}`,
 		"kind: tailtrim-group",
@@ -158,7 +158,7 @@ function resolvePositiveInteger(name, value, fallback) {
 }
 function resolveMaxLines(value) {
 	const resolved = value ?? 200;
-	if (!Number.isSafeInteger(resolved) || resolved < 1 || resolved > MAX_LINES) throw new Error(`context_compression_retrieve: max_lines must be an integer from 1 to ${String(MAX_LINES)}`);
+	if (!Number.isSafeInteger(resolved) || resolved < 1 || resolved > MAX_LINES) throw new Error(`${RUNTIME_TOOL_NAMES.RETRIEVE}: max_lines must be an integer from 1 to ${String(MAX_LINES)}`);
 	return resolved;
 }
 function scanBlocks(blocks, maxChars) {
@@ -229,7 +229,7 @@ function* jsonTokens(value) {
 			yield "}";
 			return;
 		}
-		default: throw new TypeError("context_compression_retrieve: source content is not JSON-serializable");
+		default: throw new TypeError(`${RUNTIME_TOOL_NAMES.RETRIEVE}: source content is not JSON-serializable`);
 	}
 }
 function jsonScalar(value) {
@@ -262,8 +262,11 @@ function splitScannedLines(scan) {
 	};
 }
 function directSlice(lines, startLine, maxLines, scanComplete, partialTail) {
-	if (!Number.isSafeInteger(startLine) || startLine < 1) throw new Error("context_compression_retrieve: start_line must be a positive safe integer");
-	if (startLine > lines.length) throw new Error(`context_compression_retrieve: start_line ${String(startLine)} is ${scanComplete ? "outside the source line range" : "beyond the source scan limit"}`);
+	if (!Number.isSafeInteger(startLine) || startLine < 1) throw new Error(`${RUNTIME_TOOL_NAMES.RETRIEVE}: start_line must be a positive safe integer`);
+	if (startLine > lines.length) {
+		const reason = scanComplete ? "outside the source line range" : "beyond the source scan limit";
+		throw new Error(`${RUNTIME_TOOL_NAMES.RETRIEVE}: start_line ${String(startLine)} is ${reason}`);
+	}
 	const startIndex = startLine - 1;
 	const selected = lines.slice(startIndex, startIndex + maxLines);
 	return {
@@ -499,7 +502,7 @@ function buildLocatorBlock(events, shadowedRange) {
 			`- seq range: ${String(shadowedRange.start)}-${String(shadowedRange.end)}`,
 			...[...spillFiles].map((path) => `- spill file: ${path}`),
 			...[...touchedFiles].map((path) => `- file touched: ${path}`),
-			"(Use `read <spill file>` or `context_compression_retrieve` with a `session://` source — pass start_line/max_lines to window the text — to restore exact text.)"
+			`(Use \`read <spill file>\` or \`${RUNTIME_TOOL_NAMES.RETRIEVE}\` with a \`session://\` source — pass start_line/max_lines to window the text — to restore exact text.)`
 		].join("\n"),
 		spillFiles: spillFiles.size,
 		touchedFiles: touchedFiles.size
@@ -751,7 +754,7 @@ function historicalPlaceholder(input) {
 	const lastFolded = normalized.folded.at(-1);
 	const elidedLines = lastFolded === void 0 ? void 0 : lastFolded.originalLineEnd ?? lastFolded.originalLine;
 	const anchorLine = input.compact ? void 0 : (normalized.folded.find((line) => IMPORTANT_PATTERN.test(line.text)) ?? void 0)?.originalLine;
-	const retrieveHint = anchorLine === void 0 ? `retrieve: context_compression_retrieve({"ref":"${input.sourceRef}"})` : `retrieve: context_compression_retrieve({"ref":"${input.sourceRef}","start_line":${String(anchorLine)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}})`;
+	const retrieveHint = anchorLine === void 0 ? `retrieve: ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${input.sourceRef}"})` : `retrieve: ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${input.sourceRef}","start_line":${String(anchorLine)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}})`;
 	const lines = [
 		"[Old tool result content cleared from active context]",
 		`tool: ${input.toolName || "unknown"}`,
@@ -991,7 +994,7 @@ function reduceBundledJs(input) {
 	if (declarations.size === 0) return null;
 	const hasSourceMap = input.contentText.includes(SOURCEMAP_DIRECTIVE);
 	const entries = [...declarations.entries()].sort((a, b) => a[1] - b[1]);
-	const kept = [`[bundled/minified JS detected; ${String(entries.length)} declarations; minified symbols may be renamed — exports.*/module.exports traces are the reliable ones;${hasSourceMap ? " source map present, prefer reading the original source;" : ""} source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"}) (line-addressed: single-line bundles come back whole)]`, ...entries.slice(0, 400).map(([symbol, line]) => `${symbol}  (line ${String(line)})`)];
+	const kept = [`[bundled/minified JS detected; ${String(entries.length)} declarations; minified symbols may be renamed — exports.*/module.exports traces are the reliable ones;${hasSourceMap ? " source map present, prefer reading the original source;" : ""} source: ${input.sourceRef}; retrieve with ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${input.sourceRef}"}) (line-addressed: single-line bundles come back whole)]`, ...entries.slice(0, 400).map(([symbol, line]) => `${symbol}  (line ${String(line)})`)];
 	const start = input.lines[0]?.originalLine ?? 1;
 	const end = originalEnd(input.lines, input.lines.length - 1);
 	if (end > start) kept.push(elidedRangeMarker(start, end));
@@ -1219,7 +1222,7 @@ function reduceSearch(input, fileRanking) {
 		rows
 	})), fileRanking)) perFile.set(entry.id, [...entry.rows].sort((a, b) => a.important === b.important ? a.fileLine - b.fileLine : a.important ? -1 : 1));
 	const allLocators = [...perFile.keys()].map((path) => locatorFor(path, groups.get(path)));
-	const headerFor = (l2Rows, omitted) => `[search results compressed; ${String(groups.size)} files, ${String(totalMatches)} matches; ${String(l2Rows)} content rows shown, ${String(omitted)} matches omitted; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"})]`;
+	const headerFor = (l2Rows, omitted) => `[search results compressed; ${String(groups.size)} files, ${String(totalMatches)} matches; ${String(l2Rows)} content rows shown, ${String(omitted)} matches omitted; source: ${input.sourceRef}; retrieve with ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${input.sourceRef}"})]`;
 	const fillL2 = (output, quotaChars) => {
 		let used = 0;
 		let shown = 0;
@@ -1306,7 +1309,7 @@ function reduceGit(input, command) {
 	}
 	if (keep.length === 0) return reduceSalient(input, reducer);
 	const text = fitLines([
-		`[git output compressed; ${scannedTotals(input, keep.length)}; source: ${input.sourceRef}; scatter-masked: retrieve with context_compression_retrieve({"ref":"${input.sourceRef}","query":"<keyword>"}) for missed rows]`,
+		`[git output compressed; ${scannedTotals(input, keep.length)}; source: ${input.sourceRef}; scatter-masked: retrieve with ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${input.sourceRef}","query":"<keyword>"}) for missed rows]`,
 		...keep,
 		...lines.slice(-8).map((line) => line.text)
 	], input.budgetChars, input.sourceRef);
@@ -1320,7 +1323,7 @@ function reducePatternLog(input, reducer, pattern) {
 	const lines = input.lines;
 	const kept = lines.filter((line) => pattern.test(line.text) || IMPORTANT_PATTERN.test(line.text) || STATUS_PATTERN.test(line.text));
 	const text = fitLines([
-		`[command output compressed by ${reducer}; ${scannedTotals(input, kept.length)}; source: ${input.sourceRef}; scatter-masked: retrieve with context_compression_retrieve({"ref":"${input.sourceRef}","query":"<keyword>"}) for missed rows]`,
+		`[command output compressed by ${reducer}; ${scannedTotals(input, kept.length)}; source: ${input.sourceRef}; scatter-masked: retrieve with ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${input.sourceRef}","query":"<keyword>"}) for missed rows]`,
 		...kept.map((line) => line.text),
 		...lines.slice(-20).map((line) => line.text)
 	], input.budgetChars, input.sourceRef);
@@ -1335,7 +1338,7 @@ function reduceShell(input) {
 	const important = lines.filter((line) => IMPORTANT_PATTERN.test(line.text));
 	if (important.length === 0) return reduceTail(input, "pi-tail");
 	const text = fitLines([
-		`[shell/log output compressed; ${scannedTotals(input, important.length)}; source: ${input.sourceRef}; scatter-masked: retrieve with context_compression_retrieve({"ref":"${input.sourceRef}","query":"<keyword>"}) for missed rows]`,
+		`[shell/log output compressed; ${scannedTotals(input, important.length)}; source: ${input.sourceRef}; scatter-masked: retrieve with ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${input.sourceRef}","query":"<keyword>"}) for missed rows]`,
 		...important.map((line) => line.text),
 		"--- final output ---",
 		...lines.slice(-40).map((line) => line.text)
@@ -1524,7 +1527,7 @@ function reduceHtml(input) {
 	if (slim.length === 0) return null;
 	const buildHeader = (reducer, firstElided) => {
 		const startLine = firstElided === void 0 ? "" : `,"start_line":${String(firstElided.start)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}`;
-		return `[html compressed by ${reducer}; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"${startLine}})]`;
+		return `[html compressed by ${reducer}; source: ${input.sourceRef}; retrieve with ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${input.sourceRef}"${startLine}})]`;
 	};
 	const foldedSlim = foldRepeatedHtmlBlocks(slim, (index) => input.lines[index]?.originalLine ?? 1);
 	if (foldedSlim.reduce((sum, line) => sum + codePointLength(line.text) + 1, 0) + 160 <= input.budgetChars) {
@@ -1679,7 +1682,7 @@ function reduceDocSkeleton(input, sectionRanking) {
 			kept.push(elidedRangeMarker(start, end));
 		}
 		const hint = firstElided === void 0 ? "" : `,"start_line":${String(firstElided)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}`;
-		kept.unshift(`[document compressed by doc-skeleton; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"${hint}})]`);
+		kept.unshift(`[document compressed by doc-skeleton; source: ${input.sourceRef}; retrieve with ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${input.sourceRef}"${hint}})]`);
 		return {
 			text: fitLines(kept, budget, input.sourceRef),
 			...firstElided === void 0 ? {} : { firstElided },
@@ -1750,7 +1753,7 @@ function reduceProseKeep(input) {
 	const last = lines[lines.length - 1];
 	const tailLine = last.originalLineEnd ?? last.originalLine;
 	const markerTemplate = elidedRangeMarker(first.originalLine, tailLine);
-	const sourceNoteTemplate = `; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"})`;
+	const sourceNoteTemplate = `; source: ${input.sourceRef}; retrieve with ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${input.sourceRef}"})`;
 	const reserved = codePointLength(markerTemplate) + codePointLength(sourceNoteTemplate) + 2;
 	const bodyBudget = input.budgetChars - reserved;
 	if (bodyBudget <= 0) return null;
@@ -1777,7 +1780,7 @@ function reduceProseKeep(input) {
 	const elidedStart = lines[headCount].originalLine;
 	const elidedEnd = originalEnd(lines, lines.length - tailCount - 1);
 	if (elidedEnd < elidedStart) return null;
-	const sourceNote = `; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}","start_line":${String(elidedStart)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}})`;
+	const sourceNote = `; source: ${input.sourceRef}; retrieve with ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${input.sourceRef}","start_line":${String(elidedStart)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}})`;
 	return {
 		text: [
 			...lines.slice(0, headCount).map((line) => line.text),
@@ -1929,7 +1932,7 @@ function reduceCodeSkeleton(input) {
 	return finishSkeleton(kept, lines, input, firstElided, elidedTotal);
 }
 function finishSkeleton(kept, lines, input, firstElided, elidedLines) {
-	const hint = firstElided === void 0 ? "" : `; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}","start_line":${String(firstElided.start)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}})`;
+	const hint = firstElided === void 0 ? "" : `; retrieve with ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${input.sourceRef}","start_line":${String(firstElided.start)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}})`;
 	const text = fitLines([
 		`[code output compressed by hypa-code-skeleton; source: ${input.sourceRef}${hint}]`,
 		...kept,
@@ -1986,7 +1989,7 @@ function looksLikeSourceCode(text) {
 	return false;
 }
 function omissionMarker(input, reducer) {
-	return `[... ${reducer} omitted content; original_chars=${String(codePointLength(input.text))}; source=${input.sourceRef}; retrieve with context_compression_retrieve ...]`;
+	return `[... ${reducer} omitted content; original_chars=${String(codePointLength(input.text))}; source=${input.sourceRef}; retrieve with ${RUNTIME_TOOL_NAMES.RETRIEVE} ...]`;
 }
 /**
 * Continuous-mask marker (R9b): an original-event line range plus a pasteable
@@ -1994,7 +1997,7 @@ function omissionMarker(input, reducer) {
 * at the RAW event because retrieve reads raw events (D8).
 */
 function rangeOmissionMarker(input, reducer, elidedStart, elidedEnd) {
-	return `[... lines ${String(elidedStart)}-${String(elidedEnd)} elided (${String(elidedEnd - elidedStart + 1)} lines); ${reducer}; original_chars=${String(codePointLength(input.text))}; source=${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}","start_line":${String(elidedStart)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}}) ...]`;
+	return `[... lines ${String(elidedStart)}-${String(elidedEnd)} elided (${String(elidedEnd - elidedStart + 1)} lines); ${reducer}; original_chars=${String(codePointLength(input.text))}; source=${input.sourceRef}; retrieve with ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${input.sourceRef}","start_line":${String(elidedStart)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}}) ...]`;
 }
 /** Scatter-mask note (R9b): totals instead of fragmented per-run ranges. */
 function scannedTotals(input, kept) {
@@ -4040,7 +4043,7 @@ var ToolResultPruner = class extends Service {
 			}, settings.profile, settings.custom, {
 				...contextWindowTokens === void 0 ? {} : { contextWindowTokens },
 				autoCompactThresholdPercent: settings.autoCompact.thresholdPercent
-			});
+			}, settings.ptcCustom);
 			const route = routeAuditFact(session);
 			const auditKey = JSON.stringify({
 				policy,
@@ -4287,7 +4290,7 @@ var ToolResultPruner = class extends Service {
 	* recovery tool; the per-session set admits future recovery paths.
 	*/
 	isRecoveryExempt(session, candidate) {
-		if (candidate.call.name === "context_compression_retrieve") return true;
+		if (candidate.call.name === RUNTIME_TOOL_NAMES.RETRIEVE) return true;
 		return this.state.recoveryExemptions.get(session)?.has(candidate.seq) ?? false;
 	}
 	/** Register a result seq as permanently exempt from further reduction. */
@@ -4335,7 +4338,7 @@ var ToolResultPruner = class extends Service {
 		const dedupeEnabled = policy.presetOptions?.dedupeToolResults === true;
 		const maxCandidateTokens = candidates.length === 0 ? void 0 : Math.max(...candidates.map((candidate) => candidate.count.kind === "exact-tokenizer" ? candidate.count.tokens : charsToTokens(candidate.characterPressure)));
 		if (policy.freshEnabled) {
-			if (candidates.some((candidate) => candidate.call.name !== "context_compression_retrieve" && candidate.count.kind !== "exact-tokenizer")) this.warnExactUnavailable(session, view, "fresh");
+			if (candidates.some((candidate) => candidate.call.name !== RUNTIME_TOOL_NAMES.RETRIEVE && candidate.count.kind !== "exact-tokenizer")) this.warnExactUnavailable(session, view, "fresh");
 			for (const candidate of candidates) {
 				if (this.isRecoveryExempt(session, candidate)) continue;
 				if (dedupeEnabled) {
@@ -4525,7 +4528,7 @@ var ToolResultPruner = class extends Service {
 			"[Tool result reduced to satisfy the completed-step aggregate budget]",
 			`tool: ${candidate.call.name}`,
 			`source: ${sourceRef$2}`,
-			"Retrieve a narrow slice via context_compression_retrieve if needed."
+			`Retrieve a narrow slice via ${RUNTIME_TOOL_NAMES.RETRIEVE} if needed.`
 		].join("\n");
 		const plan = this.plan(candidate, [{
 			type: "text",
@@ -4747,7 +4750,7 @@ var ToolResultPruner = class extends Service {
 			const assistant = eventBySeq(events, assistantSeq);
 			if (assistant?.type !== "assistant/message" || assistant.data.interrupted === true || assistant.data.message.content.length === 0 || assistant.data.message.content.some((block) => block.type !== "tool-call") || assistant.data.turn === firstCompletedSurfaceTurn || !completedTurns.has(assistant.data.turn) || !completedSteps.has(`${String(assistant.data.turn)}:${String(assistant.data.step)}`)) continue;
 			const calls = assistant.data.message.content;
-			if (calls.some((call) => call.name === "context_compression_retrieve")) continue;
+			if (calls.some((call) => call.name === RUNTIME_TOOL_NAMES.RETRIEVE)) continue;
 			const callIds = calls.map((call) => String(call.id));
 			if (new Set(callIds).size !== callIds.length) continue;
 			const resultSeqs = nodes.slice(index + 1, index + 1 + calls.length);
@@ -5036,7 +5039,7 @@ var ToolResultPruner = class extends Service {
 	landAll(session, plans) {
 		if (plans.length === 0) return [];
 		if (!this.hasRecoveryTool(session)) {
-			this.warnOnce(session, "missing-context-retrieve", "context-compression kept original tool results because context_compression_retrieve is unavailable");
+			this.warnOnce(session, "missing-context-retrieve", `context-compression kept original tool results because ${RUNTIME_TOOL_NAMES.RETRIEVE} is unavailable`);
 			return [];
 		}
 		if (!hasOpenTurn(session)) throw new Error("tool-result pruning cannot append a surface replacement outside any open turn");
@@ -5052,7 +5055,7 @@ var ToolResultPruner = class extends Service {
 		const tools = this.ctx.get("tools");
 		if (tools === void 0) return false;
 		const agent = this.ctx.get("agents")?.get(session.id);
-		return tools.get("context_compression_retrieve", agent) !== void 0;
+		return tools.get(RUNTIME_TOOL_NAMES.RETRIEVE, agent) !== void 0;
 	}
 	auditHistoryEvaluation(session, policy, view, allowed, outcome) {
 		if (policy.historyMode === "disabled") {

@@ -17,6 +17,8 @@ export const es = {
   'profile.savings': 'Ahorro',
   'profile.adaptive': 'Adaptativo (costo conservador)',
   'profile.tokenpilot-inspired': 'Inspirado en TokenPilot',
+  'profile.ptc': 'PTC / modo código (absoluto)',
+  'detail.ptc': 'Marcas de agua absolutas independientes de la ventana para el modo código y sesiones con muchos resultados pequeños; el envejecimiento del historial se activa al superar el umbral, umbrales editables por separado',
   'estimator.title': 'Estimador (opcional)',
   'estimator.description': 'Un pequeño modelo auxiliar estima sin ejemplos si las lecturas antiguas de archivos probablemente aún se referencian; solo consultivo para el envejecimiento del historial. Sin configuración o ante fallos, se vuelve al comportamiento basado solo en reglas.',
   'estimator.mode': 'Canal',

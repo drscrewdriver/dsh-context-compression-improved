@@ -97,6 +97,28 @@ export const DEFAULT_CUSTOM_COMPRESSION_POLICY: CustomCompressionPolicyV3 = deep
   tailTrim: { enabled: false, trigger: 700_000 },
 })
 
+/**
+ * PTC/code-mode default policy: window-independent absolute watermarks tuned
+ * for many-small-result sessions. `ptc` seeds its own editable `ptcCustom`
+ * document from this value, so editing `ptcCustom` never touches `custom` /
+ * `tokenpilot-inspired`.
+ */
+export const DEFAULT_PTC_COMPRESSION_POLICY: CustomCompressionPolicyV3 = deepFreeze({
+  version: 3,
+  unit: 'tokens',
+  fresh: { enabled: true, trigger: 4_096, target: 1_536 },
+  aggregate: { enabled: true, trigger: 16_384, target: 4_096 },
+  history: {
+    enabled: true,
+    trigger: 20_000,
+    keepRecentToolCalls: 8,
+    keepRecentTokens: 8_000,
+    minReclaim: 6_000,
+  },
+  prefixPolicy: 'pressure-break',
+  tailTrim: { enabled: false, trigger: 700_000 },
+})
+
 /** Routed model facts needed only by context-percent Custom documents. */
 export interface CustomPolicyResolutionOptions {
   /** Positive resolved shared model context capacity. */

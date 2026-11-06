@@ -22,7 +22,7 @@ import type { CompressionProfileSelectorProps } from './CompressionProfileSelect
 import { CustomPolicyEditor, editableCustom } from './CustomPolicyEditor.tsx'
 
 export function CompressionProfileControls({
-  useCompression, select, saveCustom, resetCustom, t, showCustomEditor,
+  useCompression, select, saveCustom, resetCustom, savePtcCustom, resetPtcCustom, t, showCustomEditor,
 }: CompressionProfileSelectorProps & { showCustomEditor: boolean }) {
   const state = useCompression(snapshot => snapshot)
   // Harness 0.1.5 dropped browser-side agentPreset from session summaries; see
@@ -33,6 +33,7 @@ export function CompressionProfileControls({
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [draft, setDraft] = useState<CustomCompressionPolicyV3 | null>(null)
+  const [ptcDraft, setPtcDraft] = useState<CustomCompressionPolicyV3 | null>(null)
   const unavailableId = useId()
   const current = state.value?.profile ?? 'balanced'
   useEffect(() => {
@@ -41,8 +42,12 @@ export function CompressionProfileControls({
   }, [contextCompressionAvailable, state.status, state.writable])
   useEffect(() => {
     const custom = state.value?.custom
-    setDraft(current === 'custom' && custom !== undefined ? editableCustom(custom) : null)
+    setDraft((current === 'custom' || current === 'tokenpilot-inspired') && custom !== undefined ? editableCustom(custom) : null)
   }, [current, state.value?.custom])
+  useEffect(() => {
+    const ptcCustom = state.value?.ptcCustom
+    setPtcDraft(current === 'ptc' && ptcCustom !== undefined ? editableCustom(ptcCustom) : null)
+  }, [current, state.value?.ptcCustom])
   if (state.status === 'unavailable') return null
   const busy = state.status === 'loading' || saving
   const label = busy ? t('status.loading') : t(`profile.${current}`)
@@ -103,16 +108,37 @@ export function CompressionProfileControls({
       <div className={css.settingsHint}>
         {t('autoCompact.summaryHint').replace('{percent}', String(state.value?.autoCompact?.thresholdPercent ?? AUTO_COMPACT_THRESHOLD_LIMITS.default))}
       </div>
-      {current !== 'custom' || showCustomEditor ? null : (
+      {current !== 'custom' && current !== 'tokenpilot-inspired' || showCustomEditor ? null : (
         <div className={css.settingsHint}>{t('custom.settingsHint')}</div>
       )}
-      {current !== 'custom' || draft === null || !showCustomEditor ? null : (
+      {current !== 'custom' && current !== 'tokenpilot-inspired' || draft === null || !showCustomEditor ? null : (
         <CustomPolicyEditor
           value={draft}
           disabled={busy || !state.writable || !contextCompressionAvailable}
           setValue={setDraft}
           save={() => saveCustom(structuredClone(draft))}
           reset={resetCustom}
+          settle={(operation) => {
+            setSaveError(null)
+            setSaving(true)
+            void operation().then(
+              () => { setSaving(false) },
+              (error: unknown) => {
+                setSaving(false)
+                setSaveError(error instanceof Error && error.message !== '' ? error.message : t('status.saveFailed'))
+              },
+            )
+          }}
+          t={t}
+        />
+      )}
+      {current !== 'ptc' || ptcDraft === null || !showCustomEditor ? null : (
+        <CustomPolicyEditor
+          value={ptcDraft}
+          disabled={busy || !state.writable || !contextCompressionAvailable}
+          setValue={setPtcDraft}
+          save={() => savePtcCustom(structuredClone(ptcDraft))}
+          reset={resetPtcCustom}
           settle={(operation) => {
             setSaveError(null)
             setSaving(true)

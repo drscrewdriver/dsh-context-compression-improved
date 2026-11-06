@@ -1,4 +1,4 @@
-import { n as viewToolResult, s as sessionEvents, t as compressionMessageSource } from "./tool-result.js";
+import { l as sessionEvents, n as viewToolResult, s as RUNTIME_TOOL_NAMES, t as compressionMessageSource } from "./tool-result.js";
 //#region src/compat/llm-messages.ts
 /** Recursive `Object.freeze` over own enumerable properties (arrays included). */
 function deepFreeze(value) {
@@ -50,7 +50,7 @@ function tailTrimStub(ref, toolNames, sourceEventSeqs) {
 		`ref: ${ref}`,
 		`tools: ${toolNames.join(", ")}`,
 		`source_event_seqs: ${sourceEventSeqs.join(", ")}`,
-		"use context_compression_retrieve with this TailTrim ref if needed"
+		`use ${RUNTIME_TOOL_NAMES.RETRIEVE} with this TailTrim ref if needed`
 	].join("\n");
 	return Array.from(stub).length <= MAX_STUB_CODE_POINTS ? stub : null;
 }

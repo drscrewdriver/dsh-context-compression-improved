@@ -28,7 +28,7 @@ declare class DedupeTable {
 //#endregion
 //#region src/runtime/types.d.ts
 /** User-facing mixed strategy profile. */
-declare const COMPRESSION_PROFILES: readonly ["off", "native", "balanced", "cache-strict", "savings", "adaptive", "tokenpilot-inspired", "custom"];
+declare const COMPRESSION_PROFILES: readonly ["off", "native", "balanced", "cache-strict", "savings", "adaptive", "tokenpilot-inspired", "ptc", "custom"];
 /** Public compression strategy selected for one Session. */
 type CompressionProfile = typeof COMPRESSION_PROFILES[number];
 /** When historical tool results may be aged for one Session policy. */
@@ -182,6 +182,8 @@ interface ContextCompressionSettings {
   profile: CompressionProfile;
   /** Versioned Custom policy snapped with `profile` for a newly observed Session. */
   custom: CustomCompressionPolicy;
+  /** PTC profile's own editable policy, seeded from the ptc defaults and independent of `custom`. Optional like `monitorPanel`/`presetOptions`: schema-defaulted, always present after parse. */
+  ptcCustom?: CustomCompressionPolicy;
   /** Auto Compact trigger preference snapped with `profile` for a newly observed Session. */
   autoCompact: AutoCompactSettings;
   /** Code-skeleton reducer gate snapped independently of `profile`. */
@@ -691,7 +693,7 @@ declare function resolveConfig(config?: ToolResultPruneConfig): ResolvedConfig;
  * to resolve context-percent Custom values and standard-profile linkage.
  * @returns the effective deterministic compression policy.
  */
-declare function resolvePolicy(config: ResolvedConfig, profile: CompressionProfile, custom?: CustomCompressionPolicy, options?: CustomPolicyResolutionOptions): CompressionPolicy;
+declare function resolvePolicy(config: ResolvedConfig, profile: CompressionProfile, custom?: CustomCompressionPolicy, options?: CustomPolicyResolutionOptions, ptcCustom?: CustomCompressionPolicy): CompressionPolicy;
 //#endregion
 //#region src/runtime/reducers.d.ts
 /** Deterministic, evidence-backed reducers for fresh tool results. */

@@ -2,6 +2,7 @@
 
 import { codePointLength } from './config.ts'
 import { classifyToolSource } from './toolclass.ts'
+import { RUNTIME_TOOL_NAMES } from './tool-names.ts'
 
 /** Input shared by every fresh-result reducer. */
 export interface ReducerInput {
@@ -287,8 +288,8 @@ export function historicalPlaceholder(input: {
       .find(line => IMPORTANT_PATTERN.test(line.text))
       ?? undefined)?.originalLine
   const retrieveHint = anchorLine === undefined
-    ? `retrieve: context_compression_retrieve({"ref":"${input.sourceRef}"})`
-    : `retrieve: context_compression_retrieve({"ref":"${input.sourceRef}","start_line":${String(anchorLine)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}})`
+    ? `retrieve: ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${input.sourceRef}"})`
+    : `retrieve: ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${input.sourceRef}","start_line":${String(anchorLine)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}})`
   const lines = [
     '[Old tool result content cleared from active context]',
     `tool: ${input.toolName || 'unknown'}`,
@@ -581,7 +582,7 @@ function reduceBundledJs(input: PreparedInput): ReducerOutput | null {
   if (declarations.size === 0) return null
   const hasSourceMap = input.contentText.includes(SOURCEMAP_DIRECTIVE)
   const entries = [...declarations.entries()].sort((a, b) => a[1] - b[1])
-  const header = `[bundled/minified JS detected; ${String(entries.length)} declarations; minified symbols may be renamed — exports.*/module.exports traces are the reliable ones;${hasSourceMap ? ' source map present, prefer reading the original source;' : ''} source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"}) (line-addressed: single-line bundles come back whole)]`
+  const header = `[bundled/minified JS detected; ${String(entries.length)} declarations; minified symbols may be renamed — exports.*/module.exports traces are the reliable ones;${hasSourceMap ? ' source map present, prefer reading the original source;' : ''} source: ${input.sourceRef}; retrieve with ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${input.sourceRef}"}) (line-addressed: single-line bundles come back whole)]`
   const kept = [header, ...entries.slice(0, 400).map(([symbol, line]) => `${symbol}  (line ${String(line)})`)]
   const start = input.lines[0]?.originalLine ?? 1
   const end = originalEnd(input.lines, input.lines.length - 1)
@@ -806,7 +807,7 @@ function reduceSearch(input: PreparedInput, fileRanking?: readonly string[]): Re
   const allLocators = [...perFile.keys()].map(path => locatorFor(path, groups.get(path)!))
 
   const headerFor = (l2Rows: number, omitted: number): string =>
-    `[search results compressed; ${String(groups.size)} files, ${String(totalMatches)} matches; ${String(l2Rows)} content rows shown, ${String(omitted)} matches omitted; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"})]`
+    `[search results compressed; ${String(groups.size)} files, ${String(totalMatches)} matches; ${String(l2Rows)} content rows shown, ${String(omitted)} matches omitted; source: ${input.sourceRef}; retrieve with ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${input.sourceRef}"})]`
 
   // L2 water-filling: one unchosen row per file per round, so no file
   // disappears and no file outpaces another by more than one round. Important
@@ -902,7 +903,7 @@ function reduceGit(input: PreparedInput, command: string): ReducerOutput | null 
       || IMPORTANT_PATTERN.test(line))
   }
   if (keep.length === 0) return reduceSalient(input, reducer)
-  const header = `[git output compressed; ${scannedTotals(input, keep.length)}; source: ${input.sourceRef}; scatter-masked: retrieve with context_compression_retrieve({"ref":"${input.sourceRef}","query":"<keyword>"}) for missed rows]`
+  const header = `[git output compressed; ${scannedTotals(input, keep.length)}; source: ${input.sourceRef}; scatter-masked: retrieve with ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${input.sourceRef}","query":"<keyword>"}) for missed rows]`
   const text = fitLines([header, ...keep, ...lines.slice(-8).map(line => line.text)], input.budgetChars, input.sourceRef)
   return text === null ? null : { text, reducer, lossy: true }
 }
@@ -910,7 +911,7 @@ function reduceGit(input: PreparedInput, command: string): ReducerOutput | null 
 function reducePatternLog(input: PreparedInput, reducer: string, pattern: RegExp): ReducerOutput | null {
   const lines = input.lines
   const kept = lines.filter(line => pattern.test(line.text) || IMPORTANT_PATTERN.test(line.text) || STATUS_PATTERN.test(line.text))
-  const header = `[command output compressed by ${reducer}; ${scannedTotals(input, kept.length)}; source: ${input.sourceRef}; scatter-masked: retrieve with context_compression_retrieve({"ref":"${input.sourceRef}","query":"<keyword>"}) for missed rows]`
+  const header = `[command output compressed by ${reducer}; ${scannedTotals(input, kept.length)}; source: ${input.sourceRef}; scatter-masked: retrieve with ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${input.sourceRef}","query":"<keyword>"}) for missed rows]`
   const text = fitLines([header, ...kept.map(line => line.text), ...lines.slice(-20).map(line => line.text)], input.budgetChars, input.sourceRef)
   return text === null ? null : { text, reducer, lossy: true }
 }
@@ -919,7 +920,7 @@ function reduceShell(input: PreparedInput): ReducerOutput | null {
   const lines = input.lines
   const important = lines.filter(line => IMPORTANT_PATTERN.test(line.text))
   if (important.length === 0) return reduceTail(input, 'pi-tail')
-  const header = `[shell/log output compressed; ${scannedTotals(input, important.length)}; source: ${input.sourceRef}; scatter-masked: retrieve with context_compression_retrieve({"ref":"${input.sourceRef}","query":"<keyword>"}) for missed rows]`
+  const header = `[shell/log output compressed; ${scannedTotals(input, important.length)}; source: ${input.sourceRef}; scatter-masked: retrieve with ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${input.sourceRef}","query":"<keyword>"}) for missed rows]`
   const text = fitLines([header, ...important.map(line => line.text), '--- final output ---', ...lines.slice(-40).map(line => line.text)], input.budgetChars, input.sourceRef)
   return text === null ? null : { text, reducer: 'shell-salience-tail', lossy: true }
 }
@@ -1109,7 +1110,7 @@ function reduceHtml(input: PreparedInput): ReducerOutput | null {
 
   const buildHeader = (reducer: string, firstElided?: { readonly start: number }): string => {
     const startLine = firstElided === undefined ? '' : `,"start_line":${String(firstElided.start)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}`
-    return `[html compressed by ${reducer}; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"${startLine}})]`
+    return `[html compressed by ${reducer}; source: ${input.sourceRef}; retrieve with ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${input.sourceRef}"${startLine}})]`
   }
 
   // Third level (R4): deterministic repeated-block folding. Nav/footer/
@@ -1277,7 +1278,7 @@ function reduceDocSkeleton(input: PreparedInput, sectionRanking?: readonly strin
     const hint = firstElided === undefined
       ? ''
       : `,"start_line":${String(firstElided)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}`
-    kept.unshift(`[document compressed by doc-skeleton; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"${hint}})]`)
+    kept.unshift(`[document compressed by doc-skeleton; source: ${input.sourceRef}; retrieve with ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${input.sourceRef}"${hint}})]`)
     const text = fitLines(kept, budget, input.sourceRef)
     return { text, ...(firstElided === undefined ? {} : { firstElided }), elidedLines }
   }
@@ -1358,7 +1359,7 @@ function reduceProseKeep(input: PreparedInput): ReducerOutput | null {
   const last = lines[lines.length - 1]!
   const tailLine = last.originalLineEnd ?? last.originalLine
   const markerTemplate = elidedRangeMarker(first.originalLine, tailLine)
-  const sourceNoteTemplate = `; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}"})`
+  const sourceNoteTemplate = `; source: ${input.sourceRef}; retrieve with ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${input.sourceRef}"})`
   const reserved = codePointLength(markerTemplate) + codePointLength(sourceNoteTemplate) + 2
   const bodyBudget = input.budgetChars - reserved
   if (bodyBudget <= 0) return null
@@ -1385,7 +1386,7 @@ function reduceProseKeep(input: PreparedInput): ReducerOutput | null {
   const elidedStart = lines[headCount]!.originalLine
   const elidedEnd = originalEnd(lines, lines.length - tailCount - 1)
   if (elidedEnd < elidedStart) return null
-  const sourceNote = `; source: ${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}","start_line":${String(elidedStart)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}})`
+  const sourceNote = `; source: ${input.sourceRef}; retrieve with ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${input.sourceRef}","start_line":${String(elidedStart)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}})`
   const text = [
     ...lines.slice(0, headCount).map(line => line.text),
     elidedRangeMarker(elidedStart, elidedEnd) + sourceNote,
@@ -1552,7 +1553,7 @@ function finishSkeleton(
 ): ReducerOutput | null {
   const hint = firstElided === undefined
     ? ''
-    : `; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}","start_line":${String(firstElided.start)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}})`
+    : `; retrieve with ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${input.sourceRef}","start_line":${String(firstElided.start)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}})`
   const header = `[code output compressed by hypa-code-skeleton; source: ${input.sourceRef}${hint}]`
   const text = fitLines([header, ...kept, ...lines.slice(-4)], input.budgetChars, input.sourceRef)
   return text === null ? null : { text, reducer: 'hypa-code-skeleton', lossy: true, elidedLines }
@@ -1608,7 +1609,7 @@ function looksLikeSourceCode(text: string): boolean {
 }
 
 function omissionMarker(input: PreparedInput, reducer: string): string {
-  return `[... ${reducer} omitted content; original_chars=${String(codePointLength(input.text))}; source=${input.sourceRef}; retrieve with context_compression_retrieve ...]`
+  return `[... ${reducer} omitted content; original_chars=${String(codePointLength(input.text))}; source=${input.sourceRef}; retrieve with ${RUNTIME_TOOL_NAMES.RETRIEVE} ...]`
 }
 
 /**
@@ -1622,7 +1623,7 @@ function rangeOmissionMarker(
   elidedStart: number,
   elidedEnd: number,
 ): string {
-  return `[... lines ${String(elidedStart)}-${String(elidedEnd)} elided (${String(elidedEnd - elidedStart + 1)} lines); ${reducer}; original_chars=${String(codePointLength(input.text))}; source=${input.sourceRef}; retrieve with context_compression_retrieve({"ref":"${input.sourceRef}","start_line":${String(elidedStart)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}}) ...]`
+  return `[... lines ${String(elidedStart)}-${String(elidedEnd)} elided (${String(elidedEnd - elidedStart + 1)} lines); ${reducer}; original_chars=${String(codePointLength(input.text))}; source=${input.sourceRef}; retrieve with ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${input.sourceRef}","start_line":${String(elidedStart)},"max_lines":${String(RETRIEVE_HINT_MAX_LINES)}}) ...]`
 }
 
 /** Scatter-mask note (R9b): totals instead of fragmented per-run ranges. */

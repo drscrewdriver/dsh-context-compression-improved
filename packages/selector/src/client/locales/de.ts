@@ -17,6 +17,8 @@ export const de = {
   'profile.savings': 'Sparen',
   'profile.adaptive': 'Adaptiv (kostenbewusst)',
   'profile.tokenpilot-inspired': 'TokenPilot-inspiriert',
+  'profile.ptc': 'PTC / Codemodus (absolut)',
+  'detail.ptc': 'Fensterunabhängige absolute Wasserstände für den Codemodus und Sitzungen mit vielen kleinen Ergebnissen; die Historienalterung startet, sobald der Umfang die Schwelle überschreitet, Schwellen separat editierbar',
   'estimator.title': 'Schätzer (optional)',
   'estimator.description': 'Ein kleines Hilfsmodell schätzt ohne Beispiele, ob alte Datei-Lesevorgänge wahrscheinlich noch referenziert werden; nur beratend für das Altern des Verlaufs. Ohne Konfiguration oder bei Fehlern greift reines Regelverhalten.',
   'estimator.mode': 'Kanal',

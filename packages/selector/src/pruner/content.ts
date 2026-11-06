@@ -9,6 +9,7 @@
  */
 
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import { RUNTIME_TOOL_NAMES } from '../runtime/tool-names.ts'
 import type {
   CompactionTokenView,
   ProviderMeasurementKey,
@@ -72,8 +73,8 @@ function unavailableCount(reason: string): TokenCount {
 
 function recoveryMarker(sourceRef: string, label: string, startLine?: number): string {
   const hint = startLine === undefined
-    ? 'use context_compression_retrieve with a query or narrow start_line/max_lines if needed (avoid re-reading the whole result)'
-    : `retrieve with context_compression_retrieve({"ref":"${sourceRef}","start_line":${String(startLine)},"max_lines":80})`
+    ? `use ${RUNTIME_TOOL_NAMES.RETRIEVE} with a query or narrow start_line/max_lines if needed (avoid re-reading the whole result)`
+    : `retrieve with ${RUNTIME_TOOL_NAMES.RETRIEVE}({"ref":"${sourceRef}","start_line":${String(startLine)},"max_lines":80})`
   return `\n\n[... ${label}; source=${sourceRef}; ${hint} ...]\n\n`
 }
 

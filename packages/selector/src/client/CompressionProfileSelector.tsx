@@ -27,6 +27,8 @@ export interface CompressionSelectorInjected {
   select: (profile: CompressionProfile) => Promise<void>
   saveCustom: (custom: CustomCompressionPolicy) => Promise<void>
   resetCustom: () => Promise<void>
+  savePtcCustom: (custom: CustomCompressionPolicy) => Promise<void>
+  resetPtcCustom: () => Promise<void>
   saveAutoCompact: (thresholdPercent: number) => Promise<void>
   saveCodeSkeleton: (enabled: boolean) => Promise<void>
   saveIntentSummary: (enabled: boolean) => Promise<void>

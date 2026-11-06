@@ -9,7 +9,7 @@ import {
   ContextCompressionSettingsSection,
   type CompressionSelectorInjected, type ContextCompressionSettings,
 } from './CompressionProfileSelector.tsx'
-import { DEFAULT_CUSTOM_COMPRESSION_POLICY } from '../profiles.ts'
+import { DEFAULT_CUSTOM_COMPRESSION_POLICY, DEFAULT_PTC_COMPRESSION_POLICY } from '../profiles.ts'
 import { decodeSettings } from './decode.ts'
 import { initMonitorFab } from './monitor-fab.ts'
 import { en, zh } from './locales.ts'
@@ -314,6 +314,16 @@ let readMonitorPanelEnabled = (): boolean => monitorPanelEnabledCache
         () => scope.set('custom', structuredClone(DEFAULT_CUSTOM_COMPRESSION_POLICY)),
         settings => isCustomCompressionPolicy(settings.custom)
           && sameCustomPolicy(settings.custom, DEFAULT_CUSTOM_COMPRESSION_POLICY),
+      ),
+      savePtcCustom: custom => writeAndConfirm(
+        () => scope.set('ptcCustom', custom),
+        settings => isCustomCompressionPolicy(settings.ptcCustom)
+          && sameCustomPolicy(settings.ptcCustom, custom),
+      ),
+      resetPtcCustom: () => writeAndConfirm(
+        () => scope.set('ptcCustom', structuredClone(DEFAULT_PTC_COMPRESSION_POLICY)),
+        settings => isCustomCompressionPolicy(settings.ptcCustom)
+          && sameCustomPolicy(settings.ptcCustom, DEFAULT_PTC_COMPRESSION_POLICY),
       ),
       saveAutoCompact: thresholdPercent => writeAndConfirm(
         () => scope.set('autoCompact', { thresholdPercent }),

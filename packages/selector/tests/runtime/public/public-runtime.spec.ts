@@ -444,7 +444,7 @@ describe('standalone runtime on published Harness APIs', () => {
   it('tokenpilot-inspired lands a fresh replace on an UNAVAILABLE-tokenizer route (local Qwen)', async () => {
     const ctx = await runtimeContext()
     const audit = captureAudit(ctx)
-    await ctx.plugin(ToolResultPruner, { profile: 'tokenpilot-inspired' }).await()
+    await ctx.plugin(ToolResultPruner, { profile: 'tokenpilot-inspired', freshTriggerTokens: 4_096, freshTargetTokens: 1_536 }).await()
     const session = Session.create(SessionId('public-tokenpilot-qwen-fresh'))
     // A ~40KB JSONL result — the exact shape the desktop test feeds. local-35 has
     // no bundled tokenizer, so every node count is 'unavailable' and the fresh
@@ -630,6 +630,20 @@ describe('standalone runtime on published Harness APIs', () => {
     })
     expect(record?.tokensBefore).toBeGreaterThan(100)
     expect(record?.tokensAfter).toBeLessThan(record?.tokensBefore ?? 0)
+  })
+
+  it('lands PTC absolute-window history aging without per-session threshold overrides', async () => {
+    const ctx = await runtimeContext()
+    const session = Session.create(SessionId('public-ptc-absolute-history'))
+    for (let turn = 1; turn <= 10; turn += 1) {
+      appendToolTurn(session, turn, `ptc absolute evidence ${String(turn)} `.repeat(1_000), true)
+    }
+    session.append('turn/start', { turn: 11 })
+    await ctx.plugin(ToolResultPruner, { profile: 'ptc' }).await()
+    const result = ctx.toolResultPruner.pruneSession(session, { stage: 'pressure' })
+    expect(result.pruned.length).toBeGreaterThanOrEqual(1)
+    expect(result.pruned.every(entry => entry.stage === 'pressure')).toBe(true)
+    expect(result.tokensRemoved).toBeGreaterThan(0)
   })
 
   it('moves the capacity-pressure gate with the frozen Auto Compact threshold', async () => {

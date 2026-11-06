@@ -60,6 +60,7 @@ import {
   tailTrimStub,
 } from './runtime/tail-trim.ts'
 import { installContextCompressionRetrieve } from './runtime/retrieve.ts'
+import { RUNTIME_TOOL_NAMES } from './runtime/tool-names.ts'
 import type { PrunerState } from './pruner/state.ts'
 import { countOmittedLines, CAPACITY_PRESSURE_RATIO } from './pruner/tuning.ts'
 import type { ToolCallInfo, SnapshotCandidate, PlannedReplacement, HistoryPlanOutcome } from './pruner/types.ts'
@@ -1217,6 +1218,7 @@ export class ToolResultPruner extends Service {
           ...contextWindowTokens === undefined ? {} : { contextWindowTokens },
           autoCompactThresholdPercent: settings.autoCompact.thresholdPercent,
         },
+        settings.ptcCustom,
       )
       // Route changes must produce a fresh audit record even when the policy
       // object is unchanged, or the dedupe would hide a mid-session reroute.
@@ -1551,7 +1553,7 @@ export class ToolResultPruner extends Service {
    * recovery tool; the per-session set admits future recovery paths.
    */
   private isRecoveryExempt(session: Session, candidate: SnapshotCandidate): boolean {
-    if (candidate.call.name === 'context_compression_retrieve') return true
+    if (candidate.call.name === RUNTIME_TOOL_NAMES.RETRIEVE) return true
     return this.state.recoveryExemptions.get(session)?.has(candidate.seq) ?? false
   }
 
@@ -1627,7 +1629,7 @@ export class ToolResultPruner extends Service {
         ? candidate.count.tokens
         : charsToTokens(candidate.characterPressure)))
     if (policy.freshEnabled) {
-      if (candidates.some(candidate => candidate.call.name !== 'context_compression_retrieve'
+      if (candidates.some(candidate => candidate.call.name !== RUNTIME_TOOL_NAMES.RETRIEVE
         && candidate.count.kind !== 'exact-tokenizer')) {
         this.warnExactUnavailable(session, view, 'fresh')
       }
@@ -1946,7 +1948,7 @@ export class ToolResultPruner extends Service {
       '[Tool result reduced to satisfy the completed-step aggregate budget]',
       `tool: ${candidate.call.name}`,
       `source: ${sourceRef}`,
-      'Retrieve a narrow slice via context_compression_retrieve if needed.',
+      `Retrieve a narrow slice via ${RUNTIME_TOOL_NAMES.RETRIEVE} if needed.`,
     ].join('\n')
     const plan = this.plan(
       candidate,
@@ -2293,7 +2295,7 @@ export class ToolResultPruner extends Service {
         || !completedTurns.has(assistant.data.turn)
         || !completedSteps.has(`${String(assistant.data.turn)}:${String(assistant.data.step)}`)) continue
       const calls = assistant.data.message.content as Extract<ContentBlock, { type: 'tool-call' }>[]
-      if (calls.some(call => call.name === 'context_compression_retrieve')) continue
+      if (calls.some(call => call.name === RUNTIME_TOOL_NAMES.RETRIEVE)) continue
       const callIds = calls.map(call => String(call.id))
       if (new Set(callIds).size !== callIds.length) continue
       const resultSeqs = nodes.slice(index + 1, index + 1 + calls.length)
@@ -2652,7 +2654,7 @@ export class ToolResultPruner extends Service {
       this.warnOnce(
         session,
         'missing-context-retrieve',
-        'context-compression kept original tool results because context_compression_retrieve is unavailable',
+        `context-compression kept original tool results because ${RUNTIME_TOOL_NAMES.RETRIEVE} is unavailable`,
       )
       return []
     }
@@ -2672,7 +2674,7 @@ export class ToolResultPruner extends Service {
     const tools = this.ctx.get('tools')
     if (tools === undefined) return false
     const agent = this.ctx.get('agents')?.get(session.id)
-    return tools.get('context_compression_retrieve', agent) !== undefined
+    return tools.get(RUNTIME_TOOL_NAMES.RETRIEVE, agent) !== undefined
   }
 
   private auditHistoryEvaluation(

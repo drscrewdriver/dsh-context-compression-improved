@@ -3,6 +3,7 @@
 import {
   canonicalizeCustomPolicy,
   COMPRESSION_PROFILES,
+  DEFAULT_PTC_COMPRESSION_POLICY,
   decodeAutoCompactSettings,
   decodeCodeSkeletonSettings,
   decodeIntentSummarySettings,
@@ -27,11 +28,15 @@ import {
 export function decodeSettings(value: unknown): ContextCompressionSettings | undefined {
   if (!isPlainRecord(value)) return undefined
   const keys = Object.keys(value)
-  if (keys.some(key => key !== 'profile' && key !== 'custom' && key !== 'autoCompact' && key !== 'codeSkeleton' && key !== 'intentSummary' && key !== 'monitorPanel' && key !== 'presetOptions')) {
+  if (keys.some(key => key !== 'profile' && key !== 'custom' && key !== 'ptcCustom' && key !== 'autoCompact' && key !== 'codeSkeleton' && key !== 'intentSummary' && key !== 'monitorPanel' && key !== 'presetOptions')) {
     return undefined
   }
   const profile = (value as { profile?: unknown }).profile
   const custom = (value as { custom?: unknown }).custom
+  const ptcCustomRaw = (value as { ptcCustom?: unknown }).ptcCustom
+  const ptcCustom = ptcCustomRaw === undefined
+    ? DEFAULT_PTC_COMPRESSION_POLICY
+    : isCustomCompressionPolicy(ptcCustomRaw) ? canonicalizeCustomPolicy(ptcCustomRaw) : undefined
   const autoCompact = decodeAutoCompactSettings((value as { autoCompact?: unknown }).autoCompact)
   const codeSkeleton = decodeCodeSkeletonSettings((value as { codeSkeleton?: unknown }).codeSkeleton)
   const intentSummary = decodeIntentSummarySettings((value as { intentSummary?: unknown }).intentSummary)
@@ -40,6 +45,7 @@ export function decodeSettings(value: unknown): ContextCompressionSettings | und
   return typeof profile === 'string'
     && (COMPRESSION_PROFILES as readonly string[]).includes(profile)
     && isCustomCompressionPolicy(custom)
+    && ptcCustom !== undefined
     && autoCompact !== undefined
     && codeSkeleton !== undefined
     && intentSummary !== undefined
@@ -47,6 +53,7 @@ export function decodeSettings(value: unknown): ContextCompressionSettings | und
     ? {
         profile: profile as CompressionProfile,
         custom: canonicalizeCustomPolicy(custom),
+        ptcCustom,
         autoCompact,
         codeSkeleton,
         intentSummary,

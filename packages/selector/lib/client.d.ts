@@ -24,6 +24,8 @@ declare const zh: {
   'profile.savings': string;
   'profile.adaptive': string;
   'profile.tokenpilot-inspired': string;
+  'profile.ptc': string;
+  'detail.ptc': string;
   'estimator.title': string;
   'estimator.description': string;
   'estimator.mode': string;
@@ -202,6 +204,8 @@ interface CompressionSelectorInjected {
   select: (profile: CompressionProfile) => Promise<void>;
   saveCustom: (custom: CustomCompressionPolicy) => Promise<void>;
   resetCustom: () => Promise<void>;
+  savePtcCustom: (custom: CustomCompressionPolicy) => Promise<void>;
+  resetPtcCustom: () => Promise<void>;
   saveAutoCompact: (thresholdPercent: number) => Promise<void>;
   saveCodeSkeleton: (enabled: boolean) => Promise<void>;
   saveIntentSummary: (enabled: boolean) => Promise<void>;

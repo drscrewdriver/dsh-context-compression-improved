@@ -40,18 +40,18 @@ describe('tokenpilot-inspired preset', () => {
     }
   })
 
-  it('derives from the balanced baseline and injects the capability matrix', () => {
+  it('derives from the default custom document and injects the capability matrix', () => {
     const config = resolveConfig({})
     const policy = resolvePolicy(config, 'tokenpilot-inspired')
     expect(policy.profile).toBe('tokenpilot-inspired')
     expect(policy.freshEnabled).toBe(true)
     expect(policy.aggregateEnabled).toBe(true)
     expect(policy.historyMode).toBe('routine')
-    // tokenpilot-inspired ships a lower fresh trigger (4096/1536, aligned to the
-    // savings tier) so moderate results — and CJK/JSON under a real tokenizer —
-    // compress sooner. Intentional divergence from balanced's 8192/3072.
-    expect(policy.freshTriggerTokens).toBe(4_096)
-    expect(policy.freshTargetTokens).toBe(1_536)
+    // tokenpilot-inspired now consumes the Custom policy document; with the
+    // default custom document the values match balanced exactly. Users tune
+    // them via the CustomPolicyEditor in heuristic mode.
+    expect(policy.freshTriggerTokens).toBe(8_192)
+    expect(policy.freshTargetTokens).toBe(3_072)
     expect(policy.aggregateTriggerTokens).toBe(32_768)
     expect(policy.aggregateTargetTokens).toBe(12_288)
     expect(policy.historyTriggerTokens).toBe(500_000)
@@ -85,17 +85,19 @@ describe('tokenpilot-inspired preset', () => {
     expect(resolvePolicy(config, 'balanced').presetOptions).toBeUndefined()
   })
 
-  it('links Auto Compact watermarks like balanced does', () => {
+  it('uses explicit custom-document values rather than Auto Compact linkage', () => {
     const config = resolveConfig({})
     const policy = resolvePolicy(config, 'tokenpilot-inspired', undefined, {
       contextWindowTokens: 128_000,
       autoCompactThresholdPercent: 80,
     })
-    expect(policy.autoCompactTokens).toBe(102_400)
-    expect(policy.microDeadlineTokens).toBe(89_600)
-    expect(policy.historyTriggerTokens).toBe(64_000)
-    expect(policy.historyMinReclaimTokens).toBe(12_288)
-    expect(policy.historyKeepRecentTokens).toBe(8_192)
+    // tokenpilot-inspired now consumes the Custom document; Auto Compact linkage
+    // no longer applies (values come from the explicit policy document).
+    expect(policy.autoCompactTokens).toBeUndefined()
+    expect(policy.microDeadlineTokens).toBeUndefined()
+    expect(policy.historyTriggerTokens).toBe(500_000)
+    expect(policy.historyMinReclaimTokens).toBe(96_000)
+    expect(policy.historyKeepRecentTokens).toBe(64_000)
   })
 
   it('accepts persisted presetOptions overrides and rejects unknown keys', () => {

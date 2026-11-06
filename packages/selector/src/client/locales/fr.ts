@@ -17,6 +17,8 @@ export const fr = {
   'profile.savings': 'Économies',
   'profile.adaptive': 'Adaptatif (coût prudent)',
   'profile.tokenpilot-inspired': 'Inspiré de TokenPilot',
+  'profile.ptc': 'PTC / mode code (absolu)',
+  'detail.ptc': 'Repères absolus indépendants de la fenêtre pour le mode code et les sessions à nombreux petits résultats ; l’ancienneté de l’historique démarre dès que le volume dépasse le seuil, seuils modifiables séparément',
   'estimator.title': 'Estimateur (optionnel)',
   'estimator.description': 'Un petit modèle auxiliaire estime sans exemples si les anciennes lectures de fichiers ont encore des chances d’être référencées ; indicatif seulement, pour le vieillissement de l’historique. Sans configuration ou en cas d’échec, retour aux règles seules.',
   'estimator.mode': 'Canal',
