@@ -63,9 +63,11 @@ describe('linePool (verbatim capture, decoupled from block class, T1.3)', () => 
   it('caps lines at 240 codepoints plus the ellipsis marker and marks truncation', () => {
     const long = `Error: ${'x'.repeat(300)}`
     const pool = linePool(long, { seq: 1, role: 'tool', hardFailure: true })
-    expect(pool[0].text.length).toBeLessThanOrEqual(245)
-    expect(Array.from(pool[0].text.replace(/ …$/, '')).length).toBe(240)
-    expect(pool[0].truncated).toBe(true)
+    const line = pool[0]
+    if (line === undefined) throw new Error('expected one pooled line')
+    expect(line.text.length).toBeLessThanOrEqual(245)
+    expect(Array.from(line.text.replace(/ …$/, '')).length).toBe(240)
+    expect(line.truncated).toBe(true)
   })
 
   it('dedupes identical lines within one block', () => {
@@ -75,8 +77,10 @@ describe('linePool (verbatim capture, decoupled from block class, T1.3)', () => 
 
   it('carries ruleId and hardFailure onto every line', () => {
     const pool = linePool('Error: boom', { seq: 3, role: 'assistant', hardFailure: true })
-    expect(pool[0].ruleId).toBe('line:failure-classic')
-    expect(pool[0].hardFailure).toBe(true)
+    const line = pool[0]
+    if (line === undefined) throw new Error('expected one pooled line')
+    expect(line.ruleId).toBe('line:failure-classic')
+    expect(line.hardFailure).toBe(true)
   })
 })
 
@@ -113,6 +117,8 @@ describe('mergeExtraPatterns (append-only slot, T1.5)', () => {
     const patterns = mergeExtraPatterns(['(unclosed', 'valid\\d+'])
     const pool = linePool('valid123', { seq: 1, role: 'tool', hardFailure: false, extraPatterns: patterns })
     expect(pool).toHaveLength(1)
-    expect(pool[0].ruleId).toContain('ext:user:')
+    const line = pool[0]
+    if (line === undefined) throw new Error('expected one pooled line')
+    expect(line.ruleId).toContain('ext:user:')
   })
 })

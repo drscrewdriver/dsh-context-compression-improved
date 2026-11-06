@@ -160,6 +160,17 @@ interface SedimentSettings {
   maxTurnSpanTokens: number;
   /** Append-only extra failure-signal patterns; never replaces the base set. */
   extraSignalPatterns?: string[];
+  /** Fold narrative channel (Phase 4): '' keeps tier 2 inert. */
+  foldMode?: '' | 'host' | 'direct';
+  /** LAN fold endpoints share one OpenAI-compatible base URL (direct mode). */
+  foldBaseUrl?: string;
+  foldBaseUrlKey?: string;
+  /** Tier-1 endpoint (≤2K input): high hot-decode throughput. */
+  foldStrataProvider?: string;
+  foldStrataModel?: string;
+  /** Tier-2 endpoint (2~8K input): stable cold-prefill profile. */
+  foldLocal35Provider?: string;
+  foldLocal35Model?: string;
 }
 /**
  * Persisted sub-capability overrides for the `tokenpilot-inspired` preset.
@@ -847,6 +858,34 @@ declare class ToolResultPruner extends Service {
    */
   pruneSession(session: Session, options?: PruneSessionOptions): PruneResult;
   private activeSettings;
+  private readonly sedimentOrchestrators;
+  private readonly sedimentWatchers;
+  private readonly sedimentCuts;
+  private readonly ptcAgingMemo;
+  /**
+   * PTC aging short-circuit (T3.10): when an omnibus runner is registered and
+   * no direct write-family tool call is observed in the session, the regex
+   * superseded predicate is blind (writes fold into run_code bodies) — the
+   * rule-based aging branch is disabled for that session. Active only while
+   * the sediment gate is on: with default-off settings the existing readState
+   * behavior is byte-identical.
+   */
+  private ptcAgingBlocked;
+  /**
+   * Sedimentation entry (plan cci-sedimentation-triage T3.6): whole-turn
+   * replacement decided at `turn/end`, inside the quiet seam before the next
+   * request derives. Disabled sessions exit at the settings gate with zero
+   * downstream work; committed cards flush like any other surface write.
+   */
+  private sedimentTurnEnd;
+  private sedimentOrchestratorFor;
+  /**
+   * T4.8 pairing footer: when a read-class result supersedes a live shallow
+   * map of the same file, the reduced text carries the data-shaped reminder
+   * (sibling ref + discard hint). Non-read calls, unparseable arguments, and
+   * sessions without a live map all return undefined — zero side effects.
+   */
+  private shallowPairFooter;
   /**
    * TokenPilot-inspired A2: replace the compaction summary checkpoint node
    * with the same summary plus an Exact Sources locator block. Fails open:

@@ -14,27 +14,32 @@ describe('manifestFromCall (T2.1)', () => {
       JSON.stringify({ file_path: 'src/app.ts', content: 'x'.repeat(500) }),
       'File written successfully.',
     )
-    expect(verdict).toEqual({ kind: 'manifest', paths: ['src/app.ts'], seq: expect.any(Number) } as never)
-    if (verdict === null) throw new Error('unreachable')
+    expect(verdict).not.toBeNull()
+    if (verdict === null || verdict.kind !== 'manifest') throw new Error('expected manifest verdict')
     expect(verdict.paths).toEqual(['src/app.ts'])
+    expect(verdict.seq).toEqual(expect.any(Number))
   })
 
   it('collects paths[] and edits[].path forms', () => {
     const fromList = manifestFromCall('multi_edit', JSON.stringify({ paths: ['a.ts', 'b.ts'] }), '')
-    expect(fromList?.paths).toEqual(['a.ts', 'b.ts'])
+    if (fromList === null || fromList.kind !== 'manifest') throw new Error('expected manifest')
+    expect(fromList.paths).toEqual(['a.ts', 'b.ts'])
     const fromEdits = manifestFromCall('apply_patch', JSON.stringify({ edits: [{ path: 'c.ts' }, { path: 'd.ts' }] }), '')
-    expect(fromEdits?.paths).toEqual(['c.ts', 'd.ts'])
+    if (fromEdits === null || fromEdits.kind !== 'manifest') throw new Error('expected manifest')
+    expect(fromEdits.paths).toEqual(['c.ts', 'd.ts'])
   })
 
   it('falls back to result text only when args carry no paths', () => {
     const verdict = manifestFromCall('edit', '{}', 'updated E:\\repo\\fix.ps1 and notes.md')
-    expect(verdict?.paths.some(p => p.includes('fix.ps1'))).toBe(true)
+    if (verdict === null || verdict.kind !== 'manifest') throw new Error('expected manifest')
+    expect(verdict.paths.some(p => p.includes('fix.ps1'))).toBe(true)
   })
 
   it('caps at 12 unique paths', () => {
     const many = Array.from({ length: 30 }, (_, i) => `f${i}.ts`)
     const verdict = manifestFromCall('write', JSON.stringify({ paths: many }), '')
-    expect(verdict?.paths).toHaveLength(12)
+    if (verdict === null || verdict.kind !== 'manifest') throw new Error('expected manifest')
+    expect(verdict.paths).toHaveLength(12)
   })
 
   it('non-write tools return null', () => {

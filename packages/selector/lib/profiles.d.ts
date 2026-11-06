@@ -102,6 +102,14 @@ interface SedimentSettings {
    * whole section (never silently dropped).
    */
   extraSignalPatterns?: string[];
+  /** Fold narrative channel (Phase 4); '' keeps narrative tier 2 inert. */
+  foldMode?: '' | 'host' | 'direct';
+  foldBaseUrl?: string;
+  foldBaseUrlKey?: string;
+  foldStrataProvider?: string;
+  foldStrataModel?: string;
+  foldLocal35Provider?: string;
+  foldLocal35Model?: string;
 }
 /** Browser-safe mirror of the runtime presetOptions section. */
 interface PresetOptionsSettings {

@@ -1,8 +1,10 @@
-import { $ as isValidAutoCompactThresholdPercent, A as officialRequestUsage, At as recordRecertified, B as unavailableCount, Ct as getAdvisorState, D as dedupePlaceholder, Dt as invalidateOnTaskChange, E as dedupeHash, Et as getSummaryOverride, F as onlyTextBlocks, Ft as priceOfficialDeepSeekUsage, G as ContextCompressionSettingsSchema, H as countOmittedLines, I as pressureCost, It as resolveOfficialDeepSeekPrice, J as PRUNE_MARKER, K as DEFAULTS, L as recoveryMarker, Lt as getSavingsLedger, M as emptyResult, N as nativePruneContent, Nt as DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION, O as flattenPlainText, Ot as observeIntentEnabled, P as onlyTextBlock, Pt as decimalRateNanoUnits, Q as isCompressionProfile, R as sameProviderMeasurementKey, St as evaluateIntentGate, T as DedupeTable, U as AUTO_COMPACT_THRESHOLD_LIMITS, V as CAPACITY_PRESSURE_RATIO, W as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, X as charsToTokens, Y as charsForTokens, Z as codePointLength, _ as scheduleUsageFlush, at as resolveCustomPolicy, ct as COMPRESSION_PROFILES, d as claimFromLand, et as parseContextCompressionSettings, f as claimOffset, ft as deepSeekV4TokenizerForModel, g as reclaimFromTailTrim, it as DEFAULT_CUSTOM_COMPRESSION_POLICY, j as countToolContent, jt as recordScore, k as measureForCompaction, kt as recordIntentFold, lt as countExactCanonicalTextFields, m as flushUsageOnDispose, n as sampleIntegralBoundary, nt as resolvePolicy, o as kickStatsBackfillOnDispose, ot as assertNever, rt as CustomCompressionPolicySchema, st as deepFreeze, tt as resolveConfig, v as setStatsLivePathBusy, w as projectSessionSavings, yt as observeContextUsage, z as summarize } from "./savings-integral.js";
+import { $ as isValidAutoCompactThresholdPercent, A as officialRequestUsage, At as recordIntentFold, B as unavailableCount, Ct as evaluateIntentGate, D as dedupePlaceholder, Dt as getSummaryOverride, E as dedupeHash, F as onlyTextBlocks, Ft as decimalRateNanoUnits, G as ContextCompressionSettingsSchema, H as countOmittedLines, I as pressureCost, It as priceOfficialDeepSeekUsage, J as PRUNE_MARKER, K as DEFAULTS, L as recoveryMarker, Lt as resolveOfficialDeepSeekPrice, M as emptyResult, Mt as recordScore, N as nativePruneContent, O as flattenPlainText, Ot as invalidateOnTaskChange, P as onlyTextBlock, Pt as DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION, Q as isCompressionProfile, R as sameProviderMeasurementKey, Rt as getSavingsLedger, T as DedupeTable, U as AUTO_COMPACT_THRESHOLD_LIMITS, V as CAPACITY_PRESSURE_RATIO, W as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, X as charsToTokens, Y as charsForTokens, Z as codePointLength, _ as scheduleUsageFlush, at as resolveCustomPolicy, bt as setSedimentObservation, ct as COMPRESSION_PROFILES, d as claimFromLand, et as parseContextCompressionSettings, f as claimOffset, ft as deepSeekV4TokenizerForModel, g as reclaimFromTailTrim, it as DEFAULT_CUSTOM_COMPRESSION_POLICY, j as countToolContent, jt as recordRecertified, k as measureForCompaction, kt as observeIntentEnabled, lt as countExactCanonicalTextFields, m as flushUsageOnDispose, n as sampleIntegralBoundary, nt as resolvePolicy, o as kickStatsBackfillOnDispose, ot as assertNever, rt as CustomCompressionPolicySchema, st as deepFreeze, tt as resolveConfig, v as setStatsLivePathBusy, w as projectSessionSavings, wt as getAdvisorState, yt as observeContextUsage, z as summarize } from "./savings-integral.js";
 import { c as eventBySeq, l as sessionEvents, n as viewToolResult, o as PTC_BINDING_NOTE, s as RUNTIME_TOOL_NAMES, t as compressionMessageSource } from "./tool-result.js";
 import { a as validatePublishedTailTrim, i as tailTrimStub, n as tailTrimMessage, o as createUserMessage, r as tailTrimRef, s as freezeMessage, t as parseTailTrimRef } from "./tail-trim.js";
 import z from "@deepseek-ai/schemastery";
+import path from "node:path";
 import * as dshSessionNamespace from "@deepseek-ai/dsh-session";
+import fs from "node:fs/promises";
 import { Service } from "@deepseek-ai/cordis";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 z.object({
@@ -10,7 +12,7 @@ z.object({
 	maxScanChars: z.number().step(1).min(1).default(25e4),
 	maxQueryChars: z.number().step(1).min(1).default(256)
 });
-const REF_PATTERN = /^session:\/\/([^/]+)\/event\/(\d+)$/;
+const REF_PATTERN$1 = /^session:\/\/([^/]+)\/event\/(\d+)$/;
 const MAX_LINES = 1e3;
 const DEFAULT_MAX_CHARS = 12e3;
 const DEFAULT_MAX_SCAN_CHARS = 25e4;
@@ -65,7 +67,7 @@ function installContextCompressionRetrieve(ctx, config = {}) {
 		isConcurrencySafe: () => true,
 		execute(args, exec) {
 			if (exec.agent === void 0) throw new Error(`${RUNTIME_TOOL_NAMES.RETRIEVE} requires an agent session`);
-			const match = REF_PATTERN.exec(args.ref);
+			const match = REF_PATTERN$1.exec(args.ref);
 			const tailTrimRef = parseTailTrimRef(args.ref);
 			if (match === null && tailTrimRef === null) throw new Error(`${RUNTIME_TOOL_NAMES.RETRIEVE}: ref must be session://<session-id>/(event|tailtrim)/<seq>`);
 			if ((match?.[1] ?? tailTrimRef?.sessionId) !== String(exec.agent.session.id)) throw new Error(`${RUNTIME_TOOL_NAMES.RETRIEVE}: a compression reference may only read the caller's current session`);
@@ -361,152 +363,129 @@ function codePointLength$1(text) {
 	return count;
 }
 //#endregion
-//#region src/pruner/session.ts
-/** Check whether the session currently has an open (unterminated) turn. */
-function hasOpenTurn(session) {
-	let open = false;
-	for (const event of sessionEvents(session)) if (event.type === "turn/start") open = true;
-	else if (event.type === "turn/end") open = false;
-	return open;
+//#region src/runtime/triage/shallow.ts
+/** Windows-first corpus; forward slashes accepted everywhere. */
+function normalizeToolPath(raw) {
+	const unified = raw.replace(/\\/g, "/").replace(/^\.\//, "");
+	const collapsed = (/^[A-Za-z]:\//.test(unified) ? `${unified[0].toLowerCase()}${unified.slice(1)}` : unified).replace(/\/{2,}/g, "/").replace(/\/$/, "");
+	const segments = collapsed.split("/");
+	const out = [];
+	for (const segment of segments) if (segment === "..") out.pop();
+	else if (segment !== "." && segment !== "") out.push(segment);
+	const joined = out.join("/");
+	return collapsed.startsWith("/") ? `/${joined}` : joined;
 }
-/** Walk the tool-result source chain to find the root result seq. */
-function rootToolResultSeq(session, seq) {
-	const events = sessionEvents(session);
-	let current = seq;
-	const seen = /* @__PURE__ */ new Set();
-	while (!seen.has(current)) {
-		seen.add(current);
-		const event = events[current];
-		if (event?.type !== "tool/result" || typeof event.surfaceOp !== "object") return current;
-		const previous = event.sourceEventSeqs?.[0];
-		if (previous === void 0) return current;
-		current = previous;
-	}
-	return seq;
-}
-/** Build a session:// event reference string for a given seq. */
-function sourceRef(session, seq) {
-	return `session://${session.id}/event/${String(seq)}`;
-}
-/** Find the latest completed step number for a given turn. */
-function latestCompletedToolStep(session, turn) {
-	let latest;
-	for (const event of sessionEvents(session)) if (event.type === "step/end" && event.data.turn === turn) latest = event.data.step;
-	return latest;
-}
-/** Routed provider/model when the durable request header names one route. */
-function routeAuditFact(session) {
-	const header = session.requestHeader()?.config;
-	if (header === void 0 || header.provider.length === 0 || header.model.length === 0) return void 0;
+const JSON_START = /^[{[]/;
+const CSV_HINT = /^[^\n,]*,.*\n(?:[^\n,]*,.*){2,}/;
+const FRONTMATTER_HINT = /^---\n/;
+/** Classify from a bounded header sample only — the body is never opened here. */
+function classifyShallowSample(head, ext, totalBytes) {
+	const extension = ext.toLowerCase().replace(/^\./, "");
+	const trimmed = head.replace(/^\uFEFF/, "").trimStart();
+	if (extension === "json" || extension === "jsonc" || JSON_START.test(trimmed) && (extension === "" || extension === "jsonl")) return {
+		method: "json-skeleton",
+		reason: "structured JSON: key skeleton beats raw text"
+	};
+	if (extension === "jsonl" || extension === "ndjson") return {
+		method: "code-skeleton",
+		reason: "record stream: head/tail records with counts"
+	};
+	if (extension === "csv" || extension === "tsv" || totalBytes > 2e3 && CSV_HINT.test(trimmed)) return {
+		method: "csv-header",
+		reason: "tabular: header row + row count, rows elided"
+	};
+	if ([
+		"md",
+		"markdown",
+		"rst",
+		"txt",
+		"adoc"
+	].includes(extension)) return {
+		method: "toc-lines",
+		reason: "prose: heading outline, bodies elided"
+	};
+	if ([
+		"ts",
+		"tsx",
+		"js",
+		"jsx",
+		"mjs",
+		"py",
+		"go",
+		"rs",
+		"java",
+		"c",
+		"h",
+		"cc",
+		"cpp",
+		"cs",
+		"kt",
+		"swift",
+		"php",
+		"rb"
+	].includes(extension) || FRONTMATTER_HINT.test(trimmed) === false && /^\s*(?:import|from|package|use|def|fn|class|const|function)/.test(trimmed)) return {
+		method: "code-skeleton",
+		reason: "source code: declarations kept, bodies elided"
+	};
+	if (totalBytes < 4e3) return {
+		method: "head-tail",
+		reason: "small enough that a plain slice is the honest view"
+	};
 	return {
-		provider: header.provider,
-		model: header.model
+		method: "toc-lines",
+		reason: "unknown shape: line-structure outline as safe default"
 	};
-}
-/** Bundled tokenizer identity for one route, when the route is eligible. */
-function tokenizerAuditFact(route) {
-	const identity = route.provider === "deepseek" || route.provider === "deepseek-official" ? deepSeekV4TokenizerForModel(route.model)?.countText("") : void 0;
-	if (identity?.kind === "exact-tokenizer") return { tokenizer: {
-		repository: identity.tokenizerId,
-		revision: identity.tokenizerRevision
-	} };
-	return { tokenizer: {
-		repository: "unavailable",
-		revision: "unavailable"
-	} };
-}
-/** Check whether a snapshot candidate represents an error result. */
-function isError(candidate) {
-	return viewToolResult(candidate.event.data.message).isError || candidate.event.data.error !== void 0;
-}
-/** Wrap a plan list into a HistoryPlanOutcome. */
-function historyOutcome(plans) {
-	return {
-		kind: "planned",
-		plans: [...plans]
-	};
-}
-//#endregion
-//#region src/runtime/tokenpilot/locator.ts
-/** Files touched by read/grep-style tool calls inside the range. */
-const TOUCHED_FILE_TOOL = /(?:^|[-_])?(?:read|write|edit|glob|grep|view|str_replace_editor)(?:$|[-_])/i;
-/** Spill notice paths emitted by the Harness output-retention policy. */
-const SPILL_PATH = /stored at:\s*([^\s)\]]+)/g;
-/** Tool call arguments keys that commonly carry a file path. */
-const PATH_KEYS$1 = ["path", "file_path"];
-/**
-* Find the latest compaction/summary event matching the compaction id of a
-* compaction/end event. Returns undefined when the transaction cannot be
-* identified — the caller must skip rather than guess.
-*/
-function findCompactionTrace(events, compactionId) {
-	let trace;
-	for (const event of events) if (event.type === "compaction/summary" && event.data.compactionId === compactionId) trace = {
-		compactionId,
-		summarySeq: event.seq,
-		summaryShadowedRange: event.data.shadowedRange
-	};
-	return trace;
-}
-/** Extract spill file paths from one text chunk. */
-function extractSpillPaths(text) {
-	const paths = [];
-	for (const match of text.matchAll(SPILL_PATH)) {
-		const path = match[1]?.replace(/[.,;]+$/, "");
-		if (path !== void 0 && path.length > 0) paths.push(path);
-	}
-	return paths;
-}
-/** Extract touched file paths from one tool/call event's arguments. */
-function extractTouchedPath(name, argumentsText) {
-	if (!TOUCHED_FILE_TOOL.test(name)) return void 0;
-	let parsed;
-	try {
-		parsed = JSON.parse(argumentsText);
-	} catch {
-		return;
-	}
-	if (typeof parsed !== "object" || parsed === null) return void 0;
-	const record = parsed;
-	for (const key of PATH_KEYS$1) {
-		const value = record[key];
-		if (typeof value === "string" && value.length > 0) return value;
-	}
 }
 /**
-* Build the Exact Sources block for one shadowed range, or null when the
-* range locates nothing concrete (no spill files and no touched files).
+* The asymmetric guard (findings F6): losing the map costs far more than the
+* saved bytes. Discarding the map requires the covering read to span it
+* fully; equal paths after normalization are a precondition, never assumed.
 */
-function buildLocatorBlock(events, shadowedRange) {
-	const spillFiles = /* @__PURE__ */ new Set();
-	const touchedFiles = /* @__PURE__ */ new Set();
-	for (let seq = shadowedRange.start; seq <= shadowedRange.end && seq < events.length; seq += 1) {
-		const event = events[seq];
-		if (event === void 0) continue;
-		if (event.type === "tool/call") {
-			const path = extractTouchedPath(event.data.name, event.data.arguments);
-			if (path !== void 0) touchedFiles.add(path);
-			continue;
-		}
-		if (event.type === "tool/result" || event.type === "user/message") {
-			const data = event.data;
-			const content = Array.isArray(data.content) ? data.content : data.message?.content;
-			if (!Array.isArray(content)) continue;
-			for (const block of content) if (block.type === "text") for (const path of extractSpillPaths(block.text)) spillFiles.add(path);
-		}
-	}
-	if (spillFiles.size === 0 && touchedFiles.size === 0) return null;
-	return {
-		text: [
-			"## Exact Sources (locators)",
-			`- seq range: ${String(shadowedRange.start)}-${String(shadowedRange.end)}`,
-			...[...spillFiles].map((path) => `- spill file: ${path}`),
-			...[...touchedFiles].map((path) => `- file touched: ${path}`),
-			`(Use \`read <spill file>\` or \`${RUNTIME_TOOL_NAMES.RETRIEVE}\` with a \`session://\` source — pass start_line/max_lines to window the text — to restore exact text.)`
-		].join("\n"),
-		spillFiles: spillFiles.size,
-		touchedFiles: touchedFiles.size
+function evaluateDiscardGuard(input) {
+	const mapPath = normalizeToolPath(input.map.path);
+	const coveringPath = normalizeToolPath(input.covering.path);
+	if (mapPath === "" || coveringPath === "" || mapPath !== coveringPath) return {
+		allowed: false,
+		reason: `path-mismatch:${input.map.path}|${input.covering.path}`
 	};
+	if (input.map.coverage.kind === "full") {
+		if (input.covering.coverage.kind === "full") return {
+			allowed: true,
+			reason: "covered-full"
+		};
+		return {
+			allowed: false,
+			reason: "map-is-full-need-full-coverage"
+		};
+	}
+	if (input.covering.coverage.kind === "full") return {
+		allowed: true,
+		reason: "covered-by-full"
+	};
+	const fromOk = input.covering.coverage.from <= input.map.coverage.from;
+	const toOk = input.covering.coverage.to >= input.map.coverage.to;
+	return fromOk && toOk ? {
+		allowed: true,
+		reason: "covered-by-window"
+	} : {
+		allowed: false,
+		reason: `window-gap:${input.map.coverage.from}-${input.map.coverage.to} vs ${input.covering.coverage.from}-${input.covering.coverage.to}`
+	};
+}
+/** Footer riding a full read that pairs with a live shallow map (T4.8). */
+function buildShallowFooter(checkpoint, savedTokens) {
+	return `[cci-shallow-pair] 同文件的浅读视图 ${checkpoint.ref}（≈${savedTokens} tok）仍在上下文；确认不再需要时可调 context_compression_discard 释放（检查点行会保留）。被省略的输出不要凭本行推测补写。`;
+}
+/** The one permanent line a discarded map leaves behind (R11). */
+function renderCheckpointLine(checkpoint) {
+	return `[cci-checkpoint] ${checkpoint.path} | ${checkpoint.coverage} | ref ${checkpoint.ref} | fp ${checkpoint.fingerprint}`;
+}
+/** Cheap order-sensitive header hash + size; staleness hint only, never authority. */
+function shallowFingerprint(text) {
+	const head = text.slice(0, 512);
+	let hash = 5381;
+	for (let index = 0; index < head.length; index += 1) hash = (hash << 5) + hash + head.charCodeAt(index) >>> 0;
+	return `${text.length.toString(16)}-${hash.toString(16)}`;
 }
 //#endregion
 //#region src/runtime/toolclass.ts
@@ -2111,81 +2090,921 @@ function buildPattern() {
 	].join(""), "i");
 }
 //#endregion
-//#region src/runtime/tokenpilot/read-state.ts
-/** Write-style tool names whose success supersedes earlier reads. */
-const WRITE_TOOLS = /(?:^|[-_])?(?:write|edit|apply_patch|file_write|file_edit|str_replace|replace|multiedit)(?:$|[-_])/i;
-const PATH_KEYS = ["path", "file_path"];
-/** Parse one path out of a tool-call arguments JSON blob. */
-function toolCallPath(argumentsText) {
+//#region src/runtime/triage/masks.ts
+/**
+* Line-C deterministic masks (plan cci-sedimentation-triage, Phase 2).
+*
+* Two extractions replace enumeration (findings F5 "extraction over
+* enumeration"):
+* 1. `manifestFromCall` — write-family results collapse to the touched-file
+*    list. Paths come from CALL ARGS first: result text usually says "written"
+*    without full paths (replay round-1 failure mode).
+* 2. `skeletonFromRead` — large read results collapse to declaration lines.
+* Matching runs on the gutter-stripped view (the host's `N: ` prefix defeats
+* naive declaration regexes — the CCI JSON-skeleton trap), while CAPTURED
+* lines keep their gutter because it is the model's inline locator into the
+* original file, same convention as `hasReadGutter` in reducers.
+*
+* Both fail open: returning `null` means "not maskable", the caller keeps the
+* normal reduction path. Zero-hit is a normal outcome, not an error.
+*
+* @module runtime/triage/masks
+*/
+/** Write-family tool names whose results are pure "what changed" manifests. */
+const WRITE_TOOLS$1 = /^(write|edit|apply_patch|multi_edit|create|search_replace)$/i;
+/** Read results below this char length stay verbatim (masking would lose more than it saves). */
+const MASK_READ_MIN_CHARS = 3e3;
+/** Declaration-ish line starts across the languages this corpus exercises. */
+const SKELETON_PATTERN = /^\s*(?:import |from \S+ import |export |package |use |fn |func |def |class |interface |type |impl |enum |pub |const |let |var |async function|public |private |protected |static |#define|template)/;
+/** Hard caps keep one card section bounded regardless of input size. */
+const MANIFEST_MAX_PATHS = 12;
+const SKELETON_MAX_LINES = 40;
+/** Gutter prefix added by the host's `formatReadOutput`; strip for MATCHING only. */
+const GUTTER_STRIP = /^(\d+): /;
+/** Text-fallback path pattern: absolute-ish paths and extension-bearing names. */
+const PATH_FALLBACK = /((?:[A-Za-z]:)?[\\/][^\s"'`,:]{3,}|\.?[\w./\\-]+\.(?:ts|tsx|js|mjs|py|go|rs|md|json|ya?ml|css|html))(?::\d+)?/g;
+function collectArgPaths(argsJson) {
 	let parsed;
 	try {
-		parsed = JSON.parse(argumentsText);
+		parsed = JSON.parse(argsJson);
 	} catch {
+		return [];
+	}
+	if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return [];
+	const record = parsed;
+	const singles = [
+		record.file_path,
+		record.path,
+		record.filePath
+	];
+	const list = Array.isArray(record.paths) ? record.paths : [];
+	const edits = Array.isArray(record.edits) ? record.edits : [];
+	const out = [];
+	for (const entry of [
+		...singles,
+		...list,
+		...edits.map((item) => item?.path)
+	]) if (typeof entry === "string" && entry.trim() !== "") out.push(entry.trim());
+	return out;
+}
+/**
+* Collapse a write-family result to its touched-file manifest.
+* Args first, result text only as fallback; never throws on broken args.
+*/
+function manifestFromCall(name, argsJson, text, seq = 0) {
+	if (!WRITE_TOOLS$1.test(name)) return null;
+	const fromArgs = collectArgPaths(argsJson);
+	const candidates = fromArgs.length > 0 ? fromArgs : (text.match(PATH_FALLBACK) ?? []).map((entry) => entry.replace(/:\d+$/, ""));
+	const paths = [...new Set(candidates)].slice(0, MANIFEST_MAX_PATHS);
+	if (paths.length === 0) return null;
+	return {
+		kind: "manifest",
+		paths,
+		seq
+	};
+}
+/**
+* Collapse a large read result to its declaration skeleton. Returns `null`
+* for small reads, non-read content, and zero-hit bodies (prose dumps) —
+* fail-open to the normal reducer path. Captured lines keep the gutter.
+* With a target `path`, the verdict carries the permanent checkpoint layer
+* (plan R11): path/coverage/fingerprint survive any later `discard`.
+*/
+function skeletonFromRead(text, seq = 0, path) {
+	if (text.length < MASK_READ_MIN_CHARS) return null;
+	const lines = text.replace(/\n+$/, "").split("\n");
+	const guttered = hasReadGutter(lines);
+	const kept = [];
+	for (const line of lines) {
+		const matchView = guttered ? line.replace(GUTTER_STRIP, "") : line;
+		if (SKELETON_PATTERN.test(matchView)) {
+			kept.push(line);
+			if (kept.length >= SKELETON_MAX_LINES) break;
+		}
+	}
+	if (kept.length === 0) return null;
+	const keptChars = kept.reduce((sum, line) => sum + line.length + 1, 0);
+	return {
+		kind: "skeleton",
+		lines: kept,
+		totalLines: lines.length,
+		elidedChars: Math.max(0, text.length - keptChars),
+		seq,
+		...path === void 0 || path.trim() === "" ? {} : { checkpoint: {
+			path: normalizeToolPath(path),
+			coverage: `${lines.length} lines`,
+			ref: `event/${seq}`,
+			fingerprint: shallowFingerprint(text)
+		} }
+	};
+}
+/** Write-family predicate for the wiring site. */
+function isWriteToolName(name) {
+	return WRITE_TOOLS$1.test(name);
+}
+//#endregion
+//#region src/runtime/shallow-tools.ts
+/**
+* Shallow-read tool surface (plan cci-sedimentation-triage, Phase 4.5).
+*
+* Registers the upgrade-discard primitives next to the existing retrieve tool:
+* - `context_compression_probe`   — O(1) header sample → recommended shallow view
+* - `context_compression_shallow` — the map: classified shallow view + checkpoint
+* - `context_compression_discard` — drops one side of a shallow/full pair,
+*   guarded so the MAP only dies under full coverage; the checkpoint line
+*   always survives (R11).
+*
+* The decision core is exported pure (`buildShallowView`, `parseReadCoverage`,
+* registry helpers) so the guard arithmetic is unit-testable without a host;
+* `installShallowTools` only adapts those to `defineTool`.
+*/
+const PROBE_SAMPLE_BYTES = 2048;
+const SHALLOW_MAX_BYTES = 2e6;
+const REF_PATTERN = /^session:\/\/([^/]+)\/event\/(\d+)$/;
+const registry = /* @__PURE__ */ new WeakMap();
+function shallowRegistryFor(session) {
+	let map = registry.get(session);
+	if (map === void 0) {
+		map = /* @__PURE__ */ new Map();
+		registry.set(session, map);
+	}
+	return map;
+}
+/** The live (undiscarded) map for a path, if any — footer pairing source. */
+function liveShallowFor(session, rawPath) {
+	const entry = shallowRegistryFor(session).get(normalizeToolPath(rawPath));
+	return entry !== void 0 && !entry.discarded ? entry : void 0;
+}
+/** Pure view builder shared by the shallow tool and tests. */
+function buildShallowView(text, method, rawPath, seq) {
+	const lines = text.replace(/\n+$/, "").split("\n");
+	const checkpointBase = {
+		path: normalizeToolPath(rawPath),
+		coverage: `${lines.length} lines`,
+		ref: `event/${seq}`,
+		fingerprint: shallowFingerprint(text)
+	};
+	if (method === "code-skeleton") {
+		const verdict = skeletonFromRead(text, seq, rawPath);
+		if (verdict !== null && verdict.kind === "skeleton") return {
+			body: `${verdict.lines.join("\n")}\n[… body elided: ${verdict.totalLines - verdict.lines.length} lines / ${verdict.elidedChars} chars]`,
+			checkpoint: verdict.checkpoint ?? { ...checkpointBase }
+		};
+		return headTailView(lines, checkpointBase);
+	}
+	if (method === "json-skeleton") try {
+		const parsed = JSON.parse(text);
+		const keys = [];
+		collectJsonKeys(parsed, "", keys, 40);
+		if (keys.length === 0) return headTailView(lines, checkpointBase);
+		return {
+			body: `${keys.join("\n")}\n[… ${lines.length} lines of JSON values elided]`,
+			checkpoint: { ...checkpointBase }
+		};
+	} catch {
+		return headTailView(lines, checkpointBase);
+	}
+	if (method === "csv-header") return {
+		body: `${lines.slice(0, 3).join("\n")}\n[… ${Math.max(0, lines.length - 3)} data rows elided]`,
+		checkpoint: { ...checkpointBase }
+	};
+	if (method === "toc-lines") {
+		const headings = lines.filter((line) => /^#{1,6} |^\s*\*\*\w/.test(line)).slice(0, 60);
+		if (headings.length === 0) return headTailView(lines, checkpointBase);
+		return {
+			body: `${headings.join("\n")}\n[… ${lines.length} lines under the outline elided]`,
+			checkpoint: { ...checkpointBase }
+		};
+	}
+	return headTailView(lines, checkpointBase);
+}
+function headTailView(lines, base) {
+	const head = lines.slice(0, 20);
+	const tail = lines.slice(-10);
+	const middle = Math.max(0, lines.length - head.length - tail.length);
+	return {
+		body: [
+			...head,
+			...middle > 0 ? [`[… ${middle} lines elided]`] : [],
+			...tail
+		].join("\n"),
+		checkpoint: base
+	};
+}
+function collectJsonKeys(node, prefix, out, cap) {
+	if (out.length >= cap) return;
+	if (Array.isArray(node)) {
+		out.push(`${prefix}[] (${node.length})`);
+		if (node.length > 0) collectJsonKeys(node[0], `${prefix}[]`, out, cap);
 		return;
 	}
-	if (typeof parsed !== "object" || parsed === null) return void 0;
-	const record = parsed;
-	for (const key of PATH_KEYS) {
-		const value = record[key];
-		if (typeof value === "string" && value.length > 0) return value;
+	if (node !== null && typeof node === "object") for (const [key, value] of Object.entries(node)) {
+		if (out.length >= cap) return;
+		const at = `${prefix}.${key}`.replace(/^\./, "");
+		if (value !== null && typeof value === "object") collectJsonKeys(value, at, out, cap);
+		else out.push(at);
 	}
+}
+/** Coverage of a host `read` call from its arguments JSON (pairing input). */
+function parseReadCoverage(argsJson) {
+	let args;
+	try {
+		args = JSON.parse(argsJson);
+	} catch {
+		return {
+			kind: "slice",
+			from: 1,
+			to: 0
+		};
+	}
+	const offset = typeof args.offset === "number" && Number.isSafeInteger(args.offset) ? Math.max(0, args.offset) : 0;
+	const limit = typeof args.limit === "number" && Number.isSafeInteger(args.limit) ? args.limit : void 0;
+	if (limit === void 0 && offset === 0) return { kind: "full" };
+	return {
+		kind: "slice",
+		from: offset + 1,
+		to: limit === void 0 ? Number.MAX_SAFE_INTEGER : offset + limit
+	};
 }
 /**
-* Decide whether an oversized read result was superseded by a later mutation
-* of the same file. `readPath` is the read call's target path; events after
-* `readSeq` are scanned for a write-style call on it.
+* Register probe/shallow/discard. Reachability and the pairing registry are
+* in-process truth; every tool call stays inside the caller's own session.
 */
-function isSupersededRead(events, readSeq, readPath) {
-	if (readPath === void 0) return false;
-	for (let seq = readSeq + 1; seq < events.length; seq += 1) {
-		const event = events[seq];
-		if (event?.type !== "tool/call") continue;
-		if (!WRITE_TOOLS.test(event.data.name)) continue;
-		if (toolCallPath(event.data.arguments) === readPath) return true;
-	}
-	return false;
+function installShallowTools(ctx) {
+	const OUTPUT = {
+		schema: { type: "string" },
+		render: (_args, value) => [{
+			type: "text",
+			text: value
+		}]
+	};
+	ctx.systemPrompt.section({
+		name: "tool:context-compression-shallow",
+		order: 115,
+		text: `Before reading a large unknown file, call ${RUNTIME_TOOL_NAMES.PROBE} with its path to pick the right shallow view, then ${RUNTIME_TOOL_NAMES.SHALLOW} to get the map (declaration/outline/keys + checkpoint line) instead of the full body. After a full read supersedes a live map, or a map's body is no longer needed, ${RUNTIME_TOOL_NAMES.DISCARD} frees it — the checkpoint line always remains and ${RUNTIME_TOOL_NAMES.RETRIEVE} can still recover the body. Never reconstitute discarded output from memory or guesswork; use the ref. ` + PTC_BINDING_NOTE
+	});
+	ctx.tools.register(defineTool({
+		name: RUNTIME_TOOL_NAMES.PROBE,
+		description: `Read at most the first ${PROBE_SAMPLE_BYTES} bytes of a file and return the recommended shallow view method with reasons. ${PTC_BINDING_NOTE}`,
+		parameters: { path: {
+			type: "string",
+			required: true,
+			description: "File path to probe."
+		} },
+		output: OUTPUT,
+		isConcurrencySafe: () => true,
+		async execute(args) {
+			const handle = await fs.open(args.path, "r");
+			try {
+				const buffer = Buffer.alloc(PROBE_SAMPLE_BYTES);
+				const { bytesRead } = await handle.read(buffer, 0, PROBE_SAMPLE_BYTES, 0);
+				const stat = await handle.stat();
+				const verdict = classifyShallowSample(buffer.subarray(0, bytesRead).toString("utf8"), path.extname(args.path), stat.size);
+				return `${verdict.method} | ${verdict.reason} | size ${stat.size} B`;
+			} finally {
+				await handle.close();
+			}
+		}
+	}));
+	ctx.tools.register(defineTool({
+		name: RUNTIME_TOOL_NAMES.SHALLOW,
+		description: "Return a shallow view (declaration skeleton / JSON keys / outline / csv header + head/tail) of a file plus its permanent checkpoint line. Cheaper than a full read; pairs with discard and retrieve. " + PTC_BINDING_NOTE,
+		parameters: {
+			path: {
+				type: "string",
+				required: true,
+				description: "File path to view shallowly."
+			},
+			method: {
+				type: "string",
+				description: `Override the classified view: json-skeleton | code-skeleton | csv-header | toc-lines | head-tail.`
+			}
+		},
+		output: OUTPUT,
+		isConcurrencySafe: () => true,
+		async execute(args, exec) {
+			if (exec.agent === void 0) throw new Error(`${RUNTIME_TOOL_NAMES.SHALLOW} requires an agent session`);
+			const stat = await fs.stat(args.path);
+			if (stat.size > SHALLOW_MAX_BYTES) throw new Error(`${RUNTIME_TOOL_NAMES.SHALLOW}: file is ${stat.size} B, above the ${SHALLOW_MAX_BYTES} B shallow cap; read slices instead`);
+			const text = await fs.readFile(args.path, "utf8");
+			const method = args.method ?? classifyShallowSample(text.slice(0, PROBE_SAMPLE_BYTES), path.extname(args.path), stat.size).method;
+			const seq = sessionEvents(exec.agent.session).length;
+			const { body, checkpoint } = buildShallowView(text, method, args.path, seq);
+			if (checkpoint !== null) {
+				shallowRegistryFor(exec.agent.session).set(checkpoint.path, {
+					seq,
+					checkpoint,
+					bodyTokens: Math.ceil((body.length + checkpoint.path.length) / 4),
+					discarded: false
+				});
+				return `${body}\n\n${renderCheckpointLine(checkpoint)}`;
+			}
+			return body;
+		}
+	}));
+	ctx.tools.register(defineTool({
+		name: RUNTIME_TOOL_NAMES.DISCARD,
+		description: "Free one side of a shallow/full read pair from the context: the live shallow map (only when a covering full read spans it) or a full read whose map suffices. The checkpoint line always remains; retrieve can recover bodies by ref. " + PTC_BINDING_NOTE,
+		parameters: {
+			ref: {
+				type: "string",
+				required: true,
+				description: "session://<current-session-id>/event/<seq> of the shallow map to discard."
+			},
+			covering_ref: {
+				type: "string",
+				description: "event ref of the full read that supersedes the map (required to discard the map)."
+			}
+		},
+		output: OUTPUT,
+		isConcurrencySafe: () => false,
+		async execute(args, exec) {
+			if (exec.agent === void 0) throw new Error(`${RUNTIME_TOOL_NAMES.DISCARD} requires an agent session`);
+			const session = exec.agent.session;
+			const match = REF_PATTERN.exec(args.ref);
+			if (match === null || match[1] !== String(session.id)) throw new Error(`${RUNTIME_TOOL_NAMES.DISCARD}: ref must be session://<current-session-id>/event/<seq>`);
+			const targetSeq = Number(match[2]);
+			const entry = [...shallowRegistryFor(session).values()].find((candidate) => candidate.seq === targetSeq);
+			if (entry === void 0) throw new Error(`${RUNTIME_TOOL_NAMES.DISCARD}: ${args.ref} is not a live shallow map of this session (only ${RUNTIME_TOOL_NAMES.SHALLOW} results are discardable here)`);
+			if (entry.discarded) return `${renderCheckpointLine(entry.checkpoint)} (already discarded)`;
+			const coveringRef = args.covering_ref;
+			if (coveringRef === void 0) throw new Error(`${RUNTIME_TOOL_NAMES.DISCARD}: discarding the map requires covering_ref of the full read that supersedes it`);
+			const coveringMatch = REF_PATTERN.exec(coveringRef);
+			if (coveringMatch === null || coveringMatch[1] !== String(session.id)) throw new Error(`${RUNTIME_TOOL_NAMES.DISCARD}: covering_ref must be in the current session`);
+			const events = sessionEvents(session);
+			const coveringEvent = events[Number(coveringMatch[2])];
+			if (coveringEvent?.type !== "tool/result") throw new Error(`${RUNTIME_TOOL_NAMES.DISCARD}: covering_ref does not cite a tool/result`);
+			const coveringMessage = coveringEvent.data?.message;
+			const coveringArgs = typeof coveringMessage?.toolCallId === "string" ? findCallArgs(events, coveringMessage.toolCallId) : void 0;
+			const covering = {
+				seq: Number(coveringMatch[2]),
+				path: coveringArgs?.path ?? "",
+				coverage: coveringArgs === void 0 ? {
+					kind: "slice",
+					from: 1,
+					to: 0
+				} : parseReadCoverage(coveringArgs.argsJson)
+			};
+			const guard = evaluateDiscardGuard({
+				map: {
+					seq: entry.seq,
+					path: entry.checkpoint.path,
+					coverage: { kind: "full" }
+				},
+				covering
+			});
+			if (!guard.allowed) throw new Error(`${RUNTIME_TOOL_NAMES.DISCARD}: refused (${guard.reason}) — the map covers the whole file and the cited read does not supersede it`);
+			const message = tailTrimMessage(renderCheckpointLine(entry.checkpoint));
+			session.append("user/message", message, {
+				surfaceOp: {
+					op: "replace",
+					startSeq: entry.seq,
+					endSeq: entry.seq
+				},
+				sourceEventSeqs: [entry.seq]
+			});
+			entry.discarded = true;
+			getSavingsLedger().recordSaving({
+				sessionId: String(session.id),
+				component: "shallow-discard",
+				tokensBefore: entry.bodyTokens,
+				tokensAfter: Math.ceil(renderCheckpointLine(entry.checkpoint).length / 4),
+				basis: "characters",
+				sourceSeq: entry.seq,
+				replacementSeq: entry.seq,
+				originalText: `${entry.checkpoint.path} shallow body`
+			});
+			return buildShallowFooter(entry.checkpoint, 0) + `\n[discarded] ${renderCheckpointLine(entry.checkpoint)}`;
+		}
+	}));
 }
-/** Error/warning/info line classifiers used by the omission summary. */
-const ERROR_LINE = /\b(error|failed|failure|fatal|exception|traceback|cannot|unable|denied)\b/i;
-const WARN_LINE = /\b(warn|warning|deprecated)\b/i;
-const SECTION_HEADING = /^#{1,3}\s+(.{1,80})/;
+/** Find the arguments JSON + file path of the call owning a tool/result. */
+function findCallArgs(events, callId) {
+	for (const event of events) {
+		if (event.type !== "assistant/message") continue;
+		const message = event.data?.message;
+		const blocks = Array.isArray(message?.content) ? message.content : [];
+		for (const raw of blocks) {
+			const block = raw;
+			if (block !== null && block.type === "tool-call" && block.id === callId) {
+				const argsJson = typeof block.arguments === "string" ? block.arguments : JSON.stringify(block.arguments ?? {});
+				let filePath;
+				try {
+					const parsed = JSON.parse(argsJson);
+					filePath = typeof parsed.file_path === "string" ? parsed.file_path : typeof parsed.path === "string" ? parsed.path : "";
+				} catch {
+					filePath = "";
+				}
+				return {
+					path: filePath,
+					argsJson
+				};
+			}
+		}
+	}
+}
+//#endregion
+//#region src/runtime/triage/signals.ts
+/** Per-line verbatim cap (plan: 240 codepoints, ` …` marker excluded). */
+const LINE_CAP = 240;
+/** Base structural block signals: id + predicate over the raw result text. */
+const BASE_BLOCK_SIGNALS = Object.freeze([
+	{
+		id: "sig:isError-flag",
+		test: (_text, isError) => isError
+	},
+	{
+		id: "sig:stderr-prefix",
+		test: (text) => text.trimStart().startsWith("[stderr]")
+	},
+	{
+		id: "sig:exit-code-bracket",
+		test: (text) => {
+			const trimmed = text.trim();
+			return /\[exit code:\s*(?!0\b)-?\d+\s*\]\s*$/.test(trimmed) || /\[Command finished with exit code\s+(?!0\b)-?\d+\]\s*$/.test(trimmed) || /^exit_code=\s*(?!0\b)-?\d+\s*$/.test(trimmed);
+		}
+	},
+	{
+		id: "sig:json-exitcode",
+		test: (text) => {
+			const trimmed = text.trim();
+			if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return false;
+			try {
+				const parsed = JSON.parse(trimmed);
+				return typeof parsed?.exitCode === "number" && parsed.exitCode !== 0;
+			} catch {
+				return false;
+			}
+		}
+	}
+]);
+/** Line-level base family: the classic failure markers (spine-validated). */
+const FAILURE_BASE_PATTERN = /(?:^|\s)(?:FAIL(?:ED)?\b|Error:|Exception:|Traceback\b|panic:|AssertionError)/;
 /**
-* Cluster one omitted line-count into a summary appended to a placeholder
-* marker, giving the model meta-knowledge about what was dropped. Document
-* content (R8) swaps the error/warn/info census for a section-heading list —
-* `0 error, 0 warn, N info` carries no information about a dropped document,
-* while its heading list does.
+* Built-in default extras — trial-3 validated families the base misses
+* (48.2% of pool lines in the replay corpus). Distributed like user extras:
+* append-only, never replaces the base, individually skippable when invalid.
 */
-function clusterOmittedLines(text, omittedLines) {
-	if (omittedLines <= 0) return void 0;
-	if (looksLikeDocument(text)) return documentCensus(text, omittedLines);
-	let errors = 0;
-	let warns = 0;
-	let infos = 0;
-	for (const line of text.split("\n")) if (ERROR_LINE.test(line)) errors += 1;
-	else if (WARN_LINE.test(line)) warns += 1;
-	else infos += 1;
-	const parts = [];
-	if (errors > 0) parts.push(`${String(errors)} error`);
-	if (warns > 0) parts.push(`${String(warns)} warn`);
-	if (infos > 0) parts.push(`${String(infos)} info`);
-	if (parts.length === 0) return void 0;
-	return `${String(omittedLines)} lines omitted (${parts.join(", ")})`;
-}
-/** Bounded section-heading list for an omitted document (R8 census). */
-function documentCensus(text, omittedLines) {
-	const titles = [];
-	for (const line of text.split("\n")) {
-		const match = SECTION_HEADING.exec(line);
-		if (match === null) continue;
-		titles.push(match[1].trim());
-		if (titles.length >= 8) break;
+const DEFAULT_EXTRA_PATTERNS = Object.freeze([
+	{
+		id: "ext:tool-timeout",
+		source: String.raw`TOOL_TIMEOUT|timed out after \d+ms`
+	},
+	{
+		id: "ext:npm-err",
+		source: String.raw`npm ERR!|\bERR!`
+	},
+	{
+		id: "ext:proc-kill",
+		source: String.raw`\bkilled\b|OOM|out of memory`
+	},
+	{
+		id: "ext:assert-ctx",
+		source: String.raw`expected .* to (?:be|equal|throw)|Received:|toStrictEqual`
 	}
-	if (titles.length === 0) return `${String(omittedLines)} lines omitted (document content)`;
-	let summary = titles.join(" · ");
-	if (summary.length > 240) summary = `${summary.slice(0, 240)}…`;
-	return `${String(omittedLines)} lines omitted (sections: ${summary})`;
+]);
+/**
+* Compile the append-only line-rule set: base classic family first (its id
+* wins on multi-rule matches, keeping audit stable), then built-in default
+* extras, then user extras. Invalid user regexes are skipped silently — the
+* settings boundary already rejected them upstream; capture must never throw.
+*/
+function mergeExtraPatterns(userExtra) {
+	const rules = [{
+		id: "line:failure-classic",
+		pattern: FAILURE_BASE_PATTERN
+	}];
+	for (const entry of DEFAULT_EXTRA_PATTERNS) try {
+		rules.push({
+			id: entry.id,
+			pattern: new RegExp(entry.source, "i")
+		});
+	} catch {}
+	for (const source of userExtra) try {
+		rules.push({
+			id: `ext:user:${source.slice(0, 60)}`,
+			pattern: new RegExp(source)
+		});
+	} catch {}
+	return rules;
 }
+const DEFAULT_LINE_RULES = mergeExtraPatterns([]);
+/** Decide whether the whole block carries a hard failure signal (audit/grouping only — never gates the line pool). */
+function blockFailureVerdict(text, isError) {
+	const ruleIds = [];
+	for (const rule of BASE_BLOCK_SIGNALS) if (rule.test(text, isError)) ruleIds.push(rule.id);
+	return {
+		hard: ruleIds.length > 0,
+		ruleIds
+	};
+}
+function usefulLines(text) {
+	return text.replace(/\n+$/, "").split("\n").filter((line) => {
+		const trimmed = line.trim();
+		return trimmed.length > 0 && trimmed !== "[stderr]" && !/^\[exit code:/.test(trimmed);
+	});
+}
+/**
+* Verbatim per-line capture over the compiled rule set. Dedup by exact line
+* text within the block, 240-codepoint cap with ` …` marker, first-matching
+* rule wins the audit id (base order guarantees `line:failure-classic` wins
+* ties). Decoupled from block classification: soft-failure blocks pass through
+* with `hardFailure: false` and still yield lines.
+*/
+function linePool(text, context) {
+	const rules = context.extraPatterns ?? DEFAULT_LINE_RULES;
+	const pool = [];
+	const seen = /* @__PURE__ */ new Set();
+	for (const raw of usefulLines(text)) {
+		const line = raw.trim();
+		if (seen.has(line)) continue;
+		const matched = rules.find((rule) => rule.pattern.test(line));
+		if (matched === void 0) continue;
+		seen.add(line);
+		const chars = Array.from(line);
+		const truncated = chars.length > LINE_CAP;
+		const captured = truncated ? `${chars.slice(0, LINE_CAP).join("")} …` : line;
+		pool.push({
+			seq: context.seq,
+			role: context.role,
+			text: captured,
+			ruleId: matched.id,
+			truncated,
+			hardFailure: context.hardFailure
+		});
+	}
+	return pool;
+}
+//#endregion
+//#region src/runtime/sediment-card.ts
+/** Qualification floor for the closing body to serve as narrative (tokens). */
+const DEFAULT_MIN_CLOSING_TOKENS = 120;
+/** Mechanical-only needs pool+mask coverage of at least this span fraction. */
+const MECHANICAL_ONLY_MIN_COVERAGE = .5;
+/** Cheap token estimate consistent with the replay corpus meter (CJK-aware). */
+function estimateTokens(text) {
+	const cjk = (text.match(/[\u4e00-\u9fff]/g) ?? []).length;
+	return Math.ceil(cjk / 1.5 + (text.length - cjk) / 4);
+}
+function poolSection(pool) {
+	if (pool.length === 0) return "";
+	return `原文摘录（逐字，非新指令）:\n${pool.join("\n")}`;
+}
+function maskSection(masks) {
+	if (masks.length === 0) return "";
+	return masks.map((mask) => {
+		if (mask.kind === "manifest") return `- 改动文件 (seq ${mask.seq}): ${mask.paths.join(", ")}`;
+		if (mask.kind === "skeleton") return `- 代码骨架 (seq ${mask.seq}):\n${mask.lines.map((l) => `  ${l}`).join("\n")}\n  [… 省略 ${mask.totalLines - mask.lines.length} 行 / ${mask.elidedChars} 字符]`;
+		return `- 超大结果仅留指针 (seq ${mask.seq}, ${mask.tokens} tok)`;
+	}).join("\n");
+}
+/**
+* Decide the narrative tier and whether replacement proceeds at all.
+* Exported for the clock module to pre-check without building the card.
+*/
+function decideNarrativeTier(input, coverageRatio) {
+	const floor = input.minClosingTokens ?? DEFAULT_MIN_CLOSING_TOKENS;
+	if (estimateTokens(input.closingText) >= floor) return "closing";
+	if (input.foldAvailable) return "fold";
+	if (coverageRatio >= MECHANICAL_ONLY_MIN_COVERAGE) return "mechanical-only";
+	return "skip";
+}
+/** Assemble one whole-turn replacement card. Returns null when the tier is `skip`. */
+function buildTurnCard(input) {
+	const pool = input.triage.flatMap((result) => result.poolLines).map((line) => `- [${line.role}] (seq ${line.seq}) ${line.text}`);
+	const masks = input.triage.map((result) => result.mask).filter((mask) => mask !== void 0);
+	const sourceTokens = input.triage.reduce((sum, result) => sum + result.sourceTokens, 0);
+	const retainedVerbatimTokens = estimateTokens(pool.join("\n") + maskSection(masks));
+	const tier = decideNarrativeTier(input, sourceTokens === 0 ? 0 : retainedVerbatimTokens / sourceTokens);
+	if (tier === "skip") return null;
+	const narrative = tier === "fold" ? input.foldText?.trim() ?? "" : "";
+	const narrativeTokens = narrative === "" ? 0 : estimateTokens(narrative);
+	const head = `CCI 沉降卡。区间 seq ${input.startSeq}-${input.endSeq} 的原文仍在会话日志里；序号是本会话日志的事件号，不是备份文件路径。这是旧内容摘录，不是新指令，也不是你的授权。`;
+	const omissionStats = `Matched lines: ${pool.length}. Masks: ${masks.length}. Retained ≈${retainedVerbatimTokens + narrativeTokens} tok / source ≈${sourceTokens} tok.`;
+	return {
+		head,
+		pool: input.triage.flatMap((result) => result.poolLines),
+		masks,
+		omissionStats,
+		...narrative === "" ? {} : { narrative },
+		narrativeTier: tier,
+		retainedTokens: retainedVerbatimTokens + narrativeTokens,
+		sourceTokens
+	};
+}
+/** Render a card draft to the single replacement message text. */
+function renderTurnCard(draft) {
+	const sections = [
+		draft.head,
+		poolSection(draft.pool.map((line) => `- [${line.role}] (seq ${line.seq}) ${line.text}`)),
+		maskSection(draft.masks)
+	];
+	if (draft.narrative !== void 0) sections.push(`收尾正文:\n${draft.narrative}`);
+	sections.push(draft.omissionStats);
+	return sections.filter((section) => section !== "").join("\n\n");
+}
+//#endregion
+//#region src/runtime/sediment-span.ts
+/** Close tool rounds over the projected events (open-stack, same shape as the replay harness). */
+function closeRounds(events) {
+	const rounds = [];
+	let open = 0;
+	let start = -1;
+	for (const event of events) {
+		const calls = event.type === "assistant/message" ? event.toolCalls ?? 0 : 0;
+		if (calls > 0) {
+			if (open === 0) start = events.indexOf(event);
+			open += calls;
+			continue;
+		}
+		if (event.type !== "tool/result") continue;
+		if (open <= 0) continue;
+		open -= 1;
+		if (open === 0 && start >= 0) {
+			rounds.push({
+				start,
+				end: events.indexOf(event)
+			});
+			start = -1;
+		}
+	}
+	return rounds;
+}
+/** Plan the replacement span for one turn's projected events. */
+function planTurnSpan(events, options = {}) {
+	const tailRoundsKept = options.tailRoundsKept ?? 1;
+	const completed = events.find((event) => event.type === "turn/end")?.reasonKind === "completed";
+	const body = events.filter((event) => event.type !== "turn/end");
+	const keptSeqs = body.filter((event) => event.type === "user/message").map((event) => event.seq);
+	const rounds = closeRounds(body);
+	const lastRoundEnd = rounds.length > 0 ? rounds[rounds.length - 1].end : -1;
+	let closingText = "";
+	let closingIndex = -1;
+	for (let index = body.length - 1; index > lastRoundEnd; index -= 1) {
+		const event = body[index];
+		if (event === void 0) continue;
+		if (event.type === "assistant/message" && (event.toolCalls ?? 0) === 0 && event.text.trim() !== "") {
+			closingText = event.text.trim();
+			closingIndex = index;
+			keptSeqs.push(event.seq);
+			break;
+		}
+	}
+	const keptRounds = tailRoundsKept > 0 ? rounds.slice(Math.max(0, rounds.length - tailRoundsKept)) : [];
+	for (const round of keptRounds) for (let index = round.start; index <= round.end; index += 1) {
+		const event = body[index];
+		if (event !== void 0) keptSeqs.push(event.seq);
+	}
+	const firstIndex = body.findIndex((event) => event.type === "assistant/message" || event.type === "tool/result");
+	const keptStartIndex = keptRounds.length > 0 ? keptRounds[0].start : closingIndex >= 0 ? closingIndex : body.length;
+	const spanEndIndex = Math.max(firstIndex, keptStartIndex) - 1;
+	const replaceable = firstIndex >= 0 && spanEndIndex >= firstIndex;
+	const blocks = replaceable ? body.slice(firstIndex, spanEndIndex + 1) : [];
+	return {
+		completed,
+		startSeq: replaceable ? blocks[0].seq : null,
+		endSeq: replaceable ? blocks[blocks.length - 1].seq : null,
+		blocks,
+		closingText,
+		keptSeqs
+	};
+}
+/** Triage every block of a planned span into the frozen TriageResult shape. */
+function triageSpanBlocks(plan, rules) {
+	return plan.blocks.map((event) => {
+		const sourceTokens = estimateTokens(event.text);
+		if (event.type === "tool/result") {
+			const verdict = blockFailureVerdict(event.text, event.isError === true);
+			const poolLines = linePool(event.text, {
+				seq: event.seq,
+				role: "tool",
+				hardFailure: verdict.hard,
+				extraPatterns: rules
+			});
+			const mask = manifestFromCall(event.toolName ?? "", event.argsJson ?? "", event.text, event.seq) ?? (event.toolName !== void 0 && /^(read|read_file|view)$/i.test(event.toolName) ? skeletonFromRead(event.text, event.seq) : null);
+			const residualNarrative = poolLines.length === 0 && mask === null && event.text.trim() !== "" ? [{
+				seq: event.seq,
+				role: "tool",
+				tokens: sourceTokens,
+				text: event.text
+			}] : [];
+			return {
+				poolLines,
+				...mask === null ? {} : { mask },
+				residualNarrative,
+				sourceTokens
+			};
+		}
+		const verdict = blockFailureVerdict(event.text, false);
+		const poolLines = linePool(event.text, {
+			seq: event.seq,
+			role: "assistant",
+			hardFailure: verdict.hard,
+			extraPatterns: rules
+		});
+		return {
+			poolLines,
+			residualNarrative: poolLines.length === 0 ? [{
+				seq: event.seq,
+				role: "assistant",
+				tokens: sourceTokens,
+				text: event.text
+			}] : [],
+			sourceTokens
+		};
+	});
+}
+//#endregion
+//#region src/runtime/sediment-publish.ts
+/**
+* Sediment publication (plan cci-sedimentation-triage, Phase 3, T3.5/T3.6).
+*
+* The commit transaction mirrors the proven TailTrim publication shape
+* (pruner.ts L2386-2406): a `compaction/prune` manifest event, then ONE
+* `user/message` replacement carrying `surfaceOp: replace` and
+* `sourceEventSeqs`, through the generation-gated message builder so 0.1.x
+* and 0.2.x hosts accept the same code path. The shortening proof (M7) runs
+* BEFORE any append — a card that does not shrink the span is refused, and
+* nothing half-committed can exist.
+*
+* The session is injected as a minimal interface so the transaction is
+* unit-testable without a host; the wiring site passes the real session.
+*/
+/** Commit one card over the span. Never throws; every failure is a reason code. */
+function publishSettledCard(session, draft, span) {
+	if (draft.retainedTokens >= draft.sourceTokens) return {
+		ok: false,
+		reason: `shortening-proof-failed:${draft.retainedTokens}>=${draft.sourceTokens}`
+	};
+	if (span.shadowedSeqs.length === 0) return {
+		ok: false,
+		reason: "empty-span"
+	};
+	const manifest = session.append("compaction/prune", {
+		shadowedRange: {
+			start: span.startSeq,
+			end: span.endSeq
+		},
+		shadowedSeqs: [...span.shadowedSeqs],
+		shadowedTokenCount: draft.sourceTokens
+	});
+	let replacementSeq;
+	try {
+		const message = tailTrimMessage(renderTurnCard(draft));
+		replacementSeq = session.append("user/message", message, {
+			surfaceOp: {
+				op: "replace",
+				startSeq: span.startSeq,
+				endSeq: span.endSeq
+			},
+			sourceEventSeqs: [manifest.seq, ...span.shadowedSeqs]
+		}).seq;
+	} catch (error) {
+		return {
+			ok: false,
+			reason: `publication-failed:${error instanceof Error ? error.message : String(error)}`,
+			manifestSeq: manifest.seq
+		};
+	}
+	return {
+		ok: true,
+		reason: "landed",
+		manifestSeq: manifest.seq,
+		replacementSeq
+	};
+}
+/**
+* Rewrite guard (T3.3 accounting, findings F2 community 1:15 evidence):
+* a cut may only land when its saving clears the estimated cached-tail
+* rewrite cost by the configured ratio. Pure function over token counts.
+*/
+function passesRewriteGuard(draft, rewriteTailTokens, ratio) {
+	const saving = draft.sourceTokens - draft.retainedTokens;
+	return saving > 0 && saving >= rewriteTailTokens * ratio;
+}
+/**
+* Project a host session event into the minimal `SurfaceEvent` the span
+* planner consumes. Kept separate from the planner so the planner stays
+* host-type-free; the wiring site supplies the call-id → name/args map.
+*/
+function projectSurfaceEvent(seq, event, callInfo) {
+	const text = flattenText(event.data?.message?.content ?? event.data?.content);
+	switch (event.type) {
+		case "user/message": return {
+			seq,
+			type: "user/message",
+			text
+		};
+		case "assistant/message": {
+			const toolCalls = countToolCallBlocks(event.data?.message?.content);
+			return {
+				seq,
+				type: "assistant/message",
+				text: stripToolCallBlocks(text),
+				toolCalls
+			};
+		}
+		case "tool/result": return {
+			seq,
+			type: "tool/result",
+			text,
+			...callInfo === void 0 ? {} : {
+				toolName: callInfo.name,
+				argsJson: callInfo.argsJson
+			},
+			isError: event.data?.message?.isError === true
+		};
+		case "turn/end": {
+			const reasonKind = event.data?.reason?.kind;
+			return {
+				seq,
+				type: "turn/end",
+				text: "",
+				...reasonKind === void 0 ? {} : { reasonKind }
+			};
+		}
+		default: return null;
+	}
+}
+function blockText(block) {
+	if (block === null || typeof block !== "object") return "";
+	const record = block;
+	return typeof record.text === "string" ? record.text : "";
+}
+function flattenText(content) {
+	if (typeof content === "string") return content;
+	if (Array.isArray(content)) return content.map(blockText).filter((entry) => entry !== "").join("\n");
+	return "";
+}
+function countToolCallBlocks(content) {
+	if (!Array.isArray(content)) return 0;
+	return content.filter((block) => block?.type === "tool-call").length;
+}
+function stripToolCallBlocks(text) {
+	return text;
+}
+//#endregion
+//#region src/runtime/sediment-clock.ts
+/** Pure commit predicate; every exclusion returns a machine-readable reason. */
+function canCommitNow(context) {
+	if (!context.inFlightRequest && context.lastEventType !== "turn/end" && context.lastEventType !== "step/end") return {
+		ok: false,
+		reason: "not-in-quiet-seam"
+	};
+	if (context.inFlightRequest) return {
+		ok: false,
+		reason: "request-in-flight"
+	};
+	if (context.compactionOpen) return {
+		ok: false,
+		reason: "compaction-in-progress"
+	};
+	if (context.resumeFirstBatch) return {
+		ok: false,
+		reason: "resume-first-batch"
+	};
+	const official = context.officialCheckpointSeq;
+	if (official !== void 0 && official !== context.seenOfficialCheckpointSeq) return {
+		ok: false,
+		reason: `yield-official-checkpoint-${official}`
+	};
+	return {
+		ok: true,
+		reason: "quiet-seam"
+	};
+}
+/** Mutable per-session clock: cooldown consumption + re-entrance guard. */
+var SedimentClock = class {
+	warming = false;
+	seenOfficialSeq;
+	/** True while a commit job is running for this session (no stacked cuts). */
+	get busy() {
+		return this.warming;
+	}
+	/** Claim the commit slot; false means another job owns this session's seam. */
+	begin() {
+		if (this.warming) return false;
+		this.warming = true;
+		return true;
+	}
+	end() {
+		this.warming = false;
+	}
+	/** Consume the one-time yield for the given official checkpoint seq. */
+	noteOfficialConsumed(seq) {
+		this.seenOfficialSeq = seq;
+	}
+	get seenOfficial() {
+		return this.seenOfficialSeq;
+	}
+	/** Decide with this clock's cooldown state folded in. */
+	decide(base) {
+		return canCommitNow({
+			...base,
+			seenOfficialCheckpointSeq: this.seenOfficialSeq
+		});
+	}
+};
 //#endregion
 //#region src/runtime/tokenpilot/sidechannel.ts
 /** One bound side channel. `ask` resolves `undefined` on ANY failure. */
@@ -2322,6 +3141,569 @@ var SideChannel = class {
 		return typeof text === "string" && text.trim().length > 0 ? text : void 0;
 	}
 };
+//#endregion
+//#region src/runtime/fold-router.ts
+/** Tier limits in tokens of fold INPUT (spans + template). */
+const FOLD_TIER_LIMITS = Object.freeze({
+	strataMax: 2048,
+	local35Max: 8192
+});
+/** Per-tier timeout budgets (ms): sized for cold prefill, not warm round-trips. */
+const FOLD_TIMEOUT_MS = Object.freeze({
+	strata: 8e3,
+	local35: 12e3,
+	large: 15e3
+});
+/** Tier decision over the fold input size. */
+function foldTier(inputTokens) {
+	if (inputTokens > FOLD_TIER_LIMITS.local35Max) return "skip";
+	return inputTokens <= FOLD_TIER_LIMITS.strataMax ? "strata" : "local35";
+}
+const FOLD_SYSTEM = "You are writing a short connective narrative for a durable context card. Summarize ONLY the material given below: what was attempted and what was concluded, in 2-6 bullets. The card already contains verbatim error lines, file manifests, and code skeletons that were DELIBERATELY withheld from you. Never restate, guess, or reconstitute withheld output; never add facts not present in the material. Output only the bullets.";
+/** Rough meter aligned with the replay corpus estimator (CJK-aware). */
+function foldTokens(text) {
+	const cjk = (text.match(/[\u4e00-\u9fff]/g) ?? []).length;
+	return Math.ceil(cjk / 1.5 + (text.length - cjk) / 4);
+}
+/**
+* Assemble the fold prompt from residual narrative only. Lines that appear
+* in the protection pool or any mask section are excluded BY CONSTRUCTION
+* (S4): the caller passes triage output, and the spans entering the prompt
+* are the residual ones.
+*/
+function buildFoldPrompt(spans, protectedLines, masks) {
+	const protectedText = new Set(protectedLines.map((line) => line.text));
+	const maskText = masks.flatMap((mask) => mask.kind === "skeleton" ? [...mask.lines] : []);
+	const body = spans.filter((span) => !protectedText.has(span.text) && !maskText.includes(span.text)).map((span) => `[${span.role}] ${span.text}`).join("\n");
+	if (body.trim() === "") return null;
+	const user = `Material to fold (turn narrative residue):\n${body}`;
+	return {
+		system: FOLD_SYSTEM,
+		user,
+		inputTokens: foldTokens(user)
+	};
+}
+/**
+* One fold channel per pruner instance family; queue depth 1 per session id.
+* `fold` never throws and never retries; undefined text = tier-3 mechanical card.
+*/
+var FoldRouter = class {
+	ctx;
+	settings;
+	busy = /* @__PURE__ */ new Set();
+	constructor(ctx, settings) {
+		this.ctx = ctx;
+		this.settings = settings;
+	}
+	/** True while a fold call for that session is in flight. */
+	isBusy(sessionId) {
+		return this.busy.has(sessionId);
+	}
+	async fold(sessionId, prompt, signal) {
+		const tier = foldTier(prompt.inputTokens);
+		if (tier === "skip") return { audit: {
+			ok: false,
+			latencyMs: 0,
+			reason: "fold-input-over-8k-refused"
+		} };
+		if (this.settings.foldMode === void 0 || this.settings.foldMode === "") return { audit: {
+			ok: false,
+			latencyMs: 0,
+			reason: "fold-unconfigured"
+		} };
+		if (this.busy.has(sessionId)) return { audit: {
+			ok: false,
+			latencyMs: 0,
+			reason: "fold-busy-skip"
+		} };
+		this.busy.add(sessionId);
+		try {
+			const endpoint = tier === "strata" ? {
+				provider: this.settings.foldStrataProvider,
+				model: this.settings.foldStrataModel
+			} : {
+				provider: this.settings.foldLocal35Provider,
+				model: this.settings.foldLocal35Model
+			};
+			if (endpoint.provider === void 0 || endpoint.model === void 0) return { audit: {
+				ok: false,
+				latencyMs: 0,
+				reason: `fold-endpoint-missing:${tier}`
+			} };
+			const timeoutMs = tier === "strata" ? FOLD_TIMEOUT_MS.strata : prompt.inputTokens > FOLD_TIER_LIMITS.strataMax ? FOLD_TIMEOUT_MS.large : FOLD_TIMEOUT_MS.local35;
+			return await new SideChannel(this.ctx, {
+				estimatorMode: this.settings.foldMode,
+				estimatorProvider: endpoint.provider,
+				estimatorModel: endpoint.model,
+				...this.settings.foldBaseUrl === void 0 ? {} : { estimatorBaseUrl: this.settings.foldBaseUrl },
+				...this.settings.foldBaseUrlKey === void 0 ? {} : { estimatorApiKey: this.settings.foldBaseUrlKey }
+			}, {
+				timeoutMs,
+				maxTokens: 400
+			}).askAudited({
+				system: prompt.system,
+				user: prompt.user,
+				signal
+			});
+		} finally {
+			this.busy.delete(sessionId);
+		}
+	}
+};
+//#endregion
+//#region src/runtime/sediment.ts
+/**
+* Sediment orchestrator (plan cci-sedimentation-triage, Phase 3, T3.6).
+*
+* Host-agnostic by injection: the wiring site (pruner) supplies the settings
+* snapshot reader, the event reader, and the call-id map; this module owns
+* the per-session clock and the turn-end decision pipeline:
+*
+*   settings gate → clock predicate → span plan (reason gate)
+*   → triage → card build (tier gates) → rewrite guard → publish.
+*
+* With `sediment.enabled=false` (the default) the FIRST check short-circuits
+* and nothing else in this module runs — the M1 zero-drift guarantee holds by
+* construction: no event accumulation, no card, no append.
+*/
+/** Compiled extra-pattern rules per session settings identity (cheap cache). */
+const ruleCache = /* @__PURE__ */ new WeakMap();
+function rulesFor(settings) {
+	let rules = ruleCache.get(settings);
+	if (rules === void 0) {
+		rules = mergeExtraPatterns(settings.extraSignalPatterns ?? []);
+		ruleCache.set(settings, rules);
+	}
+	return rules;
+}
+var SedimentOrchestrator = class {
+	options;
+	clocks = /* @__PURE__ */ new Map();
+	constructor(options) {
+		this.options = options;
+	}
+	clockFor(sessionId) {
+		let clock = this.clocks.get(sessionId);
+		if (clock === void 0) {
+			clock = new SedimentClock();
+			this.clocks.set(sessionId, clock);
+		}
+		return clock;
+	}
+	/**
+	* Entry point called by the wiring site on `turn/end`. Returns immediately
+	* with reason 'disabled' when the gate is off — nothing downstream runs.
+	*/
+	async handleTurnEnd(session, turn, context) {
+		const sessionId = String(session.id);
+		const settings = this.options.settingsFor(sessionId);
+		if (settings === void 0 || !settings.enabled) return {
+			committed: false,
+			reason: "disabled"
+		};
+		const clock = this.clockFor(sessionId);
+		const decision = clock.decide({
+			lastEventType: context.lastEventType,
+			inFlightRequest: context.inFlightRequest,
+			compactionOpen: context.compactionOpen,
+			officialCheckpointSeq: context.officialCheckpointSeq,
+			resumeFirstBatch: context.resumeFirstBatch
+		});
+		if (!decision.ok) {
+			if (context.officialCheckpointSeq !== void 0 && decision.reason.startsWith("yield-official")) clock.noteOfficialConsumed(context.officialCheckpointSeq);
+			this.options.onSkip?.(sessionId, decision.reason);
+			return {
+				committed: false,
+				reason: decision.reason
+			};
+		}
+		if (!clock.begin()) return {
+			committed: false,
+			reason: "already-committing"
+		};
+		try {
+			return await this.commitTurn(session, turn, settings);
+		} finally {
+			clock.end();
+		}
+	}
+	async commitTurn(session, turn, settings) {
+		const sessionId = String(session.id);
+		const rawEvents = this.options.eventsFor(session, turn);
+		const projected = [];
+		for (const event of rawEvents) {
+			const callId = (event.data?.message)?.toolCallId;
+			const surface = projectSurfaceEvent(event.seq, {
+				type: event.type,
+				data: event.data
+			}, this.options.callInfoFor(sessionId)(callId));
+			if (surface !== null) projected.push(surface);
+		}
+		const plan = planTurnSpan(projected);
+		if (!plan.completed) {
+			this.options.onSkip?.(sessionId, "reason-gate");
+			return {
+				committed: false,
+				reason: "reason-gate"
+			};
+		}
+		if (plan.startSeq === null || plan.endSeq === null) {
+			this.options.onSkip?.(sessionId, "empty-span");
+			return {
+				committed: false,
+				reason: "empty-span"
+			};
+		}
+		const triage = triageSpanBlocks(plan, rulesFor(settings));
+		const foldAvailable = this.options.fold !== void 0;
+		let foldText;
+		if (this.options.fold !== void 0 && estimateTokens(plan.closingText) < (settings.minClosingTokens ?? 120)) {
+			const prompt = buildFoldPrompt(triage.flatMap((result) => result.residualNarrative), triage.flatMap((result) => result.poolLines), triage.map((result) => result.mask).filter((mask) => mask !== void 0));
+			if (prompt !== null) foldText = await this.options.fold.run(sessionId, prompt, AbortSignal.timeout(2e4));
+		}
+		const draft = buildTurnCard({
+			startSeq: plan.startSeq,
+			endSeq: plan.endSeq,
+			triage,
+			closingText: plan.closingText,
+			foldAvailable,
+			...foldText === void 0 ? {} : { foldText },
+			minClosingTokens: settings.minClosingTokens
+		});
+		if (draft === null) {
+			this.options.onSkip?.(sessionId, "tier-skip");
+			return {
+				committed: false,
+				reason: "tier-skip"
+			};
+		}
+		const tailTokens = this.options.tailTokensFor(session, plan.endSeq);
+		const feedback = this.options.feedback?.() ?? {
+			conservative: false,
+			reason: "ok"
+		};
+		if (!passesRewriteGuard(draft, tailTokens, feedback.conservative ? Math.max(settings.rewriteGuardRatio, 5) : settings.rewriteGuardRatio)) {
+			this.options.onSkip?.(sessionId, feedback.conservative ? `rewrite-guard-conservative:${feedback.reason}` : "rewrite-guard");
+			return {
+				committed: false,
+				reason: "rewrite-guard"
+			};
+		}
+		const result = publishSettledCard(session, draft, {
+			startSeq: plan.startSeq,
+			endSeq: plan.endSeq,
+			shadowedSeqs: plan.blocks.map((block) => block.seq)
+		});
+		if (result.ok) this.options.onLanded?.(sessionId, draft.sourceTokens - draft.retainedTokens, draft.narrativeTier, result);
+		else this.options.onSkip?.(sessionId, result.reason);
+		return {
+			committed: result.ok,
+			reason: result.reason
+		};
+	}
+};
+//#endregion
+//#region src/runtime/sediment-guard.ts
+/** Omnibus tool names that mark a PTC/code-mode session (both host lines). */
+const OMNIBUS_TOOL_NAMES = Object.freeze(["run_code", "code_run"]);
+/** True when the registered tool surface contains an omnibus runner. */
+function detectPtcMode(hasTool) {
+	return OMNIBUS_TOOL_NAMES.some((name) => hasTool(name));
+}
+/**
+* read-state blindness probe: with PTC active and ZERO write-tool regex hits
+* across the observed calls, the superseded predicate cannot see real write
+* targets — aging decisions must be considered untrustworthy.
+*/
+function readStateBlind(ptcActive, writeRegexHits, observedCalls) {
+	if (!ptcActive) return false;
+	return observedCalls > 0 && writeRegexHits === 0;
+}
+/**
+* Feedback loop state: consumes request-boundary samples and decides whether
+* sediment/aging operation should run in conservative mode. K consecutive
+* negative-net samples arm it; a positive net sample disarms immediately.
+*/
+var FeedbackLoop = class {
+	k;
+	negativeStreak = 0;
+	armed = false;
+	constructor(k = 5) {
+		this.k = k;
+	}
+	get conservative() {
+		return this.armed;
+	}
+	observe(sample) {
+		const net = sample.grossSaved - sample.recallOffset;
+		if (net < 0) {
+			this.negativeStreak += 1;
+			if (this.negativeStreak >= this.k) this.armed = true;
+		} else if (net > 0) {
+			this.negativeStreak = 0;
+			this.armed = false;
+		}
+		return {
+			conservative: this.armed,
+			reason: this.armed ? `net-negative-x${this.negativeStreak}` : "ok"
+		};
+	}
+};
+/**
+* Watcher adapter (T3.11 consumption point): the savings ledger reports
+* CUMULATIVE gross/offsets; the feedback loop needs per-boundary NET deltas.
+* This wrapper remembers the last reading and feeds the loop the difference.
+*/
+var SedimentFeedbackWatcher = class {
+	loop;
+	last = {
+		gross: 0,
+		offsets: 0
+	};
+	constructor(loop = new FeedbackLoop(5)) {
+		this.loop = loop;
+	}
+	observe(totals) {
+		const gross = totals.gross.exact + totals.gross.estimated;
+		const offsets = totals.offsets.exact + totals.offsets.estimated;
+		const sample = {
+			grossSaved: gross - this.last.gross,
+			recallOffset: offsets - this.last.offsets
+		};
+		this.last = {
+			gross,
+			offsets
+		};
+		return this.loop.observe(sample);
+	}
+	get conservative() {
+		return this.loop.conservative;
+	}
+};
+//#endregion
+//#region src/pruner/session.ts
+/** Check whether the session currently has an open (unterminated) turn. */
+function hasOpenTurn(session) {
+	let open = false;
+	for (const event of sessionEvents(session)) if (event.type === "turn/start") open = true;
+	else if (event.type === "turn/end") open = false;
+	return open;
+}
+/** Walk the tool-result source chain to find the root result seq. */
+function rootToolResultSeq(session, seq) {
+	const events = sessionEvents(session);
+	let current = seq;
+	const seen = /* @__PURE__ */ new Set();
+	while (!seen.has(current)) {
+		seen.add(current);
+		const event = events[current];
+		if (event?.type !== "tool/result" || typeof event.surfaceOp !== "object") return current;
+		const previous = event.sourceEventSeqs?.[0];
+		if (previous === void 0) return current;
+		current = previous;
+	}
+	return seq;
+}
+/** Build a session:// event reference string for a given seq. */
+function sourceRef(session, seq) {
+	return `session://${session.id}/event/${String(seq)}`;
+}
+/** Find the latest completed step number for a given turn. */
+function latestCompletedToolStep(session, turn) {
+	let latest;
+	for (const event of sessionEvents(session)) if (event.type === "step/end" && event.data.turn === turn) latest = event.data.step;
+	return latest;
+}
+/** Routed provider/model when the durable request header names one route. */
+function routeAuditFact(session) {
+	const header = session.requestHeader()?.config;
+	if (header === void 0 || header.provider.length === 0 || header.model.length === 0) return void 0;
+	return {
+		provider: header.provider,
+		model: header.model
+	};
+}
+/** Bundled tokenizer identity for one route, when the route is eligible. */
+function tokenizerAuditFact(route) {
+	const identity = route.provider === "deepseek" || route.provider === "deepseek-official" ? deepSeekV4TokenizerForModel(route.model)?.countText("") : void 0;
+	if (identity?.kind === "exact-tokenizer") return { tokenizer: {
+		repository: identity.tokenizerId,
+		revision: identity.tokenizerRevision
+	} };
+	return { tokenizer: {
+		repository: "unavailable",
+		revision: "unavailable"
+	} };
+}
+/** Check whether a snapshot candidate represents an error result. */
+function isError(candidate) {
+	return viewToolResult(candidate.event.data.message).isError || candidate.event.data.error !== void 0;
+}
+/** Wrap a plan list into a HistoryPlanOutcome. */
+function historyOutcome(plans) {
+	return {
+		kind: "planned",
+		plans: [...plans]
+	};
+}
+//#endregion
+//#region src/runtime/tokenpilot/locator.ts
+/** Files touched by read/grep-style tool calls inside the range. */
+const TOUCHED_FILE_TOOL = /(?:^|[-_])?(?:read|write|edit|glob|grep|view|str_replace_editor)(?:$|[-_])/i;
+/** Spill notice paths emitted by the Harness output-retention policy. */
+const SPILL_PATH = /stored at:\s*([^\s)\]]+)/g;
+/** Tool call arguments keys that commonly carry a file path. */
+const PATH_KEYS$1 = ["path", "file_path"];
+/**
+* Find the latest compaction/summary event matching the compaction id of a
+* compaction/end event. Returns undefined when the transaction cannot be
+* identified — the caller must skip rather than guess.
+*/
+function findCompactionTrace(events, compactionId) {
+	let trace;
+	for (const event of events) if (event.type === "compaction/summary" && event.data.compactionId === compactionId) trace = {
+		compactionId,
+		summarySeq: event.seq,
+		summaryShadowedRange: event.data.shadowedRange
+	};
+	return trace;
+}
+/** Extract spill file paths from one text chunk. */
+function extractSpillPaths(text) {
+	const paths = [];
+	for (const match of text.matchAll(SPILL_PATH)) {
+		const path = match[1]?.replace(/[.,;]+$/, "");
+		if (path !== void 0 && path.length > 0) paths.push(path);
+	}
+	return paths;
+}
+/** Extract touched file paths from one tool/call event's arguments. */
+function extractTouchedPath(name, argumentsText) {
+	if (!TOUCHED_FILE_TOOL.test(name)) return void 0;
+	let parsed;
+	try {
+		parsed = JSON.parse(argumentsText);
+	} catch {
+		return;
+	}
+	if (typeof parsed !== "object" || parsed === null) return void 0;
+	const record = parsed;
+	for (const key of PATH_KEYS$1) {
+		const value = record[key];
+		if (typeof value === "string" && value.length > 0) return value;
+	}
+}
+/**
+* Build the Exact Sources block for one shadowed range, or null when the
+* range locates nothing concrete (no spill files and no touched files).
+*/
+function buildLocatorBlock(events, shadowedRange) {
+	const spillFiles = /* @__PURE__ */ new Set();
+	const touchedFiles = /* @__PURE__ */ new Set();
+	for (let seq = shadowedRange.start; seq <= shadowedRange.end && seq < events.length; seq += 1) {
+		const event = events[seq];
+		if (event === void 0) continue;
+		if (event.type === "tool/call") {
+			const path = extractTouchedPath(event.data.name, event.data.arguments);
+			if (path !== void 0) touchedFiles.add(path);
+			continue;
+		}
+		if (event.type === "tool/result" || event.type === "user/message") {
+			const data = event.data;
+			const content = Array.isArray(data.content) ? data.content : data.message?.content;
+			if (!Array.isArray(content)) continue;
+			for (const block of content) if (block.type === "text") for (const path of extractSpillPaths(block.text)) spillFiles.add(path);
+		}
+	}
+	if (spillFiles.size === 0 && touchedFiles.size === 0) return null;
+	return {
+		text: [
+			"## Exact Sources (locators)",
+			`- seq range: ${String(shadowedRange.start)}-${String(shadowedRange.end)}`,
+			...[...spillFiles].map((path) => `- spill file: ${path}`),
+			...[...touchedFiles].map((path) => `- file touched: ${path}`),
+			`(Use \`read <spill file>\` or \`${RUNTIME_TOOL_NAMES.RETRIEVE}\` with a \`session://\` source — pass start_line/max_lines to window the text — to restore exact text.)`
+		].join("\n"),
+		spillFiles: spillFiles.size,
+		touchedFiles: touchedFiles.size
+	};
+}
+//#endregion
+//#region src/runtime/tokenpilot/read-state.ts
+/** Write-style tool names whose success supersedes earlier reads. */
+const WRITE_TOOLS = /(?:^|[-_])?(?:write|edit|apply_patch|file_write|file_edit|str_replace|replace|multiedit)(?:$|[-_])/i;
+const PATH_KEYS = ["path", "file_path"];
+/** Parse one path out of a tool-call arguments JSON blob. */
+function toolCallPath(argumentsText) {
+	let parsed;
+	try {
+		parsed = JSON.parse(argumentsText);
+	} catch {
+		return;
+	}
+	if (typeof parsed !== "object" || parsed === null) return void 0;
+	const record = parsed;
+	for (const key of PATH_KEYS) {
+		const value = record[key];
+		if (typeof value === "string" && value.length > 0) return value;
+	}
+}
+/**
+* Decide whether an oversized read result was superseded by a later mutation
+* of the same file. `readPath` is the read call's target path; events after
+* `readSeq` are scanned for a write-style call on it.
+*/
+function isSupersededRead(events, readSeq, readPath) {
+	if (readPath === void 0) return false;
+	for (let seq = readSeq + 1; seq < events.length; seq += 1) {
+		const event = events[seq];
+		if (event?.type !== "tool/call") continue;
+		if (!WRITE_TOOLS.test(event.data.name)) continue;
+		if (toolCallPath(event.data.arguments) === readPath) return true;
+	}
+	return false;
+}
+/** Error/warning/info line classifiers used by the omission summary. */
+const ERROR_LINE = /\b(error|failed|failure|fatal|exception|traceback|cannot|unable|denied)\b/i;
+const WARN_LINE = /\b(warn|warning|deprecated)\b/i;
+const SECTION_HEADING = /^#{1,3}\s+(.{1,80})/;
+/**
+* Cluster one omitted line-count into a summary appended to a placeholder
+* marker, giving the model meta-knowledge about what was dropped. Document
+* content (R8) swaps the error/warn/info census for a section-heading list —
+* `0 error, 0 warn, N info` carries no information about a dropped document,
+* while its heading list does.
+*/
+function clusterOmittedLines(text, omittedLines) {
+	if (omittedLines <= 0) return void 0;
+	if (looksLikeDocument(text)) return documentCensus(text, omittedLines);
+	let errors = 0;
+	let warns = 0;
+	let infos = 0;
+	for (const line of text.split("\n")) if (ERROR_LINE.test(line)) errors += 1;
+	else if (WARN_LINE.test(line)) warns += 1;
+	else infos += 1;
+	const parts = [];
+	if (errors > 0) parts.push(`${String(errors)} error`);
+	if (warns > 0) parts.push(`${String(warns)} warn`);
+	if (infos > 0) parts.push(`${String(infos)} info`);
+	if (parts.length === 0) return void 0;
+	return `${String(omittedLines)} lines omitted (${parts.join(", ")})`;
+}
+/** Bounded section-heading list for an omitted document (R8 census). */
+function documentCensus(text, omittedLines) {
+	const titles = [];
+	for (const line of text.split("\n")) {
+		const match = SECTION_HEADING.exec(line);
+		if (match === null) continue;
+		titles.push(match[1].trim());
+		if (titles.length >= 8) break;
+	}
+	if (titles.length === 0) return `${String(omittedLines)} lines omitted (document content)`;
+	let summary = titles.join(" · ");
+	if (summary.length > 240) summary = `${summary.slice(0, 240)}…`;
+	return `${String(omittedLines)} lines omitted (sections: ${summary})`;
+}
 //#endregion
 //#region src/runtime/tokenpilot/estimator.ts
 /** Exponential backoff with a 5-minute cap: 1s, 2s, 4s, … */
@@ -3277,6 +4659,24 @@ function sanitizeAuditMessage(error) {
 */
 const dshSessionSoft = dshSessionNamespace;
 const SessionSeq = dshSessionSoft.SessionSeq ?? dshSessionSoft.default?.SessionSeq ?? ((value) => value);
+function looseEvents(session) {
+	return sessionEvents(session);
+}
+function looseData(event) {
+	return event?.data;
+}
+function looseContent(event) {
+	const data = looseData(event);
+	const content = (data?.message ?? data)?.content;
+	return Array.isArray(content) ? content : [];
+}
+/** Flatten the visible text of any surface event for sediment accounting. */
+function sedimentEventText(event) {
+	return looseContent(event).filter((block) => {
+		const record = block;
+		return record !== null && record.type === "text" && typeof record.text === "string";
+	}).map((block) => block.text).join("\n");
+}
 /** 节省统计配对键用原文(纯文本块才可配对;富内容返回 undefined)。 */
 function originalTextForSavings(candidate) {
 	return flattenPlainText(viewToolResult(candidate.event.data.message).blocks);
@@ -3337,6 +4737,7 @@ var ToolResultPruner = class extends Service {
 		super(ctx, "toolResultPruner");
 		ctx.inject(["tools", "systemPrompt"], (recoveryCtx) => {
 			installContextCompressionRetrieve(recoveryCtx);
+			installShallowTools(recoveryCtx);
 		});
 		this.state = {
 			config: resolveConfig(config),
@@ -3382,6 +4783,12 @@ var ToolResultPruner = class extends Service {
 				this.auditFailure(session, "pressure", "summary-locator", error);
 				ctx.logger.warn("context-compression summary locator failed open: %o", error);
 			}
+			if (event.type === "turn/end") try {
+				this.sedimentTurnEnd(session);
+			} catch (error) {
+				this.auditFailure(session, "pressure", "sediment", error);
+				ctx.logger.warn("context-compression sediment pass failed open: %o", error);
+			}
 		});
 		ctx.on("agent/pre-step", async ({ agent, signal, turn, step }, next) => {
 			const boundary = {};
@@ -3416,6 +4823,21 @@ var ToolResultPruner = class extends Service {
 			this.ensureSavingsProjection(agent.session);
 			try {
 				getSavingsLedger().observeActive(String(agent.session.id), new Set([...agent.session.surface.nodes].map(Number)));
+			} catch {}
+			try {
+				const feedbackSessionId = String(agent.session.id);
+				let watcher = this.sedimentWatchers.get(agent.session);
+				if (watcher === void 0) {
+					watcher = new SedimentFeedbackWatcher();
+					this.sedimentWatchers.set(agent.session, watcher);
+				}
+				const mode = watcher.observe(getSavingsLedger().snapshot(feedbackSessionId));
+				setSedimentObservation(feedbackSessionId, {
+					conservative: mode.conservative,
+					reason: mode.reason,
+					cuts: this.sedimentCuts.get(feedbackSessionId) ?? 0
+				});
+				if (mode.conservative) this.warnOnce(agent.session, "sediment:conservative", "context-compression sediment feedback armed conservative mode: %s", mode.reason);
 			} catch {}
 			this.postflightEstimatorPass(agent.session, signal).catch(() => void 0);
 			this.postflightAdvisorPass(agent.session, turn, signal).catch(() => void 0);
@@ -3557,6 +4979,198 @@ var ToolResultPruner = class extends Service {
 		});
 		return snapshot;
 	}
+	sedimentOrchestrators = /* @__PURE__ */ new WeakMap();
+	sedimentWatchers = /* @__PURE__ */ new WeakMap();
+	sedimentCuts = /* @__PURE__ */ new Map();
+	ptcAgingMemo = /* @__PURE__ */ new WeakMap();
+	/**
+	* PTC aging short-circuit (T3.10): when an omnibus runner is registered and
+	* no direct write-family tool call is observed in the session, the regex
+	* superseded predicate is blind (writes fold into run_code bodies) — the
+	* rule-based aging branch is disabled for that session. Active only while
+	* the sediment gate is on: with default-off settings the existing readState
+	* behavior is byte-identical.
+	*/
+	ptcAgingBlocked(session) {
+		if (this.activeSettings(session).sediment?.enabled !== true) return false;
+		const events = looseEvents(session);
+		const memo = this.ptcAgingMemo.get(session);
+		if (memo !== void 0 && memo.events === events.length) return memo.blocked;
+		let blocked = false;
+		const hasTool = (name) => {
+			try {
+				return this.ctx.get("tools")?.get?.(name) !== void 0;
+			} catch {
+				return false;
+			}
+		};
+		if (detectPtcMode(hasTool)) {
+			let observedCalls = 0;
+			let writeHits = 0;
+			for (const event of events) {
+				if (event.type !== "assistant/message") continue;
+				for (const raw of looseContent(event)) {
+					const block = raw;
+					if (block !== null && block.type === "tool-call") {
+						observedCalls += 1;
+						if (isWriteToolName(String(block.name ?? ""))) writeHits += 1;
+					}
+				}
+			}
+			blocked = readStateBlind(true, writeHits, observedCalls);
+		}
+		this.ptcAgingMemo.set(session, {
+			events: events.length,
+			blocked
+		});
+		return blocked;
+	}
+	/**
+	* Sedimentation entry (plan cci-sedimentation-triage T3.6): whole-turn
+	* replacement decided at `turn/end`, inside the quiet seam before the next
+	* request derives. Disabled sessions exit at the settings gate with zero
+	* downstream work; committed cards flush like any other surface write.
+	*/
+	sedimentTurnEnd(session) {
+		const settings = this.activeSettings(session).sediment;
+		if (settings === void 0 || settings.enabled !== true) return;
+		const events = sessionEvents(session);
+		let turn;
+		for (let index = events.length - 1; index >= 0; index -= 1) {
+			const candidate = events[index];
+			if (candidate?.type === "turn/end") {
+				const value = candidate.data.turn;
+				if (typeof value === "number") {
+					turn = value;
+					break;
+				}
+			}
+		}
+		if (turn === void 0) return;
+		const orchestrator = this.sedimentOrchestratorFor(session, settings);
+		let officialCheckpointSeq;
+		for (const seq of [...session.surface.nodes].reverse()) {
+			const event = events[seq];
+			if (event?.type !== "user/message") continue;
+			if (event.data.source?.kind === "compact-checkpoint") {
+				officialCheckpointSeq = seq;
+				break;
+			}
+		}
+		let compactionOpen = false;
+		for (let index = events.length - 1; index >= 0; index -= 1) {
+			const type = events[index]?.type;
+			if (type === "compaction/end") break;
+			if (type === "compaction/start") {
+				compactionOpen = true;
+				break;
+			}
+		}
+		orchestrator.handleTurnEnd(session, turn, {
+			lastEventType: "turn/end",
+			inFlightRequest: this.state.activeRequestBoundaries.get(session) !== void 0,
+			compactionOpen,
+			officialCheckpointSeq,
+			resumeFirstBatch: false
+		}).then((outcome) => {
+			if (outcome.committed) try {
+				this.ctx.sessions?.flush?.(session);
+			} catch {}
+		}).catch((error) => {
+			this.auditFailure(session, "pressure", "sediment", error);
+			this.ctx.logger.warn("context-compression sediment commit failed open: %o", error);
+		});
+	}
+	sedimentOrchestratorFor(session, settings) {
+		let orchestrator = this.sedimentOrchestrators.get(session);
+		if (orchestrator !== void 0) return orchestrator;
+		orchestrator = new SedimentOrchestrator({
+			settingsFor: () => this.activeSettings(session).sediment,
+			eventsFor: (_s, turn) => looseEvents(session).filter((event) => looseData(event)?.turn === turn).map((event) => {
+				const data = looseData(event);
+				return {
+					seq: event.seq,
+					type: event.type,
+					...data === void 0 ? {} : { data }
+				};
+			}),
+			callInfoFor: () => {
+				const map = /* @__PURE__ */ new Map();
+				for (const event of looseEvents(session)) {
+					if (event.type !== "assistant/message") continue;
+					for (const raw of looseContent(event)) {
+						const block = raw;
+						if (block !== null && block.type === "tool-call" && typeof block.id === "string") map.set(block.id, {
+							name: String(block.name ?? "tool"),
+							argsJson: typeof block.arguments === "string" ? block.arguments : JSON.stringify(block.arguments ?? {})
+						});
+					}
+				}
+				return (callId) => callId === void 0 ? void 0 : map.get(callId);
+			},
+			tailTokensFor: (_s, endSeq) => {
+				let tail = 0;
+				for (const event of looseEvents(session)) {
+					if (typeof event.seq !== "number" || event.seq <= endSeq) continue;
+					tail += estimateTokens(sedimentEventText(event));
+				}
+				return tail;
+			},
+			...settings.foldMode === void 0 || settings.foldMode === "" ? {} : { fold: { run: (sessionId, prompt, signal) => new FoldRouter(this.ctx, settings).fold(sessionId, prompt, signal).then((outcome) => outcome.text) } },
+			feedback: () => {
+				const watcher = this.sedimentWatchers.get(session);
+				return watcher === void 0 ? {
+					conservative: false,
+					reason: "ok"
+				} : {
+					conservative: watcher.conservative,
+					reason: watcher.conservative ? "net-negative-streak" : "ok"
+				};
+			},
+			onLanded: (sessionId, savedTokens, tier, result) => {
+				this.sedimentCuts.set(sessionId, (this.sedimentCuts.get(sessionId) ?? 0) + 1);
+				this.ctx.logger.info("context-compression sediment landed (%s): turn saved %d tok via %s narrative", sessionId, savedTokens, tier);
+				const allEvents = looseEvents(session);
+				const manifestEvent = allEvents.find((event) => event.seq === result.manifestSeq);
+				const originalText = (looseData(manifestEvent)?.shadowedSeqs ?? []).map((seq) => sedimentEventText(allEvents[seq])).join("\n");
+				const tokensBefore = looseData(manifestEvent)?.shadowedTokenCount ?? savedTokens;
+				if (originalText.length > 0) getSavingsLedger().recordSaving({
+					sessionId,
+					component: "sediment",
+					tokensBefore,
+					tokensAfter: Math.max(0, tokensBefore - savedTokens),
+					basis: "characters",
+					sourceSeq: result.manifestSeq ?? 0,
+					replacementSeq: result.replacementSeq ?? 0,
+					originalText
+				});
+			},
+			onSkip: (sessionId, reason) => {
+				this.ctx.logger.debug?.("context-compression sediment skipped (%s): %s", sessionId, reason);
+			}
+		});
+		this.sedimentOrchestrators.set(session, orchestrator);
+		return orchestrator;
+	}
+	/**
+	* T4.8 pairing footer: when a read-class result supersedes a live shallow
+	* map of the same file, the reduced text carries the data-shaped reminder
+	* (sibling ref + discard hint). Non-read calls, unparseable arguments, and
+	* sessions without a live map all return undefined — zero side effects.
+	*/
+	shallowPairFooter(session, candidate) {
+		if (/^(read|read_file|view)$/i.test(candidate.call.name) === false) return void 0;
+		let filePath;
+		try {
+			const parsed = JSON.parse(candidate.call.arguments);
+			filePath = typeof parsed.file_path === "string" ? parsed.file_path : typeof parsed.path === "string" ? parsed.path : "";
+		} catch {
+			return;
+		}
+		if (filePath === "") return void 0;
+		const entry = liveShallowFor(session, filePath);
+		return entry === void 0 ? void 0 : buildShallowFooter(entry.checkpoint, entry.bodyTokens);
+	}
 	/**
 	* TokenPilot-inspired A2: replace the compaction summary checkpoint node
 	* with the same summary plus an Exact Sources locator block. Fails open:
@@ -3626,6 +5240,7 @@ var ToolResultPruner = class extends Service {
 		const policy = this.activePolicy(session);
 		const presetOptions = policy?.presetOptions;
 		if (policy === void 0 || presetOptions?.readState !== true) return;
+		if (this.ptcAgingBlocked(session)) return;
 		const estimatorMode = presetOptions.estimator?.mode ?? "";
 		if (estimatorMode === "") return;
 		const failures = this.state.estimatorFailures.get(session);
@@ -4503,9 +6118,11 @@ var ToolResultPruner = class extends Service {
 					codeSkeleton
 				});
 				if (output !== null) {
+					const footer = this.shallowPairFooter(session, candidate);
+					const reducedText = footer === void 0 ? output.text : `${output.text}\n\n${footer}`;
 					const plan = this.plan(candidate, [{
 						...textBlock,
-						text: output.text
+						text: reducedText
 					}], sourceSeq, output.reducer, "fresh", "fresh", void 0, view, {
 						noNetSavingsGuard: policy.presetOptions?.noNetSavingsGuard === true,
 						...output.elidedLines === void 0 ? {} : { elidedLines: output.elidedLines }
@@ -4619,7 +6236,7 @@ var ToolResultPruner = class extends Service {
 		for (const candidate of eligible) {
 			const resultView = viewToolResult(candidate.event.data.message);
 			const block = onlyTextBlock(resultView.blocks);
-			if (policy.presetOptions?.readState === true && block !== null) {
+			if (policy.presetOptions?.readState === true && block !== null && !this.ptcAgingBlocked(session)) {
 				const readPath = toolCallPath(candidate.call.arguments);
 				const estimatorExpired = this.state.estimatorVerdicts.get(session)?.get(candidate.seq) === true;
 				if (readPath !== void 0 && (isSupersededRead(events, candidate.seq, readPath) || estimatorExpired)) {

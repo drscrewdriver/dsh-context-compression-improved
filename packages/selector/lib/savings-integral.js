@@ -785,6 +785,30 @@ function evaluateIntentGate(input) {
 * (默认 80%)——提前一档给出人工干预窗口。
 */
 const MONITOR_SUGGEST_PCT = .7;
+const sedimentBySession = /* @__PURE__ */ new Map();
+const SEDIMENT_CAP = 64;
+/** Record the latest sediment observation for one session (pruner side). */
+function setSedimentObservation(sessionId, block) {
+	if (sedimentBySession.size >= SEDIMENT_CAP && !sedimentBySession.has(sessionId)) {
+		const oldest = sedimentBySession.keys().next().value;
+		if (oldest !== void 0) sedimentBySession.delete(oldest);
+	}
+	sedimentBySession.set(sessionId, {
+		...block,
+		at: Date.now()
+	});
+}
+/** Read the latest sediment observation (absent before first observation). */
+function getSedimentObservation(sessionId) {
+	const found = sedimentBySession.get(sessionId);
+	if (found === void 0) return void 0;
+	const { conservative, reason, cuts } = found;
+	return {
+		conservative,
+		reason,
+		cuts
+	};
+}
 /**
 * Savings snapshot plus the intent-summary control block. Ledger is
 * injectable so tests seed a private instance instead of the process
@@ -805,10 +829,12 @@ function buildMonitorSnapshot(sessionId, ledger = getSavingsLedger()) {
 		thresholdPct: MONITOR_SUGGEST_PCT,
 		occupancyPct: contextBlock.pct
 	};
+	const sedimentBlock = scopeKey.length === 0 ? void 0 : getSedimentObservation(scopeKey);
 	return {
 		...ledger.snapshot(sessionId),
 		...contextBlock === void 0 ? {} : { context: contextBlock },
 		...suggestion === void 0 ? {} : { suggestion },
+		...sedimentBlock === void 0 ? {} : { sediment: sedimentBlock },
 		intent: {
 			override,
 			observedEnabled: getObservedIntentEnabled(scopeKey),
@@ -2216,7 +2242,14 @@ const SEDIMENT_KEYS = /* @__PURE__ */ new Set([
 	"minClosingTokens",
 	"rewriteGuardRatio",
 	"maxTurnSpanTokens",
-	"extraSignalPatterns"
+	"extraSignalPatterns",
+	"foldMode",
+	"foldBaseUrl",
+	"foldBaseUrlKey",
+	"foldStrataProvider",
+	"foldStrataModel",
+	"foldLocal35Provider",
+	"foldLocal35Model"
 ]);
 function isSafeSignalPatternSource(entry) {
 	return typeof entry === "string" && entry.length > 0 && entry.length <= 200 && (() => {
@@ -2264,13 +2297,29 @@ function parseSedimentSettings(value) {
 	if (value.extraSignalPatterns !== void 0) {
 		if (!Array.isArray(value.extraSignalPatterns) || value.extraSignalPatterns.some((entry) => !isSafeSignalPatternSource(entry))) throw new TypeError("Context-compression sediment.extraSignalPatterns must be parseable non-empty patterns");
 	}
+	if (value.foldMode !== void 0 && value.foldMode !== "" && value.foldMode !== "host" && value.foldMode !== "direct") throw new TypeError("Context-compression sediment.foldMode must be \"\", \"host\", or \"direct\"");
+	for (const key of [
+		"foldBaseUrl",
+		"foldBaseUrlKey",
+		"foldStrataProvider",
+		"foldStrataModel",
+		"foldLocal35Provider",
+		"foldLocal35Model"
+	]) if (value[key] !== void 0 && typeof value[key] !== "string") throw new TypeError(`Context-compression sediment.${key} must be a string`);
 	return {
 		enabled: value.enabled ?? DEFAULT_SEDIMENT_SETTINGS.enabled,
 		granularity: value.granularity ?? DEFAULT_SEDIMENT_SETTINGS.granularity,
 		minClosingTokens: value.minClosingTokens ?? DEFAULT_SEDIMENT_SETTINGS.minClosingTokens,
 		rewriteGuardRatio: value.rewriteGuardRatio ?? DEFAULT_SEDIMENT_SETTINGS.rewriteGuardRatio,
 		maxTurnSpanTokens: value.maxTurnSpanTokens ?? DEFAULT_SEDIMENT_SETTINGS.maxTurnSpanTokens,
-		...value.extraSignalPatterns === void 0 ? {} : { extraSignalPatterns: [...value.extraSignalPatterns] }
+		...value.extraSignalPatterns === void 0 ? {} : { extraSignalPatterns: [...value.extraSignalPatterns] },
+		...value.foldMode === void 0 ? {} : { foldMode: value.foldMode },
+		...value.foldBaseUrl === void 0 ? {} : { foldBaseUrl: value.foldBaseUrl },
+		...value.foldBaseUrlKey === void 0 ? {} : { foldBaseUrlKey: value.foldBaseUrlKey },
+		...value.foldStrataProvider === void 0 ? {} : { foldStrataProvider: value.foldStrataProvider },
+		...value.foldStrataModel === void 0 ? {} : { foldStrataModel: value.foldStrataModel },
+		...value.foldLocal35Provider === void 0 ? {} : { foldLocal35Provider: value.foldLocal35Provider },
+		...value.foldLocal35Model === void 0 ? {} : { foldLocal35Model: value.foldLocal35Model }
 	};
 }
 /**
@@ -4647,4 +4696,4 @@ function formatFemtoUnits(value) {
 	return fraction.length === 0 ? whole : `${whole}.${fraction}`;
 }
 //#endregion
-export { isValidAutoCompactThresholdPercent as $, officialRequestUsage as A, recordRecertified as At, unavailableCount as B, resolveStatsDshHome as C, getAdvisorState as Ct, dedupePlaceholder as D, invalidateOnTaskChange as Dt, dedupeHash as E, getSummaryOverride as Et, onlyTextBlocks as F, priceOfficialDeepSeekUsage as Ft, ContextCompressionSettingsSchema as G, countOmittedLines as H, pressureCost as I, resolveOfficialDeepSeekPrice as It, PRUNE_MARKER as J, DEFAULTS as K, recoveryMarker as L, getSavingsLedger as Lt, emptyResult as M, setSummaryOverride as Mt, nativePruneContent as N, DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION as Nt, flattenPlainText as O, observeIntentEnabled as Ot, onlyTextBlock as P, decimalRateNanoUnits as Pt, isCompressionProfile as Q, sameProviderMeasurementKey as R, statsPersistenceState as S, evaluateIntentGate as St, DedupeTable as T, getObservedIntentEnabled as Tt, AUTO_COMPACT_THRESHOLD_LIMITS as U, CAPACITY_PRESSURE_RATIO as V, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as W, charsToTokens as X, charsForTokens as Y, codePointLength as Z, scheduleUsageFlush as _, isSessionOverrideAction as _t, getStatsBackfillStatus as a, resolveCustomPolicy as at, ensureStatsStore as b, INTENT_GATE_FLOOR_FRACTION as bt, pauseStatsBackfill as c, COMPRESSION_PROFILES as ct, claimFromLand as d, decodeSessionLogBytes as dt, parseContextCompressionSettings as et, claimOffset as f, deepSeekV4TokenizerForModel as ft, reclaimFromTailTrim as g, estimateSavingsPricing as gt, getStatsActiveSessionId as h, drsTotalsFragment as ht, discoverBackfillSessionLogs as i, DEFAULT_CUSTOM_COMPRESSION_POLICY as it, countToolContent as j, recordScore as jt, measureForCompaction as k, recordIntentFold as kt, resumeStatsBackfill as l, countExactCanonicalTextFields as lt, flushUsageOnDispose as m, buildMonitorSnapshot as mt, sampleIntegralBoundary as n, resolvePolicy as nt, kickStatsBackfillOnDispose as o, assertNever as ot, flushPendingUsageNow as p, applySessionOverride as pt, DEFAULT_CONTEXT_COMPRESSION_SETTINGS as q, configureStatsBackfillTrigger as r, CustomCompressionPolicySchema as rt, kickStatsBackfillOnRouteHit as s, deepFreeze as st, estimateIntegralMoney as t, resolveConfig as tt, cancelPendingUsageFlushes as u, unavailableTokenCount as ut, setStatsLivePathBusy as v, mergeCompositionByComponent as vt, projectSessionSavings as w, getLastIntentFold as wt, getStatsStore as x, INTENT_GATE_GROWTH_TOKENS as xt, closeStatsStore as y, observeContextUsage as yt, summarize as z };
+export { isValidAutoCompactThresholdPercent as $, officialRequestUsage as A, recordIntentFold as At, unavailableCount as B, resolveStatsDshHome as C, evaluateIntentGate as Ct, dedupePlaceholder as D, getSummaryOverride as Dt, dedupeHash as E, getObservedIntentEnabled as Et, onlyTextBlocks as F, decimalRateNanoUnits as Ft, ContextCompressionSettingsSchema as G, countOmittedLines as H, pressureCost as I, priceOfficialDeepSeekUsage as It, PRUNE_MARKER as J, DEFAULTS as K, recoveryMarker as L, resolveOfficialDeepSeekPrice as Lt, emptyResult as M, recordScore as Mt, nativePruneContent as N, setSummaryOverride as Nt, flattenPlainText as O, invalidateOnTaskChange as Ot, onlyTextBlock as P, DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION as Pt, isCompressionProfile as Q, sameProviderMeasurementKey as R, getSavingsLedger as Rt, statsPersistenceState as S, INTENT_GATE_GROWTH_TOKENS as St, DedupeTable as T, getLastIntentFold as Tt, AUTO_COMPACT_THRESHOLD_LIMITS as U, CAPACITY_PRESSURE_RATIO as V, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as W, charsToTokens as X, charsForTokens as Y, codePointLength as Z, scheduleUsageFlush as _, isSessionOverrideAction as _t, getStatsBackfillStatus as a, resolveCustomPolicy as at, ensureStatsStore as b, setSedimentObservation as bt, pauseStatsBackfill as c, COMPRESSION_PROFILES as ct, claimFromLand as d, decodeSessionLogBytes as dt, parseContextCompressionSettings as et, claimOffset as f, deepSeekV4TokenizerForModel as ft, reclaimFromTailTrim as g, estimateSavingsPricing as gt, getStatsActiveSessionId as h, drsTotalsFragment as ht, discoverBackfillSessionLogs as i, DEFAULT_CUSTOM_COMPRESSION_POLICY as it, countToolContent as j, recordRecertified as jt, measureForCompaction as k, observeIntentEnabled as kt, resumeStatsBackfill as l, countExactCanonicalTextFields as lt, flushUsageOnDispose as m, buildMonitorSnapshot as mt, sampleIntegralBoundary as n, resolvePolicy as nt, kickStatsBackfillOnDispose as o, assertNever as ot, flushPendingUsageNow as p, applySessionOverride as pt, DEFAULT_CONTEXT_COMPRESSION_SETTINGS as q, configureStatsBackfillTrigger as r, CustomCompressionPolicySchema as rt, kickStatsBackfillOnRouteHit as s, deepFreeze as st, estimateIntegralMoney as t, resolveConfig as tt, cancelPendingUsageFlushes as u, unavailableTokenCount as ut, setStatsLivePathBusy as v, mergeCompositionByComponent as vt, projectSessionSavings as w, getAdvisorState as wt, getStatsStore as x, INTENT_GATE_FLOOR_FRACTION as xt, closeStatsStore as y, observeContextUsage as yt, summarize as z };

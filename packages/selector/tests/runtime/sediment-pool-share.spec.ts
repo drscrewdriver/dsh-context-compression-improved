@@ -21,7 +21,7 @@ function segments(text: string): Array<{ role: TriageRole; body: string }> {
     const role = match[1]
     return {
       role: role === 'user' || role === 'assistant' || role === 'tool' ? role : 'tool',
-      body: match[2],
+      body: match[2] ?? '',
     }
   })
 }

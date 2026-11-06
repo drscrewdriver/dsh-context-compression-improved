@@ -90,10 +90,14 @@ describe('publishSettledCard (T3.5 transaction)', () => {
     const result = publishSettledCard(session, draft(1_000, 4_000), { startSeq: 2, endSeq: 9, shadowedSeqs: [2, 3, 9] })
     expect(result.ok).toBe(true)
     expect(session.calls.map(call => call.type)).toEqual(['compaction/prune', 'user/message'])
-    const options = session.calls[1].options as Record<string, unknown>
+    const second = session.calls[1]
+    if (second === undefined) throw new Error('missing replacement call')
+    const options = second.options as { surfaceOp?: unknown, sourceEventSeqs?: unknown }
     expect(options.surfaceOp).toEqual({ op: 'replace', startSeq: 2, endSeq: 9 })
     expect(options.sourceEventSeqs).toEqual([11, 2, 3, 9])
-    const manifest = session.calls[0].data as Record<string, unknown>
+    const first = session.calls[0]
+    if (first === undefined) throw new Error('missing manifest call')
+    const manifest = first.data as Record<string, unknown>
     expect(manifest.shadowedTokenCount).toBe(4_000)
   })
 

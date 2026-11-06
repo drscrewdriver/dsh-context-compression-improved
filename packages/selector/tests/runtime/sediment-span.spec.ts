@@ -15,7 +15,7 @@ function turn(events: SurfaceEvent[]): SurfaceEvent[] {
 const a = (seq: number, toolCalls = 0, text = ''): SurfaceEvent =>
   ({ seq, type: 'assistant/message', text, toolCalls })
 const t = (seq: number, text: string, toolName?: string, argsJson?: string, isError = false): SurfaceEvent =>
-  ({ seq, type: 'tool/result', text, toolName, argsJson, isError })
+  ({ seq, type: 'tool/result', text, ...(toolName === undefined ? {} : { toolName }), ...(argsJson === undefined ? {} : { argsJson }), isError })
 
 describe('planTurnSpan (T3.3)', () => {
   const bigRead = `import fs from "node:fs"\n${'  const x = compute(i)\n'.repeat(120)}`
@@ -84,7 +84,9 @@ describe('triageSpanBlocks (end-to-end line assignment)', () => {
     expect(readBlock?.mask?.kind).toBe('skeleton')
     const failBlock = triage.find(result => result.poolLines.some(line => line.text.includes('TS2345')))
     expect(failBlock).toBeDefined()
-    expect(failBlock?.poolLines[0].hardFailure).toBe(true)
+    const failLine = failBlock?.poolLines[0]
+    if (failLine === undefined) throw new Error('expected pooled failure line')
+    expect(failLine.hardFailure).toBe(true)
     expect(bySeq.size).toBeGreaterThan(0)
   })
 })

@@ -30,7 +30,15 @@ function eventBySeq(events, seq) {
 * compression surface without any error. Keeping one source prevents that class
 * of silent split here.
 */
-const RUNTIME_TOOL_NAMES = Object.freeze({ RETRIEVE: "context_compression_retrieve" });
+const RUNTIME_TOOL_NAMES = Object.freeze({
+	RETRIEVE: "context_compression_retrieve",
+	/** Shallow read preview: declaration skeleton over a type-classified view. */
+	SHALLOW: "context_compression_shallow",
+	/** Upgrade-discard pair primitive: drop one side of a shallow/full read pair. */
+	DISCARD: "context_compression_discard",
+	/** O(1) header probe recommending which shallow view fits a file. */
+	PROBE: "context_compression_probe"
+});
 /**
 * Calling-convention note appended to the retrieval tool description. In a
 * standard (direct tool-call) preset the model calls the tool directly; when the

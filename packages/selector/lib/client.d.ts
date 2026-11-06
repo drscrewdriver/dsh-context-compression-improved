@@ -73,6 +73,11 @@ declare const zh: {
   'codeSkeleton.enabled': string;
   'codeSkeleton.enabled.on': string;
   'codeSkeleton.enabled.off': string;
+  'sediment.title': string;
+  'sediment.description': string;
+  'sediment.enabled': string;
+  'sediment.enabled.on': string;
+  'sediment.enabled.off': string;
   'intentSummary.title': string;
   'intentSummary.description': string;
   'intentSummary.enabled': string;
@@ -104,6 +109,8 @@ declare const zh: {
   'monitor.panel.stateOff': string;
   'monitor.panel.gateUnknown': string;
   'monitor.panel.lastFold': string;
+  'monitor.panel.sedimentCuts': string;
+  'monitor.panel.sedimentConservative': string;
   'monitor.panel.stale': string;
   'monitorPanel.title': string;
   'monitorPanel.description': string;
@@ -208,6 +215,7 @@ interface CompressionSelectorInjected {
   resetPtcCustom: () => Promise<void>;
   saveAutoCompact: (thresholdPercent: number) => Promise<void>;
   saveCodeSkeleton: (enabled: boolean) => Promise<void>;
+  saveSediment: (enabled: boolean) => Promise<void>;
   saveIntentSummary: (enabled: boolean) => Promise<void>;
   saveMonitorPanel: (enabled: boolean) => Promise<void>;
   /** Patch of `presetOptions` members; an explicit `undefined` clears that field. */

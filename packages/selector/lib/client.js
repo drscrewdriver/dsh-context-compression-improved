@@ -74,6 +74,96 @@ window.__ModuleLoader__.load({
 				trigger: 7e5
 			}
 		};
+		/** Off-defaults mirrored browser-safe from the runtime sediment section. */
+		const DEFAULT_SEDIMENT_SETTINGS = {
+			enabled: false,
+			granularity: "turn",
+			minClosingTokens: 120,
+			rewriteGuardRatio: 3,
+			maxTurnSpanTokens: 32e3
+		};
+		/**
+		* Browser-safe mirror of the runtime sediment section (absent inherits the off
+		* defaults). Strict like the other gates: unknown keys, wrong types, or an
+		* unparseable extra pattern invalidate the whole section — never coerced.
+		*/
+		function decodeSedimentSettings(value) {
+			if (value === void 0) return { ...DEFAULT_SEDIMENT_SETTINGS };
+			if (!isPlainRecord(value)) return void 0;
+			const allowed = /* @__PURE__ */ new Set([
+				"enabled",
+				"granularity",
+				"minClosingTokens",
+				"rewriteGuardRatio",
+				"maxTurnSpanTokens",
+				"extraSignalPatterns",
+				"foldMode",
+				"foldBaseUrl",
+				"foldBaseUrlKey",
+				"foldStrataProvider",
+				"foldStrataModel",
+				"foldLocal35Provider",
+				"foldLocal35Model"
+			]);
+			if (Object.keys(value).some((key) => !allowed.has(key))) return void 0;
+			if (value.enabled !== void 0 && typeof value.enabled !== "boolean") return void 0;
+			if (value.granularity !== void 0 && value.granularity !== "turn" && value.granularity !== "span") return void 0;
+			if (value.foldMode !== void 0 && value.foldMode !== "" && value.foldMode !== "host" && value.foldMode !== "direct") return void 0;
+			for (const key of [
+				"foldBaseUrl",
+				"foldBaseUrlKey",
+				"foldStrataProvider",
+				"foldStrataModel",
+				"foldLocal35Provider",
+				"foldLocal35Model"
+			]) if (value[key] !== void 0 && typeof value[key] !== "string") return void 0;
+			const bounded = [
+				[
+					value.minClosingTokens,
+					40,
+					2e3
+				],
+				[
+					value.rewriteGuardRatio,
+					1,
+					10
+				],
+				[
+					value.maxTurnSpanTokens,
+					4e3,
+					64e3
+				]
+			];
+			for (const [entry, min, max] of bounded) if (entry !== void 0 && (typeof entry !== "number" || !Number.isSafeInteger(entry) || entry < min || entry > max)) return void 0;
+			if (value.extraSignalPatterns !== void 0) {
+				if (!Array.isArray(value.extraSignalPatterns) || value.extraSignalPatterns.some((entry) => typeof entry !== "string" || !isSafeSignalPattern(entry))) return void 0;
+			}
+			return {
+				enabled: value.enabled ?? DEFAULT_SEDIMENT_SETTINGS.enabled,
+				granularity: value.granularity ?? DEFAULT_SEDIMENT_SETTINGS.granularity,
+				minClosingTokens: value.minClosingTokens ?? DEFAULT_SEDIMENT_SETTINGS.minClosingTokens,
+				rewriteGuardRatio: value.rewriteGuardRatio ?? DEFAULT_SEDIMENT_SETTINGS.rewriteGuardRatio,
+				maxTurnSpanTokens: value.maxTurnSpanTokens ?? DEFAULT_SEDIMENT_SETTINGS.maxTurnSpanTokens,
+				...value.extraSignalPatterns === void 0 ? {} : { extraSignalPatterns: [...value.extraSignalPatterns] },
+				...value.foldMode === void 0 ? {} : { foldMode: value.foldMode },
+				...value.foldBaseUrl === void 0 ? {} : { foldBaseUrl: value.foldBaseUrl },
+				...value.foldBaseUrlKey === void 0 ? {} : { foldBaseUrlKey: value.foldBaseUrlKey },
+				...value.foldStrataProvider === void 0 ? {} : { foldStrataProvider: value.foldStrataProvider },
+				...value.foldStrataModel === void 0 ? {} : { foldStrataModel: value.foldStrataModel },
+				...value.foldLocal35Provider === void 0 ? {} : { foldLocal35Provider: value.foldLocal35Provider },
+				...value.foldLocal35Model === void 0 ? {} : { foldLocal35Model: value.foldLocal35Model }
+			};
+		}
+		/** Accept only parseable, length-bounded patterns; caps keep one scan linear. */
+		function isSafeSignalPattern(entry) {
+			if (entry.length === 0 || entry.length > 200) return false;
+			try {
+				new RegExp(entry);
+				return true;
+			} catch {
+				return false;
+			}
+		}
 		/**
 		* Decode the persisted codeSkeleton section with exactly the runtime schema's
 		* strictness: absent means the lossless off default; present values must be a
@@ -873,6 +963,45 @@ window.__ModuleLoader__.load({
 				]
 			});
 		}
+		/**
+		* Turn-tail sedimentation gate (plan cci-sedimentation-triage T3.7): on/off
+		* select with the display-impact disclosure in its description (M13) —
+		* replaced spans leave the transcript view; originals stay in the log.
+		*/
+		function SedimentControls({ value, disabled, save, settle, t }) {
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+				className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.autoCompact,
+				"aria-labelledby": "context-compression-sediment-title",
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
+						id: "context-compression-sediment-title",
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.autoCompactTitle,
+						children: t("sediment.title")
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.customNote,
+						children: t("sediment.description")
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.field,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("sediment.enabled") }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+							value: value ? "on" : "off",
+							disabled,
+							onChange: (event) => {
+								settle(() => save(event.currentTarget.value === "on"));
+							},
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+								value: "on",
+								children: t("sediment.enabled.on")
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+								value: "off",
+								children: t("sediment.enabled.off")
+							})]
+						})]
+					})
+				]
+			});
+		}
 		//#endregion
 		//#region src/client/EstimatorControls.tsx
 		/**
@@ -1448,7 +1577,7 @@ window.__ModuleLoader__.load({
 		function ContextCompressionSettingsSection(props) {
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SettingsCompressionProfileControls, { ...props });
 		}
-		function SettingsCompressionProfileControls({ useCompression, select, saveCustom, resetCustom, savePtcCustom, resetPtcCustom, saveAutoCompact, saveCodeSkeleton, saveIntentSummary, saveMonitorPanel, savePresetOptions, t }) {
+		function SettingsCompressionProfileControls({ useCompression, select, saveCustom, resetCustom, savePtcCustom, resetPtcCustom, saveAutoCompact, saveCodeSkeleton, saveSediment, saveIntentSummary, saveMonitorPanel, savePresetOptions, t }) {
 			const state = useCompression((snapshot) => snapshot);
 			const [saving, setSaving] = (0, react.useState)(false);
 			const [saveError, setSaveError] = (0, react.useState)(null);
@@ -1540,6 +1669,13 @@ window.__ModuleLoader__.load({
 						settle,
 						t
 					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(SedimentControls, {
+						value: state.value?.sediment?.enabled ?? false,
+						disabled: busy || !state.writable || false,
+						save: saveSediment,
+						settle,
+						t
+					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(IntentSummaryControls, {
 						value: state.value?.intentSummary?.enabled ?? false,
 						disabled: busy || !state.writable || false,
@@ -1610,7 +1746,7 @@ window.__ModuleLoader__.load({
 		*/
 		function decodeSettings(value) {
 			if (!isPlainRecord(value)) return void 0;
-			if (Object.keys(value).some((key) => key !== "profile" && key !== "custom" && key !== "ptcCustom" && key !== "autoCompact" && key !== "codeSkeleton" && key !== "intentSummary" && key !== "monitorPanel" && key !== "presetOptions")) return;
+			if (Object.keys(value).some((key) => key !== "profile" && key !== "custom" && key !== "ptcCustom" && key !== "autoCompact" && key !== "codeSkeleton" && key !== "intentSummary" && key !== "monitorPanel" && key !== "sediment" && key !== "presetOptions")) return;
 			const profile = value.profile;
 			const custom = value.custom;
 			const ptcCustomRaw = value.ptcCustom;
@@ -1619,8 +1755,9 @@ window.__ModuleLoader__.load({
 			const codeSkeleton = decodeCodeSkeletonSettings(value.codeSkeleton);
 			const intentSummary = decodeIntentSummarySettings(value.intentSummary);
 			const monitorPanel = decodeMonitorPanelSettings(value.monitorPanel);
+			const sediment = decodeSedimentSettings(value.sediment);
 			const presetOptions = decodePresetOptionsSettings(value.presetOptions);
-			return typeof profile === "string" && COMPRESSION_PROFILES.includes(profile) && isCustomCompressionPolicy(custom) && ptcCustom !== void 0 && autoCompact !== void 0 && codeSkeleton !== void 0 && intentSummary !== void 0 && monitorPanel !== void 0 ? {
+			return typeof profile === "string" && COMPRESSION_PROFILES.includes(profile) && isCustomCompressionPolicy(custom) && ptcCustom !== void 0 && autoCompact !== void 0 && codeSkeleton !== void 0 && intentSummary !== void 0 && monitorPanel !== void 0 && sediment !== void 0 ? {
 				profile,
 				custom: canonicalizeCustomPolicy(custom),
 				ptcCustom,
@@ -1628,6 +1765,7 @@ window.__ModuleLoader__.load({
 				codeSkeleton,
 				intentSummary,
 				...monitorPanel === void 0 ? {} : { monitorPanel },
+				sediment,
 				...presetOptions === void 0 ? {} : { presetOptions }
 			} : void 0;
 		}
@@ -1771,6 +1909,7 @@ window.__ModuleLoader__.load({
   <button data-overon>${t("monitor.panel.resume")}</button>
   <button data-overoff class="ghost">${t("monitor.panel.disable")}</button></div>
 <div class="row muted" data-fold style="display:none"></div>
+<div class="row muted" data-sediment style="display:none"></div>
 <div class="stale" data-stale>${t("monitor.panel.stale")}</div>
 <div data-compwrap style="display:none">
   <div class="row"><span class="label">${t("monitor.panel.composition")}</span></div>
@@ -1967,6 +2106,12 @@ window.__ModuleLoader__.load({
 					foldEl.style.display = "";
 					foldEl.textContent = `${t("monitor.panel.lastFold")} turn ${String(fold.turn ?? "–")}, seq ${String(fold.startSeq ?? "–")}..${String(fold.endSeq ?? "–")}`;
 				} else foldEl.style.display = "none";
+				const sediment = snap.sediment;
+				const sedimentEl = panel.querySelector("[data-sediment]");
+				if (sediment !== void 0 && sediment !== null && typeof sediment === "object") {
+					sedimentEl.style.display = "";
+					sedimentEl.textContent = sediment.conservative === true ? `${t("monitor.panel.sedimentConservative")} (${String(sediment.reason ?? "–")})` : `${t("monitor.panel.sedimentCuts")} ${String(sediment.cuts ?? 0)}`;
+				} else sedimentEl.style.display = "none";
 				const recent = Array.isArray(snap.recentOffsets) ? snap.recentOffsets.slice(0, 3) : [];
 				const recentEl = panel.querySelector("[data-recent]");
 				recentEl.style.display = recent.length === 0 ? "none" : "";
@@ -2090,6 +2235,11 @@ window.__ModuleLoader__.load({
 			"codeSkeleton.enabled": "代码骨架压缩",
 			"codeSkeleton.enabled.on": "开",
 			"codeSkeleton.enabled.off": "关（默认）",
+			"sediment.title": "轮尾沉降（实验）",
+			"sediment.description": "开启后，每个正常收尾的回合结束时，该轮的工具调用区间会被一张沉降卡（错误原文逐字摘录 + 文件清单/代码骨架 + 省略统计）持久替换，压低窗口占用、推迟官方大压缩。注意：被替换的原消息将从对话视图撤出（原文仍在会话日志，可按卡片里的序号用回捞工具找回）；仅对新观察会话生效。",
+			"sediment.enabled": "轮尾沉降",
+			"sediment.enabled.on": "开",
+			"sediment.enabled.off": "关（默认）",
 			"intentSummary.title": "回合末意图摘要（转向尾部压缩）",
 			"intentSummary.description": "开启后，回合收尾阶段把本次消费的增量按语义角色折叠为意图摘要块：读类工具结果压成单行目标/规模记录，写类保留骨架头与逐字错误行，于下一次压力回合经既有折叠管线落地；仅当增长门控通过（活跃表面 >45% 且距上次折叠增长 >50K token）才触发。修改只影响新会话；当前会话可用 /ctx-summary off|on|status 临时覆盖。",
 			"intentSummary.enabled": "回合末意图摘要",
@@ -2121,6 +2271,8 @@ window.__ModuleLoader__.load({
 			"monitor.panel.stateOff": "关",
 			"monitor.panel.gateUnknown": "未评估",
 			"monitor.panel.lastFold": "最近折叠",
+			"monitor.panel.sedimentCuts": "沉降刀数",
+			"monitor.panel.sedimentConservative": "沉降：保守模式（净节省负反馈）",
 			"monitor.panel.stale": "快照不可达——显示上次数据",
 			"monitorPanel.title": "压缩监控悬浮面板",
 			"monitorPanel.description": "开启后，输入区旁出现可拖拽的悬浮球，点开即监控当前压缩状态：净节省（精确口径）、缓存命中率、成本估算、回合末意图摘要门控与最近抵消；面板内可临时覆盖当前会话的意图摘要开关。统计经 SQLite 持久化，跨宿主重启保留。",
@@ -2247,6 +2399,11 @@ window.__ModuleLoader__.load({
 			"codeSkeleton.enabled": "Code skeleton compression",
 			"codeSkeleton.enabled.on": "On",
 			"codeSkeleton.enabled.off": "Off (default)",
+			"sediment.title": "Turn-tail sedimentation (experimental)",
+			"sediment.description": "When on, each completed turn replaces its tool-call span with one durable sediment card (verbatim error lines + file manifests / code skeletons + omission stats), shrinking the live window and deferring the official compaction. Note: replaced messages leave the transcript view (originals stay in the session log and can be retrieved by the card's sequence numbers); applies to newly observed sessions only.",
+			"sediment.enabled": "Turn-tail sedimentation",
+			"sediment.enabled.on": "On",
+			"sediment.enabled.off": "Off (default)",
 			"intentSummary.title": "Turn-tail intent summary",
 			"intentSummary.description": "When on, the turn-boundary postflight folds the consumed increment into intent-summary blocks by semantic role: read-class tool results become one-line target/scale records and write-class keep skeleton heads plus verbatim error lines, landing on the next pressure round through the ordinary fold pipeline. Only fires when the growth gate passes (live surface >45% and >50K tokens grown since the last fold). Applies to new sessions; override the current one with /ctx-summary off|on|status.",
 			"intentSummary.enabled": "Turn-tail intent summary",
@@ -2278,6 +2435,8 @@ window.__ModuleLoader__.load({
 			"monitor.panel.stateOff": "off",
 			"monitor.panel.gateUnknown": "not evaluated yet",
 			"monitor.panel.lastFold": "Last fold",
+			"monitor.panel.sedimentCuts": "Sediment cuts",
+			"monitor.panel.sedimentConservative": "Sediment: conservative mode (net-savings feedback)",
 			"monitor.panel.stale": "Snapshot unreachable — showing last data",
 			"monitorPanel.title": "Compression monitor panel",
 			"monitorPanel.description": "When on, a draggable floating bubble appears next to the input area — open it to watch live compression state: net savings (exact basis), cache hit rate, cost estimate, the turn-tail intent-summary gate and recent offsets. The panel can temporarily override the current session's intent-summary switch. Stats persist in SQLite and survive host restarts.",
@@ -2406,6 +2565,11 @@ window.__ModuleLoader__.load({
 			"codeSkeleton.enabled": "Code-Skelettkomprimierung",
 			"codeSkeleton.enabled.on": "Ein",
 			"codeSkeleton.enabled.off": "Aus (Standard)",
+			"sediment.title": "Wendelsenkung (experimentell)",
+			"sediment.description": "Wenn aktiv, ersetzt jeder abgeschlossene Turn sein Tool-Call-Fenster durch eine dauerhafte Sedimentkarte (Fehlerzeilen wörtlich + Dateilisten/Code-Skelette + Auslassungsstatistik), verkleinert das Fenstervolumen und verschiebt die offizielle Komprimierung. Hinweis: ersetzte Meldungen verschwinden aus der Transkript-Ansicht (Originale bleiben im Sitzungsprotokoll und sind über die Sequenznummern der Karte wiederholbar); gilt nur für neu beobachtete Sitzungen.",
+			"sediment.enabled": "Wendelsenkung",
+			"sediment.enabled.on": "Ein",
+			"sediment.enabled.off": "Aus (Standard)",
 			"intentSummary.title": "Abschluss-Zusammenfassung (Turn-Tail)",
 			"intentSummary.description": "Aktiviert faltet der Turn-Abschluss den verbrauchten Zuwachs nach semantischen Rollen zu Intent-Zusammenfassungsblöcken: Lese-Tool-Ergebnisse werden zu Einzeilern mit Ziel/Umfang, die Schreibklasse behält Skelettköpfe plus wörtliche Fehlerzeilen; die Landung erfolgt in der nächsten Druckrunde über die gewöhnliche Falt-Pipeline. Zündet nur, wenn die Wachstumsschwelle passiert ist (live Oberfläche >45 % und >50K Token seit der letzten Faltung). Gilt für neue Sitzungen; die aktuelle lässt sich mit /ctx-summary off|on|status übersteuern.",
 			"intentSummary.enabled": "Abschluss-Zusammenfassung",
@@ -2437,6 +2601,8 @@ window.__ModuleLoader__.load({
 			"monitor.panel.stateOff": "aus",
 			"monitor.panel.gateUnknown": "noch nicht bewertet",
 			"monitor.panel.lastFold": "Letzte Faltung",
+			"monitor.panel.sedimentCuts": "Sediment-Schnitte",
+			"monitor.panel.sedimentConservative": "Sediment: konservativer Modus (Netto-Spar-Rückkopplung)",
 			"monitor.panel.stale": "Snapshot nicht erreichbar — letzte Daten",
 			"monitorPanel.title": "Komprimierungs-Monitorpanel",
 			"monitorPanel.description": "Aktiviert erscheint neben dem Eingabebereich eine ziehbare Schwebekugel — öffne sie, um den Live-Komprimierungszustand zu beobachten: Nettoeinsparung (exakte Basis), Cache-Trefferquote, Kostenschätzung, das Turn-Tail-Gate und letzte Ausgleiche. Das Panel kann den Intent-Zusammenfassungsschalter der aktuellen Sitzung temporär übersteuern. Statistiken werden in SQLite persistiert und überstehen Host-Neustarts.",
@@ -2565,6 +2731,11 @@ window.__ModuleLoader__.load({
 			"codeSkeleton.enabled": "Compresión de esqueleto del código",
 			"codeSkeleton.enabled.on": "Activado",
 			"codeSkeleton.enabled.off": "Desactivado (predeterminado)",
+			"sediment.title": "Sedimentación de fin de turno (experimental)",
+			"sediment.description": "Si se activa, cada turno completado sustituye su rango de llamadas a herramientas por una tarjeta de sedimentación persistente (líneas de error literales + listas de archivos/esqueletos de código + estadísticas de omisión), reduciendo la ventana y posponiendo la compactación oficial. Nota: los mensajes sustituidos salen de la vista del transcript (los originales quedan en el registro de sesión y se recuperan por los números de secuencia de la tarjeta); solo afecta a sesiones nuevas.",
+			"sediment.enabled": "Sedimentación de fin de turno",
+			"sediment.enabled.on": "Activado",
+			"sediment.enabled.off": "Desactivado (predeterminado)",
 			"intentSummary.title": "Resumen de intención al cierre del turno",
 			"intentSummary.description": "Al activarlo, el postflight de cierre de turno pliega el incremento consumido en bloques de resumen de intención por rol semántico: los resultados de herramientas de lectura se convierten en registros de una línea con objetivo/escala y los de escritura conservan la cabecera de esqueleto más las líneas de error textuales; aterriza en la siguiente ronda de presión por el conducto de plegado normal. Solo se dispara si se supera la puerta de crecimiento (superficie activa >45 % y >50K tokens desde el último plegado). Aplica a sesiones nuevas; la actual se gobierna con /ctx-summary off|on|status.",
 			"intentSummary.enabled": "Resumen de intención al cierre",
@@ -2596,6 +2767,8 @@ window.__ModuleLoader__.load({
 			"monitor.panel.stateOff": "no",
 			"monitor.panel.gateUnknown": "aún sin evaluar",
 			"monitor.panel.lastFold": "Último plegado",
+			"monitor.panel.sedimentCuts": "Cortes de sedimento",
+			"monitor.panel.sedimentConservative": "Sedimento: modo conservador (retroalimentación de ahorro neto)",
 			"monitor.panel.stale": "Instantánea inalcanzable — se muestran los últimos datos",
 			"monitorPanel.title": "Panel de monitor de compresión",
 			"monitorPanel.description": "Al activarlo, junto al área de entrada aparece una burbuja flotante arrastrable — ábrela para observar el estado de compresión en vivo: ahorro neto (base exacta), tasa de acierto de caché, estimación de coste, la puerta de resumen de intención del turno y compensaciones recientes. El panel puede invalidar temporalmente el interruptor de resumen de intención de la sesión actual. Las estadísticas se persisten en SQLite y sobreviven al reinicio del host.",
@@ -2724,6 +2897,11 @@ window.__ModuleLoader__.load({
 			"codeSkeleton.enabled": "Compression du code en squelette",
 			"codeSkeleton.enabled.on": "Activé",
 			"codeSkeleton.enabled.off": "Désactivé (par défaut)",
+			"sediment.title": "Sédimentation de fin de tour (expérimental)",
+			"sediment.description": "Si activé, chaque tour terminé remplace sa plage d'appels d'outils par une carte de sédimentation durable (lignes d'erreur littérales + listes de fichiers/squelettes de code + statistiques d'omission), réduisant la fenêtre et repoussant la compaction officielle. Note : les messages remplacés quittent la vue du transcript (les originaux restent dans le journal de session et sont récupérables via les numéros de séquence de la carte) ; ne s'applique qu'aux nouvelles sessions.",
+			"sediment.enabled": "Sédimentation de fin de tour",
+			"sediment.enabled.on": "Activé",
+			"sediment.enabled.off": "Désactivé (par défaut)",
 			"intentSummary.title": "Résumé d'intention en fin de tour",
 			"intentSummary.description": "Activé, le postflight de fin de tour plie l'incrément consommé en blocs de résumé d'intention par rôle sémantique : les résultats d'outils de lecture deviennent des enregistrements une-ligne objectif/échelle, les écrits gardent la tête de squelette plus les lignes d'erreur verbatim ; l'atterrissage se fait au prochain tour de pression via le pipeline de pliage habituel. Ne se déclenche que si la porte de croissance passe (surface active >45 % et >50K tokens depuis le dernier pliage). S'applique aux nouvelles sessions ; la session courante se pilote avec /ctx-summary off|on|status.",
 			"intentSummary.enabled": "Résumé d'intention en fin de tour",
@@ -2755,6 +2933,8 @@ window.__ModuleLoader__.load({
 			"monitor.panel.stateOff": "désactivé",
 			"monitor.panel.gateUnknown": "pas encore évalué",
 			"monitor.panel.lastFold": "Dernier pliage",
+			"monitor.panel.sedimentCuts": "Coupes de sédimentation",
+			"monitor.panel.sedimentConservative": "Sédimentation : mode conservateur (rétroaction sur économie nette)",
 			"monitor.panel.stale": "Instantané injoignable — dernières données",
 			"monitorPanel.title": "Panneau de monitorage de compression",
 			"monitorPanel.description": "Activé, une bulle flottante déplaçable apparaît près de la zone de saisie — ouvrez-la pour observer l'état de compression en direct : économie nette (base exacte), taux de réussite du cache, estimation de coût, la porte de résumé d'intention du tour et les compensations récentes. Le panneau peut contourner temporairement l'interrupteur de résumé d'intention de la session courante. Les statistiques sont persistées en SQLite et survivent au redémarrage de l'hôte.",
@@ -2883,6 +3063,11 @@ window.__ModuleLoader__.load({
 			"codeSkeleton.enabled": "Compressione a scheletro del codice",
 			"codeSkeleton.enabled.on": "Attivato",
 			"codeSkeleton.enabled.off": "Disattivato (predefinito)",
+			"sediment.title": "Sedimentazione di fine turno (sperimentale)",
+			"sediment.description": "Se attiva, ogni turno completato sostituisce il suo intervallo di chiamate tool con una carta di sedimentazione durevole (righe di errore letterali + elenchi file/scheletri di codice + statistiche di omissione), riducendo la finestra e rinviando la compattazione ufficiale. Nota: i messaggi sostituiti escono dalla vista del transcript (gli originali restano nel log di sessione e sono recuperabili tramite i numeri di sequenza della carta); vale solo per le nuove sessioni.",
+			"sediment.enabled": "Sedimentazione di fine turno",
+			"sediment.enabled.on": "Attiva",
+			"sediment.enabled.off": "Disattiva (predefinito)",
 			"intentSummary.title": "Riepilogo di intento a fine turno",
 			"intentSummary.description": "Quando attivo, il postflight di fine turno piega l'incremento consumato in blocchi di riepilogo di intento per ruolo semantico: i risultati degli strumenti di lettura diventano record a riga singola obiettivo/scala, quelli di scrittura mantengono la testa dello scheletro più le righe di errore testuali; atterra al prossimo round di pressione tramite la pipeline di piegatura ordinaria. Si attiva solo se la soglia di crescita passa (superficie attiva >45% e >50K token dall'ultima piegatura). Vale per le nuove sessioni; quella corrente si governa con /ctx-summary off|on|status.",
 			"intentSummary.enabled": "Riepilogo di intento a fine turno",
@@ -2914,6 +3099,8 @@ window.__ModuleLoader__.load({
 			"monitor.panel.stateOff": "off",
 			"monitor.panel.gateUnknown": "non ancora valutato",
 			"monitor.panel.lastFold": "Ultima piegatura",
+			"monitor.panel.sedimentCuts": "Tagli di sedimentazione",
+			"monitor.panel.sedimentConservative": "Sedimentazione: modalità conservativa (feedback su risparmio netto)",
 			"monitor.panel.stale": "Snapshot non raggiungibile — ultimi dati",
 			"monitorPanel.title": "Pannello di monitoraggio compressione",
 			"monitorPanel.description": "Quando attivo, accanto all'area di input appare una bolla flottante trascinabile — aprila per osservare lo stato di compressione in tempo reale: risparmio netto (base esatta), tasso di hit della cache, stima dei costi, la soglia del riepilogo di intento del turno e le compensazioni recenti. Il pannello può ignorare temporaneamente l'interruttore del riepilogo di intento della sessione corrente. Le statistiche sono persistite in SQLite e sopravvivono al riavvio dell'host.",
@@ -3042,6 +3229,11 @@ window.__ModuleLoader__.load({
 			"codeSkeleton.enabled": "コードスケルトン圧縮",
 			"codeSkeleton.enabled.on": "オン",
 			"codeSkeleton.enabled.off": "オフ(既定)",
+			"sediment.title": "ターン末尾沈降（実験的）",
+			"sediment.description": "有効にすると、正常終了した各ターンでそのツール呼び出し区間が永続的な沈降カード（エラー原文の逐語引用 + ファイル一覧/コードスケルトン + 省略統計）に置き換わり、ウィンドウ占有を抑え公式圧縮を遅らせます。注意：置き換えられた元メッセージは会話ビューから消えます（原文はセッションログに残り、カード内の番号でリトリーバルツールにより復元可能）。新規セッションのみに適用。",
+			"sediment.enabled": "ターン末尾沈降",
+			"sediment.enabled.on": "オン",
+			"sediment.enabled.off": "オフ（デフォルト）",
 			"intentSummary.title": "ターン末尾インテント要約",
 			"intentSummary.description": "有効にすると、ターン境界のポストフライトが消費済み増分を意味役割ごとにインテント要約ブロックへ折り畳みます。読み系ツール結果は目標/規模の 1 行レコードに、書き系は骨格ヘッダーと逐語エラー行を保持し、次の圧力ラウンドで通常の折り畳みパイプラインを通じて着地します。成長ゲート（ライブ表面 >45%、前回の折り畳みから >50K トークン増）を通過したときだけ発火します。変更は新セッションに適用され、現セッションは /ctx-summary off|on|status で上書きできます。",
 			"intentSummary.enabled": "ターン末尾インテント要約",
@@ -3073,6 +3265,8 @@ window.__ModuleLoader__.load({
 			"monitor.panel.stateOff": "オフ",
 			"monitor.panel.gateUnknown": "未評価",
 			"monitor.panel.lastFold": "最後の折り畳み",
+			"monitor.panel.sedimentCuts": "沈降カット数",
+			"monitor.panel.sedimentConservative": "沈降：保守モード（正味節約の負帰還）",
 			"monitor.panel.stale": "スナップショット到達不能——前回データを表示",
 			"monitorPanel.title": "圧縮モニター パネル",
 			"monitorPanel.description": "有効にすると、入力欄のそばにドラッグできるフローティング バブルが現れます。開くとライブの圧縮状態を監視できます。正味節約（正確 basis）、キャッシュ ヒット率、コスト概算、ターン末尾インテント要約ゲート、最近の相殺。パネルから現セッションのインテント要約スイッチを一時的に上書きできます。統計は SQLite に永続化され、ホスト再起動後も保持されます。",
@@ -3201,6 +3395,11 @@ window.__ModuleLoader__.load({
 			"codeSkeleton.enabled": "코드 스켈레톤 압축",
 			"codeSkeleton.enabled.on": "켬",
 			"codeSkeleton.enabled.off": "끔(기본값)",
+			"sediment.title": "턴 끝 침전(실험)",
+			"sediment.description": "켜면 완료된 각 턴에서 도구 호출 구간이 영구 침전 카드(오류 원문 그대로 + 파일 목록/코드 골격 + 생략 통계)로 교체되어 창 사용을 줄이고 공식 압축을 미룹니다. 주의: 교체된 원본 메시지는 대화 뷰에서 사라집니다(원문은 세션 로그에 남으며 카드의 순번으로 리트리브 도구로 복원 가능). 새로 관찰되는 세션에만 적용됩니다.",
+			"sediment.enabled": "턴 끝 침전",
+			"sediment.enabled.on": "켜기",
+			"sediment.enabled.off": "끄기(기본)",
 			"intentSummary.title": "턴 말머리 인텐트 요약",
 			"intentSummary.description": "켜면 턴 경계 포스트플라이트가 소비된 증분을 의미 역할별 인텐트 요약 블록으로 접습니다. 읽기 도구 결과는 목표/규모 한 줄 레코드가 되고 쓰기는 골격 헤더와 원문 오류 줄을 유지하며, 다음 압력 라운드에서 기존 접기 파이프라인을 통해 착지합니다. 성장 게이트(라이브 표면 >45%, 마지막 접기 이후 >50K 토큰 증가)를 통과할 때만 발동합니다. 새 세션에 적용되며, 현재 세션은 /ctx-summary off|on|status 로 임시 전환할 수 있습니다.",
 			"intentSummary.enabled": "턴 말머리 인텐트 요약",
@@ -3232,6 +3431,8 @@ window.__ModuleLoader__.load({
 			"monitor.panel.stateOff": "끔",
 			"monitor.panel.gateUnknown": "아직 평가 안 됨",
 			"monitor.panel.lastFold": "마지막 접기",
+			"monitor.panel.sedimentCuts": "침전 컷 수",
+			"monitor.panel.sedimentConservative": "침전: 보수 모드(순 절약 피드백)",
 			"monitor.panel.stale": "스냅샷 도달 불가——이전 데이터 표시",
 			"monitorPanel.title": "압축 모니터 패널",
 			"monitorPanel.description": "켜면 입력 영역 옆에 드래그 가능한 플로팅 버블이 나타납니다. 열면 라이브 압축 상태를 볼 수 있습니다. 순 절감(정확 기준), 캐시 적중률, 비용 추정, 턴 말머리 인텐트 요약 게이트, 최근 상쇄. 패널에서 현재 세션의 인텐트 요약 스위치를 임시로 전환할 수 있습니다. 통계는 SQLite에 영속화되어 호스트 재시작 후에도 유지됩니다.",
@@ -3360,6 +3561,11 @@ window.__ModuleLoader__.load({
 			"codeSkeleton.enabled": "Скелетное сжатие кода",
 			"codeSkeleton.enabled.on": "Вкл",
 			"codeSkeleton.enabled.off": "Выкл (по умолчанию)",
+			"sediment.title": "Оседание конца хода (экспериментально)",
+			"sediment.description": "Если включено, каждый завершённый ход заменяет свой интервал вызовов инструментов устойчивой карточкой оседания (дословные строки ошибок + списки файлов/скелеты кода + статистика пропусков), уменьшая окно и откладывая официальную компактацию. Примечание: заменённые сообщения исчезают из представления транскрипта (оригиналы остаются в журнале сессии и восстанавливаются по номерам последовательности карточки); действует только на новые сессии.",
+			"sediment.enabled": "Оседание конца хода",
+			"sediment.enabled.on": "Вкл",
+			"sediment.enabled.off": "Выкл (по умолчанию)",
 			"intentSummary.title": "Итог намерения в конце хода",
 			"intentSummary.description": "При включении постфлайт на границе хода сворачивает потреблённый прирост в блоки итогов намерения по семантическим ролям: результаты читающих инструментов становятся однострочными записями цель/масштаб, пишущие сохраняют заголовок скелета и дословные строки ошибок; приземляется в следующем раунде давления через обычный конвейер свёртки. Срабатывает только при прохождении шлюза роста (активная поверхность >45% и >50K токенов с последней свёртки). Действует на новые сессии; текущую можно переключить командой /ctx-summary off|on|status.",
 			"intentSummary.enabled": "Итог намерения в конце хода",
@@ -3391,6 +3597,8 @@ window.__ModuleLoader__.load({
 			"monitor.panel.stateOff": "выкл",
 			"monitor.panel.gateUnknown": "ещё не оценено",
 			"monitor.panel.lastFold": "Последняя свёртка",
+			"monitor.panel.sedimentCuts": "Осадочных вырезов",
+			"monitor.panel.sedimentConservative": "Оседание: консервативный режим (обратная связь по чистой экономии)",
 			"monitor.panel.stale": "Снимок недоступен — показаны последние данные",
 			"monitorPanel.title": "Панель мониторинга сжатия",
 			"monitorPanel.description": "При включении рядом с областью ввода появляется перетаскиваемый плавающий шарик — откройте его, чтобы следить за состоянием сжатия в реальном времени: чистая экономия (точная база), процент попаданий кэша, оценка стоимости, шлюз итогов намерения хода и последние компенсации. Панель может временно переключить тумблер итогов намерения текущей сессии. Статистика персистентна в SQLite и переживает перезапуск хоста.",
@@ -3845,6 +4053,7 @@ window.__ModuleLoader__.load({
 					resetPtcCustom: () => writeAndConfirm(() => scope.set("ptcCustom", structuredClone(DEFAULT_PTC_COMPRESSION_POLICY)), (settings) => isCustomCompressionPolicy(settings.ptcCustom) && sameCustomPolicy(settings.ptcCustom, DEFAULT_PTC_COMPRESSION_POLICY)),
 					saveAutoCompact: (thresholdPercent) => writeAndConfirm(() => scope.set("autoCompact", { thresholdPercent }), (settings) => settings.autoCompact.thresholdPercent === thresholdPercent),
 					saveCodeSkeleton: (enabled) => writeAndConfirm(() => scope.set("codeSkeleton", { enabled }), (settings) => settings.codeSkeleton.enabled === enabled),
+					saveSediment: (enabled) => writeAndConfirm(() => scope.set("sediment", { enabled }), (settings) => settings.sediment?.enabled === enabled),
 					saveIntentSummary: (enabled) => writeAndConfirm(() => scope.set("intentSummary", { enabled }), (settings) => settings.intentSummary.enabled === enabled),
 					saveMonitorPanel: (enabled) => writeAndConfirm(() => scope.set("monitorPanel", { enabled }), (settings) => settings.monitorPanel?.enabled === enabled),
 					savePresetOptions: (options) => {

@@ -86,7 +86,10 @@ describe('FoldRouter (S1/S2/S3 + queue depth 1)', () => {
 
   it('missing endpoint mapping for the tier refuses with tier identity', async () => {
     vi.stubGlobal('fetch', vi.fn())
-    const router = new FoldRouter(ctxStub(), settingsWith({ foldLocal35Model: undefined }))
+    // local-35 tier without its model configured: omit the key entirely.
+    const noLocal35 = settingsWith({})
+    delete (noLocal35 as { foldLocal35Model?: string }).foldLocal35Model
+    const router = new FoldRouter(ctxStub(), noLocal35)
     const outcome = await router.fold('s1', { ...promptSmall, inputTokens: 4_000 }, new AbortController().signal)
     expect(outcome.audit.reason).toBe('fold-endpoint-missing:local35')
   })
