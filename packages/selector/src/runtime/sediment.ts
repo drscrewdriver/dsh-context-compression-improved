@@ -17,6 +17,8 @@ import { buildTurnCard, estimateTokens } from './sediment-card.ts'
 import { passesRewriteGuard, projectSurfaceEvent, publishSettledCard, type PublishResult } from './sediment-publish.ts'
 import { SedimentClock, type CommitDecision } from './sediment-clock.ts'
 import { mergeExtraPatterns, type LineRule } from './triage/signals.ts'
+import { buildFoldPrompt, type FoldPrompt } from './fold-router.ts'
+import type { MaskVerdict } from './triage/types.ts'
 import type { SedimentSettings } from './types.ts'
 
 /** Minimal append-capable session face (real Session satisfies it). */
@@ -40,6 +42,10 @@ export interface OrchestratorOptions {
   readonly tailTokensFor: (session: SedimentSession, endSeq: number) => number
   readonly onLanded?: (sessionId: string, savedTokens: number, tier: string, result: PublishResult) => void
   readonly onSkip?: (sessionId: string, reason: string) => void
+  /** Narrative tier 2 channel (T4.5): present only when a fold endpoint is configured. */
+  readonly fold?: {
+    readonly run: (sessionId: string, prompt: FoldPrompt, signal: AbortSignal) => Promise<string | undefined>
+  }
 }
 
 export interface TurnOutcome {
@@ -77,13 +83,13 @@ export class SedimentOrchestrator {
    * Entry point called by the wiring site on `turn/end`. Returns immediately
    * with reason 'disabled' when the gate is off — nothing downstream runs.
    */
-  handleTurnEnd(session: SedimentSession, turn: number, context: {
+  async handleTurnEnd(session: SedimentSession, turn: number, context: {
     readonly lastEventType: string | undefined
     readonly inFlightRequest: boolean
     readonly compactionOpen: boolean
     readonly officialCheckpointSeq: number | undefined
     readonly resumeFirstBatch: boolean
-  }): TurnOutcome {
+  }): Promise<TurnOutcome> {
     const sessionId = String(session.id)
     const settings = this.options.settingsFor(sessionId)
     if (settings === undefined || !settings.enabled) {
@@ -110,18 +116,18 @@ export class SedimentOrchestrator {
       return { committed: false, reason: 'already-committing' }
     }
     try {
-      return this.commitTurn(session, turn, settings, clock)
+      return await this.commitTurn(session, turn, settings, clock)
     } finally {
       clock.end()
     }
   }
 
-  private commitTurn(
+  private async commitTurn(
     session: SedimentSession,
     turn: number,
     settings: SedimentSettings,
     clock: SedimentClock,
-  ): TurnOutcome {
+  ): Promise<TurnOutcome> {
     const sessionId = String(session.id)
     const rawEvents = this.options.eventsFor(session, turn)
     const projected: SurfaceEvent[] = []
@@ -143,12 +149,29 @@ export class SedimentOrchestrator {
       return { committed: false, reason: 'empty-span' }
     }
     const triage = triageSpanBlocks(plan, rulesFor(settings))
+    const foldAvailable = this.options.fold !== undefined
+    // Narrative tier 2 (T4.5): when the closing body fails the qualification
+    // gate and a fold channel is configured, request the connective narrative
+    // over the residual spans ONLY (protected/skeleton material is excluded
+    // by buildFoldPrompt construction, S4). Timeout and failure are the
+    // FoldRouter's fail-open contract; undefined drops the card to tier 3.
+    let foldText: string | undefined
+    if (this.options.fold !== undefined && estimateTokens(plan.closingText) < (settings.minClosingTokens ?? 120)) {
+      const spans = triage.flatMap(result => result.residualNarrative)
+      const protectedLines = triage.flatMap(result => result.poolLines)
+      const masks = triage.map(result => result.mask).filter((mask): mask is MaskVerdict => mask !== undefined)
+      const prompt = buildFoldPrompt(spans, protectedLines, masks)
+      if (prompt !== null) {
+        foldText = await this.options.fold.run(sessionId, prompt, AbortSignal.timeout(20_000))
+      }
+    }
     const draft = buildTurnCard({
       startSeq: plan.startSeq,
       endSeq: plan.endSeq,
       triage,
       closingText: plan.closingText,
-      foldAvailable: false, // Phase 4 wires the fold channel; tier 2 stays inert
+      foldAvailable,
+      ...(foldText === undefined ? {} : { foldText }),
       minClosingTokens: settings.minClosingTokens,
     })
     if (draft === null) {

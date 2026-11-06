@@ -63,6 +63,7 @@ import { installContextCompressionRetrieve } from './runtime/retrieve.ts'
 import { installShallowTools, liveShallowFor } from './runtime/shallow-tools.ts'
 import { buildShallowFooter } from './runtime/triage/shallow.ts'
 import { SedimentOrchestrator } from './runtime/sediment.ts'
+import { FoldRouter } from './runtime/fold-router.ts'
 import { estimateTokens } from './runtime/sediment-card.ts'
 import { RUNTIME_TOOL_NAMES } from './runtime/tool-names.ts'
 import type { PrunerState } from './pruner/state.ts'
@@ -719,20 +720,25 @@ export class ToolResultPruner extends Service {
       if (type === 'compaction/end') break
       if (type === 'compaction/start') { compactionOpen = true; break }
     }
-    const outcome = orchestrator.handleTurnEnd(session as never, turn, {
+    const outcomePromise = orchestrator.handleTurnEnd(session as never, turn, {
       lastEventType: 'turn/end',
       inFlightRequest: this.state.activeRequestBoundaries.get(session) !== undefined,
       compactionOpen,
       officialCheckpointSeq,
       resumeFirstBatch: false,
     })
-    if (outcome.committed) {
-      try {
-        void (this.ctx as { sessions?: { flush?: (s: Session) => unknown } }).sessions?.flush?.(session)
-      } catch {
-        /* flush failure leaves the card durable in the event log; next flush picks it up */
+    void outcomePromise.then(outcome => {
+      if (outcome.committed) {
+        try {
+          void (this.ctx as { sessions?: { flush?: (s: Session) => unknown } }).sessions?.flush?.(session)
+        } catch {
+          /* flush failure leaves the card durable in the event log; next flush picks it up */
+        }
       }
-    }
+    }).catch(error => {
+      this.auditFailure(session, 'pressure', 'sediment', error)
+      this.ctx.logger.warn('context-compression sediment commit failed open: %o', error)
+    })
   }
 
   private sedimentOrchestratorFor(session: Session, settings: NonNullable<ContextCompressionSettings['sediment']>): SedimentOrchestrator {
@@ -766,6 +772,15 @@ export class ToolResultPruner extends Service {
         }
         return tail
       },
+      // Narrative tier 2 (T4.5): fold channel exists only when configured.
+      ...(settings.foldMode === undefined || settings.foldMode === ''
+        ? {}
+        : {
+            fold: {
+              run: (sessionId, prompt, signal) =>
+                new FoldRouter(this.ctx, settings).fold(sessionId, prompt, signal).then(outcome => outcome.text),
+            },
+          }),
       onLanded: (sessionId, savedTokens, tier, result) => {
         this.ctx.logger.info(
           'context-compression sediment landed (%s): turn saved %d tok via %s narrative',

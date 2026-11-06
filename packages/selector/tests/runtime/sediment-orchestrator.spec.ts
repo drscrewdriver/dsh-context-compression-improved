@@ -40,13 +40,16 @@ function turnEvents(completed = true): OrchestratorOptions['eventsFor'] {
   ]
 }
 
-function harness(settings: SedimentSettings | undefined, tailTokens = 10, eventsFor = turnEvents()) {
-  const session = recordedSession()
-  let eventsCalled = 0
-  const orchestrator = new SedimentOrchestrator({
+function harnessOptions(
+  settings: SedimentSettings | undefined,
+  tailTokens = 10,
+  eventsFor = turnEvents(),
+  counters?: { events: () => void },
+): OrchestratorOptions {
+  return {
     settingsFor: () => settings,
     eventsFor: (s, turn) => {
-      eventsCalled += 1
+      counters?.events()
       return eventsFor(s, turn)
     },
     callInfoFor: () => callId => callId === 'c1'
@@ -55,7 +58,13 @@ function harness(settings: SedimentSettings | undefined, tailTokens = 10, events
         ? { name: 'pwsh', argsJson: '{"command":"tsc"}' }
         : undefined,
     tailTokensFor: () => tailTokens,
-  })
+  }
+}
+
+function harness(settings: SedimentSettings | undefined, tailTokens = 10, eventsFor = turnEvents()) {
+  const session = recordedSession()
+  let eventsCalled = 0
+  const orchestrator = new SedimentOrchestrator(harnessOptions(settings, tailTokens, eventsFor, { events: () => { eventsCalled += 1 } }))
   const context = {
     lastEventType: 'turn/end',
     inFlightRequest: false,
@@ -69,23 +78,23 @@ function harness(settings: SedimentSettings | undefined, tailTokens = 10, events
 const ON: SedimentSettings = { ...DEFAULT_SEDIMENT_SETTINGS, enabled: true, minClosingTokens: 40 }
 
 describe('SedimentOrchestrator (T3.6)', () => {
-  it('disabled settings short-circuit BEFORE touching events (M1 structural)', () => {
+  it('disabled settings short-circuit BEFORE touching events (M1 structural)', async () => {
     const { session, orchestrator, context, eventsCalled } = harness({ ...DEFAULT_SEDIMENT_SETTINGS })
-    const outcome = orchestrator.handleTurnEnd(session, 1, context)
+    const outcome = await orchestrator.handleTurnEnd(session, 1, context)
     expect(outcome).toEqual({ committed: false, reason: 'disabled' })
     expect(eventsCalled()).toBe(0)
     expect(session.appends).toHaveLength(0)
   })
 
-  it('undefined settings (session not yet snapped) behaves like disabled', () => {
+  it('undefined settings (session not yet snapped) behaves like disabled', async () => {
     const { orchestrator, context, eventsCalled, session } = harness(undefined)
-    expect(orchestrator.handleTurnEnd(session, 1, context).reason).toBe('disabled')
+    expect((await orchestrator.handleTurnEnd(session, 1, context)).reason).toBe('disabled')
     expect(eventsCalled()).toBe(0)
   })
 
-  it('enabled completed turn lands manifest + replacement', () => {
+  it('enabled completed turn lands manifest + replacement', async () => {
     const { session, orchestrator, context } = harness(ON)
-    const outcome = orchestrator.handleTurnEnd(session, 1, context)
+    const outcome = await orchestrator.handleTurnEnd(session, 1, context)
     expect(outcome.committed).toBe(true)
     expect(session.appends.map(entry => entry.type)).toEqual(['compaction/prune', 'user/message'])
     const options = session.appends[1].options as Record<string, any>
@@ -95,26 +104,61 @@ describe('SedimentOrchestrator (T3.6)', () => {
     expect(options.surfaceOp.endSeq).toBe(5)
   })
 
-  it('reason gate: interrupted turns never publish', () => {
+  it('reason gate: interrupted turns never publish', async () => {
     const { session, orchestrator, context } = harness(ON, 10, turnEvents(false))
-    const outcome = orchestrator.handleTurnEnd(session, 1, context)
+    const outcome = await orchestrator.handleTurnEnd(session, 1, context)
     expect(outcome).toEqual({ committed: false, reason: 'reason-gate' })
     expect(session.appends).toHaveLength(0)
   })
 
-  it('rewrite guard: a fat cached tail refuses the cut (1:15 defense)', () => {
+  it('rewrite guard: a fat cached tail refuses the cut (1:15 defense)', async () => {
     const { session, orchestrator, context } = harness(ON, 500_000)
-    const outcome = orchestrator.handleTurnEnd(session, 1, context)
+    const outcome = await orchestrator.handleTurnEnd(session, 1, context)
     expect(outcome).toEqual({ committed: false, reason: 'rewrite-guard' })
     expect(session.appends).toHaveLength(0)
   })
 
-  it('official checkpoint yield: skip once, consume, proceed next seam', () => {
+  it('official checkpoint yield: skip once, consume, proceed next seam', async () => {
     const { session, orchestrator, context } = harness(ON)
-    const first = orchestrator.handleTurnEnd(session, 1, { ...context, officialCheckpointSeq: 60 })
+    const first = await orchestrator.handleTurnEnd(session, 1, { ...context, officialCheckpointSeq: 60 })
     expect(first.committed).toBe(false)
     expect(first.reason).toContain('yield-official-checkpoint-60')
-    const second = orchestrator.handleTurnEnd(session, 2, { ...context, officialCheckpointSeq: 60 })
+    const second = await orchestrator.handleTurnEnd(session, 2, { ...context, officialCheckpointSeq: 60 })
     expect(second.committed).toBe(true)
+  })
+
+  it('narrative tier 2 (T4.5): failing closing with a live fold channel lands the fold text', async () => {
+    const session = recordedSession()
+    // short closing (below minClosingTokens=40) + fold channel that answers
+    const foldCalls: Array<{ prompt: unknown }> = []
+    const shortClosing: OrchestratorOptions['eventsFor'] = () => [
+      { seq: 1, type: 'user/message', data: { content: [{ type: 'text', text: 'go' }] } },
+      { seq: 2, type: 'assistant/message', data: { message: { content: [{ type: 'tool-call', id: 'c1' }] } } },
+      { seq: 3, type: 'tool/result', data: { message: { toolCallId: 'c1', content: [{ type: 'text', text: bigRead }] } } },
+      { seq: 4, type: 'assistant/message', data: { message: { content: [{ type: 'tool-call', id: 'c2' }] } } },
+      { seq: 5, type: 'tool/result', data: { message: { toolCallId: 'c2', content: [{ type: 'text', text: 'Error: TS2345 failed\n[exit code: 2]' }] } } },
+      { seq: 6, type: 'assistant/message', data: { message: { content: [{ type: 'text', text: 'narrative residue for folding: refactored the loader boundary first' }] } } },
+      { seq: 7, type: 'assistant/message', data: { message: { content: [{ type: 'tool-call', id: 'c3' }] } } },
+      { seq: 8, type: 'tool/result', data: { message: { toolCallId: 'c3', content: [{ type: 'text', text: 'fixed' }] } } },
+      { seq: 9, type: 'assistant/message', data: { message: { content: [{ type: 'text', text: 'done' }] } } },
+      { seq: 10, type: 'turn/end', data: { reason: { kind: 'completed' } } },
+    ]
+    const orchestrator = new SedimentOrchestrator({
+      ...harnessOptions(ON, 10, shortClosing),
+      fold: {
+        run: async (_sid, prompt) => {
+          foldCalls.push({ prompt })
+          return '- folded: loader refactor, TS2345 fixed'
+        },
+      },
+    })
+    const outcome = await orchestrator.handleTurnEnd(session, 1, {
+      lastEventType: 'turn/end', inFlightRequest: false, compactionOpen: false,
+      officialCheckpointSeq: undefined, resumeFirstBatch: false,
+    })
+    expect(outcome.committed).toBe(true)
+    expect(foldCalls).toHaveLength(1)
+    const stub = session.appends[1]?.data as { content?: Array<{ text?: string }> }
+    expect(JSON.stringify(stub)).toContain('folded: loader refactor')
   })
 })
