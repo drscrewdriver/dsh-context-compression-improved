@@ -1,0 +1,131 @@
+[assistant] 字段没有写进文档：`downloadsCheckedAt` 完全缺失，零值日也没记录；我刚做的实测还**推翻了 `SKILL.md` 里「右端晚 1 天」这条旧结论**。先读完整文档再修改：
+[tool-call read "{\"file_path\": \"E:\\\\test\\\\rewrite-agently\\\\.agents\\\\skills\\\\dsh-registry-track\\\\SKILL.md\", \"limit\": 78]
+===
+[tool] <path>E:\test\rewrite-agently\.agents\skills\dsh-registry-track\SKILL.md</path>
+<type>file</type>
+<content>
+1: ---
+2: name: dsh-registry-track
+3: description: DSH 插件注册中心 30 天榜单追踪——每日快照抓取、四元组指纹新鲜度判定、Top-N 排名与 Δ、窗口滑动回验与批量流量归因。当用户提到 registry 排名、插件排行、下载量、owner 排名、drscrewdriver 排名、PerryLink 排名、榜单检查、插件排名趋势时使用。
+4: ---
+5: 
+6: # DSH Registry Track
+7: 
+8: ## Purpose
+9: 自动拉取并解析 DSH 插件注册中心排名数据，支持快速状态查询、多 owner 对比、快照追踪和趋势分析。
+10: 
+11: ## Trigger
+12: 当用户提到「registry 排名」「插件排行」「下载量」「owner 排名」「drscrewdriver 排名」「PerryLink 排名」「插件排名趋势」等关键词时加载。
+13: 
+14: ## Default Owners
+15: drscrewdriver, PerryLink
+16: 
+17: ## Subcommands
+18: 
+19: ### `status` — 快速状态
+20: - 读取 `snapshot/latest.json`，报告默认 owners 的排名、下载、项目数
+21: - 若缓存存在且 < 2 小时，直接读缓存
+22: - 若缓存过期，先 `python fetch.py` 再分析
+23: - 输出：Markdown 表格，一行三个 owner
+24: 
+25: ### `fetch` — 拉取数据
+26: - `python fetch.py` → 探测所有候端，用当前正在监听的那个实例
+27: - 写入 `snapshot/latest.json` + 时间戳命名副本 `snapshot/snapshot-YYYY-MM-DD_HHMMSS.json`
+28: - 显示汇总：总插件数、有下载数、唯一 owner 数、数据源来源
+29: 
+30: ## Data Source Architecture
+31: 
+32: ### 多实例端口探测（不是「主备回退」）
+33: 每个 DSH 运行时监听自己的端口，**只有正在运行的那个会应答**：
+34: 
+35: | 运行时 | URL | 说明 |
+36: |--------|-----|------|
+37: | 独立/Web 实例 | `http://127.0.0.1:3080/dsh-market/registry` | 仅在该实例运行时存在 |
+38: | **桌面版** | `http://127.0.0.1:19387/dsh-market/registry` | 桌面 App 在跑时存在，loopback 代理 |
+39: 
+40: **核心认知：端口没人监听 ≠ 注册中心故障。** 它只表示那个实例没在跑。
+41: 只使用桌面版时，3080 必然不可达——这是正常状态，不是异常。
+42: 
+43: `fetch.py` 的 `probe_sources()` 逐个探测候端，取第一个应答的，
+44: 并把未监听的候端作为**提示信息**（而非错误）打印。
+45: 
+46: **认证说明：** 两个端点均**无需 token/cookie**，公开可访问。`dsh-app://` 是 Electron 内部协议，外部工具无法直接使用，但 HTTP 代理面已提供无认证接口。
+47: 
+48: **诊断纪律：** 不要把连接被拒直接推断为「服务挂了」。先用
+49: `Get-NetTCPConnection -State Listen -LocalPort 3080,19387` 看实际监听者，
+50: 再判断是「实例未运行」还是「实例在跑但服务异常」。
+51: 
+52: ### `rank` — 排名解析
+53: - `python owners.py` → 完整 owner 排名
+54: - `python owners.py --top N` → 前 N 名
+55: - `python owners.py --owners A B` → 指定 owner 对比
+56: - 自动分配层级标签：ULTRA / T0 / T1 / T2 / T3 / T4 / 长尾
+57: 
+58: ### `compare` — 快照对比
+59: - `python compare.py` → 最新快照 vs 最近日快照
+60: - `python compare.py --snapshots A.json B.json` → 指定两个快照对比
+61: - `python compare.py --trend` → 全量趋势分析（排名演变 + 下载量 + 异常检测）
+62: - `python compare.py --cliff N` → 第 N 名附近的 gap 断崖分析
+63: 
+64: ### `daily-check` — 每日例行检查（10-15 起的标准四步）
+65: 1. `python fetch.py` → 双端点探测抓新快照（产出 plugins 明细供算指纹）。
+66: 2. `python _d15_rank.py` → **指纹三快照比对 + owner Top15/Δ/prev#**。
+67:    新鲜度四元组口径：`canonical sha1(json.dumps(plugins, sort_keys=True, ensure_ascii=False))[:12]`
+68:    + plugin 数 + sum_dl + registry_updated——**四者全等才算「无新数据」**，任一变化即有新数据。
+69: 3. `python _d15_verify.py` → **滑窗 Δ 回验**：`Δ_obs = registry 新−旧` vs
+70:    `Δ_model = Σnpm day(新纳入日) − Σnpm day(被挤出日)`；残差 ≤ max(1500, 25%|Δ_obs|) 判「单日滑动可解释」，
+71:    同时打印右侧纳入日是否结算（Σ=0 即未结算）。
+72: 4. `python _d15_burst.py` → **爆发后续逐日复核**（Σ近期逐日对比基线），供「一次性批量 vs 持续需求」判据裁决。
+73: - **期次复用：改各脚本头部常量即可**——`FILES`（快照三元组）/ `DROP_DAY` / `INTAKE_DAY` / `RANGE` / `DAYS` / `OWNERS`；
+74:   产物重定向到 `_d<期>_*_out.txt`，结论按增量写入存档文档（轨迹行 + §13 回验表 + 挂起事项）。
+75: - **输出纪律**：PowerShell 内联 `python -c` 易炸引号 → 一律写 .py 文件跑，输出重定向到文件再
+76:   `Get-Content -Encoding UTF8` 读（read 工具把 UTF-8 CJK 输出当二进制拒读）。
+77: 
+78: ## Decision Criteria
+
+(Showing lines 1-78 of 158. Use offset=79 to continue.)
+</content>
+===
+[assistant] [tool-call read "{\"file_path\": \"E:\\\\test\\\\rewrite-agently\\\\.agents\\\\skills\\\\dsh-registry-track\\\\SKILL.md\", \"offset\": 1]
+===
+[tool] <path>E:\test\rewrite-agently\.agents\skills\dsh-registry-track\SKILL.md</path>
+<type>file</type>
+<content>
+124: ## File Layout
+125: ```
+126: .agents/skills/dsh-registry-track/
+127: ├── SKILL.md            ← 本文件
+128: ├── fetch.py            ← registry 拉取 + 快照存储
+129: ├── owners.py           ← owner 聚类 + 排名解析
+130: ├── compare.py          ← 多快照对比 + 趋势分析
+131: ├── _d15_rank.py        ← daily-check 步骤 2：指纹三快照比对 + Top15/Δ
+132: ├── _d15_verify.py      ← daily-check 步骤 3：滑窗 Δ 回验 + 结算探测
+133: ├── _d15_burst.py       ← daily-check 步骤 4：爆发后续逐日复核
+134: ├── _window_pred.py     ← 下一期 Δ 预测 + 上期回验（含结算前置门）
+135: ├── snapshot/           ← 历史快照目录
+136: │   ├── latest.json     ← 最新快照
+137: │   └── snapshot-YYYY-MM-DD_HHMMSS.json  ← 历史副本
+138: └── _d<期>_*_out.txt    ← 各期检查产物（脚本输出重定向）
+139: ```
+140: 
+141: ## Example Interactions
+142: 
+143: ```
+144: 用户: "drscrewdriver 现在排名第几"
+145: → 检查缓存 → 新鲜 → python owners.py --owners drscrewdriver → 输出表格
+146: 
+147: 用户: "刷新一下 registry"
+148: → python fetch.py → 拉取最新 → 保存快照
+149: 
+150: 用户: "对比 drscrewdriver 和 PerryLink"
+151: → python owners.py --owners drscrewdriver PerryLink → 横向对比表
+152: 
+153: 用户: "drscrewdriver 从 09-15 到现在什么趋势"
+154: → python compare.py --trend → 全量趋势分析
+155: 
+156: 用户: "看 40 名附近的断崖"
+157: → python compare.py --cliff 40
+158: ```
+
+(End of file - total 158 lines)
+</content>

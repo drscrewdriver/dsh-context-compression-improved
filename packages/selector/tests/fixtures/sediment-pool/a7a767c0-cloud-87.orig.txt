@@ -1,0 +1,50 @@
+[assistant] [tool-call pwsh "{\"command\":\"& \\\"C:\\\\Users\\\\joshua\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python313\\\\python.exe\\\" -c ]
+===
+[tool] dsh-prime-memory                    |npm=dsh-prime-memory                        |dl=28502
+dsh-thinking-levels                 |npm=dsh-thinking-levels                     |dl=27215
+dsh-browser-cdp                     |npm=dsh-browser-cdp                         |dl=26627
+dsh-context-compression-improved    |npm=dsh-context-compression-improved        |dl=16563
+dsh-perm-gate                       |npm=dsh-perm-gate                           |dl=15259
+dsh-input-traffic                   |npm=dsh-input-traffic                       |dl=11322
+dsh-session-guard                   |npm=dsh-session-guard                       |dl=11064
+dsh-mcp-registry                    |npm=dsh-mcp-registry                        |dl=10901
+dsh-search-index                    |npm=dsh-search-index                        |dl=10748
+dsh-patch-edit-plus                 |npm=dsh-patch-edit-plus                     |dl=8776
+dsh-brief-sidebar                   |npm=dsh-brief-sidebar                       |dl=8636
+dsh-tidy-display                    |npm=dsh-tidy-display                        |dl=8361
+dsh-bash-terminal-ts                |npm=dsh-bash-terminal-ts                    |dl=7371
+dsh-arrowkey-nav                    |npm=dsh-arrowkey-nav                        |dl=5993
+dsh-canvas-tsx-sidebar              |npm=dsh-canvas-tsx-sidebar                  |dl=5483
+dsh-date-wrapper                    |npm=dsh-date-wrapper                        |dl=4728
+dsh-paste-dock                      |npm=dsh-paste-dock                          |dl=3318
+dsh-preset-doctor                   |npm=dsh-preset-doctor                       |dl=2511
+dsh-llm-openai-completions          |npm=dsh-llm-openai-completions              |dl=2392
+dsh-opensheet-sidebar               |npm=dsh-opensheet-sidebar                   |dl=2078
+dsh-reference-session-collector     |npm=dsh-reference-session-collector         |dl=2029
+dsh-pptx-sidebar                    |npm=dsh-pptx-sidebar                        |dl=1929
+dsh-docx-sidebar                    |npm=dsh-docx-sidebar                        |dl=1905
+dsh-union-search                    |npm=dsh-union-search                        |dl=1862
+dsh-im-union                        |npm=dsh-im-union                            |dl=1616
+dsh-media-lens                      |npm=dsh-media-lens                          |dl=1536
+dsh-sidebar-fold                    |npm=dsh-sidebar-fold                        |dl=870
+dsh-manage-session                  |npm=dsh-manage-session                      |dl=427
+
+===
+[assistant] [tool-call validate_dsh_ui "{\"spec\":\"{\\\"title\\\":\\\"你的投稿登记总表（awesome-dsh-plugin 28 条 yml ↔ 目录 28 行，1:1 对上）\\\",\\\"gap\\\":10,\\\"items\\\":]
+===
+[tool] [genui-validation]
+status=valid
+rendered=2
+next=emit_fence
+reply_language=conversation
+===
+[assistant] 对——**投稿登记 28 条 yml，目录 28 行，1:1 全对上**（表外仅 steward 一条历史投稿已被改名提交删除）。逐条：
+
+```dsh-ui
+{"title":"你的投稿登记总表（awesome-dsh-plugin 28 条 yml ↔ 目录 28 行，1:1 对上）","gap":10,"items":[{"type":"table","columns":["#","登记条目 (yml)","目录行 npm 跟踪","下载","分类"],"rows":[["1","dsh-prime-memory","dsh-prime-memory","28,502","memory"],["2","dsh-thinking-levels","dsh-thinking-levels","27,215","reasoning"],["3","dsh-browser-cdp","dsh-browser-cdp","26,627","browser"],["4","dsh-context-compression-improved","同名","16,563","context"],["5","dsh-perm-gate","dsh-perm-gate","15,259","security"],["6","dsh-input-traffic","dsh-input-traffic","11,322","input"],["7","dsh-session-guard","dsh-session-guard","11,064","session"],["8","dsh-mcp-registry","dsh-mcp-registry","10,901","mcp"],["9","dsh-search-index","dsh-search-index","10,748","search"],["10","dsh-patch-edit-plus","同名","8,776","edit"],["11","dsh-brief-sidebar","dsh-brief-sidebar","8,636","office"],["12","dsh-tidy-display","dsh-tidy-display","8,361","display"],["13","dsh-bash-terminal-ts","同名","7,371","terminal"],["14","dsh-arrowkey-nav","dsh-arrowkey-nav","5,993","input"],["15","dsh-canvas-tsx-sidebar","同名","5,483","display"],["16","dsh-date-wrapper","dsh-date-wrapper","4,728","utility"],["17","dsh-paste-dock","dsh-paste-dock","3,318","input"],["18","dsh-preset-doctor","dsh-preset-doctor","2,511","config"],["19","dsh-llm-openai-completions","同名","2,392","provider"],["20","dsh-opensheet-sidebar","同名","2,078","office"],["21","dsh-reference-session-collector","同名","2,029","session"],["22","dsh-pptx-sidebar","dsh-pptx-sidebar","1,929","office"],["23","dsh-docx-sidebar","dsh-docx-sidebar","1,905","office"],["24","dsh-union-search","dsh-union-search (bare)","1,862","browser"],["25","dsh-im-union","dsh-im-union","1,616","integration"],["26","dsh-media-lens","dsh-media-lens","1,536","media"],["27","dsh-sidebar-fold","dsh-sidebar-fold","870","display"],["28","dsh-manage-session","dsh-manage-session（新包，从零起量）","427","session"]]},{"type":"callout","tone":"warning","title":"表外那条：dsh-session-steward","content":"投稿仓历史里有（#5191，2026-09-18 合入），10-26 改名提交 9662928b 把这条 yml 删除、换成 manage-session。目录已无行跟踪 npm 老包 dsh-session-steward，其窗口真实量 9,541 目前无主——你名义 230,022，认领回则 239,563。union-search 的 scoped 名 @drscrewdriver/dsh-union-search 只在 yml 描述里双名声明，目录不跟。"}]}
+```
+
+两个表外要点：
+
+- **登记完整**：`data/plugins/drscrewdriver__*.yml` 实数 28 条，与目录 28 行严丝合缝——你的"投稿了项目"在登记面上无缺口，昨天说的"steward 被剔"不是丢投稿，是**改名把那条 yml 合法替换**（同一 sha 里 added manage-session.yml + removed steward.yml，提交信息明写 Rename entry）。
+- **唯一悬空**是 steward 老包 9,541 的归属：目录不跟踪无条目之包。要不要认领回（补投独立 yml），等你定 steward/manage-session 的产品终态。

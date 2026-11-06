@@ -1,0 +1,119 @@
+[assistant] [tool-call read "{\"file_path\":\"E:\\\\test\\\\rewrite-agently\\\\pastes\\\\20261016-115512918.txt\"}"]
+===
+[tool] <path>E:\test\rewrite-agently\pastes\20261016-115512918.txt</path>
+<type>file</type>
+<content>
+1: add drscrewdriver/dsh-tidy-display (ui)
+2: #7062
+3: ·drscrewdriver opened last week
+4: Contributor
+5: ·
+6: Add drscrewdriver/dsh-mcp-registry (dev)
+7: #7041
+8: ·drscrewdriver opened last week
+9: Contributor
+10: ·
+11: 6 tasks done
+12: ·
+13: Add drscrewdriver/dsh-preset-doctor (Development & Runtime)
+14: #6931
+15: ·drscrewdriver opened last week
+16: Contributor
+17: ·
+18: Add drscrewdriver/dsh-paste-dock (ui)
+19: #6484
+20: ·drscrewdriver opened 2 weeks ago
+21: Contributor
+22: ·
+23: 1
+24: Add drscrewdriver/dsh-browser-cdp (browser)
+25: #6451
+26: ·drscrewdriver opened 2 weeks ago
+27: Contributor
+28: ·
+
+(End of file - total 28 lines)
+</content>
+===
+[assistant] [tool-call shell "{\"command\":\"cd 'E:\\\\test\\\\rewrite-agently\\\\.agents\\\\skills\\\\dsh-registry-track'; @'\\n# -*- coding: utf-8 ]
+===
+[tool] == registry latest snapshot (updated 2026-10-14) ==
+  dsh-tidy-display         未收录 (NOT FOUND)
+  dsh-mcp-registry         未收录 (NOT FOUND)
+  dsh-preset-doctor        未收录 (NOT FOUND)
+  dsh-paste-dock           未收录 (NOT FOUND)
+  dsh-browser-cdp          未收录 (NOT FOUND)
+
+== npm 实时（point 口径）==
+  drscrewdriver/dsh-tidy-display             lastMonth=HTTP Error 404: Not Found lastWeek=HTTP Error 404: Not Found lastDay=HTTP Error 404: Not Found
+  drscrewdriver/dsh-mcp-registry             lastMonth=HTTP Error 404: Not Found lastWeek=HTTP Error 404: Not Found lastDay=HTTP Error 404: Not Found
+  drscrewdriver/dsh-preset-doctor            lastMonth=HTTP Error 404: Not Found lastWeek=HTTP Error 404: Not Found lastDay=HTTP Error 404: Not Found
+  drscrewdriver/dsh-paste-dock               lastMonth=HTTP Error 404: Not Found lastWeek=HTTP Error 404: Not Found lastDay=HTTP Error 404: Not Found
+  drscrewdriver/dsh-browser-cdp              lastMonth=HTTP Error 404: Not Found lastWeek=HTTP Error 404: Not Found lastDay=HTTP Error 404: Not Found
+
+===
+[assistant] Let me confirm the naming convention used in the registry and test unscoped names too.
+
+
+[tool-call shell "{\"command\":\"cd 'E:\\\\test\\\\rewrite-agently\\\\.agents\\\\skills\\\\dsh-registry-track'; @'\\n# -*- coding: utf-8 ]
+===
+[tool] == 18 条 drscrewdriver 条目的 name/npm 字段 ==
+   name=dsh-prime-memory                         npm=dsh-prime-memory                         dl=15318
+   name=dsh-thinking-levels                      npm=dsh-thinking-levels                      dl=14572
+   name=dsh-context-compression-improved         npm=dsh-context-compression-improved         dl=10588
+   name=dsh-perm-gate                            npm=dsh-perm-gate                            dl=8956
+   name=dsh-search-index                         npm=dsh-search-index                         dl=7096
+   name=dsh-session-guard                        npm=dsh-session-guard                        dl=6595
+   name=dsh-session-steward                      npm=dsh-session-steward                      dl=6408
+   name=dsh-input-traffic                        npm=dsh-input-traffic                        dl=5723
+   name=dsh-patch-edit-plus                      npm=dsh-patch-edit-plus                      dl=4960
+   name=dsh-bash-terminal-ts                     npm=dsh-bash-terminal-ts                     dl=4648
+   name=dsh-canvas-tsx-sidebar                   npm=dsh-canvas-tsx-sidebar                   dl=3555
+   name=dsh-arrowkey-nav                         npm=dsh-arrowkey-nav                         dl=3524
+   name=dsh-brief-sidebar                        npm=dsh-brief-sidebar                        dl=3304
+   name=dsh-date-wrapper                         npm=dsh-date-wrapper                         dl=2684
+   name=dsh-opensheet-sidebar                    npm=dsh-opensheet-sidebar                    dl=1688
+   name=dsh-pptx-sidebar                         npm=dsh-pptx-sidebar                         dl=1555
+   name=dsh-docx-sidebar                         npm=dsh-docx-sidebar                         dl=1439
+   name=dsh-llm-openai-completions               npm=dsh-llm-openai-completions               dl=847
+
+== 全库中 name/npm 含关键字的任意 owner ==
+  [tidy] -> 2 [('dsh-chat-tidy', 'ChuanTianML', 1227), ('@bananasoldier01/dsh-tidychat', 'BananaSoldier01', 2215)]
+  [mcp-registry] -> 0 []
+  [preset-doctor] -> 0 []
+  [paste] -> 7 [('dsDragPasteALL', 'balue8246-maker', None), ('dsh-paste-code-block', 'cjm-m', 1102), ('dsh-paste-path', 'jhuanxx44', 1066), ('dsh-paste-names', 'PaoMoXML', 806), ('dsh-auto-paste', 'sakuraqqq', 2205), ('dsh-paste-spill', 'winditer', 227)]
+  [cdp] -> 2 [('dsh-chrome-cdp', 'xiaobai2017666', None), ('dsh-cdp-browser', 'zaiwenJ', None)]
+  [browser] -> 34 [('dsh-skill-browser', 'loyalchiiina', 1409), ('dsh-browser-fs', 'whitefirer', 816), ('dsh-disk-browser', 'yanJ26', None), ('dsh-browser-use', 'zoahdev', 1061), ('dsh-wsl-browser', '173787247', None), ('dsh-inapp-browser', 'alllllinnrann', None)]
+
+== npm 实时（不带 scope 的裸名）==
+  dsh-tidy-display       lastMonth=                      3603 exists=YES
+  dsh-mcp-registry       lastMonth=                      4960 exists=YES
+  dsh-preset-doctor      lastMonth=                       406 exists=YES
+  dsh-paste-dock         lastMonth=                      1277 exists=YES
+  dsh-browser-cdp        lastMonth=                     11906 exists=YES
+
+===
+[assistant] [tool-call shell "{\"command\":\"cd 'E:\\\\test\\\\rewrite-agently\\\\.agents\\\\skills\\\\dsh-registry-track'; @'\\n# -*- coding: utf-8 ]
+===
+[tool] pkg                       lastDay   lastWeek  lastMonth  latest     firstPublish
+dsh-tidy-display              387       1451       3603  0.4.0      2026-09-29 (modified 2026-10-15)
+dsh-mcp-registry              484       2356       4960  0.3.5      2026-10-02 (modified 2026-10-15)
+dsh-preset-doctor              53        406        406  0.6.0      2026-10-09 (modified 2026-10-09)
+dsh-paste-dock                122        374       1277  0.1.4      2026-10-03 (modified 2026-10-04)
+dsh-browser-cdp              1307       3509      11906  1.2.0      2026-09-22 (modified 2026-10-15)
+
+== 逐日（近 8 日） ==
+dsh-tidy-display {'10-09': 106, '10-10': 233, '10-11': 414, '10-12': 387, '10-13': 0, '10-14': 0, '10-15': 0, '10-16': 0}
+dsh-mcp-registry {'10-09': 473, '10-10': 194, '10-11': 567, '10-12': 484, '10-13': 0, '10-14': 0, '10-15': 0, '10-16': 0}
+dsh-preset-doctor {'10-09': 265, '10-10': 26, '10-11': 62, '10-12': 53, '10-13': 0, '10-14': 0, '10-15': 0, '10-16': 0}
+dsh-paste-dock {'10-09': 30, '10-10': 28, '10-11': 133, '10-12': 122, '10-13': 0, '10-14': 0, '10-15': 0, '10-16': 0}
+dsh-browser-cdp {'10-09': 235, '10-10': 156, '10-11': 1393, '10-12': 1307, '10-13': 0, '10-14': 0, '10-15': 0, '10-16': 0}
+
+===
+[assistant] [tool-call validate_dsh_ui "{\"spec\":\"{\\\"title\\\":\\\"五个 PR 项目的 npm 实测数\\\",\\\"gap\\\":12,\\\"items\\\":[{\\\"type\\\":\\\"table\\\",\\\"colu]
+===
+[tool] [genui-validation]
+status=valid
+rendered=3
+next=emit_fence
+reply_language=conversation

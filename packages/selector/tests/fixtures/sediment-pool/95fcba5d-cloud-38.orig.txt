@@ -1,0 +1,220 @@
+[assistant] 1.2.5 已上架。现在核对 dist-tag，看 latest 是否已经指向它：
+[tool-call pwsh "{\"command\":\"\\\"=== dist-tags ===\\\"\\n& npm view dsh-browser-cdp dist-tags --json --registry=https://registry.npmj]
+===
+[tool] === dist-tags ===
+{
+  "beta-0.2.0": "0.18.21",
+  "beta-0.1.7": "0.17.25",
+  "dsh-0.1.5": "1.2.0",
+  "dsh-0.1.7": "1.2.0",
+  "dsh-0.2.0": "1.2.0",
+  "dsh-1.1.0": "1.2.5",
+  "dsh-0.2.1-rc.2": "1.2.4",
+  "latest": "1.2.4"
+}
+
+=== 1.2.5 元数据 ===
+发布时间 = 2026-10-20T20:10:29.549Z
+shasum   = 8e550108a43372fcce34119ada2d87ed8b0323fb
+integrity= sha512-fIQEeKXvpQvZH9z+MyA2iK8m1yPPZ5s3didrgxlKGPSx60bc6HgpkS+Ct5IUmHfAf23eY6mhdFEds/vCvQzbJA==
+latest   = 1.2.4
+
+=== tarball 探测 ===
+HTTP 200  length=
+
+===
+[assistant] [tool-call pwsh "{\"command\":\"$reg = \\\"https://registry.npmjs.org\\\"\\n\\\"=== 1) latest -> 1.2.5 ===\\\"\\n& npm dist-tag add dsh-]
+===
+[tool] === 1) latest -> 1.2.5 ===
++latest: dsh-browser-cdp@1.2.5
+=== 2) dsh-0.2.1-rc.2 -> 1.2.5 ===
++dsh-0.2.1-rc.2: dsh-browser-cdp@1.2.5
+=== 3) dsh-1.1.0 复位 -> 1.2.1 ===
++dsh-1.1.0: dsh-browser-cdp@1.2.1
+
+=== 结果 ===
+{
+  "beta-0.2.0": "0.18.21",
+  "beta-0.1.7": "0.17.25",
+  "dsh-0.1.5": "1.2.0",
+  "dsh-0.2.0": "1.2.0",
+  "dsh-0.1.7": "1.2.0",
+  "latest": "1.2.5",
+  "dsh-0.2.1-rc.2": "1.2.5",
+  "dsh-1.1.0": "1.2.1"
+}
+
+===
+[assistant] dist-tags 已经修正：latest 指向 1.2.5，dsh-1.1.0 恢复为 1.2.1。现在把引发问题的 `publishConfig.tag` 一并修掉，并核对 tarball 内容：
+[tool-call pwsh "{\"command\":\"$pj = \\\"E:\\\\test\\\\rewrite-agently\\\\mine-dsh-plugins\\\\dsh-browser-cdp\\\\package.json\\\"\\n\\\]
+===
+[tool] === publishConfig 段 ===
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "tag": "dsh-1.1.0"
+  }
+}
+
+=== 下载 tarball 校验内容 ===
+下载大小 = 508738 B
+lib/index.js 大小 = 359246
+mergeCliOutput 出现次数 = 12
+包内 version = 1.2.5
+与本地构建 SHA256 一致 = True
+
+===
+[assistant] Tarball 校验通过：其中包含 `mergeCliOutput` ×12，版本为 1.2.5，与本地构建的 SHA256 完全一致。现在修掉 `publishConfig.tag` 这个隐患：
+[tool-call apply_patch "{\"patch\":\"*** Begin Patch\\n*** Update File: E:\\\\test\\\\rewrite-agently\\\\mine-dsh-plugins\\\\dsh-browser-cdp\\\]
+[tool-call read "{\"file_path\":\"E:\\\\test\\\\rewrite-agently\\\\.agents\\\\plans\\\\browser-cdp-stderr-merge\\\\checklist.md\"}"]
+===
+[tool] Applied patch: 1 file(s), 0 added, 1 modified, 0 deleted, +1 -1 lines
+M E:\test\rewrite-agently\mine-dsh-plugins\dsh-browser-cdp\package.json
+===
+[tool] <path>E:\test\rewrite-agently\.agents\plans\browser-cdp-stderr-merge\checklist.md</path>
+<type>file</type>
+<content>
+1: # Checklist
+2: 
+3: > 勾选点位约定：完成时 `- [ ]`→`- [x]`，行尾追加 `✅ <证据/实测值>（YYYY-MM-DD）`；
+4: > 未过项保持原样，不得预勾。
+5: 
+6: ## Must Pass
+7: 
+8: ### 代码层
+9: - [ ] `mergeCliOutput` 三态正确：仅 stdout / 仅 stderr / 两者都有（顺序 stdout 在前）
+10: - [ ] `probeCliLink` 在「哨兵只在 stderr」时判 `ok: true`
+11: - [ ] `probeCliLink` 在「facades 只在 stderr」且 `useSdkPath: true` 时判 `ok: true`
+12: - [ ] `probeCliLink` 在 stderr 含噪音行 + 哨兵行时仍能取到哨兵
+13: - [ ] `parseSentinel` 能从合并文本取到 `@@DSH_RESULT@@` 载荷
+14: - [ ] `parseStatusFacades` 能处理 `\r\n` 行尾
+15: - [ ] `bcdp_status` 的 facades 来自 stdout+stderr 合并
+16: 
+17: ### 运行层
+18: - [ ] `bcdp_status` 返回 `available: true` 且 `facades.taskSpaces === "object"`、`facades.browser === "object"`
+19: - [ ] `POST /bcdp/api/cdp-status` 的 attach 为 `status: "ready"`、`linkKind: "ego-cli"`、`sdkPath` 非空
+20: - [ ] `bcdp_navigate https://www.baidu.com` 返回成功且页面标题含「百度」
+21: - [ ] `bcdp_snapshot` 或 `bcdp_page_info` 能返回真实页面内容
+22: - [ ] `bcdp_script` 返回的 `output` 字段非空（不再是空串）
+23: 
+24: ### 工程层
+25: - [ ] `pnpm run typecheck` 通过（两条 tsconfig 均无错误）
+26: - [ ] `pnpm test` 全量通过，新增用例全绿
+27: - [ ] `pnpm run build` 产物成功生成
+28: - [ ] 仓库 `lib/index.js` 与 profile 副本 SHA256 一致
+29: - [ ] `package.json` 版本为 `1.2.5`
+30: 
+31: ## Should Pass
+32: 
+33: - [ ] `stderr` 的 `maxBytes` / `spill` 已对齐 `cfg.maxOutputBytes`（4 MiB）
+34: - [ ] 错误文案由 `found on stdout` 改为 `found on stdout/stderr`
+35: - [ ] 大输出（> 512 KB）不被截断
+36: - [ ] `bcdp_cli` / `bcdp_script` 的 `stdout` / `stderr` 原始字段语义未被改变
+37: - [ ] 既有 `cli-link.test.ts` 26 个用例无回归
+38: - [ ] vendored CLI 路线（输出在 stdout）仍判 ready
+39: - [ ] `git diff` 仅涉及本计划列出的文件
+40: 
+41: ## 不可接受
+42: 
+43: - [ ] 通过只改 profile 副本"修好"（仓库未同步）
+44: - [ ] 通过放宽判据（例如只查 `exitCode === 0`）让探针通过
+45: - [ ] 删除或跳过既有测试用例
+46: - [ ] 修改 `--sdk-path` 拼装逻辑
+
+(End of file - total 46 lines)
+</content>
+===
+[assistant] [tool-call pwsh "{\"command\":\"$repo = \\\"E:\\\\test\\\\rewrite-agently\\\\mine-dsh-plugins\\\\dsh-browser-cdp\\\"\\n\\\"=== git statu]
+===
+[tool] === git status ===
+ M lib/index.js
+ M package.json
+ M src/cdp/cli-link.ts
+ M src/index.ts
+ M tests/cli-link.test.ts
+ M tests/status-facade.test.ts
+?? tests/cli-stream-merge.test.ts
+
+=== diff 文件清单 ===
+lib/index.js
+package.json
+src/cdp/cli-link.ts
+src/index.ts
+tests/cli-link.test.ts
+tests/status-facade.test.ts
+
+=== 未跟踪新增 ===
+tests/cli-stream-merge.test.ts
+[stderr]
+warning: in the working copy of 'src/index.ts', CRLF will be replaced by LF the next time Git touches it
+
+===
+[assistant] 改动文件都在计划范围内，没有多余文件。现在核对测试文件用例数，用于回写清单：
+[tool-call pwsh "{\"command\":\"cd \\\"E:\\\\test\\\\rewrite-agently\\\\mine-dsh-plugins\\\\dsh-browser-cdp\\\"\\n& pnpm vitest run test]
+===
+[tool]  ✓ tests/cli-link.test.ts (25 tests) 13ms
+ ✓ tests/cli-stream-merge.test.ts (9 tests) 5ms
+ ✓ tests/status-facade.test.ts (6 tests) 5ms
+
+
+ Test Files  3 passed (3)
+      Tests  40 passed (40)
+   Start at  04:15:37
+   Duration  1.47s (transform 401ms, setup 0ms, collect 1.33s, tests 23ms, environment 1ms, prepare 612ms)
+
+[stderr]
+  }
+}
+
+===
+[assistant] 需要核实 `cli-link.test.ts` 的用例数：计划里写的是「既有 26 例」，现在总共只有 25 例（含新增的 3 例），原文件应为 22 例。必须确认没有误删：
+[tool-call pwsh "{\"command\":\"cd \\\"E:\\\\test\\\\rewrite-agently\\\\mine-dsh-plugins\\\\dsh-browser-cdp\\\"\\n\\\"=== HEAD 版 it( 数量 ]
+===
+[tool] === HEAD 版 it( 数量 ===
+HEAD it() = 22
+=== 工作区 it( 数量 ===
+work it() = 25
+
+=== diff 只应新增（无删除行）===
+39	0	tests/cli-link.test.ts
+
+=== 被删除的行（应为空）===
+
+===
+[assistant] 确认无误：HEAD 版原本有 22 例，现在有 25 例，diff 为 `+39/-0`，没有删除任何行。计划里写的「26 例」是笔误，实际基线是 22 例。现在回写 checklist：
+[tool-call write "{\"content\":\"# Checklist\\n\\n> 勾选点位约定：完成时 `- [ ]`→`- [x]`，行尾追加 `✅ <证据/实测值>（YYYY-MM-DD）`；\\n> 未过项保持原样，不得预勾。\\n\\n## M]
+===
+[tool] <path>E:\test\rewrite-agently\.agents\plans\browser-cdp-stderr-merge\checklist.md</path>
+<type>file</type>
+<content>
+Updated file
+</content>
+===
+[assistant] [tool-call pwsh "{\"command\":\"$repo = \\\"E:\\\\test\\\\rewrite-agently\\\\mine-dsh-plugins\\\\dsh-browser-cdp\\\"\\n\\\"=== 最终一致性核验 =]
+===
+[tool] === 最终一致性核验 ===
+repo lib SHA256 = 30378B940065431689F4654C8A130C43A384616205FA211DC1F2CE3FFB0C5DAF
+prof lib SHA256 = 30378B940065431689F4654C8A130C43A384616205FA211DC1F2CE3FFB0C5DAF
+一致 = True
+
+=== 版本三侧 ===
+repo  package.json = 1.2.5
+prof  package.json = 1.2.5
+npm   latest       = 1.2.5
+npm   1.2.5 时间   = 2026-10-20T20:10:29.549Z (本地 04:10:29)
+
+=== publishConfig 已修 ===
+{"registry":"https://registry.npmjs.org","tag":"latest"}
+
+===
+[assistant] 构建与发布已完成，三侧结果一致。最后提交仓库改动：
+[tool-call pwsh "{\"command\":\"cd \\\"E:\\\\test\\\\rewrite-agently\\\\mine-dsh-plugins\\\\dsh-browser-cdp\\\"\\n\\\"=== remote ===\\\"]
+===
+[tool] === remote ===
+origin	git@github.com:drscrewdriver/dsh-browser-cdp.git (fetch)
+origin	git@github.com:drscrewdriver/dsh-browser-cdp.git (push)
+
+=== 分支与上游 ===
+unified/15rc
+d7b6ebd feat(1.2.4): --sdk-path execution injection, facade status probe, ego-cli gating, schema compression
+2e9becd fix(1.2.3): issue #1 + #2 — login_import schema fields, import error typing, family-host uSES crash backstop
+21a7b57 hosts: add 0.2.1-rc.2 (declaration-level enum; 34/34 host peers npm-verified; sync-hosts artifacts; release 1.2.2)

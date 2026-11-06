@@ -1,0 +1,231 @@
+[assistant] 改名后 tsc EXIT 0、58 文件全绿、三 bundle 构建完成。补 `Tests` 计数 + 重打 1.4.1 包(替换上轮误留的 1.4.0 tgz)+ 逐字节核验 + 看改名影响哪些 tracked 文件。
+
+
+[tool-call pwsh "{\"command\":\"Set-Location \\\"E:\\\\test\\\\rewrite-agently\\\\mine-dsh-plugins\\\\dsh-browser-cdp\\\"; \\\"=== Tests]
+===
+[tool] === Tests 计数 ===
+
+      Tests  850 passed | 12 skipped (862)
+=== 删旧 1.4.0 tgz, 重打 1.4.1 ===
+dsh-browser-cdp-1.4.1.tgz
+tgz版本: 1.4.1
+tgz SHA: E7F804F6871979B42D4F8145EAB5EABA4FE22C73905F62C8A70B4A6A2DC54E15
+build SHA: E7F804F6871979B42D4F8145EAB5EABA4FE22C73905F62C8A70B4A6A2DC54E15
+MATCH ✅
+tgz大小: 517920 B
+=== 改名影响 tracked 文件 ===
+ M CHANGELOG.md
+ M README.md
+ M dsh-plugin.json
+ M package.json
+ M tests/tool-tiers.test.ts
+
+
+[stderr]
+ConvertFrom-Json : 传入的对象无效，应为“:”或“}”。 (1034): {
+  "$schema": "https://dsh.community/schemas/dsh-plugin-0.15.json",
+  "id": "dsh-browser-cdp",
+  "name": "dsh-browser-cdp",
+  "version": "1.4.1",
+  "manifestVersion": "0.15",
+  "facets": {
+    "host": {
+      "entry": "lib/index.js",
+      "apiVersion": "v1alpha1"
+    }
+  },
+  "requires": {
+    "contracts": [
+      {
+        "apiVersion": "presentation.dsh/v1alpha1",
+        "kind": "OpenExternal",
+        "optional": true,
+        "fallback": "report the URL as text instead of opening it"
+      },
+      {
+        "apiVersion": "presentation.dsh/v1alpha1",
+        "kind": "Notification",
+        "optional": true,
+        "fallback": "log the notice to the browser-status scene"
+      }
+    ]
+  },
+  "permissions": [],
+  "contributes": {
+    "commands": [],
+    "x-dsh-tui": [
+      {
+        "apiVersion": "tui.dsh/v1alpha1",
+        "kind": "Scene",
+        "id": "dsh-browser-cdp.watch",
+        "name": "agent_browser",
+        "spec": {
+          "title": "Agent 娴忚鍣?,
+          "titles": {
+            "en": "Agent Browser",
+            "zh": "Agent 娴忚鍣?
+          }
+        }
+      },
+      {
+        "apiVersion": "tui.dsh/v1alpha1",
+        "kind": "SettingsSection",
+        "id": "dsh-browser-cdp.settings",
+        "name": "dsh_browser_cdp_settings",
+        "spec": {
+          "namespace": "dsh-browser-cdp",
+          "title": "Agent 娴忚鍣?,
+          "titles": {
+            "en": "Agent Browser",
+            "zh": "Agent 娴忚鍣?
+          },
+          "fields": [
+            {
+              "path": [
+                "toolInjection"
+              ],
+              "label": "宸ュ叿娉ㄥ叆妯″紡 (Tool injection mode)",
+              "kind": "select",
+              "options": [
+                {
+                  "value": "lazy",
+                  "label": "lazy"
+                },
+                {
+                  "value": "always",
+                  "label": "always"
+                }
+              ],
+              "hint": "lazy锛堥粯璁わ級= 甯搁┗鏍稿績 7 涓?+ 閫冪敓鑸?2 涓紝鍏朵綑棣栨 bcdp_* 璋冪敤鍚庢寜涓嬫柟寮€鍏虫敞鍏ワ紝闂茬疆鍥炴敹鏃舵敹鍥烇紱always = 鎸傝浇鍗虫敞鍐屽叏
+閮?38 涓紙鍘嗗彶琛屼负锛夈€?
+            },
+            {
+              "path": [
+                "toolBrowse"
+              ],
+              "label": "鍩虹鎿嶄綔宸ュ叿锛?6 涓級",
+              "kind": "boolean",
+              "hint": "寮€锛堥粯璁わ級= 娴忚鍣ㄦ椿鍔ㄥ悗鎸?act 鈫?observe 鈫?wait 涓夋尝鏀捐锛涘叧 = 16 涓伐鍏蜂粠妯″瀷宸ュ叿鍒楄〃绉婚櫎锛堢偣鍑?濉啓/閿紶/鎷栨嫿/鎴浘/
+璇诲彇/绛夊緟鈥︼級銆?
+            },
+            {
+              "path": [
+                "toolExtended"
+              ],
+              "label": "鎵╁睍鑳藉姏宸ュ叿锛? 涓級",
+              "kind": "boolean",
+              "hint": "寮€锛堥粯璁わ級= 娴忚鍣ㄦ椿鍔ㄥ悗娉ㄥ唽锛涘叧 = 8 涓伐鍏风Щ闄わ紙瑁?CDP/HTTP/涓婁紶/涓嬭浇/瀵硅瘽妗?楠岃瘉鐮?鐧诲綍钀界洏/鐧诲綍瀵煎叆锛夈€?
+            },
+            {
+              "path": [
+                "toolEscape"
+              ],
+              "label": "閫冪敓鑸?cli / script锛? 涓級",
+              "kind": "boolean",
+              "hint": "濮嬬粓鍙敤鈥斺€斾笌鍏跺畠妗ｄ笉鍚岋紝瀹冧笉绛夋祻瑙堝櫒娲诲姩锛屽洜涓轰竴涓?heredoc 灏辫兘鍋氬埌鍏朵綑 36 涓伐鍏风殑浜嬨€傚叧 = 灏佸嵃銆?
+            },
+            {
+              "path": [
+                "toolJudge"
+              ],
+              "label": "璇勫宸ュ叿 bcdp_jev_*锛? 涓級",
+              "kind": "boolean",
+              "hint": "寮€浠嶉渶閰嶄簡 JEV 鎴?Laya Key锛氭病 Key 鐨勮瘎瀹″伐鍏峰彧鑳藉洖绛斻€屾湭閰嶇疆銆嶏紝渚濇棫涓嶆敞鍏ャ€傚叧 = 浠讳綍鎯呭喌涓嬮兘涓嶆敞鍏ャ€?
+            },
+            {
+              "path": [
+                "isolateSpaces"
+              ],
+              "label": "浠诲姟绌洪棿娌欑洅闅旂 (Space isolation)",
+              "kind": "boolean",
+              "hint": "榛樿鍏抽棴锛氫娇鐢ㄧ鐩樻寔涔呭寲 Profile锛屼换鍔′腑鐧诲綍鐨勮处鍙疯法鐢佃剳閲嶅惎姘镐箙淇濈暀锛涘紑鍚悗浣跨敤鍐呭瓨涓存椂娌欑洅闅旂锛屼换鍔＄粨鏉熶笉钀界洏銆?
+            },
+            {
+              "path": [
+                "idleTimeoutMin"
+              ],
+              "label": "绌洪棽鑷姩鍥炴敹 (Idle auto-stop, minutes)",
+              "kind": "number",
+              "hint": "N 鍒嗛挓娌℃湁浠讳綍 bcdp_* 璋冪敤鍚庤嚜鍔ㄥ叧闂悗鍙版祻瑙堝櫒杩涚▼锛? = 鍏抽棴姝ゅ姛鑳斤級銆備笅娆¤皟鐢ㄤ細鑷姩鍐峰惎鍔紙绾?2-4 绉掞級銆傝瀵熺獥姝ｅ湪瑙傜湅涓嶇畻
+娲诲姩銆?
+            },
+            {
+              "path": [
+                "chromePath"
+              ],
+              "label": "Browser binary path",
+              "kind": "text",
+              "hint": "Path to the Chrome/Chromium/Edge binary. Empty = auto-detect."
+            },
+            {
+              "path": [
+                "captureBackend"
+              ],
+              "label": "Capture backend",
+              "kind": "select",
+              "options": [
+                {
+                  "value": "auto",
+                  "label": "Auto"
+                },
+                {
+                  "value": "cdp",
+                  "label": "CDP"
+                },
+                {
+                  "value": "ffmpeg",
+                  "label": "FFmpeg"
+                }
+              ]
+            },
+            {
+              "path": [
+                "streamProfile"
+              ],
+              "label": "Quality profile",
+              "kind": "select",
+              "options": [
+                {
+                  "value": "balanced",
+                  "label": "Balanced"
+                },
+                {
+                  "value": "quality",
+                  "label": "Quality"
+                },
+                {
+                  "value": "speed",
+                  "label": "Speed"
+                }
+              ]
+            },
+            {
+              "path": [
+                "ffmpegPath"
+              ],
+              "label": "FFmpeg binary path",
+              "kind": "text",
+              "hint": "Path to ffmpeg. Empty = auto-detect / on-demand install."
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "subscriptions": [],
+  "license": "MIT",
+  "source": {
+    "repository": "https://github.com/drscrewdriver/dsh-browser-cdp"
+  },
+  "compat": {
+    "hosts": [
+      "dsh-tui"
+    ]
+  }
+}
+所在位置 行:1 字符: 703
++ ... -Content "_p\package\dsh-plugin.json" -Raw | ConvertFrom-Json).versio ...
++                                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [ConvertFrom-Json], ArgumentException
+    + FullyQualifiedErrorId : System.ArgumentException,Microsoft.PowerShell.Commands.ConvertFromJsonCommand
+ 

@@ -1,0 +1,126 @@
+[assistant] [tool-call pwsh "{\"command\":\"& \\\"C:\\\\Users\\\\joshua\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python313\\\\python.exe\\\" -c ]
+===
+[tool] _net9.py refs: {'snapshot-npm-2026.1023.9552.json'} | uses argv: False
+_b2full.py refs: {'snapshot-npm-2026.1024.9903.json'} | uses argv: False
+
+===
+[assistant] [tool-call read "{\"file_path\":\"E:\\\\test\\\\rewrite-agently\\\\.agents\\\\skills\\\\dsh-registry-track\\\\_net9.py\"}"]
+[tool-call read "{\"file_path\":\"E:\\\\test\\\\rewrite-agently\\\\.agents\\\\skills\\\\dsh-registry-track\\\\_b2full.py\"}"]
+===
+[tool] <path>E:\test\rewrite-agently\.agents\skills\dsh-registry-track\_net9.py</path>
+<type>file</type>
+<content>
+1: # -*- coding: utf-8 -*-
+2: """Net leaderboard: owner aggregate downloads, with ranxianglei (billion-context,
+3: auto-install volume) flagged. Show #1..#9 raw, then #1..#12 after removing ranxianglei."""
+4: import json, os, collections, urllib.request
+5: SNAP = r"E:\test\rewrite-agently\.agents\skills\dsh-registry-track\snapshot"
+6: fn = "snapshot-npm-2026.1023.9552.json"
+7: d = json.load(open(os.path.join(SNAP, fn), encoding="utf-8"))
+8: pl = d["plugins"] if isinstance(d, dict) and "plugins" in d else d
+9: st = collections.Counter(p.get("downloadsStart") for p in pl if p.get("downloadsStart")).most_common(1)[0][0]
+10: en = collections.Counter(p.get("downloadsEnd") for p in pl if p.get("downloadsEnd")).most_common(1)[0][0]
+11: print("window %s~%s  version %s" % (st, en, d.get("catalog_version")))
+12: def agg(plugins):
+13:     o = collections.defaultdict(lambda: [0, 0])
+14:     for p in plugins:
+15:         ow = p.get("owner") or ""
+16:         if not ow: continue
+17:         o[ow][0] += 1; o[ow][1] += (p.get("downloads") or 0)
+18:     return o
+19: def nm(p): return p.get("name") or p.get("id") or ""
+20: pkgmax = {p.get("owner"): (p.get("downloads") or 0) for p in pl}  # not used; keep simple
+21: all_ = agg(pl)
+22: rows = sorted(all_.items(), key=lambda kv: -kv[1][1])
+23: print("\nRAW #1..#9 (ranxianglei = the auto-install package to exclude)")
+24: for i, (o, v) in enumerate(rows[:9], 1):
+25:     # biggest package of this owner
+26:     bp = max(((nm(p), p.get("downloads") or 0) for p in pl if p.get("owner") == o), key=lambda x: x[1])
+27:     print("  #%d %-15s pkgs=%-3d dl=%9d  (top pkg %s=%d)%s" % (i, o, v[0], v[1], bp[0], bp[1], "  <-- 剔除" if o=="ranxianglei" else ("  <-- ME" if o=="drscrewdriver" else "")))
+28: print("\nSum of #1..#9 raw: %d" % sum(v[1] for o,v in rows[:9]))
+29: print("Sum of #2..#9 raw (excl ranxianglei): %d" % sum(v[1] for o,v in rows[1:9]))
+30: # verify ranxianglei package = billion-context and its share
+31: rx = sum((p.get("downloads") or 0) for p in pl if p.get("owner")=="ranxianglei")
+32: tot = sum(v[1] for o,v in rows)
+33: print("ranxianglei total %d = %.1f%% of ecosystem %d" % (rx, 100.0*rx/tot, tot))
+34: # NET after removing ranxianglei
+35: net = sorted([kv for kv in rows if kv[0] != "ranxianglei"], key=lambda kv: -kv[1][1])
+36: print("\nNET #1..#12 after excluding ranxianglei")
+37: for i, (o, v) in enumerate(net[:12], 1):
+38:     print("  #%d %-15s pkgs=%-3d dl=%9d%s" % (i, o, v[0], v[1], "  <-- ME" if o=="drscrewdriver" else ""))
+39: me = next(i for i,(o,v) in enumerate(net,1) if o=="drscrewdriver")
+40: print("drscrewdriver NET rank = #%d" % me)
+
+(End of file - total 40 lines)
+</content>
+===
+[tool] <path>E:\test\rewrite-agently\.agents\skills\dsh-registry-track\_b2full.py</path>
+<type>file</type>
+<content>
+1: # -*- coding: utf-8 -*-
+2: import json, os, collections
+3: SNAP = r"E:\test\rewrite-agently\.agents\skills\dsh-registry-track\snapshot"
+4: d = json.load(open(os.path.join(SNAP,"snapshot-npm-2026.1024.9903.json"),encoding="utf-8"))
+5: pl = d["plugins"] if isinstance(d,dict) and "plugins" in d else d
+6: def nm(p): return p.get("name") or p.get("id") or ""
+7: ME="drscrewdriver"; OFFICE={"dsh-opensheet-sidebar","dsh-pptx-sidebar","dsh-docx-sidebar"}
+8: 
+9: # 口径B full list with owner's top package name
+10: best=collections.defaultdict(lambda:(0,""))
+11: for p in pl:
+12:     o=p.get("owner") or ""; v=p.get("downloads")
+13:     if not o or v is None: continue
+14:     if v>best[o][0]: best[o]=(v,nm(p))
+15: bl=sorted(best.items(),key=lambda kv:-kv[1][0])
+16: print("### CALIBER-B #1..#34 (owner | pkg | value)")
+17: for i,(o,(v,n)) in enumerate(bl[:34],1):
+18:     print("%2d|%-16s|%s|%d%s"%(i,o,n,v,"  <== ME" if o==ME else ("  [SPAM]" if o=="ranxianglei" else "")))
+19: 
+20: # efficiency >=3 pkgs, ex-Office only for ME
+21: agg=collections.defaultdict(lambda:[0,0])
+22: for p in pl:
+23:     o=p.get("owner") or ""; v=p.get("downloads")
+24:     if not o or v is None: continue
+25:     if o==ME and nm(p) in OFFICE: continue
+26:     agg[o][0]+=1; agg[o][1]+=v
+27: eff=sorted([(o,v[0],v[1],v[1]/v[0]) for o,v in agg.items() if v[0]>=3],key=lambda r:-r[3])
+28: print("\n### EFFICIENCY >=3pkgs ex-Office #1..#15 (owner|pkgs|sum|avg)")
+29: for i,r in enumerate(eff[:15],1):
+30:     print("%2d|%-16s|pkgs=%d|avg=%.0f%s"%(i,r[0],r[1],r[3],"  <== ME" if r[0]==ME else ("  [SPAM]" if r[0]=="ranxianglei" else "")))
+
+(End of file - total 30 lines)
+</content>
+===
+[assistant] 脚本钉死了旧快照文件名，参数化合并成一个 `_boards.py`：
+
+
+[tool-call write "{\"file_path\":\"E:\\\\test\\\\rewrite-agently\\\\.agents\\\\skills\\\\dsh-registry-track\\\\_boards.py\",\"content\":\]
+===
+[tool] <path>E:\test\rewrite-agently\.agents\skills\dsh-registry-track\_boards.py</path>
+<type>file</type>
+<content>
+Created file
+</content>
+===
+[assistant] [tool-call pwsh "{\"command\":\"& \\\"C:\\\\Users\\\\joshua\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python313\\\\python.exe\\\" \\\]
+===
+[tool] window 2026-09-29~2026-10-28  version 2026.1029.12068  plugins 7557
+
+### NET leaderboard (excl ranxianglei) #1..#12
+ 1|zhu1090093659   |pkgs=8  |   799697
+ 2|dsh-market      |pkgs=1  |   726352
+ 3|MichengAI       |pkgs=11 |   583206
+ 4|omdsh-dev       |pkgs=41 |   349678
+ 5|MeteorNOX       |pkgs=1  |   291932
+ 6|drscrewdriver   |pkgs=28 |   239973  <== ME
+ 7|PC2005-cloud    |pkgs=1  |   219155
+ 8|bowenliang123   |pkgs=1  |   213855
+ 9|PerryLink       |pkgs=67 |   202590
+10|liustack        |pkgs=2  |   180386
+11|GooDAnDReaDY    |pkgs=29 |   145017
+12|Han-1413141     |pkgs=10 |   119760
+Traceback (most recent call last):
+  File "E:\test\rewrite-agently\.agents\skills\dsh-registry-track\_boards.py", line 25, in <module>
+    gap_up = net[me_rank - 2][1] - agg[ME][1] if me_rank > 1 else 0
+             ~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~
+TypeError: unsupported operand type(s) for -: 'list' and 'int'

@@ -1,0 +1,67 @@
+[assistant] 先查看当前运行时状态，不凭猜测。
+[tool-call pwsh "{\"command\": \"$port = Get-NetTCPConnection -LocalPort 19387 -State Listen -ErrorAction SilentlyContinue | Select-Obje]
+[tool-call bcdp_doctor "{}"]
+===
+[tool] GUI PID      = 29272
+GUI 启动     = 10/21/2026 04:17:44
+部署写入     = 10/21/2026 04:31:17
+已加载 1.3.0 = False
+
+=== profile 配置里的开关现值 ===
+L837  toolBrowse: true
+L838  toolExtended: true
+L839  toolJudge: false
+
+===
+[tool] {
+  "ok": true,
+  "report": "tool injection: mode=lazy browse=open extended=open judge=sealed judgeKey=none active=yes → live 33 / sealed 5\negoBin: C:\\Users\\joshua\\.dsh\\profiles\\desktop\\node_modules\\dsh-browser-cdp\\runtime\\ego-linux\\bin\\ego-browser.mjs\negoBin exists: true\nbrowser binary: C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe\nruntimeArgs (effective): (none)\nremote CDP: enabled\nattach: ready (source: cli)\nlightpanda on win32: no native build — use WSL2: `wsl --install` (admin), then inside WSL: `curl -fsSL https://pkg.lightpanda.io/install.sh | bash` + `lightpanda serve --host 127.0.0.1 --port 9222`; WSL2 maps the port to Windows localhost, then add http://127.0.0.1:9222 as a CDP endpoint. Docker alternative: `docker run -d -p 127.0.0.1:9222:9222 lightpanda/browser:nightly`.\nlinks: 1 (cdp 0, ego-cli 1, lightpanda 0)\ncli: C:\\Users\\joshua\\.local\\share\\ego\\active_version_dir\\ego-browser.exe (explicit, shape direct)\nnaming: 38 bcdp_* tools; legacy ego_* aliases OFF (coexists with the upstream plugin)\nchromeArgs (effective, next cold start): (none)\nstate dir: C:\\Users\\joshua\\AppData\\Local\\ego-lite-linux (exists: true)\nbrowser.json: (none — agent browser not running)\ntask spaces: 1\nheadless override: no\nnpm/node: v24.18.1\njudge: laya -> rule -> refuse (1 http hop(s) ready)\njudge jev: not configured\njudge laya: http://127.0.0.1:8000 key=MISSING (hop will be SKIPPED)\njudge budgets: chunk=20 steps=20 wall=120000ms imageBytes=unbounded\njudge worker: C:\\Users\\joshua\\.dsh\\profiles\\desktop\\node_modules\\dsh-browser-cdp\\bin\\cdp-render-worker.mjs"
+}
+===
+[assistant] 已查明：`toolExtended` 现在为 `true`，`live 33 / sealed 5`（被封印的只有 judge 层 5 个工具）。**`bcdp_cli` 和 `bcdp_script` 当前已经注册并可用**，我直接实测：
+[tool-call bcdp_script "{\"script\": \"const t = await page.evaluate(() => document.title)\\nconsole.log(JSON.stringify({ ok: true, title: t, f]
+===
+[tool] {
+  "ok": false,
+  "stdout": "",
+  "stderr": "Error: Task space not selected\r\n    at buildEgoError (file:///C:/Users/joshua/.dsh/profiles/desktop/node_modules/dsh-browser-cdp/runtime/ego-browser/dist/out/index.js:284:19)\r\n    at assertNoEgoError (file:///C:/Users/joshua/.dsh/profiles/desktop/node_modules/dsh-browser-cdp/runtime/ego-browser/dist/out/index.js:294:15)\r\n    at file:///C:/Users/joshua/.dsh/profiles/desktop/node_modules/dsh-browser-cdp/runtime/ego-browser/dist/out/index.js:425:28\r\n    at async browserCdp (file:///C:/Users/joshua/.dsh/profiles/desktop/node_modules/dsh-browser-cdp/runtime/ego-browser/dist/out/index.js:401:21)\r\n    at async Object.defaultSend [as send] (file:///C:/Users/joshua/.dsh/profiles/desktop/node_modules/dsh-browser-cdp/runtime/ego-browser/dist/out/index.js:622:22)\r\n    at async cdp (file:///C:/Users/joshua/.dsh/profiles/desktop/node_modules/dsh-browser-cdp/runtime/ego-browser/dist/out/index.js:735:12)\r\n    at async runtimeEvaluate (file:///C:/Users/joshua/.dsh/profiles/desktop/node_modules/dsh-browser-cdp/runtime/ego-browser/dist/out/index.js:781:26)\r\n    at async file:///C:/Program%20Files/Citro%20Labs/ego%20lite/Application/0.6.0.16/[eval2]:1:11\r\n\r\nego's nodejs process exited with code 1.\r\n",
+  "output": "Error: Task space not selected\r\n    at buildEgoError (file:///C:/Users/joshua/.dsh/profiles/desktop/node_modules/dsh-browser-cdp/runtime/ego-browser/dist/out/index.js:284:19)\r\n    at assertNoEgoError (file:///C:/Users/joshua/.dsh/profiles/desktop/node_modules/dsh-browser-cdp/runtime/ego-browser/dist/out/index.js:294:15)\r\n    at file:///C:/Users/joshua/.dsh/profiles/desktop/node_modules/dsh-browser-cdp/runtime/ego-browser/dist/out/index.js:425:28\r\n    at async browserCdp (file:///C:/Users/joshua/.dsh/profiles/desktop/node_modules/dsh-browser-cdp/runtime/ego-browser/dist/out/index.js:401:21)\r\n    at async Object.defaultSend [as send] (file:///C:/Users/joshua/.dsh/profiles/desktop/node_modules/dsh-browser-cdp/runtime/ego-browser/dist/out/index.js:622:22)\r\n    at async cdp (file:///C:/Users/joshua/.dsh/profiles/desktop/node_modules/dsh-browser-cdp/runtime/ego-browser/dist/out/index.js:735:12)\r\n    at async runtimeEvaluate (file:///C:/Users/joshua/.dsh/profiles/desktop/node_modules/dsh-browser-cdp/runtime/ego-browser/dist/out/index.js:781:26)\r\n    at async file:///C:/Program%20Files/Citro%20Labs/ego%20lite/Application/0.6.0.16/[eval2]:1:11\r\n\r\nego's nodejs process exited with code 1.\r\n",
+  "durationMs": 404,
+  "timedOut": false,
+  "error": "ego-browser exited with code 1\n--- ego-browser stderr (tail) ---\nError: Task space not selected\r\n    at buildEgoError (file:///C:/Users/joshua/.dsh/profiles/desktop/node_modules/dsh-browser-cdp/runtime/ego-browser/dist/out/index.js:284:19)\r\n    at assertNoEgoError (file:///C:/Users/joshua/.dsh/profiles/desktop/node_modules/dsh-browser-cdp/runtime/ego-browser/dist/out/index.js:294:15)\r\n    at file:///C:/Users/joshua/.dsh/profiles/desktop/node_modules/dsh-browser-cdp/runtime/ego-browser/dist/out/index.js:425:28\r\n    at async browserCdp (file:///C:/Users/joshua/.dsh/profiles/desktop/node_modules/dsh-browser-cdp/runtime/ego-browser/dist/out/index.js:401:21)\r\n    at async Object.defaultSend [as send] (file:///C:/Users/joshua/.dsh/profiles/desktop/node_modules/dsh-browser-cdp/runtime/ego-browser/dist/out/index.js:622:22)\r\n    at async cdp (file:///C:/Users/joshua/.dsh/profiles/desktop/node_modules/dsh-browser-cdp/runtime/ego-browser/dist/out/index.js:735:12)\r\n    at async runtimeEvaluate (file:///C:/Users/joshua/.dsh/profiles/desktop/node_modules/dsh-browser-cdp/runtime/ego-browser/dist/out/index.js:781:26)\r\n    at async file:///C:/Program%20Files/Citro%20Labs/ego%20lite/Application/0.6.0.16/[eval2]:1:11\r\n\r\nego's nodejs process exited with code 1."
+}
+===
+[assistant] `bcdp_script` **确实已注册并成功执行**，报错来自脚本本身缺少前置的空间选择，因为结构化工具会自动补上这一步，裸脚本不会。下面查正确的调用方式：
+[tool-call pwsh "{\"command\": \"$repo = \\\"E:\\\\test\\\\rewrite-agently\\\\mine-dsh-plugins\\\\dsh-browser-cdp\\\"\\n\\\"=== useSpace]
+===
+[tool] === useSpace / ensureRealTab 实现 ===
+L854
+>>> const useSpace = (name: string | number): string =>
+  `const task = await taskSpaces.useOrCreate(${j(name)})\n`
+/**
+ * JS snippet that makes the harness act on a real page tab.
+ *
+ * The Linux host (PR #234 ego-linux) does not reliably persist "current tab"
+ * across CLI invocations: a fresh process sometimes resolves page actions
+ * against a blank/stale tab. Selecting the first non-blank tab in the space
+ * before acting makes cross-process tool calls deterministic.
+ */
+const ensureRealTab = (): string =>
+  `const __tabs = await browser.listTabs()\n` +
+  `const __real = __tabs.find(t => !t.url.startsWith('about:') && !t.url.startsWith('chrome://')) ?? __tabs[0]\n` +
+---
+L864
+>>> const ensureRealTab = (): string =>
+  `const __tabs = await browser.listTabs()\n` +
+  `const __real = __tabs.find(t => !t.url.startsWith('about:') && !t.url.startsWith('chrome://')) ?? __tabs[0]\n` +
+  `if (__real) await browser.switchTab(__real.targetId)\n`
+function renderText(_args: unknown, value: unknown): unknown[] {
+  const v = value as Record<string, unknown> | null
+  if (
+    v !== null &&
+    typeof v === 'object' &&
+    v.ok === true &&
+    typeof v.text === 'string'
+  ) {
+    return [{ type: 'text', text: v.text }]
+---

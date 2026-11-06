@@ -1,0 +1,102 @@
+[assistant] [tool-call pwsh "{\"command\":\"& \\\"C:\\\\Users\\\\joshua\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python313\\\\python.exe\\\" \\\]
+===
+[tool] 
+CN  now : 2026-10-29 14:07:33
+latest : 2026.1029.12068 -> 2026-10-29T04:31:21.568Z
+latest : 2026.1029.12068 -> 2026-10-29T04:31:21.568Z
+
+
+===
+[assistant] 今天版 `2026.1029.12068` 北京 12:31 已落地。拉取 + 结算探针 + diff：
+
+
+[tool-call pwsh "{\"command\":\"& \\\"C:\\\\Users\\\\joshua\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python313\\\\python.exe\\\" \\\]
+===
+[tool] version: 2026.1029.12068 | plugins: 7557 | window 2026-09-29~2026-10-28 | saved E:\test\rewrite-agently\.agents\skills\dsh-registry-track\snapshot\snapshot-npm-2026.1029.12068.json
+react: [('2026-10-25', 22450923), ('2026-10-26', 39668639), ('2026-10-27', 39653909), ('2026-10-28', 0), ('2026-10-29', 0)]
+steward old-pkg true sum 09-29~10-28 = 9694
+window: 2026-09-29 ~ 2026-10-28
+plugins 7406 -> 7557 (+151)
+sum 13347285 -> 13963474 (+616189, 4.62%)
+
+TOP 20
+  #1  ranxianglei      pkgs=1   dl=  2179313  d=   +78016 rank=+0
+  #2  zhu1090093659    pkgs=8   dl=   799697  d=    +9924 rank=+0
+  #3  dsh-market       pkgs=1   dl=   726352  d=   +36732 rank=+0
+  #4  MichengAI        pkgs=11  dl=   583206  d=   +11834 rank=+0
+  #5  omdsh-dev        pkgs=41  dl=   349678  d=   +11980 rank=+0
+  #6  MeteorNOX        pkgs=1   dl=   291932  d=   +25716 rank=+0
+  #7  drscrewdriver    pkgs=28  dl=   239973  d=    +9951 rank=+0 <== ME
+  #8  PC2005-cloud     pkgs=1   dl=   219155  d=   +35508 rank=+2
+  #9  bowenliang123    pkgs=1   dl=   213855  d=   +20326 rank=+0
+  #10 PerryLink        pkgs=67  dl=   202590  d=    +3345 rank=-2 <== Perry
+  #11 liustack         pkgs=2   dl=   180386  d=   +19732 rank=+0
+  #12 GooDAnDReaDY     pkgs=29  dl=   145017  d=    -5340 rank=+0
+  #13 Han-1413141      pkgs=10  dl=   119760  d=    +1267 rank=+0
+  #14 STARDUSTLC666    pkgs=21  dl=   108971  d=   +12910 rank=+0
+  #15 elysia395        pkgs=1   dl=    94514  d=    +6236 rank=+0
+  #16 kenryu42         pkgs=1   dl=    78448  d=    +7210 rank=+0
+  #17 xmanrui          pkgs=3   dl=    75735  d=    +5093 rank=+0
+  #18 T-Auto           pkgs=1   dl=    73899  d=    +9473 rank=+3
+  #19 Small-tailqwq    pkgs=2   dl=    70847  d=    +5202 rank=+1
+  #20 dingminhua       pkgs=5   dl=    70566  d=    +4211 rank=-2
+drscrewdriver    #7->#7  230022 -> 239973 (+9951)
+bowenliang123    #9->#9  193529 -> 213855 (+20326)
+liustack         #11->#11  160654 -> 180386 (+19732)
+PerryLink        #8->#10  199245 -> 202590 (+3345)
+GooDAnDReaDY     #12->#12  150357 -> 145017 (-5340)
+ranxianglei      #1->#1  2101297 -> 2179313 (+78016)
+MichengAI        #4->#4  571372 -> 583206 (+11834)
+MeteorNOX        #6->#6  266216 -> 291932 (+25716)
+
+shared=7400 up=2784 down=989 flat=3627
+new=157 (sum=44564) gone=6
+
+drscrewdriver per-pkg:
+  dsh-arrowkey-nav                      5993 ->    6191  +198
+  dsh-brief-sidebar                     8636 ->    8915  +279
+  dsh-canvas-tsx-sidebar                5483 ->    5672  +189
+  dsh-input-traffic                    11322 ->   11652  +330
+  dsh-paste-dock                        3318 ->    3442  +124
+  dsh-sidebar-fold                       870 ->     966  +96
+
+===
+[assistant] [tool-call pwsh "{\"command\":\"Get-Content \\\"E:\\\\test\\\\rewrite-agently\\\\.agents\\\\skills\\\\dsh-registry-track\\\\_diff29_out.]
+===
+[tool] 
+>   dsh-manage-session                     427 ->    1495  +1068
+    dsh-reference-session-collector       2029 ->    2415  +386
+>   dsh-union-search                      1862 ->    2017  +155
+    dsh-media-lens                        1536 ->    1691  +155
+>   dsh-im-union                          1616 ->    1920  +304
+> sum delta: 9951
+  
+> EFF:
+>   >= 3 pkgs: pool=259 ME #13 avg=8570
+>   >= 5 pkgs: pool=90 ME #7 avg=8570
+>   >=10 pkgs: pool=21 ME #3 avg=8570
+> CALIBER B: pool=2497 ME #32 best=29500 dsh-prime-memory
+====catalog steward check====
+pkgs= 28  sum= 239973
+  dsh-manage-session npm= dsh-manage-session dl= 1495
+  dsh-reference-session-collector npm= dsh-reference-session-collector dl= 2415
+  dsh-session-guard npm= dsh-session-guard dl= 11337
+  dsh-union-search npm= dsh-union-search dl= 2017
+  dsh-im-union npm= dsh-im-union dl= 1920
+
+
+===
+[assistant] **今日版** `2026.1029.12068`（北京 12:31，窗口 09-29~10-28）。连续第三个回补日：10-27 结算 39.7M 入袋，生态 **+4.62%**；仅 10-28 一个空日在右缘，挤出轻微。
+
+```dsh-ui
+{"title":"Top10（10-29 版 · 剔 ran 口径你看 #7 稳）","gap":10,"items":[{"type":"table","columns":["#","owner","pkgs","今日","Δ","备注"],"rows":[["1","ranxianglei [刷量]","1","2,179,313","+78,016",""],["2","zhu1090093659","8","799,697","+9,924",""],["3","dsh-market","1","726,352","+36,732",""],["4","MichengAI","11","583,206","+11,834","反弹持续"],["5","omdsh-dev","41","349,678","+11,980",""],["6","MeteorNOX","1","291,932","+25,716",""],["7","drscrewdriver ←你","28","239,973","+9,951","含 manage-session 1,495"],["8","PC2005-cloud","1","219,155","+35,508","↑2 逼近"],["9","bowenliang123","1","213,855","+20,326",""],["10","PerryLink","67","202,590","+3,345","↓2 跌出前9"]]}]}
+```
+
+- **对 PerryLink 名义领先扩到 +37,383**，且他自己掉到 #10——薄均匀盘在回补日只弹 +3,345（昨天预测兑现）。反超 #7 的威胁换人：**PC2005-cloud 两期弹 +63,671（83k→219k），距你 20,818**；bowen +20,326 距你 26,118。俩单包号回补弹性大，若明天 10-28 结算值高（前日 39.7M 量级）它们还会再弹。
+- **修正口径**：steward 老包仍无条目跟踪（真实窗口 09-29~10-28 = **9,694**），修正后你 = **249,667**，对 PC2005 缓冲 30,512。
+- **manage-session 开始接量**：427 → **1,495（+1,068，3.5x）**——改名后的新包爬坡启动，老包流量迁移初现。若这个斜率是真实迁移，steward 的 9.5k 会在 30 天窗口内自然转进新行，补投 yml 的紧迫性下降。
+- **GooDAnDReaDY 连续三期负增长**（-388 → -5,340），Top12 唯一失血——纯日销盘无脉冲可回补，正被 liustack(+19,732) 拉开。
+- 效率：avg **8,570**，≥10包池 **#3**、≥5包 #7、≥3包 #13；口径 B **prime-memory 29,500** 守单包王，榜位 **#32**（池 2,497）。
+- 盘面：插件 7,406→**7,557**（+151），up=2,784 / down=989。
+
+一句话：#7 坐稳且名义领先走阔，但防守对象从 PerryLink 换成 PC2005-cloud；manage-session 爬坡若持续，steward 漏计会自愈，先别补投——建议明天看斜率再定。

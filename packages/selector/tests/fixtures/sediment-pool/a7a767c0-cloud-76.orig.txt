@@ -1,0 +1,71 @@
+[assistant] [tool-call write "{\"content\":\"# -*- coding: utf-8 -*-\\n\\\"\\\"\\\"10-20 bake: (1) owner efficiency boards >=3/>=5/>=10 pkgs; (2) sin]
+===
+[tool] <path>E:\test\rewrite-agently\.agents\skills\dsh-registry-track\_effb20.py</path>
+<type>file</type>
+<content>
+Created file
+</content>
+===
+[assistant] [tool-call edit "{\"file_path\":\"E:\\\\test\\\\rewrite-agently\\\\.agents\\\\skills\\\\dsh-registry-track\\\\_effb20.py\",\"old_string\]
+===
+[tool] The file E:\test\rewrite-agently\.agents\skills\dsh-registry-track\_effb20.py has been updated successfully.
+===
+[assistant] [tool-call edit "{\"file_path\":\"E:\\\\test\\\\rewrite-agently\\\\.agents\\\\skills\\\\dsh-registry-track\\\\_effb20.py\",\"new_string\]
+===
+[tool] The file E:\test\rewrite-agently\.agents\skills\dsh-registry-track\_effb20.py has been updated successfully.
+===
+[assistant] [tool-call pwsh "{\"command\":\"& \\\"C:\\\\Users\\\\joshua\\\\.dsh\\\\dsh-runtimes\\\\dsh-primary-runtime\\\\dependencies\\\\python\\\\]
+===
+[tool] EFF with Office >= 3 pkgs: pool=216  ME #14 avg=7335
+EFF with Office >= 5 pkgs: pool=67   ME #5 avg=7335
+EFF with Office >=10 pkgs: pool=15   ME #3 avg=7335
+EFF no Office   >= 3 pkgs: pool=216  ME #14 avg=8167
+EFF no Office   >= 5 pkgs: pool=67   ME #5 avg=8167
+EFF no Office   >=10 pkgs: pool=15   ME #3 avg=8167
+YESTERDAY >= 3: pool=208 ME #16 avg=6570
+YESTERDAY >= 5: pool=65 ME #6 avg=6570
+YESTERDAY >=10: pool=15 ME #3 avg=6570
+
+>=10 pool top8:
+  #1 MichengAI        pkgs=11 avg=123547
+  #2 omdsh-dev        pkgs=10 avg=32636
+  #3 drscrewdriver    pkgs=23 avg=7335 <== ME
+  #4 GooDAnDReaDY     pkgs=27 avg=6193
+  #5 STARDUSTLC666    pkgs=21 avg=3911
+  #6 PerryLink        pkgs=54 avg=3770
+  #7 weibaohui        pkgs=24 avg=2560
+  #8 better-er        pkgs=12 avg=1853
+
+CALIBER B (single max pkg), total owners=2011
+ME #39  prime-memory=20059
+caliber B top5:
+  #1 ranxianglei       1784926  billion-context
+  #2 dsh-market         620408  dsh-market
+  #3 MichengAI          242304  dsh-codex-ui
+  #4 omdsh-dev          217109  DSH-better-sidebar
+  #5 MeteorNOX          203256  DeepSeek-Balance-Whale-Widget
+  #34 T-Auto              22879  dsh-ops
+  #35 Noob-stupid         22443  dsh-plugin-gating-hub
+  #36 dingminhua          22435  dsh-connect-workbuddy
+  #37 wqty123             20813  dsh-browser
+  #38 f-e-n-g-0531        20321  dsh-code-review
+  #39 drscrewdriver       20059  dsh-thinking-levels <== ME
+  #40 Nwflower            19064  dsh-claude-style
+  #41 iasiv5              18314  dsh-m
+  #42 flymysql            17066  dsh-remote
+  #43 Mars-Sea            16551  dsh-commandcode-provider
+  #44 kenz1117            16253  dsh-ui-usage-billing
+  #45 saya-ch             15911  dsh-mobile
+yesterday ME #39 with 17946
+
+===
+[assistant] 两榜都基于今晨版（窗口 09-20~10-19）。先纠正一处明细误标：口径 B 的冠军包是 **thinking-levels 20,059**，不是 prime-memory（19,756）——两包差 303，我上轮把 prime-memory 当最大值报了，已核正。
+
+```dsh-ui
+{"title":"10-20 平均效率榜 & 单作者最高榜","gap":12,"items":[{"type":"table","columns":["门槛","池","含 Office","名次","剔 Office","名次","昨日名次"],"rows":[["≥ 3 包","216","7,335","#14","8,167","#14","#16"],["≥ 5 包","67","7,335","#5","8,167","#5","#6"],["≥ 10 包","15","7,335","#3","8,167","#3","#3"]],"details":"≥10 包头部：MichengAI 123,547 / omdsh-dev 32,636 / 你 7,335 / GooDAnDReaDY 6,193 / PerryLink 3,770"},{"type":"table","columns":["#","owner","最高单包","值"],"rows":[["1","ranxianglei","billion-context","1,784,926"],["2","dsh-market","dsh-market","620,408"],["3","MichengAI","dsh-codex-ui","242,304"],["4","omdsh-dev","DSH-better-sidebar","217,109"],["5","MeteorNOX","DeepSeek-Balance-Whale-Widget","203,256"],["…","","","",""],["38","f-e-n-g-0531","dsh-code-review","20,321"],["39","drscrewdriver","dsh-thinking-levels","20,059"],["40","Nwflower","dsh-claude-style","19,064"]],"details":"全池 2,011 位 owner；你 #39，昨日也 #39（值 17,946 → 20,059，+2,113）"},{"type":"callout","tone":"success","title":"结论","content":"效率榜三线全进：≥5 包 #6→#5（超 PerryLink 3,770 阵营）、≥3 包 #16→#14，剔 Office 口径均值 8,167/包。多包赛道里你在 ≥10 包池稳居 #3，与前二为体量级差、无追赶意义。单作者最高榜原地踏步：#39 → #39，名次没动但数值 +11.7%，身前后差距都只有几百到两千，属贴身分层。"},{"type":"callout","tone":"warning","title":"口径注意","content":"效率涨幅含第二个回补追赶日效应（10-18 结算入袋 + 新烤 144 包贡献 60,675）；池规模 ≥3 包已从 208 胀到 216。单作者最高榜进前 20 需单包窗口破 3.7 万级（昨日记忆门槛），你的 thinking-levels 距该线还差约 1.7 万——它当前日增约 2,100，纯自然增长到榜眼区不现实，需靠新版本拉动。"}]}
+```
+
+**要点**：
+
+- **平均效率**：7,335/包（含 Office）→ 剔 Office **8,167/包**。三线全升：≥3 包 #14（+2）、≥5 包 #5（+1）、≥10 包 #3（持平，池子仍是那 15 人）。
+- **单作者最高（口径 B）**：**#39/2,011**，与昨日同名次。thinking-levels 20,059 刚超 f-e-n-g-0531 的 20,321 线下方 262，身位咬得极紧——下期一个回补就可能再窜一两名。

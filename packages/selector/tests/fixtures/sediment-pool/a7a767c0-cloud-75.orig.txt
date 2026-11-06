@@ -1,0 +1,196 @@
+[assistant] [tool-call pwsh "{\"command\":\"Get-ChildItem \\\"E:\\\\test\\\\rewrite-agently\\\\.agents\\\\skills\\\\dsh-registry-track\\\" -File | W]
+===
+[tool] 10-17 00:36  _cat_cmp.py
+10-17 00:36  _cat_cmp_out.txt
+10-17 00:44  _brief_side.py
+10-17 11:54  _fetch_1017.txt
+10-17 11:54  _diff_1017.py
+10-17 11:54  _diff_1017_out.txt
+10-17 11:55  _pr_state_1017.py
+10-17 11:56  _verify_merge.py
+10-17 12:00  _merged_24h.py
+10-17 12:02  _other_pr.py
+10-17 12:18  _fetch_1017b.txt
+10-17 12:18  _recheck.py
+10-17 12:22  _fetch_18799.txt
+10-17 12:23  _discovery.py
+10-17 12:23  _hunt_token.py
+10-17 12:24  _ingest_lag.py
+10-17 12:33  _yamlcheck.py
+10-17 12:33  _npm_probe.py
+10-17 12:33  _window_rev.py
+10-17 12:34  _zero_days.py
+10-17 12:34  _zerocal.py
+10-17 12:34  _corrected.py
+10-17 12:35  _market_cache.py
+10-17 12:35  _catalog_meta.py
+10-17 12:35  _catalog_fetch.py
+10-17 12:36  _fetch_19387.py
+10-17 12:38  _fetch_1017c.txt
+10-17 12:38  _catalog_origin.py
+10-17 12:39  _win_fields.py
+10-17 12:42  _snap_fields.py
+10-17 12:42  _phantom.py
+10-17 12:43  _verify_offset.py
+10-17 12:43  _stale.py
+10-17 12:47  SKILL.md
+10-17 12:51  _today_rank.py
+10-17 12:51  _today_rank_out.txt
+10-17 12:51  _today_corrected.py
+10-17 12:51  _today_corr_out.txt
+10-17 12:56  _corr_small.py
+10-17 12:57  _corr_small_out.txt
+10-17 13:23  _guardian.py
+10-17 13:23  _guardian_out.txt
+10-17 13:25  _guardian_verify.py
+10-17 13:25  _guardian_verify_out.txt
+10-17 23:21  _fetch_17night.txt
+10-17 23:21  _fp_check.py
+10-17 23:21  _fp_out.txt
+10-17 23:24  _merge_sim.py
+10-17 23:30  _open_prs_top20.json
+10-17 23:30  _merge_sim_out.txt
+10-17 23:31  _prs_dump.txt
+10-17 23:31  _merged_since.py
+10-17 23:32  _merged_since_out.txt
+10-17 23:37  _proj_merge.py
+10-17 23:40  _m2top20.py
+10-17 23:43  _merged_top20_since16.json
+10-17 23:46  _inspect11.py
+10-17 23:46  _inspect11_out.txt
+10-17 23:46  _adds11.py
+10-17 23:49  _adds11.json
+10-17 23:49  _adds11_out.txt
+10-17 23:49  _adds11b.py
+10-17 23:50  _adds_top20.json
+10-17 23:50  _m2top20_out.txt
+10-17 23:55  _one_yml.txt
+10-17 23:55  _adds11b_out.txt
+10-17 23:55  _adds11b.json
+10-17 23:55  _adds11c.py
+10-17 23:56  _adds11c.json
+10-17 23:56  _adds11c_out.txt
+10-17 23:56  _final_proj.py
+10-17 23:56  _final_proj_out.txt
+10-17 23:56  _buffer.py
+10-17 23:56  _buffer_out.txt
+10-18 00:01  _mylist.py
+10-18 00:01  _mylist_out.txt
+10-18 00:02  _mynpm.py
+10-18 00:02  _mynpm_out.txt
+10-18 00:02  _mymissing.py
+10-18 00:03  _perry9.py
+10-18 00:03  _mymissing.json
+10-18 00:03  _mymissing_out.txt
+10-18 00:03  _perry9_yml.json
+10-18 00:03  _perry9_out.txt
+10-18 00:03  _perry9_dump.txt
+10-18 00:03  _myprs.py
+10-18 00:03  _myprs_out.txt
+10-18 00:03  _myprs2.py
+10-18 00:04  _myprs_merged.json
+10-18 00:04  _myprs2_out.txt
+10-18 00:05  _whyclosed.py
+10-18 00:06  _whyclosed_out.txt
+10-18 00:07  _perry9_repo.py
+10-18 00:07  _perry9_repo_out.txt
+10-18 00:07  _perry9_raw.py
+10-18 00:12  _perry9_raw_out.txt
+10-18 00:12  _perry9_patch.py
+10-18 00:13  _perry9_patch_out.txt
+10-18 00:13  _pr_projection.json
+10-18 00:13  _proj_merge_out.txt
+10-18 00:13  _perry9_api.py
+10-18 00:14  _perry9_api_out.txt
+10-18 00:14  _audit20.py
+10-18 00:15  _audit20_out.txt
+10-18 00:15  _live_tok.py
+10-18 00:15  _live_tok_out.txt
+10-18 00:15  _npm_full.py
+10-18 00:16  _npm_mine.json
+10-18 00:16  _npm_full_out.txt
+10-18 00:16  _yml_scan.py
+10-18 00:17  _llm_probe.py
+10-18 00:17  _llm_probe_out.txt
+10-18 00:17  _llm_deep.py
+10-18 00:17  _llm_deep_out.txt
+10-18 00:17  _llm_iface.py
+10-18 00:17  _llm_iface_out.txt
+10-18 00:21  _yml_scan_out.txt
+10-18 00:22  _tree_scan.py
+10-18 00:22  _tree_scan_out.txt
+10-18 00:22  _jsdelivr_scan.py
+10-18 00:22  _yml_in_repo.json
+10-18 00:22  _jsd_out.txt
+10-18 00:22  _yml_scan2.py
+10-18 00:22  _yml_scan2_out.txt
+10-18 00:22  _recon23.py
+10-18 00:22  _recon23_out.txt
+10-18 11:44  _today.py
+10-18 11:45  _today_out.txt
+10-18 11:45  _ver.py
+10-18 11:45  _fetch18.txt
+10-18 11:45  _fresh18.py
+10-18 11:58  _021_check.py
+10-18 11:59  _021_out.txt
+10-18 12:51  _bake18.py
+10-18 12:51  _fetch18b.txt
+10-18 12:51  _bake18_out.txt
+10-18 12:54  _verify18.py
+10-18 12:54  _diff18.py
+10-18 12:54  _bakediff_out.txt
+10-18 12:54  _diff18_out.txt
+10-18 13:04  _eff18.py
+10-18 13:04  _eff18_out.txt
+10-18 13:05  _effboard18.py
+10-18 13:05  _effboard18_out.txt
+10-18 13:05  _maxpkg18.py
+10-18 13:06  _maxpkg18_out.txt
+10-18 13:06  _effchk18.py
+10-19 12:02  _fetch19.txt
+10-19 12:02  _check19.py
+10-19 12:02  _cat_evening7728.json
+10-19 12:02  _check19_out.txt
+10-19 12:03  _diff19b.py
+10-19 12:05  _slide19.py
+10-19 12:05  _slide19_out.txt
+10-19 12:06  _proj19.py
+10-19 12:08  _proj19_out.txt
+10-19 12:20  _f19c.txt
+10-19 12:20  _fp19.py
+10-19 12:32  _f19d.txt
+10-19 12:33  _diff19c.py
+10-19 12:33  _diff19c_out.txt
+10-19 12:33  _sum19.py
+10-19 12:34  _sum19_out.txt
+10-19 12:35  _pin19.py
+10-19 12:35  _pin19_out.txt
+10-20 12:00  _f20.txt
+10-20 12:00  _fp20.py
+10-20 12:05  _f20b.txt
+10-20 12:21  _f20c.txt
+10-20 12:21  _diff20.py
+10-20 12:21  _diff20_out.txt
+10-20 12:26  _effb20.py
+10-20 12:26  _effb20_out.txt
+---- snapshot dir ----
+10-17 11:54        6275  snapshot-2026-10-17_035429.json
+10-17 12:18        6275  snapshot-2026-10-17_041845.json
+10-17 12:38        6723  snapshot-2026-10-17_043810.json
+10-17 23:21        6723  snapshot-2026-10-17_152103.json
+10-18 11:45        6723  snapshot-2026-10-18_034531.json
+10-18 12:51        7788  snapshot-2026-10-18_045131.json
+10-19 12:02        7789  snapshot-2026-10-19_040206.json
+10-19 12:20        7789  snapshot-2026-10-19_042020.json
+10-19 12:32        8023  snapshot-2026-10-19_043254.json
+10-20 12:00        8023  snapshot-2026-10-20_040014.json
+10-20 12:05        8023  snapshot-2026-10-20_040553.json
+10-20 12:21        8224  latest.json
+10-20 12:21        8224  snapshot-2026-10-20_042125.json
+
+===
+[assistant] [tool-call pwsh "{\"command\":\"$d=(Get-ChildItem \\\"E:\\\\test\\\\rewrite-agently\\\\.agents\\\\skills\\\\dsh-registry-track\\\" -File]
+===
+[tool] root: total=173  py=87  txt=72  json=13
+snapshot dir since 10-17:
+13

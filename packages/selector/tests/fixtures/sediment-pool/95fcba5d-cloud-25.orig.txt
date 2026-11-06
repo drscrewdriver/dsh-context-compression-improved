@@ -1,0 +1,236 @@
+[assistant] [tool-call pwsh "{\"command\":\"$p = \\\"C:\\\\Users\\\\joshua\\\\.dsh\\\\profiles\\\\desktop\\\"\\nGet-ChildItem $p -Directory | Select]
+[tool-call pwsh "{\"command\":\"\\\"=== npm registry latest ===\\\"\\ntry { (Invoke-WebRequest -UseBasicParsing -Uri \\\"https://registr]
+===
+[tool] 
+Name           
+----           
+.dsh-market    
+.plugin-manager
+node_modules   
+---- installed plugin version ----
+C:\Users\joshua\.dsh\profiles\desktop\node_modules\dsh-browser-cdp\package.json
+1.2.4
+---- search anywhere ----
+               
+               
+               
+               
+
+
+
+===
+[tool] === npm registry latest ===
+latest: 1.2.4
+versions: 0.0.1, 0.17.0, 0.17.1, 0.17.2, 0.17.3, 0.17.4, 0.18.0, 0.17.5, 0.18.1, 0.17.6, 0.18.2, 0.17.7, 0.18.3, 0.17.8, 0.18.4, 0.17.9, 0.18.6, 0.17.10, 0.18.7, 0.17.11, 0.18.8, 0.17.12, 0.18.9, 0.17.13, 0.17.14, 0.18.11, 0.17.15, 0.18.12, 0.17.16, 0.18.13, 0.18.10, 0.17.17, 0.18.14, 0.17.18, 0.18.15, 0.18.16, 0.17.19, 0.18.5, 0.17.20, 0.18.17, 0.17.21, 0.18.18, 0.17.22, 0.17.23, 0.18.19, 0.16.23, 0.16.24, 0.18.21, 0.17.25, 1.1.5, 1.2.0, 1.2.1, 1.2.2, 1.2.3, 1.2.4
+modified: 2026-10-20T19:25:47.962Z
+
+===
+[assistant] 本地已安装 **1.2.4**，npm latest 也是 **1.2.4**（发布于昨天 19:25Z），所以“更新”这一步已经完成。关键问题变成：**1.2.4 里到底有没有修 `--sdk-path` 贯通**。直接查已安装的 dist 产物：
+[tool-call pwsh "{\"command\":\"$d = \\\"C:\\\\Users\\\\joshua\\\\.dsh\\\\profiles\\\\desktop\\\\node_modules\\\\dsh-browser-cdp\\\"\\nG]
+[tool-call pwsh "{\"command\":\"$d = \\\"C:\\\\Users\\\\joshua\\\\.dsh\\\\profiles\\\\desktop\\\\node_modules\\\\dsh-browser-cdp\\\"\\n\]
+===
+[tool] 
+Name                   Length
+----                   ------
+bin                          
+lib                          
+runtime                      
+cordis.patch.yml       945   
+dsh-plugin.json        6068  
+LICENSE                1387  
+package.json           3858  
+README.de.md           37862 
+README.es.md           39073 
+README.fr.md           40011 
+README.it.md           38438 
+README.md              37087 
+README.ru.md           56945 
+THIRD_PARTY_NOTICES.md 4323  
+---- dist files ----
+                       227805
+                       28203 
+                       5672  
+                       188301
+                       357880
+                       12470 
+                       588   
+                       412234
+                       1437  
+                       14754 
+                       2259  
+                       32835 
+                       55062 
+                       2752  
+                       1781  
+                       1378  
+                       6743  
+                       16260 
+                       12705 
+                       16113 
+                       4495  
+                       27329 
+                       11557 
+                       3741  
+                       373   
+                       1147  
+                       458   
+                       978   
+                       1052  
+
+
+
+===
+[tool] === grep sdk-path ===
+--- C:\Users\joshua\.dsh\profiles\desktop\node_modules\dsh-browser-cdp\lib\client.js
+  L106: useSdkPath: false,
+  L2311: checked: row.useSdkPath === true,
+  L2315: writeLinks(updateRow(links, row.id, { useSdkPath: next }));
+--- C:\Users\joshua\.dsh\profiles\desktop\node_modules\dsh-browser-cdp\lib\index.js
+  L989: return /unknown option.*sdk-path|unrecognized option.*sdk-path|invalid option.*sdk-path/i.test(text);
+  L1061: const sdkArgs = input.useSdkPath === true && (input.sdkPath ?? "") !== "" ? ["--sdk-path", input.sdkPath] : [];
+  L1069: let result = await runHeredoc(sdkArgs);
+  L1070: if (sdkArgs.length > 0 && looksLikeUnknownSdkFlag(result.stdout + result.stderr)) {
+  L1071: warning = "this ego CLI does not support --sdk-path; retried with the CLI's own harness";
+  L1096: const facadesOk = input.useSdkPath !== true || facadeMatch?.[1] === "object" && facadeMatch?.[2] === "object";
+  L1234: ...rec.useSdkPath === void 0 ? {} : { useSdkPath: Boolean(rec.useSdkPath) }
+  L1500: useSdkPath: link.useSdkPath === true,
+  L1501: sdkPath: input.sdkPath ?? "",
+  L1523: sdkPath: link.useSdkPath === true && probe.warning === void 0 ? input.sdkPath ?? "" : "",
+  L2652: useSdkPath: z.boolean(),
+  L2746: * `--headless` is managed by EGO_LINUX_HEADLESS; `--sdk-path` is allowed.
+  L3101: sdkPath: fileURLToPath(new URL("../runtime/ego-browser/dist/out/index.js", import.meta.url)),
+  L7459: * R1 — argv for one tool run. Single source of truth for the `--sdk-path`
+  L7466: const sdkArgs = attach.linkKind === EGO_CLI_KIND && (attach.sdkPath ?? "") !== "" ? ["--sdk-path", attach.sdkPath] : [];
+  L7470: ...sdkArgs,
+  L7895: sdkPath: fileURLToPath(new URL("../runtime/ego-browser/dist/out/index.js", import.meta.url)),
+--- C:\Users\joshua\.dsh\profiles\desktop\node_modules\dsh-browser-cdp\runtime\ego-linux\bin\ego-browser.mjs
+  L365: // `--sdk-path <file>` selects which harness bundle to run. Upstream's real
+  L369: const sdkFlag = rest.indexOf("--sdk-path");
+  L373: process.stderr.write("--sdk-path requires a path\n");
+
+===
+[assistant] 1.2.4 的 dist 里出现了 `R1 — argv for one tool run. Single source of truth for the --sdk-path`、`probe.warning === void 0` 守卫、`facadeMatch` 校验 —— 这几乎就是我们计划里 Phase 1/2 的内容。先读实锤：
+[tool-call pwsh "{\"command\":\"$f = \\\"C:\\\\Users\\\\joshua\\\\.dsh\\\\profiles\\\\desktop\\\\node_modules\\\\dsh-browser-cdp\\\\lib\]
+[tool-call pwsh "{\"command\":\"$f = \\\"C:\\\\Users\\\\joshua\\\\.dsh\\\\profiles\\\\desktop\\\\node_modules\\\\dsh-browser-cdp\\\\lib\]
+===
+[tool] ===== 7440-7500 =====
+ 7451: 		...prefix,
+ 7452: 		"nodejs",
+ 7453: 		...sdkArgs,
+ 7454: 		...extraCliArgs
+ 7455: 	];
+ 7456: }
+ 7457: async function runEgoScript(subprocess, script, exec, cfg, graceOverrideMs) {
+ 7458: 	let handle;
+ 7459: 	try {
+ 7460: 		const attach = defaultAttachCache.get();
+ 7461: 		handle = subprocess.spawn({
+ 7462: 			argv: buildEgoToolArgv(cfg.egoArgvPrefix, attach, cfg.runtimeArgs ?? ""),
+ 7463: 			cwd: process.cwd(),
+ 7464: 			env: resolveEgoEnv(cfg),
+ 7465: 			stdio: {
+ 7466: 				stdin: { data: script },
+ 7467: 				stdout: {
+ 7468: 					maxBytes: cfg.maxOutputBytes,
+ 7469: 					spill: { maxBytes: cfg.maxOutputBytes }
+ 7470: 				},
+ 7471: 				stderr: {
+ 7472: 					maxBytes: 512e3,
+ 7473: 					spill: { maxBytes: 2e6 }
+ 7474: 				}
+ 7475: 			},
+ 7476: 			graceMs: Number.isFinite(graceOverrideMs) && graceOverrideMs > 0 ? graceOverrideMs : cfg.graceMs,
+ 7477: 			...exec.signal !== void 0 ? { signal: exec.signal } : {}
+ 7478: 		});
+ 7479: 	} catch (err) {
+ 7480: 		return {
+ 7481: 			ok: false,
+ 7482: 			error: describeSpawnFailure(err),
+ 7483: 			stdout: "",
+ 7484: 			stderr: ""
+ 7485: 		};
+ 7486: 	}
+ 7487: 	let outcome;
+ 7488: 	try {
+ 7489: 		outcome = await handle.done;
+ 7490: 	} catch (err) {
+ 7491: 		return {
+ 7492: 			ok: false,
+ 7493: 			error: describeSpawnFailure(err),
+ 7494: 			stdout: "",
+ 7495: 			stderr: ""
+ 7496: 		};
+ 7497: 	}
+ 7498: 	const stdout = readAll(handle.collected.stdout);
+ 7499: 	const stderr = readAll(handle.collected.stderr);
+ 7500: 	if (exec.signal !== void 0 && exec.signal.aborted) return {
+ 7501: 		ok: false,
+
+===
+[tool] ===== 1480-1545 =====
+ 1481: 		targetId: link.id,
+ 1482: 		endpoint: "",
+ 1483: 		wsUrl: "",
+ 1484: 		linkKind: EGO_CLI_KIND
+ 1485: 	};
+ 1486: 	const io = input.cliIo;
+ 1487: 	if (!io) return cache.patch({
+ 1488: 		...base,
+ 1489: 		status: "unreachable",
+ 1490: 		code: "cli-io-missing",
+ 1491: 		message: "the host did not provide CLI IO for the local ego CLI link",
+ 1492: 		resolvedAt: now()
+ 1493: 	});
+ 1494: 	const probe = await probeCliLink({
+ 1495: 		cliPath: link.cliPath,
+ 1496: 		bundled: input.bundledCli ?? "",
+ 1497: 		useSdkPath: link.useSdkPath === true,
+ 1498: 		sdkPath: input.sdkPath ?? "",
+ 1499: 		timeoutMs: input.timeoutMs
+ 1500: 	}, io);
+ 1501: 	if (!probe.ok) return cache.patch({
+ 1502: 		...base,
+ 1503: 		status: "unreachable",
+ 1504: 		code: probe.code,
+ 1505: 		message: probe.message,
+ 1506: 		cliPath: probe.cliPath,
+ 1507: 		cliShape: probe.shape,
+ 1508: 		latencyMs: probe.latencyMs,
+ 1509: 		resolvedAt: now()
+ 1510: 	});
+ 1511: 	const coldStart = probe.running === false;
+ 1512: 	return cache.patch({
+ 1513: 		...base,
+ 1514: 		status: "ready",
+ 1515: 		endpointSource: coldStart ? "cli-launch" : "cli",
+ 1516: 		code: "",
+ 1517: 		message: probe.warning ?? (coldStart ? "local ego CLI reachable; the backing browser is not running yet and will start on the first call" : "local ego CLI ready"),
+ 1518: 		cliPath: probe.cliPath,
+ 1519: 		cliShape: probe.shape,
+ 1520: 		sdkPath: link.useSdkPath === true && probe.warning === void 0 ? input.sdkPath ?? "" : "",
+ 1521: 		latencyMs: probe.latencyMs,
+ 1522: 		resolvedAt: now()
+ 1523: 	});
+ 1524: }
+ 1525: /**
+ 1526: * Lightpanda backend 鈥?ensure the managed serve for an activated `lightpanda`
+ 1527: * row, then probe its endpoint. The launcher owns launch/reuse/exclusivity
+ 1528: * (a live managed Chrome loses the singleton slot to the serve and vice
+ 1529: * versa); `engine` is stamped from the ROW 鈥?the source the user picked 鈥?and
+ 1530: * `/json/version`'s `Browser: Lightpanda/鈥 merely re-confirms it.
+ 1531: */
+ 1532: async function refreshLightpandaAttach(input, cache, suggested, link, now) {
+ 1533: 	const base = {
+ 1534: 		...suggested,
+ 1535: 		targetId: link.id,
+ 1536: 		endpoint: "",
+ 1537: 		wsUrl: "",
+ 1538: 		linkKind: LP_KIND
+ 1539: 	};
+ 1540: 	const launch = await launchLocalBrowser({
+ 1541: 		engine: "lightpanda",
+ 1542: 		lightpandaPath: link.servePath ?? "",
+ 1543: 		lightpandaArgs: input.lightpandaArgs
+ 1544: 	}, input.launcherIo);
+ 1545: 	if (!launch.ok) return cache.patch({
+ 1546: 		...base,

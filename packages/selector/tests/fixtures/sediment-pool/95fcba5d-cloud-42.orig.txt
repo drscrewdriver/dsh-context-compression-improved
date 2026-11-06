@@ -1,0 +1,140 @@
+[assistant] 需要先核实数字：你担心的「爆炸」和「整合回 16」是否真实，不能只靠口算。
+[tool-call write "{\"content\": \"// 计算每一档注入面的真实 schema 成本（按 1.3.1 的八批策略）\\nimport { readFileSync } from 'node:fs'\\nimport { execFileSyn]
+===
+[tool] <path>E:\test\rewrite-agently\.tmp-surface.mjs</path>
+<type>file</type>
+<content>
+Created file
+</content>
+===
+[assistant] [tool-call pwsh "{\"command\": \"& node \\\"E:\\\\test\\\\rewrite-agently\\\\.tmp-surface.mjs\\\" 2>&1\", \"description\": \"Compute rea]
+===
+[tool] tier      count  chars
+[stderr]
+node.exe : file:///E:/test/rewrite-agently/.tmp-surface.mjs:45
+所在位置 行:1 字符: 129
++ ... ::new($false); & node "E:\test\rewrite-agently\.tmp-surface.mjs" 2>&1
++                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (file:///E:/test...-surface.mjs:45:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  console.log(`${t.padEnd(9)} ${String(cost[t].count).padStart(5)} ${String(cost[t].chars).padStart(6)}`)
+                                               ^
+TypeError: Cannot read properties of undefined (reading 'count')
+    at file:///E:/test/rewrite-agently/.tmp-surface.mjs:45:48
+    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:665:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
+Node.js v22.22.1
+[exit code: 1]
+===
+[assistant] 我的脚本把 `bcdp_` 前缀拼了两次，现在修正：
+[tool-call apply_patch "{\"patch\": \"*** Begin Patch\\n*** Update File: E:\\\\test\\\\rewrite-agently\\\\.tmp-surface.mjs\\n@@\\n-  for (const]
+===
+[tool] Applied patch: 1 file(s), 0 added, 1 modified, 0 deleted, +1 -1 lines
+M E:\test\rewrite-agently\.tmp-surface.mjs
+===
+[assistant] [tool-call pwsh "{\"command\": \"& node \\\"E:\\\\test\\\\rewrite-agently\\\\.tmp-surface.mjs\\\" 2>&1\", \"description\": \"Recompute i]
+===
+[tool] tier      count  chars
+core          7   2610
+act           8   3823
+observe       4   1663
+wait          4   1695
+power         5   2947
+session       3   1689
+escape        2   1677
+judge         5   3183
+
+--- 各档注入面 ---
+1.2.5 默认（lazy，无活动）                               7 tools   2610 chars ≈   746 tok
+1.3.1 默认（lazy，无活动）= core + escape                9 tools   4287 chars ≈  1225 tok
+1.3.1 首次活动（第1波）= +act +power +session           25 tools  12746 chars ≈  3642 tok
+1.3.1 第2波 = +observe                            29 tools  14409 chars ≈  4117 tok
+1.3.1 第3波 = +wait（全部非评审）                        33 tools  16104 chars ≈  4601 tok
+1.3.1 全量 38（含评审）                                38 tools  19287 chars ≈  5511 tok
+
+===
+[assistant] 数字已经算出，并且发现一个问题：**我之前报的 escape 1,224 字符是旧数据**。1.3.1 中我加长描述后，它变成 1,677。先修正文档中的陈旧数字：
+[tool-call apply_patch "{\"patch\": \"*** Begin Patch\\n*** Update File: E:\\\\test\\\\rewrite-agently\\\\mine-dsh-plugins\\\\dsh-browser-cdp\\]
+===
+[tool] Error: Hunk 3 of "E:\test\rewrite-agently\mine-dsh-plugins\dsh-browser-cdp\README.md" does not apply: the context does not match the file.
+Search started at line 235.
+Expected lines:
+|[space]合计[space]|[space]38[space]|[space]18,834[space]|[space]100%[space]|[space]—[space]|
+File around the search origin:
+|[space]**judge**[space]评审链（5）[space]|[space]`bcdp_jev_*`[space]|[space]3,183[space]|[space]除解锁外，**还要求配了[space]JEV[space]或[space]Laya[space]Key**[space]|
+[empty]
+设置项在插件设置页**最上方**的「工具封印」分块（全部[space]volatile，翻完当场生效，不重启插件）——一个开关管一组批次，形状照[space]dsh-prime-memory[space]的「工具封印」：
+[empty]
+-[space]**`toolInjection`**[space]`lazy`（**默认**：常驻[space]core[space]+[space]escape，其余首次[space]`bcdp_*`[space]调用后按开关注入）/[space]`always`（挂载即全量，历史行为）。
+-[space]**`toolBrowse`**（act[space]+[space]observe[space]+[space]wait[space]=[space]16）/[space]**`toolExtended`**（power[space]+[space]session[space]=[space]8）/[space]**`toolEscape`**（cli[space]+[space]script[space]=[space]2）/[space]**`toolJudge`**（5）：开[space]=[space]开放注册，关[space]=[space]该批从模型工具列表移除。四组各自独立，封一组不波及别组；`core`[space]级不给开关（封了就没了活动入口）。
+[empty]
+**escape[space]批为什么单独成组、且不等活动**：`cli`[space]/[space]`script`[space]是唯一能在一次调用里干完任意多步任务的入口（`page`[space]/[space]`browser`[space]/[space]`taskSpaces`[space]/[space]`fetch`[space]/[space]`cdp`[space]全预置），其余[space]36[space]个工具能做的事它都能做。所以它必须始终可达——否则模型遇到「结构化工具没覆盖」的情形时手里没有任何逃生手段。这也让它成为**按需只开逃生舱**的合法姿势：关掉[space]`toolExtended`、留着[space]`toolEscape`，只留[space]2[space]个工具。
+[empty]
+行为要点：
+===
+[assistant] [tool-call read "{\"file_path\": \"E:\\\\test\\\\rewrite-agently\\\\mine-dsh-plugins\\\\dsh-browser-cdp\\\\README.md\", \"limit\": 14, \]
+===
+[tool] <path>E:\test\rewrite-agently\mine-dsh-plugins\dsh-browser-cdp\README.md</path>
+<type>file</type>
+<content>
+224: 38 个工具全量注册时，**每个会话每一轮**都要为它们的 schema 付费（AST 实测 `description` + `parameters` ≈ 18.8K 字符 ≈ 5.4K token），而不碰浏览器的会话一个也用不上。插件因此把「谁能出现在模型面前」收成一处策略（`src/toolTiers.ts`），分**八批**注入：
+225: 
+226: | 批次 | 成员 | schema | 何时出现 |
+227: |---|---|---:|---|
+228: | **core** 常驻（7） | `bcdp_status` `bcdp_doctor` `bcdp_help` `bcdp_space_open` `bcdp_space_close` `bcdp_navigate` `bcdp_snapshot` | 2,610 | 永远在场，不可封印——否则 lazy 模式连解锁入口都没有 |
+229: | **act** 动手（8） | click / fill / key / hover / scroll / select / check / drag | 3,823 | `lazy` 下首次活动放第一波 |
+230: | **observe** 观察（4） | screenshot / page_info / read_element / js | 1,663 | 第二次活动 |
+231: | **wait** 等待（4） | wait / wait_for_selector / wait_for_url / wait_for_response | 1,695 | 第三次活动 |
+232: | **power** 重量级（5） | raw CDP / http / upload / download / dialog | 2,947 | 首次活动（同 `toolExtended`） |
+233: | **session** 登录态（3） | captcha / auth_flush / login_import | 1,689 | 首次活动（同 `toolExtended`） |
+234: | **escape** 逃生舱（2） | cli / script | 1,224 | **冷启动即在**，不吃活动闸（见下） |
+235: | **judge** 评审链（5） | `bcdp_jev_*` | 3,183 | 除解锁外，**还要求配了 JEV 或 Laya Key** |
+236: 
+237: 设置项在插件设置页**最上方**的「工具封印」分块（全部 volatile，翻完当场生效，不重启插件）——一个开关管一组批次，形状照 dsh-prime-memory 的「工具封印」：
+
+(Showing lines 224-237 of 357. Use offset=238 to continue.)
+</content>
+===
+[assistant] [tool-call apply_patch "{\"patch\": \"*** Begin Patch\\n*** Update File: E:\\\\test\\\\rewrite-agently\\\\mine-dsh-plugins\\\\dsh-browser-cdp\\]
+===
+[tool] Applied patch: 1 file(s), 0 added, 1 modified, 0 deleted, +5 -2 lines
+M E:\test\rewrite-agently\mine-dsh-plugins\dsh-browser-cdp\README.md
+===
+[assistant] [tool-call pwsh "{\"command\": \"$repo = \\\"E:\\\\test\\\\rewrite-agently\\\\mine-dsh-plugins\\\\dsh-browser-cdp\\\"\\n\\\"=== README 默]
+===
+[tool] === README 默认档数字核对 ===
+L252  - 当前注入面写在 `bcdp_doctor` 报告首行（`tool injection: mode=lazy browse=open extended=open escape=open judge=open judgeKey=none active=no → live 9 / sealed 29`），不用猜。
+L253  - 默认档下不碰浏览器的会话只有 **9** 个工具在场（core 7 + escape 2 ≈ 3.8K 字符，−79.6%）；要回到历史行为把 `toolInjection` 改成 `always`（38 件全在场需再配一个评审 Key）。
+
+===
+[assistant] [tool-call apply_patch "{\"patch\": \"*** Begin Patch\\n*** Update File: E:\\\\test\\\\rewrite-agently\\\\mine-dsh-plugins\\\\dsh-browser-cdp\\]
+===
+[tool] Applied patch: 1 file(s), 0 added, 1 modified, 0 deleted, +2 -1 lines
+M E:\test\rewrite-agently\mine-dsh-plugins\dsh-browser-cdp\README.md
+===
+[assistant] [tool-call apply_patch "{\"patch\": \"*** Begin Patch\\n*** Update File: E:\\\\test\\\\rewrite-agently\\\\ego-browser-cdp-issues.md\\n@@\\n-| 批]
+===
+[tool] Applied patch: 1 file(s), 0 added, 1 modified, 0 deleted, +24 -12 lines
+M E:\test\rewrite-agently\ego-browser-cdp-issues.md
+===
+[assistant] 文档已经修正。现在核对“整合回 16”是否复原到旧状态，并确认分批放行是否真的生效：
+[tool-call pwsh "{\"command\": \"cd \\\"E:\\\\test\\\\rewrite-agently\\\\mine-dsh-plugins\\\\dsh-browser-cdp\\\"\\n\\\"=== 1.2.5 的 brows]
+===
+[tool] === 1.2.5 的 browse 是 13 个，1.3.1 的三批并集是 16 个：差在哪 ===
+旧 browse 13 = 0
+新 browse 并集 = 16
+新进 browse 的 = bcdp_click, bcdp_fill, bcdp_key, bcdp_hover, bcdp_scroll, bcdp_select, bcdp_check, bcdp_drag, bcdp_screenshot, bcdp_page_info, bcdp_read_element, bcdp_js, bcdp_wait, bcdp_wait_for_selector, bcdp_wait_for_url, bcdp_wait_for_response
+仍在 extended 的 = 8 (旧 extended 13)
+总数不变 = 38
+
+===
+[assistant] 脚本里 git 的那部分没有取到旧表（返回 0，明显是解析问题）。我直接核对旧表：
+[tool-call pwsh "{\"command\": \"cd \\\"E:\\\\test\\\\rewrite-agently\\\\mine-dsh-plugins\\\\dsh-browser-cdp\\\"\\ngit show 73ad3f7:src/]
+===
+[tool] === 旧表成员数 ===
+CORE      0 
+BROWSE    0 
+EXTENDED  0 
+JUDGE     0 
