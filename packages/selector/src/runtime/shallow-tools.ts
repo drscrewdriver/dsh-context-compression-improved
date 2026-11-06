@@ -265,13 +265,14 @@ export function installShallowTools(ctx: Context): void {
       if (coveringMatch === null || coveringMatch[1] !== String(session.id)) {
         throw new Error(`${RUNTIME_TOOL_NAMES.DISCARD}: covering_ref must be in the current session`)
       }
-      const events = sessionEvents(session as never) as unknown as Array<Record<string, any>>
+      const events = sessionEvents(session as never) as unknown as ReadonlyArray<Record<string, unknown>>
       const coveringEvent = events[Number(coveringMatch[2])]
       if (coveringEvent?.type !== 'tool/result') {
         throw new Error(`${RUNTIME_TOOL_NAMES.DISCARD}: covering_ref does not cite a tool/result`)
       }
-      const coveringArgs = typeof coveringEvent.data?.message?.toolCallId === 'string'
-        ? findCallArgs(events, coveringEvent.data.message.toolCallId)
+      const coveringMessage = (coveringEvent.data as Record<string, unknown> | undefined)?.message as Record<string, unknown> | undefined
+      const coveringArgs = typeof coveringMessage?.toolCallId === 'string'
+        ? findCallArgs(events, coveringMessage.toolCallId)
         : undefined
       const covering: ReadPairSide = {
         seq: Number(coveringMatch[2]),
@@ -313,21 +314,26 @@ export function installShallowTools(ctx: Context): void {
 
 /** Find the arguments JSON + file path of the call owning a tool/result. */
 function findCallArgs(
-  events: Array<Record<string, any>>,
+  events: ReadonlyArray<Record<string, unknown>>,
   callId: string,
 ): { path: string; argsJson: string } | undefined {
   for (const event of events) {
-    if (event?.type !== 'assistant/message') continue
-    for (const block of event.data?.message?.content ?? []) {
-      if (block?.type === 'tool-call' && block.id === callId) {
+    if (event.type !== 'assistant/message') continue
+    const message = (event.data as Record<string, unknown> | undefined)?.message as Record<string, unknown> | undefined
+    const blocks = Array.isArray(message?.content) ? message.content : []
+    for (const raw of blocks) {
+      const block = raw as Record<string, unknown> | null
+      if (block !== null && block.type === 'tool-call' && block.id === callId) {
         const argsJson = typeof block.arguments === 'string'
           ? block.arguments
           : JSON.stringify(block.arguments ?? {})
-        let filePath = ''
+        let filePath: string
         try {
           const parsed = JSON.parse(argsJson) as Record<string, unknown>
           filePath = typeof parsed.file_path === 'string' ? parsed.file_path : typeof parsed.path === 'string' ? parsed.path : ''
-        } catch { /* coverage parse will refuse */ }
+        } catch {
+          filePath = ''
+        }
         return { path: filePath, argsJson }
       }
     }

@@ -140,19 +140,34 @@ import { kickStatsBackfillOnDispose } from './runtime/stats-backfill.ts'
 import { sampleIntegralBoundary } from './runtime/savings-integral.ts'
 import { projectSessionSavings } from './runtime/savings-projection.ts'
 
-/** Flatten the visible text of any surface event for sediment accounting. */
-function sedimentEventText(event: Record<string, any> | undefined): string {
-  if (event === undefined) return ''
-  const message = event.data?.message ?? event.data
+/** Loose read-only event face for sediment accounting (sessionEvents is opaque across generations). */
+type LooseRecord = Record<string, unknown>
+type LooseEvent = Readonly<Record<string, unknown>>
+
+function looseEvents(session: Session): readonly LooseEvent[] {
+  return sessionEvents(session) as unknown as readonly LooseEvent[]
+}
+
+function looseData(event: LooseEvent | undefined): LooseRecord | undefined {
+  return event?.data as LooseRecord | undefined
+}
+
+function looseContent(event: LooseEvent | undefined): readonly unknown[] {
+  const data = looseData(event)
+  const message = (data?.message ?? data) as LooseRecord | undefined
   const content = message?.content
-  if (typeof content === 'string') return content
-  if (Array.isArray(content)) {
-    return content
-      .filter((block: any) => block?.type === 'text' && typeof block.text === 'string')
-      .map((block: any) => block.text as string)
-      .join('\n')
-  }
-  return ''
+  return Array.isArray(content) ? content : []
+}
+
+/** Flatten the visible text of any surface event for sediment accounting. */
+function sedimentEventText(event: LooseEvent | undefined): string {
+  return looseContent(event)
+    .filter(block => {
+      const record = block as LooseRecord | null
+      return record !== null && record.type === 'text' && typeof record.text === 'string'
+    })
+    .map(block => (block as { text: string }).text)
+    .join('\n')
 }
 
 /** 节省统计配对键用原文(纯文本块才可配对;富内容返回 undefined)。 */
@@ -722,7 +737,7 @@ export class ToolResultPruner extends Service {
    */
   private ptcAgingBlocked(session: Session): boolean {
     if (this.activeSettings(session).sediment?.enabled !== true) return false
-    const events = sessionEvents(session) as unknown as Array<Record<string, any>>
+    const events = looseEvents(session)
     const memo = this.ptcAgingMemo.get(session)
     if (memo !== undefined && memo.events === events.length) return memo.blocked
     let blocked = false
@@ -737,11 +752,13 @@ export class ToolResultPruner extends Service {
       let observedCalls = 0
       let writeHits = 0
       for (const event of events) {
-        if (event?.type !== 'assistant/message') continue
-        for (const block of event.data?.message?.content ?? []) {
-          if (block?.type !== 'tool-call') continue
-          observedCalls += 1
-          if (isWriteToolName(String(block.name ?? ''))) writeHits += 1
+        if (event.type !== 'assistant/message') continue
+        for (const raw of looseContent(event)) {
+          const block = raw as LooseRecord | null
+          if (block !== null && block.type === 'tool-call') {
+            observedCalls += 1
+            if (isWriteToolName(String(block.name ?? ''))) writeHits += 1
+          }
         }
       }
       blocked = readStateBlind(true, writeHits, observedCalls)
@@ -809,15 +826,23 @@ export class ToolResultPruner extends Service {
     if (orchestrator !== undefined) return orchestrator
     orchestrator = new SedimentOrchestrator({
       settingsFor: () => this.activeSettings(session).sediment,
-      eventsFor: (_s, turn) => (sessionEvents(session) as unknown as Array<{ seq: number; type: string; data?: Record<string, any> }>).filter(
-        (event) => event?.data?.turn === turn,
-      ),
+      eventsFor: (_s, turn) => looseEvents(session)
+        .filter(event => looseData(event)?.turn === turn)
+        .map(event => {
+          const data = looseData(event)
+          return {
+            seq: event.seq as number,
+            type: event.type as string,
+            ...(data === undefined ? {} : { data }),
+          }
+        }),
       callInfoFor: () => {
         const map = new Map<string, { name: string; argsJson: string }>()
-        for (const event of sessionEvents(session) as unknown as Array<Record<string, any>>) {
-          if (event?.type !== 'assistant/message') continue
-          for (const block of event.data?.message?.content ?? []) {
-            if (block?.type === 'tool-call' && typeof block.id === 'string') {
+        for (const event of looseEvents(session)) {
+          if (event.type !== 'assistant/message') continue
+          for (const raw of looseContent(event)) {
+            const block = raw as LooseRecord | null
+            if (block !== null && block.type === 'tool-call' && typeof block.id === 'string') {
               map.set(block.id, {
                 name: String(block.name ?? 'tool'),
                 argsJson: typeof block.arguments === 'string' ? block.arguments : JSON.stringify(block.arguments ?? {}),
@@ -829,8 +854,8 @@ export class ToolResultPruner extends Service {
       },
       tailTokensFor: (_s, endSeq) => {
         let tail = 0
-        for (const event of sessionEvents(session) as unknown as Array<Record<string, any>>) {
-          if (typeof event?.seq !== 'number' || event.seq <= endSeq) continue
+        for (const event of looseEvents(session)) {
+          if (typeof event.seq !== 'number' || event.seq <= endSeq) continue
           tail += estimateTokens(sedimentEventText(event))
         }
         return tail
@@ -858,13 +883,13 @@ export class ToolResultPruner extends Service {
           sessionId, savedTokens, tier,
         )
         // 节省统计与 tail-trim 同口径：从 manifest 事件回取 shadowed 原文配对键。
-        const manifestEvent = (sessionEvents(session) as unknown as Array<Record<string, any>>)
-          .find(event => event?.seq === result.manifestSeq)
-        const shadowedSeqs: number[] = (manifestEvent?.data as { shadowedSeqs?: number[] })?.shadowedSeqs ?? []
+        const allEvents = looseEvents(session)
+        const manifestEvent = allEvents.find(event => event.seq === result.manifestSeq)
+        const shadowedSeqs: number[] = (looseData(manifestEvent)?.shadowedSeqs as number[] | undefined) ?? []
         const originalText = shadowedSeqs
-          .map(seq => sedimentEventText((sessionEvents(session) as unknown as Array<Record<string, any>>)[seq]))
+          .map(seq => sedimentEventText(allEvents[seq]))
           .join('\n')
-        const tokensBefore = (manifestEvent?.data as { shadowedTokenCount?: number })?.shadowedTokenCount ?? savedTokens
+        const tokensBefore = (looseData(manifestEvent)?.shadowedTokenCount as number | undefined) ?? savedTokens
         if (originalText.length > 0) {
           getSavingsLedger().recordSaving({
             sessionId,
@@ -899,7 +924,7 @@ export class ToolResultPruner extends Service {
     candidate: { call: { name: string; arguments: string } },
   ): string | undefined {
     if (/^(read|read_file|view)$/i.test(candidate.call.name) === false) return undefined
-    let filePath = ''
+    let filePath: string
     try {
       const parsed = JSON.parse(candidate.call.arguments) as Record<string, unknown>
       filePath = typeof parsed.file_path === 'string' ? parsed.file_path

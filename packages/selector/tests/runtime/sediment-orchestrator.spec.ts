@@ -97,7 +97,7 @@ describe('SedimentOrchestrator (T3.6)', () => {
     const outcome = await orchestrator.handleTurnEnd(session, 1, context)
     expect(outcome.committed).toBe(true)
     expect(session.appends.map(entry => entry.type)).toEqual(['compaction/prune', 'user/message'])
-    const options = session.appends[1].options as Record<string, any>
+    const options = session.appends[1].options as Record<string, Record<string, unknown>>
     expect(options.surfaceOp.op).toBe('replace')
     expect(options.surfaceOp.startSeq).toBe(2)
     // tail round (6,7) kept: span ends at seq 5

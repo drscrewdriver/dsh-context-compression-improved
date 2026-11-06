@@ -34,7 +34,7 @@ export interface OrchestratorOptions {
   readonly eventsFor: (session: SedimentSession, turn: number) => ReadonlyArray<{
     seq: number
     type: string
-    data?: Record<string, any>
+    data?: Record<string, unknown>
   }>
   /** call-id → tool name/args map built by the wiring site. */
   readonly callInfoFor: (sessionId: string) => (callId: string | undefined) => { name: string; argsJson: string } | undefined
@@ -118,7 +118,7 @@ export class SedimentOrchestrator {
       return { committed: false, reason: 'already-committing' }
     }
     try {
-      return await this.commitTurn(session, turn, settings, clock)
+      return await this.commitTurn(session, turn, settings)
     } finally {
       clock.end()
     }
@@ -128,13 +128,13 @@ export class SedimentOrchestrator {
     session: SedimentSession,
     turn: number,
     settings: SedimentSettings,
-    clock: SedimentClock,
   ): Promise<TurnOutcome> {
     const sessionId = String(session.id)
     const rawEvents = this.options.eventsFor(session, turn)
     const projected: SurfaceEvent[] = []
     for (const event of rawEvents) {
-      const callId = event.data?.message?.toolCallId as string | undefined
+      const message = event.data?.message as Record<string, unknown> | undefined
+      const callId = message?.toolCallId as string | undefined
       const surface = projectSurfaceEvent(event.seq, {
         type: event.type,
         data: event.data as never,
