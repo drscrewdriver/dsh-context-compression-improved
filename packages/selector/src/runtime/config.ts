@@ -234,9 +234,12 @@ function parseSedimentSettings(value: unknown): SedimentSettings {
       ? {}
       : { extraSignalPatterns: [...value.extraSignalPatterns as string[]] },
     ...(value.foldMode === undefined ? {} : { foldMode: value.foldMode as '' | 'host' | 'direct' }),
-    ...Object.fromEntries(([      
-      'foldBaseUrl', 'foldBaseUrlKey', 'foldStrataProvider', 'foldStrataModel', 'foldLocal35Provider', 'foldLocal35Model',
-    ] as const).map(key => (value[key] === undefined ? [] : [[key, value[key] as string]]))),
+    ...(value.foldBaseUrl === undefined ? {} : { foldBaseUrl: value.foldBaseUrl as string }),
+    ...(value.foldBaseUrlKey === undefined ? {} : { foldBaseUrlKey: value.foldBaseUrlKey as string }),
+    ...(value.foldStrataProvider === undefined ? {} : { foldStrataProvider: value.foldStrataProvider as string }),
+    ...(value.foldStrataModel === undefined ? {} : { foldStrataModel: value.foldStrataModel as string }),
+    ...(value.foldLocal35Provider === undefined ? {} : { foldLocal35Provider: value.foldLocal35Provider as string }),
+    ...(value.foldLocal35Model === undefined ? {} : { foldLocal35Model: value.foldLocal35Model as string }),
   }
 }
 
