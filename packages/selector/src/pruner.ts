@@ -65,6 +65,8 @@ import { buildShallowFooter } from './runtime/triage/shallow.ts'
 import { SedimentOrchestrator } from './runtime/sediment.ts'
 import { FoldRouter } from './runtime/fold-router.ts'
 import { SedimentFeedbackWatcher } from './runtime/sediment-guard.ts'
+import { detectPtcMode, readStateBlind } from './runtime/sediment-guard.ts'
+import { isWriteToolName } from './runtime/triage/masks.ts'
 import { estimateTokens } from './runtime/sediment-card.ts'
 import { RUNTIME_TOOL_NAMES } from './runtime/tool-names.ts'
 import type { PrunerState } from './pruner/state.ts'
@@ -708,6 +710,45 @@ export class ToolResultPruner extends Service {
   private readonly sedimentOrchestrators = new WeakMap<Session, SedimentOrchestrator>()
   private readonly sedimentWatchers = new WeakMap<Session, SedimentFeedbackWatcher>()
   private readonly sedimentCuts = new Map<string, number>()
+  private readonly ptcAgingMemo = new WeakMap<Session, { events: number, blocked: boolean }>()
+
+  /**
+   * PTC aging short-circuit (T3.10): when an omnibus runner is registered and
+   * no direct write-family tool call is observed in the session, the regex
+   * superseded predicate is blind (writes fold into run_code bodies) — the
+   * rule-based aging branch is disabled for that session. Active only while
+   * the sediment gate is on: with default-off settings the existing readState
+   * behavior is byte-identical.
+   */
+  private ptcAgingBlocked(session: Session): boolean {
+    if (this.activeSettings(session).sediment?.enabled !== true) return false
+    const events = sessionEvents(session) as unknown as Array<Record<string, any>>
+    const memo = this.ptcAgingMemo.get(session)
+    if (memo !== undefined && memo.events === events.length) return memo.blocked
+    let blocked = false
+    const hasTool = (name: string): boolean => {
+      try {
+        return (this.ctx.get('tools') as { get?: (n: string) => unknown } | undefined)?.get?.(name) !== undefined
+      } catch {
+        return false
+      }
+    }
+    if (detectPtcMode(hasTool)) {
+      let observedCalls = 0
+      let writeHits = 0
+      for (const event of events) {
+        if (event?.type !== 'assistant/message') continue
+        for (const block of event.data?.message?.content ?? []) {
+          if (block?.type !== 'tool-call') continue
+          observedCalls += 1
+          if (isWriteToolName(String(block.name ?? ''))) writeHits += 1
+        }
+      }
+      blocked = readStateBlind(true, writeHits, observedCalls)
+    }
+    this.ptcAgingMemo.set(session, { events: events.length, blocked })
+    return blocked
+  }
 
   /**
    * Sedimentation entry (plan cci-sedimentation-triage T3.6): whole-turn
@@ -945,6 +986,9 @@ export class ToolResultPruner extends Service {
     const policy = this.activePolicy(session)
     const presetOptions = policy?.presetOptions
     if (policy === undefined || presetOptions?.readState !== true) return
+    // T3.10: PTC-blind sessions must not feed the estimator either — its
+    // verdicts unlock the same aging branch the short-circuit just closed.
+    if (this.ptcAgingBlocked(session)) return
     const estimatorMode = presetOptions.estimator?.mode ?? ''
     if (estimatorMode === '') return
     const failures = this.state.estimatorFailures.get(session)
@@ -2326,7 +2370,7 @@ export class ToolResultPruner extends Service {
       // TokenPilot-inspired R2: a read output whose file was later mutated is
       // superseded — its text can no longer match the file — so it takes the
       // small whole-result placeholder before the ordinary reducer runs.
-      if (policy.presetOptions?.readState === true && block !== null) {
+      if (policy.presetOptions?.readState === true && block !== null && !this.ptcAgingBlocked(session)) {
         const readPath = toolCallPath(candidate.call.arguments)
         const estimatorExpired = this.state.estimatorVerdicts.get(session)?.get(candidate.seq) === true
         if (readPath !== undefined
