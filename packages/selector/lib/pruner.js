@@ -5116,7 +5116,12 @@ var ToolResultPruner = class extends Service {
 				}
 				return tail;
 			},
-			...settings.foldMode === void 0 || settings.foldMode === "" ? {} : { fold: { run: (sessionId, prompt, signal) => new FoldRouter(this.ctx, settings).fold(sessionId, prompt, signal).then((outcome) => outcome.text) } },
+			...settings.foldMode === void 0 || settings.foldMode === "" ? {} : { fold: { run: async (sessionId, prompt, signal) => {
+				const started = Date.now();
+				const outcome = await new FoldRouter(this.ctx, settings).fold(sessionId, prompt, signal);
+				this.ctx.logger.info("context-compression sediment fold (%s): tier=%s ok=%s latencyMs=%d%s", sessionId, foldTier(prompt.inputTokens), outcome.text !== void 0, Date.now() - started, outcome.audit.ok ? "" : ` reason=${outcome.audit.reason ?? "unknown"}`);
+				return outcome.text;
+			} } },
 			feedback: () => {
 				const watcher = this.sedimentWatchers.get(session);
 				return watcher === void 0 ? {
