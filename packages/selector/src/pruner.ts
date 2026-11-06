@@ -63,7 +63,7 @@ import { installContextCompressionRetrieve } from './runtime/retrieve.ts'
 import { installShallowTools, liveShallowFor } from './runtime/shallow-tools.ts'
 import { buildShallowFooter } from './runtime/triage/shallow.ts'
 import { SedimentOrchestrator } from './runtime/sediment.ts'
-import { FoldRouter } from './runtime/fold-router.ts'
+import { FoldRouter, foldTier } from './runtime/fold-router.ts'
 import { SedimentFeedbackWatcher } from './runtime/sediment-guard.ts'
 import { detectPtcMode, readStateBlind } from './runtime/sediment-guard.ts'
 import { isWriteToolName } from './runtime/triage/masks.ts'
@@ -865,8 +865,19 @@ export class ToolResultPruner extends Service {
         ? {}
         : {
             fold: {
-              run: (sessionId, prompt, signal) =>
-                new FoldRouter(this.ctx, settings).fold(sessionId, prompt, signal).then(outcome => outcome.text),
+              run: async (sessionId, prompt, signal) => {
+                // T5.3 observability: fold P99 sampling rides this one log line;
+                // the latency budget measured here is the LAN call itself.
+                const started = Date.now()
+                const outcome = await new FoldRouter(this.ctx, settings).fold(sessionId, prompt, signal)
+                this.ctx.logger.info(
+                  'context-compression sediment fold (%s): tier=%s ok=%s latencyMs=%d%s',
+                  sessionId, foldTier(prompt.inputTokens), outcome.text !== undefined,
+                  Date.now() - started,
+                  outcome.audit.ok ? '' : ` reason=${outcome.audit.reason ?? 'unknown'}`,
+                )
+                return outcome.text
+              },
             },
           }),
       // T3.11 consumption: conservative state tightens the rewrite guard.
