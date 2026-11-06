@@ -333,6 +333,10 @@ let readMonitorPanelEnabled = (): boolean => monitorPanelEnabledCache
         () => scope.set('codeSkeleton', { enabled }),
         settings => settings.codeSkeleton.enabled === enabled,
       ),
+      saveSediment: enabled => writeAndConfirm(
+        () => scope.set('sediment', { enabled }),
+        settings => settings.sediment?.enabled === enabled,
+      ),
       saveIntentSummary: enabled => writeAndConfirm(
         () => scope.set('intentSummary', { enabled }),
         settings => settings.intentSummary.enabled === enabled,

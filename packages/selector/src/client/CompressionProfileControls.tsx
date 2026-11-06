@@ -317,3 +317,36 @@ export function CodeSkeletonControls({ value, disabled, save, settle, t }: CodeS
     </section>
   )
 }
+
+interface SedimentControlsProps {
+  value: boolean
+  disabled: boolean
+  save: (enabled: boolean) => Promise<void>
+  settle: (operation: () => Promise<void>) => void
+  t: (key: ContextCompressionLocaleKey) => string
+}
+
+/**
+ * Turn-tail sedimentation gate (plan cci-sedimentation-triage T3.7): on/off
+ * select with the display-impact disclosure in its description (M13) —
+ * replaced spans leave the transcript view; originals stay in the log.
+ */
+export function SedimentControls({ value, disabled, save, settle, t }: SedimentControlsProps) {
+  return (
+    <section className={css.autoCompact} aria-labelledby="context-compression-sediment-title">
+      <h3 id="context-compression-sediment-title" className={css.autoCompactTitle}>{t('sediment.title')}</h3>
+      <p className={css.customNote}>{t('sediment.description')}</p>
+      <label className={css.field}>
+        <span>{t('sediment.enabled')}</span>
+        <select
+          value={value ? 'on' : 'off'}
+          disabled={disabled}
+          onChange={(event) => { settle(() => save(event.currentTarget.value === 'on')) }}
+        >
+          <option value="on">{t('sediment.enabled.on')}</option>
+          <option value="off">{t('sediment.enabled.off')}</option>
+        </select>
+      </label>
+    </section>
+  )
+}

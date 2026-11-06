@@ -31,6 +31,7 @@ export interface CompressionSelectorInjected {
   resetPtcCustom: () => Promise<void>
   saveAutoCompact: (thresholdPercent: number) => Promise<void>
   saveCodeSkeleton: (enabled: boolean) => Promise<void>
+  saveSediment: (enabled: boolean) => Promise<void>
   saveIntentSummary: (enabled: boolean) => Promise<void>
   saveMonitorPanel: (enabled: boolean) => Promise<void>
   /** Patch of `presetOptions` members; an explicit `undefined` clears that field. */
@@ -58,6 +59,7 @@ export {
   CompressionProfileControls,
   AutoCompactThresholdControls,
   CodeSkeletonControls,
+  SedimentControls,
 } from './CompressionProfileControls.tsx'
 
 export {
