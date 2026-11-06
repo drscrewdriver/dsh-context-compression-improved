@@ -162,6 +162,14 @@ export interface SedimentSettings {
    * whole section (never silently dropped).
    */
   extraSignalPatterns?: string[]
+  /** Fold narrative channel (Phase 4); '' keeps narrative tier 2 inert. */
+  foldMode?: '' | 'host' | 'direct'
+  foldBaseUrl?: string
+  foldBaseUrlKey?: string
+  foldStrataProvider?: string
+  foldStrataModel?: string
+  foldLocal35Provider?: string
+  foldLocal35Model?: string
 }
 
 /** Off-defaults mirrored browser-safe from the runtime sediment section. */
@@ -181,10 +189,14 @@ export const DEFAULT_SEDIMENT_SETTINGS: SedimentSettings = {
 export function decodeSedimentSettings(value: unknown): SedimentSettings | undefined {
   if (value === undefined) return { ...DEFAULT_SEDIMENT_SETTINGS }
   if (!isPlainRecord(value)) return undefined
-  const allowed = new Set(['enabled', 'granularity', 'minClosingTokens', 'rewriteGuardRatio', 'maxTurnSpanTokens', 'extraSignalPatterns'])
+  const allowed = new Set(['enabled', 'granularity', 'minClosingTokens', 'rewriteGuardRatio', 'maxTurnSpanTokens', 'extraSignalPatterns', 'foldMode', 'foldBaseUrl', 'foldBaseUrlKey', 'foldStrataProvider', 'foldStrataModel', 'foldLocal35Provider', 'foldLocal35Model'])
   if (Object.keys(value).some(key => !allowed.has(key))) return undefined
   if (value.enabled !== undefined && typeof value.enabled !== 'boolean') return undefined
   if (value.granularity !== undefined && value.granularity !== 'turn' && value.granularity !== 'span') return undefined
+  if (value.foldMode !== undefined && value.foldMode !== '' && value.foldMode !== 'host' && value.foldMode !== 'direct') return undefined
+  for (const key of ['foldBaseUrl', 'foldBaseUrlKey', 'foldStrataProvider', 'foldStrataModel', 'foldLocal35Provider', 'foldLocal35Model'] as const) {
+    if (value[key] !== undefined && typeof value[key] !== 'string') return undefined
+  }
   const bounded: Array<[unknown, number, number]> = [
     [value.minClosingTokens, 40, 2_000],
     [value.rewriteGuardRatio, 1, 10],
@@ -207,6 +219,10 @@ export function decodeSedimentSettings(value: unknown): SedimentSettings | undef
     ...value.extraSignalPatterns === undefined
       ? {}
       : { extraSignalPatterns: [...value.extraSignalPatterns as string[]] },
+    ...(value.foldMode === undefined ? {} : { foldMode: value.foldMode as '' | 'host' | 'direct' }),
+    ...Object.fromEntries(([      
+      'foldBaseUrl', 'foldBaseUrlKey', 'foldStrataProvider', 'foldStrataModel', 'foldLocal35Provider', 'foldLocal35Model',
+    ] as const).map(key => (value[key] === undefined ? [] : [[key, value[key] as string]]))),
   }
 }
 

@@ -171,6 +171,7 @@ export const DEFAULT_SEDIMENT_SETTINGS: SedimentSettings = {
 
 const SEDIMENT_KEYS: ReadonlySet<string> = new Set([
   'enabled', 'granularity', 'minClosingTokens', 'rewriteGuardRatio', 'maxTurnSpanTokens', 'extraSignalPatterns',
+  'foldMode', 'foldBaseUrl', 'foldBaseUrlKey', 'foldStrataProvider', 'foldStrataModel', 'foldLocal35Provider', 'foldLocal35Model',
 ])
 
 function isSafeSignalPatternSource(entry: unknown): boolean {
@@ -215,6 +216,14 @@ function parseSedimentSettings(value: unknown): SedimentSettings {
       throw new TypeError('Context-compression sediment.extraSignalPatterns must be parseable non-empty patterns')
     }
   }
+  if (value.foldMode !== undefined && value.foldMode !== '' && value.foldMode !== 'host' && value.foldMode !== 'direct') {
+    throw new TypeError('Context-compression sediment.foldMode must be "", "host", or "direct"')
+  }
+  for (const key of ['foldBaseUrl', 'foldBaseUrlKey', 'foldStrataProvider', 'foldStrataModel', 'foldLocal35Provider', 'foldLocal35Model'] as const) {
+    if (value[key] !== undefined && typeof value[key] !== 'string') {
+      throw new TypeError(`Context-compression sediment.${key} must be a string`)
+    }
+  }
   return {
     enabled: value.enabled as boolean | undefined ?? DEFAULT_SEDIMENT_SETTINGS.enabled,
     granularity: value.granularity as 'turn' | 'span' | undefined ?? DEFAULT_SEDIMENT_SETTINGS.granularity,
@@ -224,6 +233,10 @@ function parseSedimentSettings(value: unknown): SedimentSettings {
     ...value.extraSignalPatterns === undefined
       ? {}
       : { extraSignalPatterns: [...value.extraSignalPatterns as string[]] },
+    ...(value.foldMode === undefined ? {} : { foldMode: value.foldMode as '' | 'host' | 'direct' }),
+    ...Object.fromEntries(([      
+      'foldBaseUrl', 'foldBaseUrlKey', 'foldStrataProvider', 'foldStrataModel', 'foldLocal35Provider', 'foldLocal35Model',
+    ] as const).map(key => (value[key] === undefined ? [] : [[key, value[key] as string]]))),
   }
 }
 

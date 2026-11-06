@@ -160,6 +160,17 @@ export interface SedimentSettings {
   maxTurnSpanTokens: number
   /** Append-only extra failure-signal patterns; never replaces the base set. */
   extraSignalPatterns?: string[]
+  /** Fold narrative channel (Phase 4): '' keeps tier 2 inert. */
+  foldMode?: '' | 'host' | 'direct'
+  /** LAN fold endpoints share one OpenAI-compatible base URL (direct mode). */
+  foldBaseUrl?: string
+  foldBaseUrlKey?: string
+  /** Tier-1 endpoint (≤2K input): high hot-decode throughput. */
+  foldStrataProvider?: string
+  foldStrataModel?: string
+  /** Tier-2 endpoint (2~8K input): stable cold-prefill profile. */
+  foldLocal35Provider?: string
+  foldLocal35Model?: string
 }
 
 /**
