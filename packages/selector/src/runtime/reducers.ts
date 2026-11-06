@@ -173,7 +173,7 @@ const JSONL_DETECT_SCAN = 512
  * original file (and its measured cost, 9.16% of read bodies, never gets
  * retrieved anyway).
  */
-function hasReadGutter(lines: readonly string[]): boolean {
+export function hasReadGutter(lines: readonly string[]): boolean {
   let nonEmpty = 0
   let guttered = 0
   let previousNumber = 0
