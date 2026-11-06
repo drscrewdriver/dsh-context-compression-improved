@@ -160,8 +160,13 @@ for (const peer of selectorDshPeers) {
 if (selectorPackage.engines?.dsh?.split(' || ').length !== supportedHosts.length) {
   fail(`selector engines.dsh must carry the ${supportedHosts.length}-rc supportedHosts enum`)
 }
-if (rootPackage.engines?.dsh?.split(' || ').length !== supportedHosts.length) {
-  fail(`root engines.dsh must carry the ${supportedHosts.length}-rc supportedHosts enum (install-surface gate)`)
+// v0.10.5 decision: the ROOT install-surface manifest declares a semver RANGE
+// (">=lower <upper") instead of the per-rc enum; the selector package keeps
+// the enum for the peer-consistency surface. Verify the range SHAPE here —
+// the peer-equality loop below still pins every root dsh-* peer to the same
+// range string, so a drift between peers and engines keeps failing the gate.
+if (!/^>=\S+ <\S+$/.test(String(rootPackage.engines?.dsh ?? ''))) {
+  fail('root engines.dsh must carry the install-surface range (">=lower <upper"), per the 0.10.5 range switch')
 }
 for (const peer of Object.keys(rootPackage.peerDependencies ?? {})) {
   if (rootPackage.peerDependencies[peer] !== rootPackage.engines.dsh) {
