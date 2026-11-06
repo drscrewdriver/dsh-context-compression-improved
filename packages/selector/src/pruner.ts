@@ -64,6 +64,7 @@ import { installShallowTools, liveShallowFor } from './runtime/shallow-tools.ts'
 import { buildShallowFooter } from './runtime/triage/shallow.ts'
 import { SedimentOrchestrator } from './runtime/sediment.ts'
 import { FoldRouter } from './runtime/fold-router.ts'
+import { SedimentFeedbackWatcher } from './runtime/sediment-guard.ts'
 import { estimateTokens } from './runtime/sediment-card.ts'
 import { RUNTIME_TOOL_NAMES } from './runtime/tool-names.ts'
 import type { PrunerState } from './pruner/state.ts'
@@ -122,7 +123,7 @@ import { computeIntentRange, INTENT_RANGE_MAX_CANDIDATES } from './runtime/token
 import { INTENT_FOLD_MARKER, renderIntentFoldBlock } from './runtime/tokenpilot/intent-fold.ts'
 import { buildIntentSummarySystemPrompt, buildIntentSummaryUserPrompt, parseIntentSummaryAnswer } from './runtime/tokenpilot/advisor-prompt.ts'
 import { getSummaryOverride, observeIntentEnabled, recordIntentFold } from './runtime/tokenpilot/advisor-state.ts'
-import { observeContextUsage } from './runtime/monitor.ts'
+import { observeContextUsage, setSedimentObservation } from './runtime/monitor.ts'
 import { compressionMessageSource, viewToolResult } from './compat/tool-result.ts'
 
 import {
@@ -461,7 +462,26 @@ export class ToolResultPruner extends Service {
           String(agent.session.id),
           new Set([...agent.session.surface.nodes].map(Number)),
         )
-      } catch { /* 观测失败静默:维持上次口径 */ }
+      } catch { /* 观测失败静默：维持上次口径 */ }
+      // T3.11/T5.1：负反馈消费点——把账本增量交给会话级 watcher，
+      // conservative 状态与沉降刀数写进监控观测位（面板 sediment 块）。
+      try {
+        const feedbackSessionId = String(agent.session.id)
+        let watcher = this.sedimentWatchers.get(agent.session)
+        if (watcher === undefined) {
+          watcher = new SedimentFeedbackWatcher()
+          this.sedimentWatchers.set(agent.session, watcher)
+        }
+        const mode = watcher.observe(getSavingsLedger().snapshot(feedbackSessionId))
+        setSedimentObservation(feedbackSessionId, {
+          conservative: mode.conservative,
+          reason: mode.reason,
+          cuts: this.sedimentCuts.get(feedbackSessionId) ?? 0,
+        })
+        if (mode.conservative) {
+          this.warnOnce(agent.session, 'sediment:conservative', 'context-compression sediment feedback armed conservative mode: %s', mode.reason)
+        }
+      } catch { /* 观测失败静默：反馈环维持上次状态 */ }
       // TokenPilot-inspired E1: advisory estimator pass, strictly off the
       // synchronous chain. Verdicts only feed the next pressure pass.
       void this.postflightEstimatorPass(agent.session, signal).catch(() => undefined)
@@ -686,6 +706,8 @@ export class ToolResultPruner extends Service {
   }
 
   private readonly sedimentOrchestrators = new WeakMap<Session, SedimentOrchestrator>()
+  private readonly sedimentWatchers = new WeakMap<Session, SedimentFeedbackWatcher>()
+  private readonly sedimentCuts = new Map<string, number>()
 
   /**
    * Sedimentation entry (plan cci-sedimentation-triage T3.6): whole-turn
@@ -781,7 +803,15 @@ export class ToolResultPruner extends Service {
                 new FoldRouter(this.ctx, settings).fold(sessionId, prompt, signal).then(outcome => outcome.text),
             },
           }),
+      // T3.11 consumption: conservative state tightens the rewrite guard.
+      feedback: () => {
+        const watcher = this.sedimentWatchers.get(session)
+        return watcher === undefined
+          ? { conservative: false, reason: 'ok' }
+          : { conservative: watcher.conservative, reason: watcher.conservative ? 'net-negative-streak' : 'ok' }
+      },
       onLanded: (sessionId, savedTokens, tier, result) => {
+        this.sedimentCuts.set(sessionId, (this.sedimentCuts.get(sessionId) ?? 0) + 1)
         this.ctx.logger.info(
           'context-compression sediment landed (%s): turn saved %d tok via %s narrative',
           sessionId, savedTokens, tier,

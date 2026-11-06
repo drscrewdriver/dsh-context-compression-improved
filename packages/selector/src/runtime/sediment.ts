@@ -46,6 +46,8 @@ export interface OrchestratorOptions {
   readonly fold?: {
     readonly run: (sessionId: string, prompt: FoldPrompt, signal: AbortSignal) => Promise<string | undefined>
   }
+  /** Feedback-loop state (T3.11): conservative arms the tightened rewrite guard. */
+  readonly feedback?: () => { readonly conservative: boolean; readonly reason: string }
 }
 
 export interface TurnOutcome {
@@ -179,8 +181,14 @@ export class SedimentOrchestrator {
       return { committed: false, reason: 'tier-skip' }
     }
     const tailTokens = this.options.tailTokensFor(session, plan.endSeq)
-    if (!passesRewriteGuard(draft, tailTokens, settings.rewriteGuardRatio)) {
-      this.options.onSkip?.(sessionId, 'rewrite-guard')
+    // T3.11: a conservative gate (net-negative streak) tightens the rewrite
+    // guard to ≥5x — cuts must clearly pay for the tail they invalidate.
+    const feedback = this.options.feedback?.() ?? { conservative: false, reason: 'ok' }
+    const guardRatio = feedback.conservative
+      ? Math.max(settings.rewriteGuardRatio, 5)
+      : settings.rewriteGuardRatio
+    if (!passesRewriteGuard(draft, tailTokens, guardRatio)) {
+      this.options.onSkip?.(sessionId, feedback.conservative ? `rewrite-guard-conservative:${feedback.reason}` : 'rewrite-guard')
       return { committed: false, reason: 'rewrite-guard' }
     }
     const result = publishSettledCard(session as never, draft, {

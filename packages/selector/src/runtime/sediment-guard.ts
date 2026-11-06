@@ -75,6 +75,32 @@ export class FeedbackLoop {
 }
 
 /**
+ * Watcher adapter (T3.11 consumption point): the savings ledger reports
+ * CUMULATIVE gross/offsets; the feedback loop needs per-boundary NET deltas.
+ * This wrapper remembers the last reading and feeds the loop the difference.
+ */
+export class SedimentFeedbackWatcher {
+  private last: { gross: number; offsets: number } = { gross: 0, offsets: 0 }
+
+  constructor(private readonly loop: FeedbackLoop = new FeedbackLoop(5)) {}
+
+  observe(totals: { gross: { exact: number, estimated: number }, offsets: { exact: number, estimated: number } }): ConservativeMode {
+    const gross = totals.gross.exact + totals.gross.estimated
+    const offsets = totals.offsets.exact + totals.offsets.estimated
+    const sample = {
+      grossSaved: gross - this.last.gross,
+      recallOffset: offsets - this.last.offsets,
+    }
+    this.last = { gross, offsets }
+    return this.loop.observe(sample)
+  }
+
+  get conservative(): boolean {
+    return this.loop.conservative
+  }
+}
+
+/**
  * Effective sediment behavior for one session after the PTC guard is folded
  * in: in PTC mode, aging-style decisions short-circuit and the rewrite guard
  * ratio tightens; the card pipeline itself (mask/pool/pointer) is unaffected.

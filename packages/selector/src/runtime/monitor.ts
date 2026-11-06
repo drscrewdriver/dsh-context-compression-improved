@@ -75,8 +75,37 @@ export type MonitorSnapshot = SavingsSnapshot & {
   context?: MonitorContextBlock
   /** 灾难性遗忘区建议;未观测前 absent。 */
   suggestion?: MonitorSuggestionBlock
+  /** Sediment gate state (plan cci-sedimentation-triage); absent until first observation. */
+  sediment?: MonitorSedimentBlock
   /** The session the snapshot was filtered to; `null` = all-sessions aggregate. */
   sessionScope: string | null
+}
+
+/** Sediment block: gate feedback state + landed cut count (T5.1). */
+export interface MonitorSedimentBlock {
+  conservative: boolean
+  reason: string
+  cuts: number
+}
+
+const sedimentBySession = new Map<string, MonitorSedimentBlock & { at: number }>()
+const SEDIMENT_CAP = 64
+
+/** Record the latest sediment observation for one session (pruner side). */
+export function setSedimentObservation(sessionId: string, block: MonitorSedimentBlock): void {
+  if (sedimentBySession.size >= SEDIMENT_CAP && !sedimentBySession.has(sessionId)) {
+    const oldest = sedimentBySession.keys().next().value
+    if (oldest !== undefined) sedimentBySession.delete(oldest)
+  }
+  sedimentBySession.set(sessionId, { ...block, at: Date.now() })
+}
+
+/** Read the latest sediment observation (absent before first observation). */
+export function getSedimentObservation(sessionId: string): MonitorSedimentBlock | undefined {
+  const found = sedimentBySession.get(sessionId)
+  if (found === undefined) return undefined
+  const { conservative, reason, cuts } = found
+  return { conservative, reason, cuts }
 }
 
 /**
@@ -110,10 +139,12 @@ export function buildMonitorSnapshot(
         thresholdPct: MONITOR_SUGGEST_PCT,
         occupancyPct: contextBlock.pct,
       }
+  const sedimentBlock = scopeKey.length === 0 ? undefined : getSedimentObservation(scopeKey)
   return {
     ...ledger.snapshot(sessionId),
     ...(contextBlock === undefined ? {} : { context: contextBlock }),
     ...(suggestion === undefined ? {} : { suggestion }),
+    ...(sedimentBlock === undefined ? {} : { sediment: sedimentBlock }),
     intent: {
       override,
       observedEnabled: getObservedIntentEnabled(scopeKey),
