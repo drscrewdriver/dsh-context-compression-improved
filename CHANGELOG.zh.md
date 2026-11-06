@@ -4,6 +4,15 @@
 
 > 完整历史（含上游 0.1.0 及更早版本）见 [CHANGELOG.md](CHANGELOG.md)。本文件只翻译本 fork 的新增条目。 · [English](CHANGELOG.md) · [日本語](CHANGELOG.ja.md) · [한국어](CHANGELOG.ko.md)
 
+## 0.11.0 - 2026-11-07
+
+### 新增
+
+- **turn 尾沉降（sediment，默认关，`sediment.enabled` 总闸）**：整 turn 原子替换 + 三闸（仅 completed 收尾 / 叙事三档：合格收尾 > fold 补写 > 仅机械卡 / 尾轮恒保留）、行级保护池（signals.ts，0.4% 体积换错误行 100% 召回）、大块读取与写文件 mask 线、重付收益门（saved ≥ 刀后重写尾巴×倍数，社区 1:15 破链重付实证防御）、发布前变短证明、复用 tail-trim 世代门控发布面。PTC 感知老化短路（omnibus 注册且无直接写族调用 ⇒ 规则老化停用，仅沉降开启时生效）；K=5 净负反馈环自动保守档（重付门收紧 ≥5x，只留 fresh 大块）。fold 通道分档 ≤2K→strata 8s / 2–8K→local-35 12–15s / >8K 拒发，队列深度 1、零重试、max_tokens 400；观测行 `sediment fold … latencyMs` 由 scripts/sediment-latency-report.mjs 聚合 p50/p95/p99。落刀已用**真实 durable 事件形状**钉住（sediment-real-shapes.spec.ts）。
+- **升级-弃对原语**：`type(path)` O(1) 头部采样选型（≤2KB、五类判形）、`skeleton` 检查点（path/覆盖/ref/结构指纹，恒不可弃）与正文分层、`discard(ref)` 方向不对称覆盖护栏（全读⊇地图才放行）、全读 sibling 配对 footer、retrieve 即 undo；模型发起弃对独立记账（`shallow-discard`），负反馈环不误计。
+- **UI**：设置行（与 codeSkeleton 同节，九语）、面板沉降观测块（刀数/保守态 reason）、显示影响声明文案；教学 preset 补丁模板 docs/shallow-teaching-preset-template.md（preset 级交付，非 PTC preset 零注入）。
+- **门禁**：root engines/peers 迁移 range 形态（`>=0.1.1-rc.2 <0.3.0`）+ verify-release range-shape 检查；package-contract spec 单源化 scripts/hosts.mjs；真机装机实证 range engines 被宿主 0.2.1-rc.5 接受，而 15+ 枚举形态插件被拒跳。
+
 ## 0.9.0 - 2026-10-08
 
 ### 新增
