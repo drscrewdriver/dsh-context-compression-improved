@@ -102,6 +102,8 @@ export const fr = {
   'monitor.panel.stateOff': 'désactivé',
   'monitor.panel.gateUnknown': 'pas encore évalué',
   'monitor.panel.lastFold': 'Dernier pliage',
+  'monitor.panel.sedimentCuts': 'Coupes de sédimentation',
+  'monitor.panel.sedimentConservative': 'Sédimentation : mode conservateur (rétroaction sur économie nette)',
   'monitor.panel.stale': 'Instantané injoignable — dernières données',
 'monitorPanel.title': 'Panneau de monitorage de compression',
   'monitorPanel.description': 'Activé, une bulle flottante déplaçable apparaît près de la zone de saisie — ouvrez-la pour observer l\'état de compression en direct : économie nette (base exacte), taux de réussite du cache, estimation de coût, la porte de résumé d\'intention du tour et les compensations récentes. Le panneau peut contourner temporairement l\'interrupteur de résumé d\'intention de la session courante. Les statistiques sont persistées en SQLite et survivent au redémarrage de l\'hôte.',

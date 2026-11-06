@@ -102,6 +102,8 @@ export const ja = {
   'monitor.panel.stateOff': 'オフ',
   'monitor.panel.gateUnknown': '未評価',
   'monitor.panel.lastFold': '最後の折り畳み',
+  'monitor.panel.sedimentCuts': '沈降カット数',
+  'monitor.panel.sedimentConservative': '沈降：保守モード（正味節約の負帰還）',
   'monitor.panel.stale': 'スナップショット到達不能——前回データを表示',
 'monitorPanel.title': '圧縮モニター パネル',
   'monitorPanel.description': '有効にすると、入力欄のそばにドラッグできるフローティング バブルが現れます。開くとライブの圧縮状態を監視できます。正味節約（正確 basis）、キャッシュ ヒット率、コスト概算、ターン末尾インテント要約ゲート、最近の相殺。パネルから現セッションのインテント要約スイッチを一時的に上書きできます。統計は SQLite に永続化され、ホスト再起動後も保持されます。',

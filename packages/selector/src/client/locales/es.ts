@@ -102,6 +102,8 @@ export const es = {
   'monitor.panel.stateOff': 'no',
   'monitor.panel.gateUnknown': 'aún sin evaluar',
   'monitor.panel.lastFold': 'Último plegado',
+  'monitor.panel.sedimentCuts': 'Cortes de sedimento',
+  'monitor.panel.sedimentConservative': 'Sedimento: modo conservador (retroalimentación de ahorro neto)',
   'monitor.panel.stale': 'Instantánea inalcanzable — se muestran los últimos datos',
 'monitorPanel.title': 'Panel de monitor de compresión',
   'monitorPanel.description': 'Al activarlo, junto al área de entrada aparece una burbuja flotante arrastrable — ábrela para observar el estado de compresión en vivo: ahorro neto (base exacta), tasa de acierto de caché, estimación de coste, la puerta de resumen de intención del turno y compensaciones recientes. El panel puede invalidar temporalmente el interruptor de resumen de intención de la sesión actual. Las estadísticas se persisten en SQLite y sobreviven al reinicio del host.',

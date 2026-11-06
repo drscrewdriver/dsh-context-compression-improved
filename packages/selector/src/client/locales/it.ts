@@ -102,6 +102,8 @@ export const it = {
   'monitor.panel.stateOff': 'off',
   'monitor.panel.gateUnknown': 'non ancora valutato',
   'monitor.panel.lastFold': 'Ultima piegatura',
+  'monitor.panel.sedimentCuts': 'Tagli di sedimentazione',
+  'monitor.panel.sedimentConservative': 'Sedimentazione: modalità conservativa (feedback su risparmio netto)',
   'monitor.panel.stale': 'Snapshot non raggiungibile — ultimi dati',
 'monitorPanel.title': 'Pannello di monitoraggio compressione',
   'monitorPanel.description': 'Quando attivo, accanto all\'area di input appare una bolla flottante trascinabile — aprila per osservare lo stato di compressione in tempo reale: risparmio netto (base esatta), tasso di hit della cache, stima dei costi, la soglia del riepilogo di intento del turno e le compensazioni recenti. Il pannello può ignorare temporaneamente l\'interruttore del riepilogo di intento della sessione corrente. Le statistiche sono persistite in SQLite e sopravvivono al riavvio dell\'host.',

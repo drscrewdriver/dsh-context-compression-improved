@@ -102,6 +102,8 @@ export const ko = {
   'monitor.panel.stateOff': '끔',
   'monitor.panel.gateUnknown': '아직 평가 안 됨',
   'monitor.panel.lastFold': '마지막 접기',
+  'monitor.panel.sedimentCuts': '침전 컷 수',
+  'monitor.panel.sedimentConservative': '침전: 보수 모드(순 절약 피드백)',
   'monitor.panel.stale': '스냅샷 도달 불가——이전 데이터 표시',
 'monitorPanel.title': '압축 모니터 패널',
   'monitorPanel.description': '켜면 입력 영역 옆에 드래그 가능한 플로팅 버블이 나타납니다. 열면 라이브 압축 상태를 볼 수 있습니다. 순 절감(정확 기준), 캐시 적중률, 비용 추정, 턴 말머리 인텐트 요약 게이트, 최근 상쇄. 패널에서 현재 세션의 인텐트 요약 스위치를 임시로 전환할 수 있습니다. 통계는 SQLite에 영속화되어 호스트 재시작 후에도 유지됩니다.',

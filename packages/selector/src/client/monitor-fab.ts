@@ -40,6 +40,8 @@ export interface MonitorSnapshotPayload {
     gate?: { floorFraction?: unknown; growthTokens?: unknown }
     lastFold?: { turn?: unknown; startSeq?: unknown; endSeq?: unknown } | undefined
   }
+  /** 沉降门状态(plan cci-sedimentation-triage T5.1);未观测时 absent。 */
+  sediment?: { conservative?: unknown; reason?: unknown; cuts?: unknown }
   context?: { liveTokens?: unknown; contextWindow?: unknown; pct?: unknown }
   suggestion?: { suggest?: unknown; thresholdPct?: unknown; occupancyPct?: unknown }
   recentOffsets?: Array<{ component?: unknown; tokens?: unknown }>
@@ -144,6 +146,7 @@ export function initMonitorFab(deps: MonitorFabDeps): void {
   <button data-overon>${t('monitor.panel.resume')}</button>
   <button data-overoff class="ghost">${t('monitor.panel.disable')}</button></div>
 <div class="row muted" data-fold style="display:none"></div>
+<div class="row muted" data-sediment style="display:none"></div>
 <div class="stale" data-stale>${t('monitor.panel.stale')}</div>
 <div data-compwrap style="display:none">
   <div class="row"><span class="label">${t('monitor.panel.composition')}</span></div>
@@ -357,6 +360,17 @@ export function initMonitorFab(deps: MonitorFabDeps): void {
       foldEl.textContent = `${t('monitor.panel.lastFold')} turn ${String(fold.turn ?? '–')}, seq ${String(fold.startSeq ?? '–')}..${String(fold.endSeq ?? '–')}`;
     } else {
       foldEl.style.display = 'none';
+    }
+    // 沉降门状态行(T5.1)：未观测隐藏；conservative 态优先展示告警语义。
+    const sediment = snap.sediment;
+    const sedimentEl = panel.querySelector('[data-sediment]') as HTMLElement;
+    if (sediment !== undefined && sediment !== null && typeof sediment === 'object') {
+      sedimentEl.style.display = '';
+      sedimentEl.textContent = sediment.conservative === true
+        ? `${t('monitor.panel.sedimentConservative')} (${String(sediment.reason ?? '–')})`
+        : `${t('monitor.panel.sedimentCuts')} ${String(sediment.cuts ?? 0)}`;
+    } else {
+      sedimentEl.style.display = 'none';
     }
     // 最近抵消(压缩后再读全文的负项) top3：无记录整行隐藏——旧空态文案
     // 「尚无压缩记录」与上方组成块自相矛盾(无抵消≠无压缩，回填投影明明在)，

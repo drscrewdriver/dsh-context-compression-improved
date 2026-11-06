@@ -102,6 +102,8 @@ export const de = {
   'monitor.panel.stateOff': 'aus',
   'monitor.panel.gateUnknown': 'noch nicht bewertet',
   'monitor.panel.lastFold': 'Letzte Faltung',
+  'monitor.panel.sedimentCuts': 'Sediment-Schnitte',
+  'monitor.panel.sedimentConservative': 'Sediment: konservativer Modus (Netto-Spar-Rückkopplung)',
   'monitor.panel.stale': 'Snapshot nicht erreichbar — letzte Daten',
 'monitorPanel.title': 'Komprimierungs-Monitorpanel',
   'monitorPanel.description': 'Aktiviert erscheint neben dem Eingabebereich eine ziehbare Schwebekugel — öffne sie, um den Live-Komprimierungszustand zu beobachten: Nettoeinsparung (exakte Basis), Cache-Trefferquote, Kostenschätzung, das Turn-Tail-Gate und letzte Ausgleiche. Das Panel kann den Intent-Zusammenfassungsschalter der aktuellen Sitzung temporär übersteuern. Statistiken werden in SQLite persistiert und überstehen Host-Neustarts.',
