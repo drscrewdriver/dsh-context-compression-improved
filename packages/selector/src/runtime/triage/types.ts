@@ -13,6 +13,21 @@
 /** Roles whose lines may enter the verbatim protection pool. */
 export type TriageRole = 'user' | 'assistant' | 'tool'
 
+/**
+ * Permanent shallow-read checkpoint (plan R11): survives `discard` — the
+ * map is never lost, only the map's bulk. Four fields, rendered as one line.
+ */
+export interface ShallowCheckpoint {
+  /** Normalized target path (drive letter lowered, separators unified). */
+  readonly path: string
+  /** Coverage statement of the body the checkpoint stands for. */
+  readonly coverage: string
+  /** session:// reference into the original event (retrieve target). */
+  readonly ref: string
+  /** Cheap structural fingerprint (size + head hash) for staleness hints. */
+  readonly fingerprint: string
+}
+
 /** One verbatim line captured by a signal rule, capped at capture time. */
 export interface VerbatimLine {
   /** Event seq of the owning tool/result or message on the session surface. */
@@ -45,6 +60,8 @@ export type MaskVerdict =
       /** Byte length of the elided body, for omission stats. */
       readonly elidedChars: number
       readonly seq: number
+      /** Permanent checkpoint layer (R11); `discard` may remove body, never this. */
+      readonly checkpoint?: ShallowCheckpoint
     }
   | {
       readonly kind: 'pointer'

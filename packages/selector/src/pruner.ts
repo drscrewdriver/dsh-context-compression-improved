@@ -60,6 +60,8 @@ import {
   tailTrimStub,
 } from './runtime/tail-trim.ts'
 import { installContextCompressionRetrieve } from './runtime/retrieve.ts'
+import { installShallowTools, liveShallowFor } from './runtime/shallow-tools.ts'
+import { buildShallowFooter } from './runtime/triage/shallow.ts'
 import { SedimentOrchestrator } from './runtime/sediment.ts'
 import { estimateTokens } from './runtime/sediment-card.ts'
 import { RUNTIME_TOOL_NAMES } from './runtime/tool-names.ts'
@@ -318,6 +320,8 @@ export class ToolResultPruner extends Service {
     super(ctx, 'toolResultPruner')
     ctx.inject(['tools', 'systemPrompt'], recoveryCtx => {
       installContextCompressionRetrieve(recoveryCtx)
+      // Upgrade-discard pair primitives (plan cci-sedimentation-triage Phase 4.5).
+      installShallowTools(recoveryCtx)
     })
     this.state = {
       config: resolveConfig(config),
@@ -796,6 +800,30 @@ export class ToolResultPruner extends Service {
     })
     this.sedimentOrchestrators.set(session, orchestrator)
     return orchestrator
+  }
+
+  /**
+   * T4.8 pairing footer: when a read-class result supersedes a live shallow
+   * map of the same file, the reduced text carries the data-shaped reminder
+   * (sibling ref + discard hint). Non-read calls, unparseable arguments, and
+   * sessions without a live map all return undefined — zero side effects.
+   */
+  private shallowPairFooter(
+    session: Session,
+    candidate: { call: { name: string; arguments: string } },
+  ): string | undefined {
+    if (/^(read|read_file|view)$/i.test(candidate.call.name) === false) return undefined
+    let filePath = ''
+    try {
+      const parsed = JSON.parse(candidate.call.arguments) as Record<string, unknown>
+      filePath = typeof parsed.file_path === 'string' ? parsed.file_path
+        : typeof parsed.path === 'string' ? parsed.path : ''
+    } catch {
+      return undefined
+    }
+    if (filePath === '') return undefined
+    const entry = liveShallowFor(session, filePath)
+    return entry === undefined ? undefined : buildShallowFooter(entry.checkpoint, entry.bodyTokens)
   }
 
   /**
@@ -2029,9 +2057,15 @@ export class ToolResultPruner extends Service {
           codeSkeleton,
         })
         if (output !== null) {
+          // T4.8 pairing footer: a read result that supersedes a live shallow
+          // map carries the data-shaped reminder (sibling ref + discard hint).
+          const footer = this.shallowPairFooter(session, candidate)
+          const reducedText = footer === undefined
+            ? output.text
+            : `${output.text}\n\n${footer}`
           const plan = this.plan(
             candidate,
-            [{ ...textBlock, text: output.text }],
+            [{ ...textBlock, text: reducedText }],
             sourceSeq,
             output.reducer,
             'fresh',

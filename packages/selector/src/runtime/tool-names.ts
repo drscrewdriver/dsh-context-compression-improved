@@ -9,6 +9,12 @@
  */
 export const RUNTIME_TOOL_NAMES = Object.freeze({
   RETRIEVE: 'context_compression_retrieve',
+  /** Shallow read preview: declaration skeleton over a type-classified view. */
+  SHALLOW: 'context_compression_shallow',
+  /** Upgrade-discard pair primitive: drop one side of a shallow/full read pair. */
+  DISCARD: 'context_compression_discard',
+  /** O(1) header probe recommending which shallow view fits a file. */
+  PROBE: 'context_compression_probe',
 } as const)
 
 /** Every runtime tool this plugin registers and later judges against. */

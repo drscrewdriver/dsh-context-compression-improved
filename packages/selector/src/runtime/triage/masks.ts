@@ -18,6 +18,7 @@
  * @module runtime/triage/masks
  */
 import { hasReadGutter } from '../reducers.ts'
+import { normalizeToolPath, shallowFingerprint } from './shallow.ts'
 import type { MaskVerdict } from './types.ts'
 
 /** Write-family tool names whose results are pure "what changed" manifests. */
@@ -80,8 +81,10 @@ export function manifestFromCall(name: string, argsJson: string, text: string, s
  * Collapse a large read result to its declaration skeleton. Returns `null`
  * for small reads, non-read content, and zero-hit bodies (prose dumps) —
  * fail-open to the normal reducer path. Captured lines keep the gutter.
+ * With a target `path`, the verdict carries the permanent checkpoint layer
+ * (plan R11): path/coverage/fingerprint survive any later `discard`.
  */
-export function skeletonFromRead(text: string, seq = 0): MaskVerdict | null {
+export function skeletonFromRead(text: string, seq = 0, path?: string): MaskVerdict | null {
   if (text.length < MASK_READ_MIN_CHARS) return null
   const lines = text.replace(/\n+$/, '').split('\n')
   const guttered = hasReadGutter(lines)
@@ -101,6 +104,16 @@ export function skeletonFromRead(text: string, seq = 0): MaskVerdict | null {
     totalLines: lines.length,
     elidedChars: Math.max(0, text.length - keptChars),
     seq,
+    ...(path === undefined || path.trim() === ''
+      ? {}
+      : {
+          checkpoint: {
+            path: normalizeToolPath(path),
+            coverage: `${lines.length} lines`,
+            ref: `event/${seq}`,
+            fingerprint: shallowFingerprint(text),
+          },
+        }),
   }
 }
 
