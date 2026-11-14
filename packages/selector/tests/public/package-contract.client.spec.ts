@@ -24,9 +24,11 @@ describe('standalone package contract', () => {
       .toBe(selector.engines?.dsh)
     expect(selector.peerDependencies?.['@deepseek-ai/dsh-command-compact'])
       .toBe(selector.engines?.dsh)
-    // compat-legacy 七线：selector=peer 一致性面，dsh-* peer 与 engines.dsh 同为
-    // hosts.mjs supportedHosts 枚举（长度取单源，补票新 rc 时零 spec 改动）。
-    expect(selector.engines?.dsh?.split(' || ')).toHaveLength(supportedHosts.length)
+    // compat-legacy 七线：selector=peer 一致性面。engines 统一后不再逐 rc 枚举，
+    // dsh-* peer 与 engines.dsh 同为一条有界区间 `>=<floor> <0.3.0-0`；
+    // floor 仍取 hosts.mjs 单源（supportedHosts 首项），补票新 rc 时零 spec 改动。
+    expect(selector.engines?.dsh).toBe(`>=${supportedHosts[0]} <0.3.0-0`)
+    expect(selector.peerDependencies?.['@deepseek-ai/dsh-compaction-basic']).toBe(selector.engines?.dsh)
     expect(selector.publishConfig?.tag).toBe('latest')
     expect(existsSync(resolve(root, '../runtime/package.json'))).toBe(false)
   })
