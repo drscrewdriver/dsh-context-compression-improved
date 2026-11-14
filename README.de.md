@@ -51,7 +51,7 @@ Wählen Sie ein Kompressionsprofil, stellen Sie den Auto-Compact-Auslösepegel e
 
 ## Installation
 
-**Empfohlen: Installation über npm.** Eine einzige Version deckt alle unterstützten Harness-Linien ab — `latest` trägt die vollständige 17-rc-Aufzählung (0.1.0-rc.2 → 0.2.1-rc.2); die Runtime wählt die linien­spezifischen Codepfade selbst.
+**Empfohlen: Installation über npm.** Eine einzige Version deckt alle unterstützten Harness-Linien ab — `latest` trägt die begrenzte Spanne `>=0.1.0-rc.2 <0.3.0-0`; die Runtime wählt die linien­spezifischen Codepfade selbst.
 
 ```sh
 dsh plugin --profile web add dsh-context-compression-improved@latest
