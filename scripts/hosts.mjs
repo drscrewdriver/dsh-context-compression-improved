@@ -33,7 +33,9 @@ export const supportedHosts = Object.freeze([
 	'0.2.1-rc.2', '0.2.1-rc.3', '0.2.1-rc.4', '0.2.1-rc.5',
 	'0.2.2-rc.1',
 ])
-export const peerRange = supportedHosts.join(' || ')
+export const peerRange = `>=${supportedHosts[0]} <0.3.0-0`
+/** 已实测宿主细胞：仅供 README 展示 / 矩阵脚本，不再下发给 peer。 */
+export const hostCells = supportedHosts.join(' || ')
 /** 显式偏离：devDeps 钉 rc.1（见文件头）。 */
 export const developmentHost = '0.2.0-rc.1'
 
