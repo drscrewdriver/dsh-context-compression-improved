@@ -119,3 +119,14 @@ Contributions follow the upstream discipline: add the failing regression first, 
 - Upstream project and all prior work: [WilliamShi666/dsh-context-compression-selector](https://github.com/WilliamShi666/dsh-context-compression-selector) by WilliamShi666 (MIT).
 - Fork additions (code-skeleton gate, tooling, localized docs): drscrewdriver.
 - MIT — see [LICENSE](LICENSE) (upstream copyright notice retained) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for bundled tokenizer provenance.
+
+## TUI 终端面（dsh-tui）
+
+dsh-tui 不加载插件的 client 半边（面板/卡片/设置页），也调不到插件自有 RPC；工具调用只显示一行摘要。人可读、人可操作的面只剩宿主斜杠命令。输出约定：单行 ≤100 字符、总行 ≤40、无 ANSI、两空格对齐；写操作默认 dry、加 `--yes` 才执行；`--json` 输出单行 JSON。
+
+| 命令 | 作用 |
+|---|---|
+| `/compress status` | 压缩策略设置节（门限/保留轮数/开关） |
+| `/compress policy` | 同 status（别名） |
+
+命令由插件自己在宿主侧注册（`ctx.inject(['commands'], …)`）：命令服务缺席的老宿主线上不激活、不报错。

@@ -3,6 +3,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { buildEstimatorCatalog, type EstimatorCatalogDeps } from './estimator-catalog.ts'
+import { registerCompressCommand, sectionOf } from './tui-command.ts'
 import { getSavingsLedger } from './runtime/savings.ts'
 import {
   applySessionOverride,
@@ -790,6 +791,24 @@ export const Config = z.object({
 
 /** Register the persisted default read by the currently mounted root pruner. */
 export function apply(ctx: Context, config: Config = {}): void {
+  // ── dsh-tui 终端面：`/compress` ──────────────────────────────────
+  // TUI 不加载设置卡/投影卡：压缩策略在终端里不可见（而它直接决定长会话会不会崩）。
+  // 命令层只读回显设置节；节名跨版本有多个写法，按候选列表依次试。
+  ;(ctx as unknown as {
+    inject?: (deps: string[], cb: (scope: Context) => void) => void
+  }).inject?.(['commands'], (scope) => {
+    const candidates = ['dsh-context-compression-improved', 'context-compression', 'dsh-context-compression']
+    registerCompressCommand(scope, {
+      ns: candidates[0],
+      section: () => {
+        for (const ns of candidates) {
+          const hit = sectionOf(scope, ns)
+          if (hit !== undefined) return hit
+        }
+        return undefined
+      },
+    })
+  })
   // Measured on the 0.1.2 host: a plugin-load failure surfaces only through the
   // cordis logger, which prints nothing in the `dsh web` terminal — so a throw
   // here is completely invisible and looks exactly like a plugin that loaded
