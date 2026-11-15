@@ -797,7 +797,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   ;(ctx as unknown as {
     inject?: (deps: string[], cb: (scope: Context) => void) => void
   }).inject?.(['commands'], (scope) => {
-    const candidates = ['dsh-context-compression-improved', 'context-compression', 'dsh-context-compression']
+    const candidates = ['dsh-context-compression-improved', 'context-compression', 'dsh-context-compression'] as const
     registerCompressCommand(scope, {
       ns: candidates[0],
       section: () => {

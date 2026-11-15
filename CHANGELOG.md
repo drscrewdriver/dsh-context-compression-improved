@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.11.3
+
+- 修复多语言注册告警噪音：`addLanguage`/`register` 命中重复注册时改为良性跳过（同 media-lens）。
+- 修复服务端类型错误：`candidates[0]` 在 `noUncheckedIndexedAccess` 下为 `string | undefined`，改为 `as const` 元组。
+
 ## 0.11.2
 
 - 终端面（dsh-tui / Desktop 命令面板同源）：压缩设置只读面（status）。

@@ -3857,6 +3857,17 @@ window.__ModuleLoader__.load({
 			if (left.version !== 3 || right.version !== 3) return false;
 			return left.version === right.version && left.unit === right.unit && left.prefixPolicy === right.prefixPolicy && left.fresh.enabled === right.fresh.enabled && left.fresh.trigger === right.fresh.trigger && left.fresh.target === right.fresh.target && left.aggregate.enabled === right.aggregate.enabled && left.aggregate.trigger === right.aggregate.trigger && left.aggregate.target === right.aggregate.target && left.history.enabled === right.history.enabled && left.history.trigger === right.history.trigger && left.history.keepRecentToolCalls === right.history.keepRecentToolCalls && left.history.keepRecentTokens === right.history.keepRecentTokens && left.history.minReclaim === right.history.minReclaim && left.tailTrim.enabled === right.tailTrim.enabled && left.tailTrim.trigger === right.tailTrim.trigger;
 		}
+		/**
+		* Host locale APIs throw on duplicate writes: `addLanguage` when the global
+		* catalog already has the id (`... is already registered`), and `register` when
+		* the namespace already carries that locale (`... already has locale "..."`).
+		* This plugin is mounted twice by name (bundle row + estimator-catalog row) and
+		* re-runs apply on `_reload`, so both throws are expected benign skips — the
+		* entry is already present and usable — and must never surface as warning noise.
+		*/
+		function isBenignLocaleDuplicate(error) {
+			return error instanceof Error && /already (?:registered|has locale)/.test(error.message);
+		}
 		function apply(ctx) {
 			try {
 				ctx.locale.register(NS, {
@@ -3864,7 +3875,7 @@ window.__ModuleLoader__.load({
 					en
 				});
 			} catch (error) {
-				console.warn("[dsh-context-compression-improved] locale 默认包(zh/en) 已注册,跳过:", error);
+				if (!isBenignLocaleDuplicate(error)) console.warn("[dsh-context-compression-improved] locale zh/en register failed:", error);
 			}
 			const languages = [
 				{
@@ -3903,15 +3914,21 @@ window.__ModuleLoader__.load({
 					dict: ru
 				}
 			];
-			for (const language of languages) try {
-				ctx.locale.register(NS, language.id, language.dict);
-				ctx.locale.addLanguage({
-					id: language.id,
-					label: language.label,
-					fallback: "en"
-				});
-			} catch (error) {
-				console.warn(`[dsh-context-compression-improved] locale "${language.id}" registration failed:`, error);
+			for (const language of languages) {
+				try {
+					ctx.locale.register(NS, language.id, language.dict);
+				} catch (error) {
+					if (!isBenignLocaleDuplicate(error)) console.warn(`[dsh-context-compression-improved] locale "${language.id}" dictionary registration failed:`, error);
+				}
+				try {
+					ctx.locale.addLanguage({
+						id: language.id,
+						label: language.label,
+						fallback: "en"
+					});
+				} catch (error) {
+					if (!isBenignLocaleDuplicate(error)) console.warn(`[dsh-context-compression-improved] locale "${language.id}" language registration failed:`, error);
+				}
 			}
 			const tNav = ctx.locale?.bind?.(NS) ?? ((key) => key);
 			let configFormsHandle;

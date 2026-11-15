@@ -80,6 +80,18 @@ function sameCustomPolicy(
     && left.tailTrim.trigger === right.tailTrim.trigger
 }
 
+/**
+ * Host locale APIs throw on duplicate writes: `addLanguage` when the global
+ * catalog already has the id (`... is already registered`), and `register` when
+ * the namespace already carries that locale (`... already has locale "..."`).
+ * This plugin is mounted twice by name (bundle row + estimator-catalog row) and
+ * re-runs apply on `_reload`, so both throws are expected benign skips — the
+ * entry is already present and usable — and must never surface as warning noise.
+ */
+function isBenignLocaleDuplicate(error: unknown): boolean {
+  return error instanceof Error && /already (?:registered|has locale)/.test(error.message)
+}
+
 export function apply(ctx: ClientContext): void {
   // 幂等:本插件可被两行同 name 挂载(bundle 行 + estimator-catalog 行,宿主侧靠
   // 引用计数去重压缩栈),客户端 apply 会被调用多次。首注册必须容错,否则第二次
@@ -87,7 +99,7 @@ export function apply(ctx: ClientContext): void {
   try {
     ctx.locale.register(NS, { zh, en })
   } catch (error) {
-    console.warn('[dsh-context-compression-improved] locale 默认包(zh/en) 已注册,跳过:', error)
+    if (!isBenignLocaleDuplicate(error)) console.warn('[dsh-context-compression-improved] locale zh/en register failed:', error)
   }
   // de/es/fr/it/ja/ko/ru are not host built-ins (`BuiltInLocaleId` is zh|en), so
   // their dictionaries ride the single-locale untyped register overload, and each
@@ -108,9 +120,13 @@ export function apply(ctx: ClientContext): void {
   for (const language of languages) {
     try {
       ctx.locale.register(NS, language.id, language.dict)
+    } catch (error) {
+      if (!isBenignLocaleDuplicate(error)) console.warn(`[dsh-context-compression-improved] locale "${language.id}" dictionary registration failed:`, error)
+    }
+    try {
       ctx.locale.addLanguage({ id: language.id, label: language.label, fallback: 'en' })
     } catch (error) {
-      console.warn(`[dsh-context-compression-improved] locale "${language.id}" registration failed:`, error)
+      if (!isBenignLocaleDuplicate(error)) console.warn(`[dsh-context-compression-improved] locale "${language.id}" language registration failed:`, error)
     }
   }
   // Section label translator, captured EAGERLY: the settings shell evaluates
