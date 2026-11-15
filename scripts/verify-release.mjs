@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { selectorDshPeers, supportedHosts } from './hosts.mjs'
+import { peerRange, selectorDshPeers, supportedHosts } from './hosts.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 
@@ -151,20 +151,19 @@ if (selectorPackage.files?.some((entry) => entry.endsWith('.css'))) {
 if (selectorPackage.name !== 'dsh-context-compression-improved') fail('unexpected selector package name')
 if (selectorPackage.publishConfig?.access !== 'public') fail('selector publish access is not public')
 if (selectorPackage.publishConfig?.tag !== 'latest') fail('selector publish tag is not latest')
-// compat-legacy 七线：dsh-* peer 走 hosts.mjs 的 16rc 枚举（同一口径）。
+// engines 统一后：selector 与 root 同走 hosts.mjs 的 `peerRange`（`>=<floor> <0.3.0-0`）。
+// 逐 rc 枚举 `hostCells` 只供 README / 矩阵脚本展示，不再下发给 engines 或 peer
+// （见 hosts.mjs 注释）。所以门禁不再数枚举长度（那是统一前的旧形状），
+// 改钉两件事：engines.dsh 必须等于单源 peerRange；每个 dsh-* peer 必须与 engines 全等。
 for (const peer of selectorDshPeers) {
   if (selectorPackage.peerDependencies?.[peer] !== selectorPackage.engines?.dsh) {
-    fail(`selector peer ${peer} is missing or outside the supportedHosts enum`)
+    fail(`selector peer ${peer} must equal engines.dsh (the single-source peerRange)`)
   }
 }
-if (selectorPackage.engines?.dsh?.split(' || ').length !== supportedHosts.length) {
-  fail(`selector engines.dsh must carry the ${supportedHosts.length}-rc supportedHosts enum`)
+if (selectorPackage.engines?.dsh !== peerRange) {
+  fail(`selector engines.dsh must equal hosts.mjs peerRange (${peerRange}); supportedHosts=${supportedHosts.length} 条枚举已不再下发`)
 }
-// v0.10.5 decision: the ROOT install-surface manifest declares a semver RANGE
-// (">=lower <upper") instead of the per-rc enum; the selector package keeps
-// the enum for the peer-consistency surface. Verify the range SHAPE here —
-// the peer-equality loop below still pins every root dsh-* peer to the same
-// range string, so a drift between peers and engines keeps failing the gate.
+// v0.10.5 起 root 用区间；engines 统一后 selector 也用同一条区间，两侧口径一致。
 if (!/^>=\S+ <\S+$/.test(String(rootPackage.engines?.dsh ?? ''))) {
   fail('root engines.dsh must carry the install-surface range (">=lower <upper"), per the 0.10.5 range switch')
 }
