@@ -285,7 +285,12 @@ describe('deterministic standing stamps', () => {
   })
 })
 
-describe('real AgentPresets standing generations with the overlay threshold', () => {
+// 本组每个用例都要真起一整套宿主插件栈（Loader/LlmRuntime/SessionStore/SystemPrompt/
+// ToolRuntime/AgentRegistry/AgentLoop/CommandRuntime/SessionProjectionRegistry/TokenMeter/
+// AgentPresets）。单跑约 1.0s，但全量 900 用例满载时会胀到 5.4s+，直接撞默认 5s 超时
+// （满载复现：`Test timed out in 5000ms`，同文件其余重用例已胀到 2.9s）。
+// 预算给到 30s：不改变断言语义，只把“慢”和“错”分开。
+describe('real AgentPresets standing generations with the overlay threshold', { timeout: 30_000 }, () => {
   it('separates colliding equal-size generations on a whole-second metadata surface before publish', async () => {
     const rootPath = await presetsRoot()
     sourceRoot = rootPath
