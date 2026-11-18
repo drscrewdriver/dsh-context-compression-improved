@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "コンテキスト圧縮セレクター",
+    "description": "dsh-context-compression-selector の改良フォーク——DeepSeek Harness 向けの監査可能なツール結果コンテキスト圧縮セレクターに、直交するコードスケルトン圧縮ゲートを追加しました。"
+  }
+}

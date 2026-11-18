@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.11.4
+
+- i18n: add Portuguese (pt-BR) locale — runtime dictionary (`Português (Brasil)` in the selector language list), `locale/*.json` package metadata for all ten languages, README/CHANGELOG mirrors and bidirectional nav links.
+
 ## 0.11.3
 
 - 修复多语言注册告警噪音：`addLanguage`/`register` 命中重复注册时改为良性跳过（同 media-lens）。

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Selector de compresión de contexto",
+    "description": "Un fork mejorado de dsh-context-compression-selector — un selector auditable de compresión de contexto de resultados de herramientas para DeepSeek Harness — que añade una puerta de compresión de esqueletos de código ortogonal."
+  }
+}

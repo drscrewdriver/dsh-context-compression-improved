@@ -1,6 +1,6 @@
 {
   "name": "dsh-context-compression-improved",
-  "version": "0.11.3",
+  "version": "0.11.4",
   "description": "One-install context-compression selector bundle for DeepSeek Harness",
   "type": "module",
   "main": "lib/index.js",
@@ -22,6 +22,7 @@
       "types": "./lib/client.d.ts",
       "default": "./lib/client.js"
     },
+    "./locale/*.json": "./locale/*.json",
     "./package.json": "./package.json"
   },
   "files": [
@@ -34,7 +35,8 @@
     "README.md",
     "README.zh.md",
     "LICENSE",
-    "THIRD_PARTY_NOTICES.md"
+    "THIRD_PARTY_NOTICES.md",
+    "locale"
   ],
   "dsh": {
     "client": {

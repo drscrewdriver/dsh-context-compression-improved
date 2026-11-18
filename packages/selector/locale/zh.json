@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "上下文压缩选择器",
+    "description": "dsh-context-compression-selector 的改进版 fork——面向 DeepSeek Harness 的可审计工具结果上下文压缩选择器，新增正交的代码骨架压缩门*。"
+  }
+}

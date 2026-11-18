@@ -86,6 +86,7 @@ const linesPerLang = {
   'README.it.md': [`- **Host DSH supportati:** ${versionList} (${supportedHosts.length} rc attraverso le linee ${LINES})`],
   'README.ru.md': [`- **Поддерживаемые хосты DSH:** ${versionList} (${supportedHosts.length} rc по линиям ${LINES})`],
   'README.ja.md': [`- **対応する DSH ホスト:** ${versionList}（${LINES} の ${supportedHosts.length} rc）`],
+  'README.pt.md': [`- **Hosts DSH compatíveis:** ${versionList} (${supportedHosts.length} rc nas linhas ${LINES})`],
   'README.ko.md': [`- **지원하는 DSH 호스트:** ${versionList} (${LINES} 라인의 ${supportedHosts.length}개 rc)`],
 }
 // 矩阵跑绿清单（.compat-results/verified.json，由矩阵执行体写出；Phase 5 前不存在则跳过）
@@ -103,6 +104,7 @@ if (existsSync(verifiedUrl)) {
       'README.it.md': `- **Verificato a runtime:** ${list} — prove in \`.compat-results/\``,
       'README.ru.md': `- **Проверено на этапе выполнения:** ${list} — доказательства в \`.compat-results/\``,
       'README.ja.md': `- **ランタイム検証済み:** ${list}（証跡は \`.compat-results/\`）`,
+      'README.pt.md': `- **Verificado em tempo de execução:** ${list} — evidências em \`.compat-results/\``,
       'README.ko.md': `- **런타임 검증됨:** ${list} (증적은 \`.compat-results/\`)`,
     }
     for (const [file, line] of Object.entries(verifiedLine)) linesPerLang[file].push(line)

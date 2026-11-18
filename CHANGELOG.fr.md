@@ -1,6 +1,6 @@
 # Journal des modifications
 
-> [English](CHANGELOG.md) · [中文](CHANGELOG.zh.md) · [日本語](CHANGELOG.ja.md) · [한국어](CHANGELOG.ko.md)
+> [English](CHANGELOG.md) · [中文](CHANGELOG.zh.md) · [日本語](CHANGELOG.ja.md) · [한국어](CHANGELOG.ko.md) · [Português](CHANGELOG.pt.md)
 
 Tous les changements notables sont consignés dans ce fichier. Le projet suit le versionnement sémantique après `0.1.0`.
 

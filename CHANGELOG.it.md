@@ -1,6 +1,6 @@
 # Registro delle modifiche
 
-> [English](CHANGELOG.md) · [中文](CHANGELOG.zh.md) · [日本語](CHANGELOG.ja.md) · [한국어](CHANGELOG.ko.md)
+> [English](CHANGELOG.md) · [中文](CHANGELOG.zh.md) · [日本語](CHANGELOG.ja.md) · [한국어](CHANGELOG.ko.md) · [Português](CHANGELOG.pt.md)
 
 Tutte le modifiche rilevanti sono annotate in questo file. Il progetto segue il versionamento semantico dopo `0.1.0`.
 

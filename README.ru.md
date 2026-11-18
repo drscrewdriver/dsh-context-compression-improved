@@ -2,7 +2,7 @@
 
 > Улучшенный форк [dsh-context-compression-selector](https://github.com/WilliamShi666/dsh-context-compression-selector) — проверяемого селектора сжатия контекста результатов инструментов для DeepSeek Harness — с добавлением ортогонального **гейта сжатия скелетов кода**.
 
-[English](README.md) · [中文说明](README.zh.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Italiano](README.it.md) · [Español](README.es.md) · [Журнал изменений](CHANGELOG.ru.md) · [Руководство по установке](docs/installation.ru.md)
+[English](README.md) · [中文说明](README.zh.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Italiano](README.it.md) · [Español](README.es.md) · [Português](README.pt.md) · [Журнал изменений](CHANGELOG.ru.md) · [Руководство по установке](docs/installation.ru.md)
 
 > [!NOTE]
 > **Что этот форк добавляет к апстриму 0.1.0:**

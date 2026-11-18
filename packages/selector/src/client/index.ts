@@ -20,6 +20,7 @@ import { it } from './locales/it.ts'
 import { ja } from './locales/ja.ts'
 import { ko } from './locales/ko.ts'
 import { ru } from './locales/ru.ts'
+import { pt } from './locales/pt.ts'
 import { planPresetOptionsOps, presetOptionsOpsAccepted } from './preset-options.ts'
 import type { ScopeSnapshot, SettingsScope } from './scope-face.ts'
 import { createBridgeScope } from './bridge-scope.ts'
@@ -116,6 +117,7 @@ export function apply(ctx: ClientContext): void {
     { id: 'ja', label: '日本語', dict: ja },
     { id: 'ko', label: '한국어', dict: ko },
     { id: 'ru', label: 'Русский', dict: ru },
+    { id: 'pt', label: 'Português (Brasil)', dict: pt },
   ] as const
   for (const language of languages) {
     try {
