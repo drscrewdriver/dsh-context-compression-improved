@@ -1,6 +1,6 @@
 # dsh-context-compression-improved
 
-> Un fork amélioré de [dsh-context-compression-selector](https://github.com/WilliamShi666/dsh-context-compression-selector) — un sélecteur auditable de compression du contexte des résultats d'outils pour DeepSeek Harness — qui ajoute une **porte de compression des squelettes de code** orthogonale.
+> **Économie de tokens d'abord : moins de tokens de résultats d'outils à chaque tour, entièrement auditable.** Un fork amélioré de [dsh-context-compression-selector](https://github.com/WilliamShi666/dsh-context-compression-selector) — un sélecteur auditable de compression du contexte des résultats d'outils pour DeepSeek Harness — qui ajoute une **porte de compression des squelettes de code** orthogonale.
 
 [English](README.md) · [中文说明](README.zh.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Deutsch](README.de.md) · [Italiano](README.it.md) · [Русский](README.ru.md) · [Español](README.es.md) · [Português](README.pt.md) · [Journal des modifications](CHANGELOG.fr.md) · [Guide d'installation](docs/installation.fr.md)
 

@@ -1,6 +1,6 @@
 # dsh-context-compression-improved
 
-> Улучшенный форк [dsh-context-compression-selector](https://github.com/WilliamShi666/dsh-context-compression-selector) — проверяемого селектора сжатия контекста результатов инструментов для DeepSeek Harness — с добавлением ортогонального **гейта сжатия скелетов кода**.
+> **Экономия токенов в первую очередь: меньше токенов в результатах инструментов на каждом шаге, с полной проверяемостью.** Улучшенный форк [dsh-context-compression-selector](https://github.com/WilliamShi666/dsh-context-compression-selector) — проверяемого селектора сжатия контекста результатов инструментов для DeepSeek Harness — с добавлением ортогонального **гейта сжатия скелетов кода**.
 
 [English](README.md) · [中文说明](README.zh.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Italiano](README.it.md) · [Español](README.es.md) · [Português](README.pt.md) · [Журнал изменений](CHANGELOG.ru.md) · [Руководство по установке](docs/installation.ru.md)
 
