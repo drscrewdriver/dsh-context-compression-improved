@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.0 (2026-11-24)
+
+- feat(guide): 首次使用引导（3 步）——设置页顶部三步教学：压缩档位（平衡 / 节省 / PTC，代码骨架、轮尾沉降、回合末意图摘要为正交开关，Auto Compact 水位才随档位联动）、首轮冻结策略（会话首次被运行时观察即冻结，当前会话无反应≠保存失败；沉降会把原消息撤出对话视图，可卡内序号回捞）、监控读数（悬浮面板的净节省 / 毛节省 / 负节省 / 缓存命中率 / 成本估算；设置页「节省统计(本进程)」首次裁剪前为空）。底部恒定重开入口。
+- feat(guide): 引导外壳自带十语（zh·en·ja·ko·fr·de·it·ru·es·pt），按 `<html lang>` 取词、认不出落 en；步骤正文 zh/en，其余语种回退 en 不留空白。Skip 与「开始使用」都写 `dsh.guide.context-compression.skipped`——看过即不再自动弹，跳过后可从底部重开。
+- 引导件 `packages/selector/src/client/guide.tsx` 是 `mine-dsh-plugins/_tools/guide-kit/guide.tsx` 的生成副本（顶部有勿手改横幅），九个自有插件共用同一套交互；样式注入与存储访问全部能力探测 + try/catch。
+- 全量：899 tests / 899 pass / 1 skipped。
+
 ## 0.11.4
 
 - i18n: add Portuguese (pt-BR) locale — runtime dictionary (`Português (Brasil)` in the selector language list), `locale/*.json` package metadata for all ten languages, README/CHANGELOG mirrors and bidirectional nav links.

@@ -1565,6 +1565,381 @@ window.__ModuleLoader__.load({
 			});
 		}
 		//#endregion
+		//#region src/client/guide.tsx
+		/**
+		* ⚠️ 生成副本 —— 请勿手改。真源：mine-dsh-plugins/_tools/guide-kit/guide.tsx
+		* 重新同步：node _tools/guide-kit/sync.mjs
+		*/
+		/**
+		* guide-kit —— 九插件共用的「首次使用引导」件（**生成副本，勿手改**）。
+		*
+		* 唯一真源：`mine-dsh-plugins/_tools/guide-kit/guide.tsx`
+		* 同步命令：`node _tools/guide-kit/sync.mjs`（会覆盖本文件；改这里等于白改）
+		*
+		* 六条契约（见 .agents/plans/unified-i18n-onboarding/spec.md §2）：
+		* 1. Skip 恒定可见，任何步骤都能退；
+		* 2. 永远有字：引导外壳（标题/按钮/步进）自带 10 语词表，按 <html lang> 取词，
+		*    认不出的一律落 en；步骤正文按「本语 → en → zh → 任意可用」逐级回退，绝不留空白；
+		* 3. 重启入口：`GuideRestartButton`（或自己调 `resetGuide(ns)` + setOpen(true)）就地重开；
+		* 4. 零依赖：只 react + localStorage，不 import 平台包，不抢宿主设置表单；
+		* 5. 引导自己绝不能成为卡面渲染的失败点：样式注入与存储访问全部 try/catch + 能力探测；
+		* 6. 外壳词表与步骤正文分离：外壳跨插件统一（本文件），正文每插件一份 `guide-steps.ts`。
+		*/
+		/** 生态通用的十个语言码（与各插件 `locale/*.json`、README 的十语镜像同口径）。 */
+		const GUIDE_LOCALES = [
+			"zh",
+			"en",
+			"ja",
+			"ko",
+			"fr",
+			"de",
+			"it",
+			"ru",
+			"es",
+			"pt"
+		];
+		/**
+		* 引导外壳词表（10 语）。
+		*
+		* 为什么不塞进各插件 locales：这七个词是**跨插件同一套**，塞进九个字典要重复翻译
+		* 9×10 次，且一旦措辞调整就得动九个仓。外壳留在本文件，正文留各插件。
+		*/
+		const GUIDE_COPY = {
+			zh: {
+				title: "快速上手",
+				skip: "跳过引导",
+				next: "下一步",
+				prev: "上一步",
+				done: "开始使用",
+				restart: "重新查看引导",
+				stepOf: (current, total) => `第 ${current} / ${total} 步`
+			},
+			en: {
+				title: "Quick start",
+				skip: "Skip guide",
+				next: "Next",
+				prev: "Back",
+				done: "Get started",
+				restart: "Show guide again",
+				stepOf: (current, total) => `Step ${current} of ${total}`
+			},
+			ja: {
+				title: "クイックスタート",
+				skip: "ガイドをスキップ",
+				next: "次へ",
+				prev: "戻る",
+				done: "はじめる",
+				restart: "ガイドをもう一度表示",
+				stepOf: (current, total) => `ステップ ${current} / ${total}`
+			},
+			ko: {
+				title: "빠른 시작",
+				skip: "가이드 건너뛰기",
+				next: "다음",
+				prev: "이전",
+				done: "시작하기",
+				restart: "가이드 다시 보기",
+				stepOf: (current, total) => `${current} / ${total} 단계`
+			},
+			fr: {
+				title: "Démarrage rapide",
+				skip: "Ignorer le guide",
+				next: "Suivant",
+				prev: "Retour",
+				done: "Commencer",
+				restart: "Revoir le guide",
+				stepOf: (current, total) => `Étape ${current} sur ${total}`
+			},
+			de: {
+				title: "Schnellstart",
+				skip: "Anleitung überspringen",
+				next: "Weiter",
+				prev: "Zurück",
+				done: "Loslegen",
+				restart: "Anleitung erneut anzeigen",
+				stepOf: (current, total) => `Schritt ${current} von ${total}`
+			},
+			it: {
+				title: "Avvio rapido",
+				skip: "Salta la guida",
+				next: "Avanti",
+				prev: "Indietro",
+				done: "Inizia",
+				restart: "Rivedi la guida",
+				stepOf: (current, total) => `Passo ${current} di ${total}`
+			},
+			ru: {
+				title: "Быстрый старт",
+				skip: "Пропустить руководство",
+				next: "Далее",
+				prev: "Назад",
+				done: "Начать",
+				restart: "Показать руководство снова",
+				stepOf: (current, total) => `Шаг ${current} из ${total}`
+			},
+			es: {
+				title: "Inicio rápido",
+				skip: "Omitir la guía",
+				next: "Siguiente",
+				prev: "Atrás",
+				done: "Empezar",
+				restart: "Ver la guía de nuevo",
+				stepOf: (current, total) => `Paso ${current} de ${total}`
+			},
+			pt: {
+				title: "Início rápido",
+				skip: "Ignorar o guia",
+				next: "Próximo",
+				prev: "Voltar",
+				done: "Começar",
+				restart: "Ver o guia novamente",
+				stepOf: (current, total) => `Passo ${current} de ${total}`
+			}
+		};
+		/** 语言标签 → 语言码：只认主标签，认不出的落 null（由调用方回退 en）。 */
+		function normalizeGuideLocale(tag) {
+			const primary = tag.toLowerCase().trim().split(/[-_]/)[0] ?? "";
+			return GUIDE_LOCALES.includes(primary) ? primary : null;
+		}
+		function htmlLang() {
+			try {
+				return typeof document === "undefined" ? "" : document.documentElement?.lang ?? "";
+			} catch {
+				return "";
+			}
+		}
+		/**
+		* 当前引导语言：以宿主 `<html lang>` 为准（语言切换会改写这个属性）。
+		*
+		* 认不出 → en：引导是「帮助」面，宁可给英文也不能给空白或中文硬串。
+		*/
+		function currentGuideLocale() {
+			return normalizeGuideLocale(htmlLang()) ?? "en";
+		}
+		/** 引导外壳取词。 */
+		function guideLabels(locale = currentGuideLocale()) {
+			return GUIDE_COPY[locale] ?? GUIDE_COPY.en;
+		}
+		/**
+		* 步骤正文取词：本语 → en → zh → 表里第一个可用。
+		*
+		* 为什么需要回退链：九插件分批补语种，某个插件可能只有 zh/en 而宿主是 ru；
+		* 这时给英文是可用的，给空白等于「引导坏了」。`undefined` 步骤表按空表处理。
+		*/
+		function guideSteps(map) {
+			if (map === void 0) return [];
+			const order = [
+				currentGuideLocale(),
+				"en",
+				"zh"
+			];
+			for (const key of order) {
+				const hit = key === void 0 ? void 0 : map[key];
+				if (hit !== void 0 && hit.length > 0) return hit;
+			}
+			for (const key of GUIDE_LOCALES) {
+				const hit = map[key];
+				if (hit !== void 0 && hit.length > 0) return hit;
+			}
+			return [];
+		}
+		function guideStorageKey(ns) {
+			return `dsh.guide.${ns}.skipped`;
+		}
+		/** 是否已跳过（存储不可用时按「未跳过」处理：宁可多教一次，不要静默不教）。 */
+		function isGuideSkipped(ns) {
+			try {
+				return typeof localStorage !== "undefined" && localStorage.getItem(guideStorageKey(ns)) === "1";
+			} catch {
+				return false;
+			}
+		}
+		/** 记下跳过；写失败不抛（隐私模式 / 存储禁用）。 */
+		function skipGuide(ns) {
+			try {
+				localStorage?.setItem(guideStorageKey(ns), "1");
+			} catch {}
+		}
+		/** 清标记 = 允许重新教学。 */
+		function resetGuide(ns) {
+			try {
+				localStorage?.removeItem(guideStorageKey(ns));
+			} catch {}
+		}
+		const GUIDE_CSS = `
+.sgGuide{border:1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.28));background:var(--dsw-alias-bg-layer-2, rgba(127,127,127,.06));border-radius:12px;padding:14px 16px;margin:0 0 12px}
+.sgGuideHead{display:flex;align-items:center;gap:8px;margin:0 0 10px}
+.sgGuideTitle{font-size:14px;font-weight:600;color:var(--dsw-alias-label-primary, currentColor)}
+.sgGuideStep{font-size:12px;color:var(--dsw-alias-label-tertiary, rgba(127,127,127,.9));margin-left:auto}
+.sgGuideBody{font-size:13px;line-height:1.6;color:var(--dsw-alias-label-secondary, currentColor);min-height:52px}
+.sgGuideBody b{color:var(--dsw-alias-label-primary, currentColor);font-weight:600}
+.sgGuideDots{display:flex;gap:6px;margin:10px 0 0}
+.sgGuideDot{width:6px;height:6px;border-radius:50%;background:var(--dsw-alias-border-l2, rgba(127,127,127,.3))}
+.sgGuideDot-on{background:var(--dsw-alias-button-primary-fill, #4d6bfe)}
+.sgGuideFoot{display:flex;align-items:center;gap:8px;margin:12px 0 0}
+.sgGuideBtn{appearance:none;font:inherit;font-size:12px;padding:5px 12px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.3));background:transparent;color:var(--dsw-alias-label-primary, currentColor);cursor:pointer}
+.sgGuideBtn-primary{background:var(--dsw-alias-button-primary-fill, #4d6bfe);border-color:transparent;color:#fff}
+.sgGuideBtn-skip{margin-right:auto;color:var(--dsw-alias-label-tertiary, rgba(127,127,127,.9));border-color:transparent;text-decoration:underline}
+.sgGuideRestart{appearance:none;font:inherit;font-size:12px;padding:0;border:0;background:transparent;color:var(--dsw-alias-link-primary, #4d6bfe);cursor:pointer;text-decoration:underline}
+`;
+		function injectGuideCss() {
+			try {
+				if (typeof document === "undefined") return;
+				if (typeof document.querySelector !== "function") return;
+				if (typeof document.createElement !== "function") return;
+				if (!document.head) return;
+				if (document.querySelector("style[data-plugin-css=\"guide-kit\"]") !== null) return;
+				const tag = document.createElement("style");
+				tag.dataset.pluginCss = "guide-kit";
+				tag.textContent = GUIDE_CSS;
+				document.head.appendChild(tag);
+			} catch {}
+		}
+		/** 语言变更订阅：语言切换后重渲染词表（引导是短生命周期，直接跟随 <html lang>）。 */
+		function useLangTick() {
+			const [, setTick] = (0, react.useState)(0);
+			(0, react.useEffect)(() => {
+				try {
+					if (typeof MutationObserver === "undefined" || typeof document === "undefined") return;
+					if (!document.documentElement) return;
+					const observer = new MutationObserver(() => setTick((n) => n + 1));
+					observer.observe(document.documentElement, {
+						attributes: true,
+						attributeFilter: ["lang"]
+					});
+					return () => observer.disconnect();
+				} catch {
+					return;
+				}
+			}, []);
+		}
+		/**
+		* 引导主体：3 步以内的小教学 + 恒定可见的 Skip。
+		*
+		* `onClose` 由宿主卡面传：Skip/Done 都会调用它（Skip 同时写标记）。
+		*/
+		function GuidePanel(props) {
+			const { ns, steps, onClose } = props;
+			const [index, setIndex] = (0, react.useState)(0);
+			useLangTick();
+			const labels = guideLabels();
+			(0, react.useEffect)(() => {
+				injectGuideCss();
+			}, []);
+			if (steps.length === 0) return null;
+			const current = steps[Math.min(index, steps.length - 1)];
+			const last = index >= steps.length - 1;
+			const finish = () => {
+				skipGuide(ns);
+				onClose();
+			};
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+				className: "sgGuide",
+				"aria-label": labels.title,
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
+						className: "sgGuideHead",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "sgGuideTitle",
+							children: labels.title
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "sgGuideStep",
+							children: labels.stepOf(index + 1, steps.length)
+						})]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "sgGuideBody",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("b", { children: current.title }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: current.body })]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "sgGuideDots",
+						"aria-hidden": "true",
+						children: steps.map((step, i) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: "sgGuideDot" + (i === index ? " sgGuideDot-on" : "") }, step.title))
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("footer", {
+						className: "sgGuideFoot",
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "sgGuideBtn sgGuideBtn-skip",
+								onClick: () => finish(),
+								children: labels.skip
+							}),
+							index > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "sgGuideBtn",
+								onClick: () => setIndex(index - 1),
+								children: labels.prev
+							}),
+							last ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "sgGuideBtn sgGuideBtn-primary",
+								onClick: () => finish(),
+								children: labels.done
+							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "sgGuideBtn sgGuideBtn-primary",
+								onClick: () => setIndex(index + 1),
+								children: labels.next
+							})
+						]
+					})
+				]
+			});
+		}
+		/**
+		* 重启入口：清标记 + 就地重开引导。
+		*
+		* 统一件，避免九插件各写一份（措辞/样式/清标记时机容易走样）。跳过之后
+		* 用户想再看一次，不需要去清浏览器存储。
+		*/
+		function GuideRestartButton(props) {
+			const { ns, onOpen, style } = props;
+			useLangTick();
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+				type: "button",
+				className: "sgGuideRestart",
+				style,
+				onClick: () => {
+					resetGuide(ns);
+					onOpen();
+				},
+				children: guideLabels().restart
+			});
+		}
+		//#endregion
+		//#region src/client/guide-steps.ts
+		const CCI_GUIDE_STEPS = {
+			zh: [
+				{
+					title: "先选 Profile，再看正交开关",
+					body: "设置 → 上下文压缩选择器，上方卡片就是压缩档位（平衡模式／节省模式／PTC 模式（绝对水位）等），点一下即改即存。下面的代码骨架压缩、轮尾沉降、回合末意图摘要属于档位之外的正交开关（默认关），Auto Compact 触发水位才是随档位联动的参数。"
+				},
+				{
+					title: "只对新会话生效，沉降还会撤下原消息",
+					body: "运行时首次观察某个会话时就冻结策略，改完当前会话没反应不是保存失败——开新会话才用新档位；只有出现「保存失败，请重试」才是真失败。开启轮尾沉降后，该轮工具调用区间被一张沉降卡替换，原消息会从对话视图撤出（原文仍在会话日志，可用卡里的序号回捞）。"
+				},
+				{
+					title: "看节省去悬浮面板，先分清口径",
+					body: "在设置里打开「悬浮面板」，输入区旁出现可拖拽的悬浮球，点开是压缩监控：净节省、毛节省、负节省（压缩后再读全文的抵消）、缓存命中率与成本估算。设置页底部的「节省统计(本进程)」在首次裁剪前是空的；标注「持久化降级」说明统计只留在内存。"
+				}
+			],
+			en: [
+				{
+					title: "Pick a profile first, then the orthogonal switches",
+					body: "Settings → Context compression selector: the cards at the top are the profiles (Balanced, Savings, PTC / Code-mode (absolute), …); a click applies and saves. Code skeleton compression, turn-tail sedimentation, and turn-tail intent summary below are orthogonal switches outside the profile (off by default), while the Auto Compact trigger level is the one parameter that follows the profile."
+				},
+				{
+					title: "New sessions only — and sedimentation pulls originals out of view",
+					body: "A session freezes its policy the first time the runtime observes it, so no visible change in the current session is not a failed save — open a new session; only “Save failed” means the save really failed. With turn-tail sedimentation on, each turn’s tool-call span becomes one sediment card and the replaced messages leave the transcript view (originals stay in the session log and can be retrieved by the card’s sequence numbers)."
+				},
+				{
+					title: "Read savings in the monitor, mind the basis",
+					body: "Turn on “Floating panel” in settings and a draggable ball appears next to the composer; it opens the compression monitor with net Δ, gross Δ, offsets (full reads after compression), cache hit rate, and cost estimates. The “Savings (this process)” card at the bottom of Settings stays empty until the first trim; a “persistence degraded” note means the numbers live in memory only."
+				}
+			]
+		};
+		//#endregion
 		//#region src/client/settings-section.tsx
 		/**
 		* Full-page Settings surface backed by the same durable selector state.
@@ -1583,6 +1958,7 @@ window.__ModuleLoader__.load({
 			const [saveError, setSaveError] = (0, react.useState)(null);
 			const [draft, setDraft] = (0, react.useState)(null);
 			const [ptcDraft, setPtcDraft] = (0, react.useState)(null);
+			const [guideOpen, setGuideOpen] = (0, react.useState)(() => !isGuideSkipped("context-compression"));
 			const current = state.value?.profile ?? "balanced";
 			(0, react.useEffect)(() => {
 				const custom = state.value?.custom;
@@ -1625,6 +2001,13 @@ window.__ModuleLoader__.load({
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.settingsDescription,
 						children: t("settings.description")
+					}),
+					guideOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(GuidePanel, {
+						ns: "context-compression",
+						steps: guideSteps(CCI_GUIDE_STEPS),
+						onClose: () => {
+							setGuideOpen(false);
+						}
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.profileGrid,
@@ -1727,6 +2110,15 @@ window.__ModuleLoader__.load({
 						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.error,
 						role: "alert",
 						children: saveError
+					}),
+					!guideOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						style: { margin: "10px 0 0" },
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(GuideRestartButton, {
+							ns: "context-compression",
+							onOpen: () => {
+								setGuideOpen(true);
+							}
+						})
 					})
 				]
 			});

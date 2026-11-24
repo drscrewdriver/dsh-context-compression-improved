@@ -19,6 +19,8 @@ import { AutoCompactThresholdControls, CodeSkeletonControls, SedimentControls, I
 import { EstimatorControls, EstimatorInactiveNotice } from './EstimatorControls.tsx'
 import { CustomPolicyEditor, editableCustom } from './CustomPolicyEditor.tsx'
 import { SavingsCard } from './savings-card'
+import { GuidePanel, GuideRestartButton, guideSteps, isGuideSkipped } from './guide.tsx'
+import { CCI_GUIDE_STEPS } from './guide-steps.ts'
 
 /** Full-page Settings surface backed by the same durable selector state. */
 export function ContextCompressionSettingsSection(props: CompressionProfileSelectorProps) {
@@ -37,6 +39,8 @@ export function SettingsCompressionProfileControls({
   const [saveError, setSaveError] = useState<string | null>(null)
   const [draft, setDraft] = useState<CustomCompressionPolicyV3 | null>(null)
   const [ptcDraft, setPtcDraft] = useState<CustomCompressionPolicyV3 | null>(null)
+  // 引导开合状态必须在最早的 `return null` 之前声明：hook 顺序对每次渲染恒定。
+  const [guideOpen, setGuideOpen] = useState(() => !isGuideSkipped('context-compression'))
   const current = state.value?.profile ?? 'balanced'
   useEffect(() => {
     const custom = state.value?.custom
@@ -77,6 +81,13 @@ export function SettingsCompressionProfileControls({
     <section className={css.settingsSection}>
       <h2 className={css.settingsTitle}>{t('settings.title')}</h2>
       <p className={css.settingsDescription}>{t('settings.description')}</p>
+      {guideOpen && (
+        <GuidePanel
+          ns="context-compression"
+          steps={guideSteps(CCI_GUIDE_STEPS)}
+          onClose={() => { setGuideOpen(false) }}
+        />
+      )}
       {selectorAvailable ? (
         <div className={css.profileGrid} aria-label={t('label')}>
           {COMPRESSION_PROFILES.map((profile) => {
@@ -151,6 +162,12 @@ export function SettingsCompressionProfileControls({
           save={() => savePtcCustom(structuredClone(ptcDraft))} reset={resetPtcCustom} settle={settle} t={t} />
       )}
       {saveError === null ? null : <div className={css.error} role="alert">{saveError}</div>}
+      {/* 引导重启入口：跳过之后想再看一次，不必去清浏览器存储。 */}
+      {!guideOpen && (
+        <p style={{ margin: '10px 0 0' }}>
+          <GuideRestartButton ns="context-compression" onOpen={() => { setGuideOpen(true) }} />
+        </p>
+      )}
     </section>
   )
 }
