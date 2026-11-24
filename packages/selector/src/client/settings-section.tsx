@@ -81,6 +81,10 @@ export function SettingsCompressionProfileControls({
     <section className={css.settingsSection}>
       <h2 className={css.settingsTitle}>{t('settings.title')}</h2>
       <p className={css.settingsDescription}>{t('settings.description')}</p>
+      {/* 引导重启入口放在设置面上方：贴士也渲染在同一位置，跳过之后一眼就能重开。 */}
+      <p style={{ margin: '0 0 10px' }}>
+        <GuideRestartButton ns="context-compression" onOpen={() => { setGuideOpen(true) }} />
+      </p>
       {guideOpen && (
         <GuidePanel
           ns="context-compression"
@@ -162,12 +166,6 @@ export function SettingsCompressionProfileControls({
           save={() => savePtcCustom(structuredClone(ptcDraft))} reset={resetPtcCustom} settle={settle} t={t} />
       )}
       {saveError === null ? null : <div className={css.error} role="alert">{saveError}</div>}
-      {/* 引导重启入口：跳过之后想再看一次，不必去清浏览器存储。 */}
-      {!guideOpen && (
-        <p style={{ margin: '10px 0 0' }}>
-          <GuideRestartButton ns="context-compression" onOpen={() => { setGuideOpen(true) }} />
-        </p>
-      )}
     </section>
   )
 }

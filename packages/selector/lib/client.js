@@ -1814,7 +1814,7 @@ window.__ModuleLoader__.load({
 			}, []);
 		}
 		/**
-		* 引导主体：3 步以内的小教学 + 恒定可见的 Skip。
+		* 引导主体：≤10 步的小教学（惯例：末条讲「用量端点」贴士）+ 恒定可见的 Skip。
 		*
 		* `onClose` 由宿主卡面传：Skip/Done 都会调用它（Skip 同时写标记）。
 		*/
@@ -1922,6 +1922,10 @@ window.__ModuleLoader__.load({
 				{
 					title: "看节省去悬浮面板，先分清口径",
 					body: "在设置里打开「悬浮面板」，输入区旁出现可拖拽的悬浮球，点开是压缩监控：净节省、毛节省、负节省（压缩后再读全文的抵消）、缓存命中率与成本估算。设置页底部的「节省统计(本进程)」在首次裁剪前是空的；标注「持久化降级」说明统计只留在内存。"
+				},
+				{
+					title: "压缩与折叠走本地直连端点",
+					body: "两处都能单独指定模型：设置页的「估计器（可选）」（仅「TokenPilot 启发模式」提供）把「通道」选成「直连 OpenAI 兼容端点」，填端点地址（/v1）与一个小模型；轮尾折叠的两层端点（高吞吐档吃 ≤2K 输入、稳定档吃 2~8K，如本地 35B）在配置里写 `sediment.foldMode: direct` 加 `foldBaseUrl` / `foldStrata*` / `foldLocal35*`。停在「宿主模型」时，压缩与对话共用同一个 provider/model，每轮裁剪都在吃对话 token。"
 				}
 			],
 			en: [
@@ -1936,6 +1940,10 @@ window.__ModuleLoader__.load({
 				{
 					title: "Read savings in the monitor, mind the basis",
 					body: "Turn on “Floating panel” in settings and a draggable ball appears next to the composer; it opens the compression monitor with net Δ, gross Δ, offsets (full reads after compression), cache hit rate, and cost estimates. The “Savings (this process)” card at the bottom of Settings stays empty until the first trim; a “persistence degraded” note means the numbers live in memory only."
+				},
+				{
+					title: "Route compression and folding to local direct endpoints",
+					body: "Two places take an explicit model: the Estimator block in settings (offered only under the TokenPilot-inspired profile) — set Channel to “Direct OpenAI-compatible endpoint” with a /v1 base URL and a small model; and the two turn-tail folding tiers (a high-throughput tier for inputs ≤2K, a stable tier such as local 35B for 2–8K), configured as sediment.foldMode: direct with foldBaseUrl / foldStrata* / foldLocal35*. Left on “Host model”, summarisation shares one provider/model with the conversation, so every trim spends conversation tokens."
 				}
 			]
 		};
@@ -2001,6 +2009,15 @@ window.__ModuleLoader__.load({
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.settingsDescription,
 						children: t("settings.description")
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						style: { margin: "0 0 10px" },
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(GuideRestartButton, {
+							ns: "context-compression",
+							onOpen: () => {
+								setGuideOpen(true);
+							}
+						})
 					}),
 					guideOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(GuidePanel, {
 						ns: "context-compression",
@@ -2110,15 +2127,6 @@ window.__ModuleLoader__.load({
 						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.error,
 						role: "alert",
 						children: saveError
-					}),
-					!guideOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-						style: { margin: "10px 0 0" },
-						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(GuideRestartButton, {
-							ns: "context-compression",
-							onOpen: () => {
-								setGuideOpen(true);
-							}
-						})
 					})
 				]
 			});
