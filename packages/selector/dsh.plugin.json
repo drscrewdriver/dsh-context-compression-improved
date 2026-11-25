@@ -1,6 +1,6 @@
 {
   "id": "dsh-external/dsh-context-compression-improved",
-  "version": "0.11.4",
+  "version": "0.15.5",
   "main": "./lib/index.js",
   "description": "Token-saving, auditable tool-result context-compression selector with code-skeleton gate for DeepSeek Harness — fewer tokens on every turn",
   "engines": {

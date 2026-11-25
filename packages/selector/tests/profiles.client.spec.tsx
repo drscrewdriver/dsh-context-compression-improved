@@ -197,7 +197,7 @@ function chooseOff(): void {
 describe('context compression profiles', () => {
   it('exposes Custom after the established profiles', () => {
     expect(COMPRESSION_PROFILES).toEqual([
-      'off', 'native', 'balanced', 'cache-strict', 'savings', 'adaptive', 'tokenpilot-inspired', 'ptc', 'custom',
+      'off', 'native', 'balanced', 'cache-strict', 'savings', 'adaptive', 'tokenpilot-inspired', 'ptc', 'flash-tuned', 'custom',
     ])
   })
 
@@ -225,13 +225,13 @@ describe('context compression profiles', () => {
     expect(screen.queryByRole('button', { name: /Context compression/ })).toBeNull()
   })
 
-  it('keeps all eight profiles selectable for a capable official or custom preset', () => {
+  it('keeps all ten profiles selectable for a capable official or custom preset', () => {
     mount(vi.fn(() => Promise.resolve()), true)
 
     const button = screen.getByRole('button', { name: /Context compression/ })
     expect((button as HTMLButtonElement).disabled).toBe(false)
     fireEvent.click(button)
-    expect(screen.getAllByRole('menuitem')).toHaveLength(9)
+    expect(screen.getAllByRole('menuitem')).toHaveLength(10)
   })
 
   it.each([false, undefined])(
@@ -272,14 +272,14 @@ describe('context compression profiles', () => {
   it('does not require a preset switch when capability refresh is delayed', async () => {
     const { sessions } = mount(vi.fn(() => Promise.resolve()), true)
     fireEvent.click(screen.getByRole('button', { name: /Context compression/ }))
-    expect(screen.getAllByRole('menuitem')).toHaveLength(9)
+    expect(screen.getAllByRole('menuitem')).toHaveLength(10)
 
     sessions.update((draft) => {
       const current = draft.byId.s1
       if (current !== undefined) current.contextCompressionAvailable = false
     })
 
-    await waitFor(() => { expect(screen.getAllByRole('menuitem')).toHaveLength(9) })
+    await waitFor(() => { expect(screen.getAllByRole('menuitem')).toHaveLength(10) })
     expect(screen.getByRole<HTMLButtonElement>('button', { name: /Context compression/ }).disabled).toBe(false)
   })
 

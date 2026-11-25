@@ -1,6 +1,6 @@
 //#region src/profiles.d.ts
 /** Public context-compression choices shared by the Host schema and browser selector. */
-declare const COMPRESSION_PROFILES: readonly ["off", "native", "balanced", "cache-strict", "savings", "adaptive", "tokenpilot-inspired", "ptc", "custom"];
+declare const COMPRESSION_PROFILES: readonly ["off", "native", "balanced", "cache-strict", "savings", "adaptive", "tokenpilot-inspired", "ptc", "flash-tuned", "custom"];
 /** One supported context-compression profile. */
 type CompressionProfile = typeof COMPRESSION_PROFILES[number];
 /** Single canonical unit stored by a version-1 browser Custom document. */
@@ -151,6 +151,31 @@ interface ContextCompressionSettings {
   sediment?: SedimentSettings;
   /** Optional tokenpilot-inspired sub-capability overrides (presence-validated only). */
   presetOptions?: PresetOptionsSettings;
+  /**
+   * F1 (v0.13.2): Minimum net-gain threshold in tokens for small-knife cuts.
+   * A candidate is skipped if (tokensBefore - tokensAfter - cardOverhead) < minNetGain.
+   * 0 disables the check. Default 1000.
+   */
+  minNetGain?: number;
+  /**
+   * F8 (v0.14.5): Zero-copy mode — when true, no fallback copies are written;
+   * retrieve reads only from the session log. Default false (v0.14), true (v0.15+).
+   */
+  zeroCopy?: boolean;
+  /**
+   * F19 (v0.14.6): Enable self-update pre-download checking.
+   */
+  updateCheck?: boolean;
+  /**
+   * F3 (v0.13.4): CardMerge settings (中刀, default disabled).
+   */
+  cardMerge?: {
+    enabled: boolean;
+    mergeMaxCards?: number;
+    mergeMinTokens?: number;
+    mergeBreakEven?: number;
+    mergeCooldownMs?: number;
+  };
 }
 //#endregion
 export { PresetOptionsSettings as i, ContextCompressionSettings as n, CustomCompressionPolicy as r, CompressionProfile as t };

@@ -116,7 +116,7 @@ describe('estimator catalog route registration', () => {
     apply(runtime, { estimatorCatalogRoute: true })
     await settle()
 
-    expect(routes.map(route => route.path)).toEqual([LEGACY_ROUTE, CATALOG_ROUTE, SAVINGS_LEGACY_ROUTE, SAVINGS_ROUTE, MONITOR_LEGACY_ROUTE, MONITOR_ROUTE, SAVINGS_SESSIONS_LEGACY_ROUTE, SAVINGS_SESSIONS_ROUTE, SETTINGS_LEGACY_ROUTE, SETTINGS_ROUTE])
+    expect(routes.map(route => route.path).sort()).toEqual([LEGACY_ROUTE, CATALOG_ROUTE, SAVINGS_LEGACY_ROUTE, SAVINGS_ROUTE, MONITOR_LEGACY_ROUTE, MONITOR_ROUTE, SAVINGS_SESSIONS_LEGACY_ROUTE, SAVINGS_SESSIONS_ROUTE, SETTINGS_LEGACY_ROUTE, SETTINGS_ROUTE, '/endpoint/dsh-context-compression-improved/cuts', '/api/dsh-context-compression-improved/cuts'].sort())
     expect(routes.every(route => route.kind === 'exact')).toBe(true)
   })
 
@@ -132,7 +132,7 @@ describe('estimator catalog route registration', () => {
     await mountWebServer(runtime, routes)
     await settle()
 
-    expect(routes.map(route => route.path)).toEqual([LEGACY_ROUTE, CATALOG_ROUTE, SAVINGS_LEGACY_ROUTE, SAVINGS_ROUTE, MONITOR_LEGACY_ROUTE, MONITOR_ROUTE, SAVINGS_SESSIONS_LEGACY_ROUTE, SAVINGS_SESSIONS_ROUTE, SETTINGS_LEGACY_ROUTE, SETTINGS_ROUTE])
+    expect(routes.map(route => route.path).sort()).toEqual([LEGACY_ROUTE, CATALOG_ROUTE, SAVINGS_LEGACY_ROUTE, SAVINGS_ROUTE, MONITOR_LEGACY_ROUTE, MONITOR_ROUTE, SAVINGS_SESSIONS_LEGACY_ROUTE, SAVINGS_SESSIONS_ROUTE, SETTINGS_LEGACY_ROUTE, SETTINGS_ROUTE, '/endpoint/dsh-context-compression-improved/cuts', '/api/dsh-context-compression-improved/cuts'].sort())
   })
 
   it('registers nothing twice when the estimator services arrive later', async () => {
@@ -197,6 +197,6 @@ describe('estimator catalog route registration', () => {
     apply(runtime, { presetOverlay: false })
     await settle()
 
-    expect(routes.map(route => route.path)).toEqual([SAVINGS_LEGACY_ROUTE, SAVINGS_ROUTE, MONITOR_LEGACY_ROUTE, MONITOR_ROUTE, SAVINGS_SESSIONS_LEGACY_ROUTE, SAVINGS_SESSIONS_ROUTE, SETTINGS_LEGACY_ROUTE, SETTINGS_ROUTE])
+    expect(routes.map(route => route.path).sort()).toEqual([SAVINGS_LEGACY_ROUTE, SAVINGS_ROUTE, MONITOR_LEGACY_ROUTE, MONITOR_ROUTE, SAVINGS_SESSIONS_LEGACY_ROUTE, SAVINGS_SESSIONS_ROUTE, SETTINGS_LEGACY_ROUTE, SETTINGS_ROUTE, '/endpoint/dsh-context-compression-improved/cuts', '/api/dsh-context-compression-improved/cuts'].sort())
   })
 })

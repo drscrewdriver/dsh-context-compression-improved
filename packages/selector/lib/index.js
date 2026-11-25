@@ -1,4 +1,4 @@
-import { C as resolveStatsDshHome, Dt as getSummaryOverride, Et as getObservedIntentEnabled, G as ContextCompressionSettingsSchema, Lt as resolveOfficialDeepSeekPrice, Nt as setSummaryOverride, Rt as getSavingsLedger, S as statsPersistenceState, St as INTENT_GATE_GROWTH_TOKENS, Tt as getLastIntentFold, W as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, _t as isSessionOverrideAction, a as getStatsBackfillStatus, b as ensureStatsStore, c as pauseStatsBackfill, dt as decodeSessionLogBytes, ft as deepSeekV4TokenizerForModel, gt as estimateSavingsPricing, h as getStatsActiveSessionId, ht as drsTotalsFragment, i as discoverBackfillSessionLogs, l as resumeStatsBackfill, mt as buildMonitorSnapshot, p as flushPendingUsageNow, pt as applySessionOverride, q as DEFAULT_CONTEXT_COMPRESSION_SETTINGS, r as configureStatsBackfillTrigger, s as kickStatsBackfillOnRouteHit, t as estimateIntegralMoney, u as cancelPendingUsageFlushes, ut as unavailableTokenCount, vt as mergeCompositionByComponent, wt as getAdvisorState, x as getStatsStore, xt as INTENT_GATE_FLOOR_FRACTION, y as closeStatsStore } from "./savings-integral.js";
+import { At as getSummaryOverride, Bt as resolveOfficialDeepSeekPrice, C as ensureStatsStore, Dt as getAdvisorState, E as resolveStatsDshHome, Ht as __toCommonJS, It as setSummaryOverride, J as ContextCompressionSettingsSchema, Ot as getLastIntentFold, S as closeStatsStore, T as statsPersistenceState, Tt as INTENT_GATE_GROWTH_TOKENS, Vt as getSavingsLedger, X as DEFAULT_CONTEXT_COMPRESSION_SETTINGS, _t as buildMonitorSnapshot, bt as isSessionOverrideAction, c as getStatsBackfillStatus, d as pauseStatsBackfill, f as resumeStatsBackfill, g as flushPendingUsageNow, gt as applySessionOverride, ht as deepSeekV4TokenizerForModel, i as estimateIntegralMoney, kt as getObservedIntentEnabled, mt as decodeSessionLogBytes, n as cut_index_exports, o as configureStatsBackfillTrigger, p as cancelPendingUsageFlushes, pt as unavailableTokenCount, q as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, r as init_cut_index, s as discoverBackfillSessionLogs, u as kickStatsBackfillOnRouteHit, v as getStatsActiveSessionId, vt as drsTotalsFragment, w as getStatsStore, wt as INTENT_GATE_FLOOR_FRACTION, xt as mergeCompositionByComponent, yt as estimateSavingsPricing } from "./cut-index.js";
 import { a as noteResolvedSettingsService, i as detectHostGeneration, r as compatLog } from "./tool-result.js";
 import z from "@deepseek-ai/schemastery";
 import { createHash } from "node:crypto";
@@ -1597,6 +1597,7 @@ const ADVISOR_REPORT_ROUTES = ["/endpoint/dsh-context-compression-improved/advis
 const SAVINGS_ROUTES = ["/endpoint/dsh-context-compression-improved/savings", "/api/dsh-context-compression-improved/savings"];
 const MONITOR_ROUTES = ["/endpoint/dsh-context-compression-improved/monitor", "/api/dsh-context-compression-improved/monitor"];
 const SAVINGS_SESSIONS_ROUTES = ["/endpoint/dsh-context-compression-improved/savings/sessions", "/api/dsh-context-compression-improved/savings/sessions"];
+const CUTS_ROUTES = ["/endpoint/dsh-context-compression-improved/cuts", "/api/dsh-context-compression-improved/cuts"];
 function sessionFor(readService, sessionId) {
 	const agents = readService("agents");
 	return typeof agents?.get === "function" ? agents.get(sessionId)?.session : void 0;
@@ -2246,6 +2247,49 @@ const Config = z.object({
 	advisorReportRoute: z.boolean().default(false),
 	settings: z.any().default(DEFAULT_CONTEXT_COMPRESSION_SETTINGS).volatile()
 });
+/** F2: Register the per-cut audit index read-only route. */
+function registerCutsRoute(ctx) {
+	const readService = (name) => {
+		try {
+			return ctx.get(name);
+		} catch {
+			return;
+		}
+	};
+	const handler = (req, res) => {
+		try {
+			const url = new URL(req.url ?? "/", "http://localhost");
+			const sessionId = url.searchParams.get("session") ?? "";
+			const limit = Math.min(Number(url.searchParams.get("limit") ?? "500"), 2e3);
+			const strategy = url.searchParams.get("strategy") ?? void 0;
+			const { readCuts } = (init_cut_index(), __toCommonJS(cut_index_exports));
+			jsonResponse(res, 200, sessionId ? readCuts(sessionId, {
+				limit,
+				...strategy ? { strategy } : {}
+			}) : []);
+		} catch (err) {
+			jsonResponse(res, 500, { error: String(err) });
+		}
+	};
+	const webServer = readService("webServer");
+	if (webServer?.register === void 0) {
+		ctx.inject(["webServer"], (inj) => {
+			const ws = inj.webServer;
+			if (ws?.register === void 0) return;
+			for (const path of CUTS_ROUTES) ws.register({
+				kind: "exact",
+				path,
+				handler
+			});
+		});
+		return;
+	}
+	for (const path of CUTS_ROUTES) webServer.register({
+		kind: "exact",
+		path,
+		handler
+	});
+}
 /** Register the persisted default read by the currently mounted root pruner. */
 function apply(ctx, config = {}) {
 	ctx.inject?.(["commands"], (scope) => {
@@ -2270,6 +2314,7 @@ function apply(ctx, config = {}) {
 		registerMonitorRoute(ctx);
 		registerSavingsSessionsRoute(ctx);
 		registerPanelCommand(ctx);
+		registerCutsRoute(ctx);
 		ctx.effect(() => () => {
 			cancelPendingUsageFlushes();
 			closeStatsStore();

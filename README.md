@@ -4,6 +4,19 @@
 
 [中文说明](README.zh.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Italiano](README.it.md) · [Русский](README.ru.md) · [Español](README.es.md) · [Português](README.pt.md) · [Changelog](CHANGELOG.md) · [Installation guide](docs/installation.md)
 
+## Positioning: Independent Multiplication Zones
+
+CCI occupies a distinct layer in the context-compression ecosystem. These plugins are **multiplicative, not overlapping**:
+
+| Plugin | Decides | Reversible? | Extra LLM Call? | Prefix Cache Impact | Scope |
+|--------|---------|-------------|----------------|--------------------|--------------|
+| **CCI** (this) | Rule-based per-message trimming with precise tokenizer | Yes (session log) | No | None (replaces content in-place) | Tool-result quality |
+| **live-compact** | Turn-end mechanical small cuts | Yes (shadow/index) | No (small) / Yes (big knife) | Minimal (tail-only) | Historical accumulation |
+| **billion-context** | Model-driven fold when context grows | Yes (decompress) | Yes (model writes summary) | Incremental ranges preserved | Extreme long sessions |
+| **flash-presets** | Global threshold + tool schema pruning | N/A (preset config) | No | Schema-level | Cost optimization for Flash |
+
+Install any combination without conflict. CCI’s panel shows “共存模式” when other compression plugins are detected.
+
 > [!NOTE]
 > **What this fork adds on top of upstream 0.1.0:**
 >

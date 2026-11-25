@@ -18,6 +18,7 @@ window.__ModuleLoader__.load({
 			"adaptive",
 			"tokenpilot-inspired",
 			"ptc",
+			"flash-tuned",
 			"custom"
 		];
 		/** Browser-safe mirror of the Host's Balanced-equivalent Custom default. */
@@ -171,7 +172,7 @@ window.__ModuleLoader__.load({
 		* never silently coerced.
 		*/
 		function decodeCodeSkeletonSettings(value) {
-			if (value === void 0) return { enabled: false };
+			if (value === void 0) return { enabled: true };
 			if (!isPlainRecord(value)) return void 0;
 			const keys = Object.keys(value);
 			if (keys.length !== 1 || keys[0] !== "enabled") return void 0;
@@ -2620,6 +2621,8 @@ window.__ModuleLoader__.load({
 			"detail.custom": "为新会话选择已实现的压缩阶段和计量阈值",
 			"detail.native": "只使用 DeepSeek Harness 原生头尾裁剪",
 			"detail.off": "关闭确定性选择器；原生 auto-compact 仍由 Harness 配置决定",
+			"profile.flash-tuned": "Flash 特化模式",
+			"detail.flash-tuned": "为 DeepSeek V4.1 Flash 优化的激进裁剪档：低触发值、小目标、骨架常开、净收益门槛 800",
 			"autoCompact.title": "Auto Compact 触发水位",
 			"autoCompact.description": "模型驱动 Auto Compact 在请求占用达到该水位时触发。调整后，标准 Profile 的 History 触发值、最小回收量与近期尾窗随水位联动；修改只影响新会话。",
 			"autoCompact.inputLabel": "Auto Compact 阈值（%）",
@@ -2784,6 +2787,8 @@ window.__ModuleLoader__.load({
 			"detail.custom": "Choose implemented stages and measured thresholds for new sessions",
 			"detail.native": "Use only the Harness native head/tail pruner",
 			"detail.off": "Disable the deterministic selector; native auto-compact remains separately configured",
+			"profile.flash-tuned": "Flash-tuned mode",
+			"detail.flash-tuned": "Aggressive profile optimized for DeepSeek V4.1 Flash: low triggers, small targets, skeleton on, netGain 800",
 			"autoCompact.title": "Auto Compact trigger level",
 			"autoCompact.description": "Model-driven Auto Compact triggers once request usage crosses this level. Standard-profile History triggers, minimum reclaim, and the recent tail follow the level; changes affect new sessions only.",
 			"autoCompact.inputLabel": "Auto Compact threshold (%)",
@@ -3061,7 +3066,9 @@ window.__ModuleLoader__.load({
 			"savings.pagePrev": "Zurück",
 			"savings.sessions": "Sitzungskonto",
 			"savings.money": "Geld gespart (cache-gewichtet)",
-			"savings.cumulative": "Kumuliert (über N Calls)"
+			"savings.cumulative": "Kumuliert (über N Calls)",
+			"profile.flash-tuned": "Flash-tuned",
+			"detail.flash-tuned": "Flash optimized"
 		};
 		//#endregion
 		//#region src/client/locales/es.ts
@@ -3227,7 +3234,9 @@ window.__ModuleLoader__.load({
 			"savings.pagePrev": "Anterior",
 			"savings.sessions": "Libro de sesiones",
 			"savings.money": "Dinero ahorrado (ponderado por caché)",
-			"savings.cumulative": "Acumulado (en N llamadas)"
+			"savings.cumulative": "Acumulado (en N llamadas)",
+			"profile.flash-tuned": "Flash-tuned",
+			"detail.flash-tuned": "Flash optimized"
 		};
 		//#endregion
 		//#region src/client/locales/fr.ts
@@ -3393,7 +3402,9 @@ window.__ModuleLoader__.load({
 			"savings.pagePrev": "Précédent",
 			"savings.sessions": "Registre des sessions",
 			"savings.money": "Argent économisé (pondéré cache)",
-			"savings.cumulative": "Cumulé (sur N appels)"
+			"savings.cumulative": "Cumulé (sur N appels)",
+			"profile.flash-tuned": "Flash-tuned",
+			"detail.flash-tuned": "Flash optimized"
 		};
 		//#endregion
 		//#region src/client/locales/it.ts
@@ -3559,7 +3570,9 @@ window.__ModuleLoader__.load({
 			"savings.pagePrev": "Indietro",
 			"savings.sessions": "Registro sessioni",
 			"savings.money": "Denaro risparmiato (ponderato cache)",
-			"savings.cumulative": "Cumulato (su N chiamate)"
+			"savings.cumulative": "Cumulato (su N chiamate)",
+			"profile.flash-tuned": "Flash-tuned",
+			"detail.flash-tuned": "Flash optimized"
 		};
 		//#endregion
 		//#region src/client/locales/ja.ts
@@ -3725,7 +3738,9 @@ window.__ModuleLoader__.load({
 			"savings.pagePrev": "前へ",
 			"savings.sessions": "セッション台帳",
 			"savings.money": "節約金額（キャッシュ加重）",
-			"savings.cumulative": "累計（N コール）"
+			"savings.cumulative": "累計（N コール）",
+			"profile.flash-tuned": "Flash-tuned",
+			"detail.flash-tuned": "Flash optimized"
 		};
 		//#endregion
 		//#region src/client/locales/ko.ts
@@ -3891,7 +3906,9 @@ window.__ModuleLoader__.load({
 			"savings.pagePrev": "이전",
 			"savings.sessions": "세션 장부",
 			"savings.money": "절약 금액(캐시 가중)",
-			"savings.cumulative": "누적(N회 호출)"
+			"savings.cumulative": "누적(N회 호출)",
+			"profile.flash-tuned": "Flash-tuned",
+			"detail.flash-tuned": "Flash optimized"
 		};
 		//#endregion
 		//#region src/client/locales/ru.ts
@@ -4057,7 +4074,9 @@ window.__ModuleLoader__.load({
 			"savings.pagePrev": "Назад",
 			"savings.sessions": "Журнал сессий",
 			"savings.money": "Сэкономлено (взвешено по кэшу)",
-			"savings.cumulative": "Накоплено (за N вызовов)"
+			"savings.cumulative": "Накоплено (за N вызовов)",
+			"profile.flash-tuned": "Flash-tuned",
+			"detail.flash-tuned": "Flash optimized"
 		};
 		//#endregion
 		//#region src/client/locales/pt.ts
@@ -4223,7 +4242,9 @@ window.__ModuleLoader__.load({
 			"savings.pagePrev": "Anterior",
 			"savings.sessions": "Razão de sessões",
 			"savings.money": "Dinheiro economado (ponderado por cache)",
-			"savings.cumulative": "Acumulado (ao longo de N chamadas)"
+			"savings.cumulative": "Acumulado (ao longo de N chamadas)",
+			"profile.flash-tuned": "Flash-tuned",
+			"detail.flash-tuned": "Flash optimized"
 		};
 		//#endregion
 		//#region src/client/preset-options.ts

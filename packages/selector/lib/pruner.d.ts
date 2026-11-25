@@ -221,6 +221,18 @@ interface ContextCompressionSettings {
   monitorPanel?: MonitorPanelSettings;
   /** Optional tokenpilot-inspired sub-capability overrides; absent inherits preset defaults. */
   presetOptions?: PresetOptionsSettings;
+  /** F1 (v0.13.2): Minimum net-gain threshold; 0 disables. */
+  minNetGain?: number;
+  /** F8 (v0.15.5): Zero-copy mode — CCI never writes shadow copies. */
+  zeroCopy?: boolean;
+  /** F3 (v0.13.4): CardMerge settings (中刀). */
+  cardMerge?: {
+    enabled: boolean;
+    mergeMaxCards?: number;
+    mergeMinTokens?: number;
+    mergeBreakEven?: number;
+    mergeCooldownMs?: number;
+  };
 }
 /** Token-gated policy with character fields limited to reducer candidate shape. */
 interface ToolResultPruneConfig {
@@ -512,6 +524,14 @@ interface PrunerState {
   readonly intentFoldedSeqs: WeakMap<Session, Set<number>>;
   /** Live-surface tokens when the last intent fold landed (growth-gate baseline). */
   readonly intentBaselines: WeakMap<Session, number>;
+  /** F14 (v0.14.1): Incremental calls cache — rebuilt only when event count changes. */
+  readonly callsCache: WeakMap<Session, {
+    map: Map<string, {
+      name: string;
+      arguments: string;
+    }>;
+    eventCount: number;
+  }>;
 }
 //#endregion
 //#region src/runtime/token-count.d.ts

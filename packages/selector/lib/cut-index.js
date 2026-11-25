@@ -1,13 +1,49 @@
 import { l as sessionEvents, n as viewToolResult, s as RUNTIME_TOOL_NAMES } from "./tool-result.js";
+import { createRequire } from "node:module";
 import z from "@deepseek-ai/schemastery";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { Tokenizer } from "@huggingface/tokenizers";
 import zlib from "node:zlib";
 import * as dshSessionNamespace from "@deepseek-ai/dsh-session";
 import { mkdir } from "node:fs/promises";
+//#region \0rolldown/runtime.js
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __esmMin = (fn, res, err) => () => {
+	if (err) throw err[0];
+	try {
+		return fn && (res = fn(fn = 0)), res;
+	} catch (e) {
+		throw err = [e], e;
+	}
+};
+var __exportAll = (all, no_symbols) => {
+	let target = {};
+	for (var name in all) __defProp(target, name, {
+		get: all[name],
+		enumerable: true
+	});
+	if (!no_symbols) __defProp(target, Symbol.toStringTag, { value: "Module" });
+	return target;
+};
+var __copyProps = (to, from, except, desc) => {
+	if (from && typeof from === "object" || typeof from === "function") for (var keys = __getOwnPropNames(from), i = 0, n = keys.length, key; i < n; i++) {
+		key = keys[i];
+		if (!__hasOwnProp.call(to, key) && key !== except) __defProp(to, key, {
+			get: ((k) => from[k]).bind(null, key),
+			enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable
+		});
+	}
+	return to;
+};
+var __toCommonJS = (mod) => __hasOwnProp.call(mod, "module.exports") ? mod["module.exports"] : __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+var __require = /* #__PURE__ */ (() => createRequire(import.meta.url))();
+//#endregion
 //#region src/runtime/savings.ts
 /**
 * 节省统计账本(诚实口径)。
@@ -2192,7 +2228,7 @@ function parseAutoCompactSettings(value) {
 * present-but-invalid section is an explicitly invalid document.
 */
 function parseCodeSkeletonSettings(value) {
-	if (value === void 0) return { enabled: false };
+	if (value === void 0) return { enabled: true };
 	if (!isPlainRecord(value)) throw new TypeError("Context-compression codeSkeleton must be a plain object");
 	const keys = Object.keys(value);
 	if (keys.length !== 1 || keys[0] !== "enabled") throw new TypeError(`Context-compression codeSkeleton: expected exactly "enabled", got "${keys.join("\", \"")}"`);
@@ -2431,7 +2467,7 @@ const DEFAULT_CONTEXT_COMPRESSION_SETTINGS = {
 	custom: structuredClone(DEFAULT_CUSTOM_COMPRESSION_POLICY),
 	ptcCustom: structuredClone(DEFAULT_PTC_COMPRESSION_POLICY),
 	autoCompact: { thresholdPercent: AUTO_COMPACT_THRESHOLD_LIMITS.default },
-	codeSkeleton: { enabled: false },
+	codeSkeleton: { enabled: true },
 	intentSummary: { enabled: false },
 	monitorPanel: { enabled: false },
 	sediment: { ...DEFAULT_SEDIMENT_SETTINGS }
@@ -4696,4 +4732,84 @@ function formatFemtoUnits(value) {
 	return fraction.length === 0 ? whole : `${whole}.${fraction}`;
 }
 //#endregion
-export { isValidAutoCompactThresholdPercent as $, officialRequestUsage as A, recordIntentFold as At, unavailableCount as B, resolveStatsDshHome as C, evaluateIntentGate as Ct, dedupePlaceholder as D, getSummaryOverride as Dt, dedupeHash as E, getObservedIntentEnabled as Et, onlyTextBlocks as F, decimalRateNanoUnits as Ft, ContextCompressionSettingsSchema as G, countOmittedLines as H, pressureCost as I, priceOfficialDeepSeekUsage as It, PRUNE_MARKER as J, DEFAULTS as K, recoveryMarker as L, resolveOfficialDeepSeekPrice as Lt, emptyResult as M, recordScore as Mt, nativePruneContent as N, setSummaryOverride as Nt, flattenPlainText as O, invalidateOnTaskChange as Ot, onlyTextBlock as P, DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION as Pt, isCompressionProfile as Q, sameProviderMeasurementKey as R, getSavingsLedger as Rt, statsPersistenceState as S, INTENT_GATE_GROWTH_TOKENS as St, DedupeTable as T, getLastIntentFold as Tt, AUTO_COMPACT_THRESHOLD_LIMITS as U, CAPACITY_PRESSURE_RATIO as V, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as W, charsToTokens as X, charsForTokens as Y, codePointLength as Z, scheduleUsageFlush as _, isSessionOverrideAction as _t, getStatsBackfillStatus as a, resolveCustomPolicy as at, ensureStatsStore as b, setSedimentObservation as bt, pauseStatsBackfill as c, COMPRESSION_PROFILES as ct, claimFromLand as d, decodeSessionLogBytes as dt, parseContextCompressionSettings as et, claimOffset as f, deepSeekV4TokenizerForModel as ft, reclaimFromTailTrim as g, estimateSavingsPricing as gt, getStatsActiveSessionId as h, drsTotalsFragment as ht, discoverBackfillSessionLogs as i, DEFAULT_CUSTOM_COMPRESSION_POLICY as it, countToolContent as j, recordRecertified as jt, measureForCompaction as k, observeIntentEnabled as kt, resumeStatsBackfill as l, countExactCanonicalTextFields as lt, flushUsageOnDispose as m, buildMonitorSnapshot as mt, sampleIntegralBoundary as n, resolvePolicy as nt, kickStatsBackfillOnDispose as o, assertNever as ot, flushPendingUsageNow as p, applySessionOverride as pt, DEFAULT_CONTEXT_COMPRESSION_SETTINGS as q, configureStatsBackfillTrigger as r, CustomCompressionPolicySchema as rt, kickStatsBackfillOnRouteHit as s, deepFreeze as st, estimateIntegralMoney as t, resolveConfig as tt, cancelPendingUsageFlushes as u, unavailableTokenCount as ut, setStatsLivePathBusy as v, mergeCompositionByComponent as vt, projectSessionSavings as w, getAdvisorState as wt, getStatsStore as x, INTENT_GATE_FLOOR_FRACTION as xt, closeStatsStore as y, observeContextUsage as yt, summarize as z };
+//#region src/runtime/cut-index.ts
+/**
+* Per-cut audit index (F2).
+*
+* Plan: cci-longterm-refactor v0.13.3
+*
+* Appends one JSON line per published cut to ~/.dsh/storages/dsh-context-compression/cuts-<sessionId>.jsonl.
+* Provides O(1) audit history without storing original content — only metadata.
+*
+* Fire-and-forget: write failure warns but never blocks the cut.
+*
+* @module dsh-context-compression-improved/runtime/cut-index
+*/
+var cut_index_exports = /* @__PURE__ */ __exportAll({
+	MAX_LINES_PER_SESSION: () => MAX_LINES_PER_SESSION,
+	appendCut: () => appendCut,
+	readCuts: () => readCuts
+});
+/** Storage directory resolver (lazy, creates if missing). */
+function getStagingDir() {
+	const dshHome = process.env.DSH_HOME ?? join(process.env.USERPROFILE || process.env.HOME || "", ".dsh");
+	return join(dshHome, "storages", "dsh-context-compression");
+}
+function cutsFilePath(sessionId) {
+	return join(getStagingDir(), `cuts-${sessionId}.jsonl`);
+}
+/**
+* Append one cut entry to the session's index file.
+* Fire-and-forget: catches all errors, warns, never throws.
+*/
+function appendCut(entry) {
+	try {
+		const dir = getStagingDir();
+		if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+		const filePath = cutsFilePath(entry.sessionId);
+		const line = JSON.stringify(entry) + "\n";
+		appendFileSync(filePath, line, {
+			encoding: "utf8",
+			flag: "a"
+		});
+		enforceLimit(filePath);
+	} catch (err) {
+		console.warn("[cci-cut-index] write failed, skipping:", err instanceof Error ? err.message : String(err));
+	}
+}
+/**
+* Read cut entries for a session (most recent first, up to limit).
+*/
+function readCuts(sessionId, opts) {
+	const filePath = cutsFilePath(sessionId);
+	if (!existsSync(filePath)) return [];
+	try {
+		const lines = readFileSync(filePath, "utf8").split("\n").filter(Boolean);
+		let entries = [];
+		for (const line of lines) try {
+			entries.push(JSON.parse(line));
+		} catch {}
+		entries.reverse();
+		if (opts?.strategy !== void 0) entries = entries.filter((e) => e.strategy === opts.strategy);
+		if (opts?.limit !== void 0 && opts.limit > 0) entries = entries.slice(0, opts.limit);
+		return entries;
+	} catch {
+		return [];
+	}
+}
+/** Enforce the per-session line limit by truncating oldest half. */
+function enforceLimit(filePath) {
+	try {
+		const lines = readFileSync(filePath, "utf8").split("\n").filter(Boolean);
+		if (lines.length <= 2e3) return;
+		const kept = lines.slice(Math.floor(lines.length / 2));
+		const { writeFileSync } = __require("node:fs");
+		writeFileSync(filePath, kept.join("\n") + "\n", "utf8");
+	} catch {}
+}
+var MAX_LINES_PER_SESSION;
+var init_cut_index = __esmMin((() => {
+	MAX_LINES_PER_SESSION = 2e3;
+}));
+//#endregion
+export { charsToTokens as $, dedupePlaceholder as A, getSummaryOverride as At, recoveryMarker as B, resolveOfficialDeepSeekPrice as Bt, ensureStatsStore as C, setSedimentObservation as Ct, projectSessionSavings as D, getAdvisorState as Dt, resolveStatsDshHome as E, evaluateIntentGate as Et, emptyResult as F, recordScore as Ft, countOmittedLines as G, summarize as H, __toCommonJS as Ht, nativePruneContent as I, setSummaryOverride as It, ContextCompressionSettingsSchema as J, AUTO_COMPACT_THRESHOLD_LIMITS as K, onlyTextBlock as L, DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION as Lt, measureForCompaction as M, observeIntentEnabled as Mt, officialRequestUsage as N, recordIntentFold as Nt, DedupeTable as O, getLastIntentFold as Ot, countToolContent as P, recordRecertified as Pt, charsForTokens as Q, onlyTextBlocks as R, decimalRateNanoUnits as Rt, closeStatsStore as S, observeContextUsage as St, statsPersistenceState as T, INTENT_GATE_GROWTH_TOKENS as Tt, unavailableCount as U, sameProviderMeasurementKey as V, getSavingsLedger as Vt, CAPACITY_PRESSURE_RATIO as W, DEFAULT_CONTEXT_COMPRESSION_SETTINGS as X, DEFAULTS as Y, PRUNE_MARKER as Z, flushUsageOnDispose as _, buildMonitorSnapshot as _t, sampleIntegralBoundary as a, resolvePolicy as at, scheduleUsageFlush as b, isSessionOverrideAction as bt, getStatsBackfillStatus as c, resolveCustomPolicy as ct, pauseStatsBackfill as d, COMPRESSION_PROFILES as dt, codePointLength as et, resumeStatsBackfill as f, countExactCanonicalTextFields as ft, flushPendingUsageNow as g, applySessionOverride as gt, claimOffset as h, deepSeekV4TokenizerForModel as ht, estimateIntegralMoney as i, resolveConfig as it, flattenPlainText as j, invalidateOnTaskChange as jt, dedupeHash as k, getObservedIntentEnabled as kt, kickStatsBackfillOnDispose as l, assertNever as lt, claimFromLand as m, decodeSessionLogBytes as mt, cut_index_exports as n, isValidAutoCompactThresholdPercent as nt, configureStatsBackfillTrigger as o, CustomCompressionPolicySchema as ot, cancelPendingUsageFlushes as p, unavailableTokenCount as pt, CONTEXT_COMPRESSION_SETTINGS_NAMESPACE as q, init_cut_index as r, parseContextCompressionSettings as rt, discoverBackfillSessionLogs as s, DEFAULT_CUSTOM_COMPRESSION_POLICY as st, appendCut as t, isCompressionProfile as tt, kickStatsBackfillOnRouteHit as u, deepFreeze as ut, getStatsActiveSessionId as v, drsTotalsFragment as vt, getStatsStore as w, INTENT_GATE_FLOOR_FRACTION as wt, setStatsLivePathBusy as x, mergeCompositionByComponent as xt, reclaimFromTailTrim as y, estimateSavingsPricing as yt, pressureCost as z, priceOfficialDeepSeekUsage as zt };

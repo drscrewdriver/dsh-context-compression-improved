@@ -1,4 +1,4 @@
-import { $ as isValidAutoCompactThresholdPercent, A as officialRequestUsage, At as recordIntentFold, B as unavailableCount, Ct as evaluateIntentGate, D as dedupePlaceholder, Dt as getSummaryOverride, E as dedupeHash, F as onlyTextBlocks, Ft as decimalRateNanoUnits, G as ContextCompressionSettingsSchema, H as countOmittedLines, I as pressureCost, It as priceOfficialDeepSeekUsage, J as PRUNE_MARKER, K as DEFAULTS, L as recoveryMarker, Lt as resolveOfficialDeepSeekPrice, M as emptyResult, Mt as recordScore, N as nativePruneContent, O as flattenPlainText, Ot as invalidateOnTaskChange, P as onlyTextBlock, Pt as DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION, Q as isCompressionProfile, R as sameProviderMeasurementKey, Rt as getSavingsLedger, T as DedupeTable, U as AUTO_COMPACT_THRESHOLD_LIMITS, V as CAPACITY_PRESSURE_RATIO, W as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, X as charsToTokens, Y as charsForTokens, Z as codePointLength, _ as scheduleUsageFlush, at as resolveCustomPolicy, bt as setSedimentObservation, ct as COMPRESSION_PROFILES, d as claimFromLand, et as parseContextCompressionSettings, f as claimOffset, ft as deepSeekV4TokenizerForModel, g as reclaimFromTailTrim, it as DEFAULT_CUSTOM_COMPRESSION_POLICY, j as countToolContent, jt as recordRecertified, k as measureForCompaction, kt as observeIntentEnabled, lt as countExactCanonicalTextFields, m as flushUsageOnDispose, n as sampleIntegralBoundary, nt as resolvePolicy, o as kickStatsBackfillOnDispose, ot as assertNever, rt as CustomCompressionPolicySchema, st as deepFreeze, tt as resolveConfig, v as setStatsLivePathBusy, w as projectSessionSavings, wt as getAdvisorState, yt as observeContextUsage, z as summarize } from "./savings-integral.js";
+import { $ as charsToTokens, A as dedupePlaceholder, At as getSummaryOverride, B as recoveryMarker, Bt as resolveOfficialDeepSeekPrice, Ct as setSedimentObservation, D as projectSessionSavings, Dt as getAdvisorState, Et as evaluateIntentGate, F as emptyResult, Ft as recordScore, G as countOmittedLines, H as summarize, I as nativePruneContent, J as ContextCompressionSettingsSchema, K as AUTO_COMPACT_THRESHOLD_LIMITS, L as onlyTextBlock, Lt as DEEPSEEK_OFFICIAL_PRICE_CATALOG_VERSION, M as measureForCompaction, Mt as observeIntentEnabled, N as officialRequestUsage, Nt as recordIntentFold, O as DedupeTable, P as countToolContent, Pt as recordRecertified, Q as charsForTokens, R as onlyTextBlocks, Rt as decimalRateNanoUnits, St as observeContextUsage, U as unavailableCount, V as sameProviderMeasurementKey, Vt as getSavingsLedger, W as CAPACITY_PRESSURE_RATIO, Y as DEFAULTS, Z as PRUNE_MARKER, _ as flushUsageOnDispose, a as sampleIntegralBoundary, at as resolvePolicy, b as scheduleUsageFlush, ct as resolveCustomPolicy, dt as COMPRESSION_PROFILES, et as codePointLength, ft as countExactCanonicalTextFields, h as claimOffset, ht as deepSeekV4TokenizerForModel, it as resolveConfig, j as flattenPlainText, jt as invalidateOnTaskChange, k as dedupeHash, l as kickStatsBackfillOnDispose, lt as assertNever, m as claimFromLand, nt as isValidAutoCompactThresholdPercent, ot as CustomCompressionPolicySchema, q as CONTEXT_COMPRESSION_SETTINGS_NAMESPACE, r as init_cut_index, rt as parseContextCompressionSettings, st as DEFAULT_CUSTOM_COMPRESSION_POLICY, t as appendCut, tt as isCompressionProfile, ut as deepFreeze, x as setStatsLivePathBusy, y as reclaimFromTailTrim, z as pressureCost, zt as priceOfficialDeepSeekUsage } from "./cut-index.js";
 import { c as eventBySeq, l as sessionEvents, n as viewToolResult, o as PTC_BINDING_NOTE, s as RUNTIME_TOOL_NAMES, t as compressionMessageSource } from "./tool-result.js";
 import { a as validatePublishedTailTrim, i as tailTrimStub, n as tailTrimMessage, o as createUserMessage, r as tailTrimRef, s as freezeMessage, t as parseTailTrimRef } from "./tail-trim.js";
 import z from "@deepseek-ai/schemastery";
@@ -3160,9 +3160,9 @@ function foldTier(inputTokens) {
 	return inputTokens <= FOLD_TIER_LIMITS.strataMax ? "strata" : "local35";
 }
 const FOLD_SYSTEM = "You are writing a short connective narrative for a durable context card. Summarize ONLY the material given below: what was attempted and what was concluded, in 2-6 bullets. The card already contains verbatim error lines, file manifests, and code skeletons that were DELIBERATELY withheld from you. Never restate, guess, or reconstitute withheld output; never add facts not present in the material. Output only the bullets.";
-/** Rough meter aligned with the replay corpus estimator (CJK-aware). */
+/** Rough meter aligned with the replay corpus estimator (CJK-aware, F9 fix: all CJK ranges). */
 function foldTokens(text) {
-	const cjk = (text.match(/[\u4e00-\u9fff]/g) ?? []).length;
+	const cjk = (text.match(/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]/g) ?? []).length;
 	return Math.ceil(cjk / 1.5 + (text.length - cjk) / 4);
 }
 /**
@@ -4511,8 +4511,21 @@ function renderIntentFoldBlock(pending, seq) {
 	const face = record === void 0 ? `${seq}` : record.role === "read-mask" ? record.line : `${record.toolName} result folded into the batch intent summary`;
 	return `${INTENT_FOLD_MARKER} folded into the batch summary above (seq ${start}..${end})] ${face}`;
 }
+/**
+* Check whether a candidate cut has sufficient net gain to be published.
+*
+* @param tokensBefore - tokens of the original content
+* @param tokensAfter - tokens of the replacement card/pointer
+* @param minNetGain - minimum required net savings (0 = disabled)
+* @returns true if the cut should proceed, false if it should be skipped
+*/
+function checkNetGain(tokensBefore, tokensAfter, minNetGain) {
+	if (minNetGain <= 0) return true;
+	return tokensBefore - tokensAfter - 80 >= minNetGain;
+}
 //#endregion
 //#region src/runtime/adaptive-cost.ts
+init_cut_index();
 /**
 * Bound Adaptive's benefit and cache-loss exposure without attributing the
 * request-level cache split to individual messages. Removed tokens are not
@@ -4759,7 +4772,8 @@ var ToolResultPruner = class extends Service {
 			projectedSavings: /* @__PURE__ */ new WeakSet(),
 			pendingIntentFolds: /* @__PURE__ */ new WeakMap(),
 			intentFoldedSeqs: /* @__PURE__ */ new WeakMap(),
-			intentBaselines: /* @__PURE__ */ new WeakMap()
+			intentBaselines: /* @__PURE__ */ new WeakMap(),
+			callsCache: /* @__PURE__ */ new WeakMap()
 		};
 		try {
 			ctx.on("session/disposed", (session) => {
@@ -6016,11 +6030,25 @@ var ToolResultPruner = class extends Service {
 	}
 	snapshot(session, view) {
 		const events = sessionEvents(session);
-		const calls = /* @__PURE__ */ new Map();
-		for (const event of events) if (event.type === "tool/call") calls.set(event.data.callId, {
-			name: event.data.name,
-			arguments: event.data.arguments
-		});
+		let cached = this.state.callsCache.get(session);
+		if (cached === void 0 || cached.eventCount !== events.length) {
+			const calls = /* @__PURE__ */ new Map();
+			const startIndex = cached?.eventCount ?? 0;
+			if (cached !== void 0 && cached.eventCount < events.length) for (const [key, value] of cached.map) calls.set(key, value);
+			for (let i = cached !== void 0 ? startIndex : 0; i < events.length; i++) {
+				const event = events[i];
+				if (event.type === "tool/call") calls.set(event.data.callId, {
+					name: event.data.name,
+					arguments: event.data.arguments
+				});
+			}
+			cached = {
+				map: calls,
+				eventCount: events.length
+			};
+			this.state.callsCache.set(session, cached);
+		}
+		const calls = cached.map;
 		const candidates = [];
 		const measured = new Map(view.measuredNodes.map((node) => [node.seq, node.count]));
 		const projectionPrices = new Map(view.nodes.map((node) => [node.seq, node.tokens]));
@@ -6575,6 +6603,8 @@ var ToolResultPruner = class extends Service {
 	}
 	land(session, plan) {
 		const { candidate } = plan;
+		const minNetGain = this.activeSettings(session).minNetGain ?? 0;
+		if (minNetGain > 0 && !checkNetGain(plan.tokensBefore, plan.tokensAfter, minNetGain)) return null;
 		const resultView = viewToolResult(candidate.event.data.message);
 		const message = freezeMessage({
 			...candidate.event.data.message,
@@ -6644,6 +6674,19 @@ var ToolResultPruner = class extends Service {
 			tokensAfter: plan.tokensAfter,
 			basis: plan.measurementBasis,
 			replacementSeq: Number(replacement.seq)
+		});
+		appendCut({
+			ts: (/* @__PURE__ */ new Date()).toISOString(),
+			sessionId: String(session.id),
+			strategy: plan.stage === "fresh" ? plan.reducer.includes("skeleton") ? "skeleton" : "small-knife" : "small-knife",
+			component: plan.component,
+			eventSeqs: [candidate.seq],
+			tokensBefore: plan.tokensBefore,
+			tokensAfter: plan.tokensAfter,
+			netGain: plan.tokensBefore - plan.tokensAfter - 80,
+			cacheRecomputeEst: 0,
+			cardRef: `session://${String(session.id)}/event/${candidate.seq}`,
+			profile: this.activeSettings(session).profile
 		});
 		return {
 			originalSeq: candidate.seq,

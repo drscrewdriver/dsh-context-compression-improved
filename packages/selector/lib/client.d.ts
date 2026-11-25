@@ -58,6 +58,8 @@ declare const zh: {
   'detail.custom': string;
   'detail.native': string;
   'detail.off': string;
+  'profile.flash-tuned': string;
+  'detail.flash-tuned': string;
   'autoCompact.title': string;
   'autoCompact.description': string;
   'autoCompact.inputLabel': string;

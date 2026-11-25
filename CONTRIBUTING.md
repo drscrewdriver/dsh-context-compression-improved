@@ -2,6 +2,17 @@
 
 Thank you for helping improve this community plugin.
 
+## Three-Stage Refactor Pipeline (since v0.13.1)
+
+All profile-default-value changes MUST follow this pipeline:
+
+1. **Lock baseline** — Before touching implementation, add/update `tests/runtime/behavior-lock-*.spec.ts` asserting the CURRENT behavior verbatim. The test must pass against existing code.
+2. **Add configuration** — Introduce the new setting (e.g., `minNetGain`, `cardMerge`, `flash-tuned` profile). Default must produce identical behavior to the locked baseline (backward-compatible).
+3. **Matrix verification** — After merging the behavior change, update the behavior-lock to the new expected values and verify all profile × parameter combinations via the test matrix.
+
+CI gate: PRs modifying `profiles.ts` defaults or `COMPRESSION_PROFILES` enumeration without a corresponding `behavior-lock` diff will fail the release check.
+
+---
 1. Open an issue before large behavior or compatibility changes.
 2. Keep every production change inside this repository; do not require a DeepSeek Harness core patch.
 3. Add a failing regression first for compression, surface/recovery, preset, tokenizer, or cache-prefix behavior.
