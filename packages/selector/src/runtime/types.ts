@@ -223,6 +223,12 @@ export interface ContextCompressionSettings {
   monitorPanel?: MonitorPanelSettings
   /** Optional tokenpilot-inspired sub-capability overrides; absent inherits preset defaults. */
   presetOptions?: PresetOptionsSettings
+  /** F1 (v0.13.2): Minimum net-gain threshold; 0 disables. */
+  minNetGain?: number
+  /** F8 (v0.15.5): Zero-copy mode — CCI never writes shadow copies. */
+  zeroCopy?: boolean
+  /** F3 (v0.13.4): CardMerge settings (中刀). */
+  cardMerge?: { enabled: boolean; mergeMaxCards?: number; mergeMinTokens?: number; mergeBreakEven?: number; mergeCooldownMs?: number }
 }
 
 /** Token-gated policy with character fields limited to reducer candidate shape. */

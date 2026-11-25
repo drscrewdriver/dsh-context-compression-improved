@@ -58,4 +58,6 @@ export interface PrunerState {
   readonly intentFoldedSeqs: WeakMap<Session, Set<number>>
   /** Live-surface tokens when the last intent fold landed (growth-gate baseline). */
   readonly intentBaselines: WeakMap<Session, number>
+  /** F14 (v0.14.1): Incremental calls cache — rebuilt only when event count changes. */
+  readonly callsCache: WeakMap<Session, { map: Map<string, { name: string; arguments: string }>; eventCount: number }>
 }

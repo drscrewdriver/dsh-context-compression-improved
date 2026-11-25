@@ -8,6 +8,7 @@ export const COMPRESSION_PROFILES = [
   'adaptive',
   'tokenpilot-inspired',
   'ptc',
+  'flash-tuned',
   'custom',
 ] as const
 
@@ -247,7 +248,7 @@ function isSafeSignalPattern(entry: string): boolean {
  * never silently coerced.
  */
 export function decodeCodeSkeletonSettings(value: unknown): CodeSkeletonSettings | undefined {
-  if (value === undefined) return { enabled: false }
+  if (value === undefined) return { enabled: true } // F4: default ON since v0.13.2
   if (!isPlainRecord(value)) return undefined
   const keys = Object.keys(value)
   if (keys.length !== 1 || keys[0] !== 'enabled') return undefined
@@ -451,6 +452,25 @@ export interface ContextCompressionSettings {
   sediment?: SedimentSettings
   /** Optional tokenpilot-inspired sub-capability overrides (presence-validated only). */
   presetOptions?: PresetOptionsSettings
+  /**
+   * F1 (v0.13.2): Minimum net-gain threshold in tokens for small-knife cuts.
+   * A candidate is skipped if (tokensBefore - tokensAfter - cardOverhead) < minNetGain.
+   * 0 disables the check. Default 1000.
+   */
+  minNetGain?: number
+  /**
+   * F8 (v0.14.5): Zero-copy mode — when true, no fallback copies are written;
+   * retrieve reads only from the session log. Default false (v0.14), true (v0.15+).
+   */
+  zeroCopy?: boolean
+  /**
+   * F19 (v0.14.6): Enable self-update pre-download checking.
+   */
+  updateCheck?: boolean
+  /**
+   * F3 (v0.13.4): CardMerge settings (中刀, default disabled).
+   */
+  cardMerge?: { enabled: boolean; mergeMaxCards?: number; mergeMinTokens?: number; mergeBreakEven?: number; mergeCooldownMs?: number }
 }
 
 /**

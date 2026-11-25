@@ -75,6 +75,12 @@ const SAVINGS_SESSIONS_ROUTES = [
   '/api/dsh-context-compression-improved/savings/sessions',
 ] as const
 
+// F2 (v0.13.3): Per-cut audit index route (read-only).
+const CUTS_ROUTES = [
+  '/endpoint/dsh-context-compression-improved/cuts',
+  '/api/dsh-context-compression-improved/cuts',
+] as const
+
 /** Minimal face of the agents service: session id → agent (carrying the session). */
 interface AgentsServiceLike {
   get?(id: unknown): { session?: unknown } | undefined
@@ -789,6 +795,37 @@ export const Config = z.object({
   settings: z.any().default(DEFAULT_CONTEXT_COMPRESSION_SETTINGS).volatile(),
 }) as unknown as z<Config>
 
+/** F2: Register the per-cut audit index read-only route. */
+function registerCutsRoute(ctx: Context): void {
+  const readService = (name: string): unknown => {
+    try { return (ctx as unknown as { get: (s: string) => unknown }).get(name) } catch { return undefined }
+  }
+  const handler = (req: unknown, res: unknown) => {
+    try {
+      const url = new URL((req as { url?: string }).url ?? '/', 'http://localhost')
+      const sessionId = url.searchParams.get('session') ?? ''
+      const limit = Math.min(Number(url.searchParams.get('limit') ?? '500'), 2000)
+      const strategy = url.searchParams.get('strategy') ?? undefined
+      // Dynamic import to avoid circular dependency
+      const { readCuts } = require('./runtime/cut-index.ts') as { readCuts: (id: string, opts?: { limit?: number; strategy?: string }) => unknown[] }
+      const cuts = sessionId ? readCuts(sessionId, { limit, ...(strategy ? { strategy: strategy as never } : {}) }) : []
+      jsonResponse(res, 200, cuts)
+    } catch (err) {
+      jsonResponse(res, 500, { error: String(err) })
+    }
+  }
+  const webServer = readService('webServer') as { register?: (opts: { kind: string; path: string; handler: (...args: unknown[]) => void }) => (() => void) | void } | undefined
+  if (webServer?.register === undefined) {
+    ctx.inject(['webServer'], (inj) => {
+      const ws = (inj as { webServer?: { register?: (opts: { kind: string; path: string; handler: (...args: unknown[]) => void }) => (() => void) | void } }).webServer
+      if (ws?.register === undefined) return
+      for (const path of CUTS_ROUTES) ws.register({ kind: 'exact', path, handler: handler as never })
+    })
+    return
+  }
+  for (const path of CUTS_ROUTES) webServer.register({ kind: 'exact', path, handler: handler as never })
+}
+
 /** Register the persisted default read by the currently mounted root pruner. */
 export function apply(ctx: Context, config: Config = {}): void {
   // ── dsh-tui 终端面：`/compress` ──────────────────────────────────
@@ -825,6 +862,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     // T24:per-session 分页面板数据面;/ccip(T29)实时控制命令。
     registerSavingsSessionsRoute(ctx)
     registerPanelCommand(ctx)
+    registerCutsRoute(ctx)
 
     // 持久层主干生命周期(spec T5):open 后台 arm 不阻塞 apply(WAL 半事务
     // 由 SQLite 在 open 时自动恢复,故 recover 并入 open);close 挂 ctx.effect

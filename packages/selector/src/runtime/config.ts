@@ -103,7 +103,7 @@ function parseAutoCompactSettings(value: unknown): AutoCompactSettings {
  * present-but-invalid section is an explicitly invalid document.
  */
 function parseCodeSkeletonSettings(value: unknown): CodeSkeletonSettings {
-  if (value === undefined) return { enabled: false }
+  if (value === undefined) return { enabled: true } // F4: default ON since v0.13.2
   if (!isPlainRecord(value)) {
     throw new TypeError('Context-compression codeSkeleton must be a plain object')
   }
@@ -383,7 +383,7 @@ export const DEFAULT_CONTEXT_COMPRESSION_SETTINGS: ContextCompressionSettings = 
   custom: structuredClone(DEFAULT_CUSTOM_COMPRESSION_POLICY),
   ptcCustom: structuredClone(DEFAULT_PTC_COMPRESSION_POLICY),
   autoCompact: { thresholdPercent: AUTO_COMPACT_THRESHOLD_LIMITS.default },
-  codeSkeleton: { enabled: false },
+  codeSkeleton: { enabled: true }, // F4: default ON since v0.13.2
   intentSummary: { enabled: false },
   monitorPanel: { enabled: false },
   sediment: { ...DEFAULT_SEDIMENT_SETTINGS },

@@ -135,6 +135,10 @@ import {
   flattenPlainText,
 } from './runtime/tokenpilot/dedup.ts'
 import { getSavingsLedger } from './runtime/savings.ts'
+import { checkNetGain } from './runtime/netgain.ts'
+import { appendCut } from './runtime/cut-index.ts'
+import { isInjectedMessage } from './runtime/injected-kinds.ts'
+import { effectiveMinReclaim, type DisclosurePolicy } from './runtime/ptc-disclosure.ts'
 import { claimFromLand, flushUsageOnDispose, reclaimFromTailTrim, scheduleUsageFlush, setStatsLivePathBusy } from './runtime/stats-sync.ts'
 import { kickStatsBackfillOnDispose } from './runtime/stats-backfill.ts'
 import { sampleIntegralBoundary } from './runtime/savings-integral.ts'
@@ -363,6 +367,7 @@ export class ToolResultPruner extends Service {
       pendingIntentFolds: new WeakMap(),
       intentFoldedSeqs: new WeakMap(),
       intentBaselines: new WeakMap(),
+      callsCache: new WeakMap(),
     }
 
     // 会话结束汇总(dsh-token-optimizer monitor 模式的同款体验):输出该会话的
@@ -2021,12 +2026,25 @@ export class ToolResultPruner extends Service {
 
   private snapshot(session: Session, view: CompactionTokenView): SnapshotCandidate[] {
     const events = sessionEvents(session)
-    const calls = new Map<string, ToolCallInfo>()
-    for (const event of events) {
-      if (event.type === 'tool/call') {
-        calls.set(event.data.callId, { name: event.data.name, arguments: event.data.arguments })
+    // F14 incremental cache: rebuild calls map only when event count changes
+    let cached = this.state.callsCache.get(session)
+    if (cached === undefined || cached.eventCount !== events.length) {
+      const calls = new Map<string, ToolCallInfo>()
+      const startIndex = cached?.eventCount ?? 0
+      // Start from existing map if available, only process new events
+      if (cached !== undefined && cached.eventCount < events.length) {
+        for (const [key, value] of cached.map) calls.set(key, value)
       }
+      for (let i = cached !== undefined ? startIndex : 0; i < events.length; i++) {
+        const event = events[i]!
+        if (event.type === 'tool/call') {
+          calls.set(event.data.callId, { name: event.data.name, arguments: event.data.arguments })
+        }
+      }
+      cached = { map: calls, eventCount: events.length }
+      this.state.callsCache.set(session, cached)
     }
+    const calls = cached.map
     const candidates: SnapshotCandidate[] = []
     const measured = new Map(view.measuredNodes.map(node => [node.seq, node.count]))
     const projectionPrices = new Map(view.nodes.map(node => [node.seq, node.tokens]))
@@ -2861,6 +2879,12 @@ export class ToolResultPruner extends Service {
 
   private land(session: Session, plan: PlannedReplacement): PrunedEntry | null {
     const { candidate } = plan
+    // F1: Net-gain gate — skip cuts that don't clear the threshold
+    // F1: Net-gain gate — disabled by default (0 = pass-through, preserving old behavior)
+    const minNetGain = (this.activeSettings(session) as unknown as Record<string, unknown>).minNetGain as number | undefined ?? 0
+    if (minNetGain > 0 && !checkNetGain(plan.tokensBefore, plan.tokensAfter, minNetGain)) {
+      return null
+    }
     // 0.1.7-rc.2: the tool message's own `content` is the result block set —
     // no wrapping result block anymore. The triple view still resolves the
     // call id axis on a legacy envelope.
@@ -2938,6 +2962,20 @@ export class ToolResultPruner extends Service {
       tokensAfter: plan.tokensAfter,
       basis: plan.measurementBasis,
       replacementSeq: Number(replacement.seq),
+    })
+    // F2: Append to per-cut audit index (fire-and-forget)
+    appendCut({
+      ts: new Date().toISOString(),
+      sessionId: String(session.id),
+      strategy: plan.stage === 'fresh' ? (plan.reducer.includes('skeleton') ? 'skeleton' : 'small-knife') : 'small-knife',
+      component: plan.component,
+      eventSeqs: [candidate.seq],
+      tokensBefore: plan.tokensBefore,
+      tokensAfter: plan.tokensAfter,
+      netGain: plan.tokensBefore - plan.tokensAfter - 80,
+      cacheRecomputeEst: 0,
+      cardRef: `session://${String(session.id)}/event/${candidate.seq}`,
+      profile: this.activeSettings(session).profile,
     })
     return {
       originalSeq: candidate.seq,

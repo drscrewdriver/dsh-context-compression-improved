@@ -478,9 +478,9 @@ describe('Auto Compact History linkage formula', () => {
 })
 
 describe('codeSkeleton settings validation', () => {
-  it('defaults legacy settings without a codeSkeleton section to off', () => {
+  it('defaults legacy settings without a codeSkeleton section to on (F4 v0.13.2)', () => {
     const settings = parseContextCompressionSettings(structuredClone(BASE_SETTINGS))
-    expect(settings.codeSkeleton).toEqual({ enabled: false })
+    expect(settings.codeSkeleton).toEqual({ enabled: true })
   })
 
   it('accepts an explicit boolean enabled flag on either side', () => {

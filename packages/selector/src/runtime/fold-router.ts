@@ -52,9 +52,10 @@ export interface FoldPrompt {
   readonly inputTokens: number
 }
 
-/** Rough meter aligned with the replay corpus estimator (CJK-aware). */
+/** Rough meter aligned with the replay corpus estimator (CJK-aware, F9 fix: all CJK ranges). */
 function foldTokens(text: string): number {
-  const cjk = (text.match(/[\u4e00-\u9fff]/g) ?? []).length
+  // F9 (v0.14.5): cover CJK Unified + Extension A + Kana + Hangul
+  const cjk = (text.match(/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]/g) ?? []).length
   return Math.ceil(cjk / 1.5 + (text.length - cjk) / 4)
 }
 
