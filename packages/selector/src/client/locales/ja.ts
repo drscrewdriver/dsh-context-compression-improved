@@ -163,5 +163,7 @@ export const ja = {
   'savings.sessions': "セッション台帳",
   'savings.money': "節約金額（キャッシュ加重）",
   'savings.cumulative': "累計（N コール）",
+  'profile.flash-tuned': 'Flash-tuned',
+  'detail.flash-tuned': 'Flash optimized',
 
 } satisfies Record<ContextCompressionLocaleKey, string>

@@ -163,5 +163,7 @@ export const ru = {
   'savings.sessions': "Журнал сессий",
   'savings.money': "Сэкономлено (взвешено по кэшу)",
   'savings.cumulative': "Накоплено (за N вызовов)",
+  'profile.flash-tuned': 'Flash-tuned',
+  'detail.flash-tuned': 'Flash optimized',
 
 } satisfies Record<ContextCompressionLocaleKey, string>

@@ -163,5 +163,7 @@ export const de = {
   'savings.sessions': "Sitzungskonto",
   'savings.money': "Geld gespart (cache-gewichtet)",
   'savings.cumulative': "Kumuliert (über N Calls)",
+  'profile.flash-tuned': 'Flash-tuned',
+  'detail.flash-tuned': 'Flash optimized',
 
 } satisfies Record<ContextCompressionLocaleKey, string>

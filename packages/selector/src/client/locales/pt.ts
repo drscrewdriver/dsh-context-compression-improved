@@ -163,5 +163,7 @@ export const pt = {
   'savings.sessions': 'Razão de sessões',
   'savings.money': 'Dinheiro economado (ponderado por cache)',
   'savings.cumulative': 'Acumulado (ao longo de N chamadas)',
+  'profile.flash-tuned': 'Flash-tuned',
+  'detail.flash-tuned': 'Flash optimized',
 
 } satisfies Record<ContextCompressionLocaleKey, string>

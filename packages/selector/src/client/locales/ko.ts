@@ -163,5 +163,7 @@ export const ko = {
   'savings.sessions': "세션 장부",
   'savings.money': "절약 금액(캐시 가중)",
   'savings.cumulative': "누적(N회 호출)",
+  'profile.flash-tuned': 'Flash-tuned',
+  'detail.flash-tuned': 'Flash optimized',
 
 } satisfies Record<ContextCompressionLocaleKey, string>

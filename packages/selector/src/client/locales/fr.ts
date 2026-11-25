@@ -163,5 +163,7 @@ export const fr = {
   'savings.sessions': "Registre des sessions",
   'savings.money': "Argent économisé (pondéré cache)",
   'savings.cumulative': "Cumulé (sur N appels)",
+  'profile.flash-tuned': 'Flash-tuned',
+  'detail.flash-tuned': 'Flash optimized',
 
 } satisfies Record<ContextCompressionLocaleKey, string>
