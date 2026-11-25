@@ -73,7 +73,12 @@ jobs:
           pnpm test
           pnpm verify:release
 
+      # 打包与发布必须在 packages/selector 下执行：仓根 package.json 同名但没有
+      # `files` 字段，在根上跑 npm publish 会打出 349 文件 / 18 MB 的仓根包
+      # （含 .agents/plans、.github 等），且**没有根级 dsh.plugin.json**，装上即坏。
+      # 真正的发布面是 packages/selector（files 白名单 → 38 文件 / 13.7 MB）。
       - name: 打包清单
+        working-directory: packages/selector
         run: npm pack --dry-run
 
       # ⑤ 幂等：同版本已存在则整体跳过发布动作
@@ -87,9 +92,10 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # ⑥ 发布
+      # ⑥ 发布（目录同 ⑤ 上方说明：必须是 packages/selector，不是仓根）
       - name: npm publish
         if: steps.guard.outputs.exists == 'false' && (github.event_name == 'push' || inputs.dry_run == false)
+        working-directory: packages/selector
         run: npm publish --registry https://registry.npmjs.org
 
       # ⑦ dist-tag 同步（读侧滞后 → 重试；失败只告警不判死，因为 publish 已成功）

@@ -137,8 +137,6 @@ import {
 import { getSavingsLedger } from './runtime/savings.ts'
 import { checkNetGain } from './runtime/netgain.ts'
 import { appendCut } from './runtime/cut-index.ts'
-import { isInjectedMessage } from './runtime/injected-kinds.ts'
-import { effectiveMinReclaim, type DisclosurePolicy } from './runtime/ptc-disclosure.ts'
 import { claimFromLand, flushUsageOnDispose, reclaimFromTailTrim, scheduleUsageFlush, setStatsLivePathBusy } from './runtime/stats-sync.ts'
 import { kickStatsBackfillOnDispose } from './runtime/stats-backfill.ts'
 import { sampleIntegralBoundary } from './runtime/savings-integral.ts'

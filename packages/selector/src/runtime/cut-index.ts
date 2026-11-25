@@ -10,7 +10,7 @@
  *
  * @module dsh-context-compression-improved/runtime/cut-index
  */
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 /** Strategy classification for the panel's four-knife badges. */
@@ -108,7 +108,6 @@ function enforceLimit(filePath: string): void {
     if (lines.length <= MAX_LINES_PER_SESSION) return
     // Keep newest half
     const kept = lines.slice(Math.floor(lines.length / 2))
-    const { writeFileSync } = require('node:fs')
     writeFileSync(filePath, kept.join('\n') + '\n', 'utf8')
   } catch {
     // Truncation failure is non-fatal

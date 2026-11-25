@@ -1,5 +1,7 @@
 # 更新日志（fork 新增条目）
 
+0.15.8：lint 门禁转绿（12 个既有 error：死赋值、空 catch、pruner 三个未用导入、测试里 5 个 any），CI 发版因此可跑；补 `scripts/release-notes.mjs`（发版第 ⑧ 步依赖它，缺了会在 npm 已写入后才失败）；`registerCutsRoute`/`cut-index` 的 `require()` 改静态导入，原「避免循环依赖」注释已过时。另修发版 workflow：打包与 `npm publish` 改在 `packages/selector` 下执行 —— 仓根同名包是 git 直装面（`dsh.bundle.patch` 指进 selector）、没有 `files` 白名单，在根上发会打出 349 文件 / 18 MB 且无根级 `dsh.plugin.json`，装上即坏。
+
 0.15.7：修 issue #11——`registerCutsRoute` 补 duplicate-route 守卫。双行 entry 各自跑一次 `apply()`，第二个挂载在 `/endpoint/dsh-context-compression-improved/cuts` 撞名抛 `webserver: duplicate exact route`，被 `apply()` 的 rethrow 放大成整行 activate 失败 → 安装回滚 → 配置菜单只读。另五组路由早已带守卫，cuts 是唯一漏网；修法与兄弟路由同构，非 duplicate 失败降级为 warn。
 
 0.10.0：功能版——per-session 统计面板 + SQLite 持久化（claims 幂等、原文不落库）+ 旧会话 jsonl 回填 + `/ccip` 面板命令 + 记账口径修复；同版含宿主枚举补票 DSH 0.2.1-rc.3（18 rc，契约面零改动）。

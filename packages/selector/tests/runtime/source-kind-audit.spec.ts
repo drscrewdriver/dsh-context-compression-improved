@@ -47,8 +47,10 @@ describe('F16: createUserMessage preserves source.kind from input', () => {
       source: source as { kind: 'dsh-context-compression' },
     })
     expect(message.role).toBe('user') // role is always 'user' for message type
-    expect((message as any).source.kind).toBe('dsh-context-compression')
-    expect((message as any).source.kind).not.toBe('user')
+    // `MessageBase.source` is already typed, so no cast is needed here — the
+    // `dsh-context-compression` kind is declared via pruner.ts's augmentation.
+    expect(message.source.kind).toBe('dsh-context-compression')
+    expect(message.source.kind).not.toBe('user')
   })
 
   it('legacy source also passes through', () => {
@@ -56,10 +58,18 @@ describe('F16: createUserMessage preserves source.kind from input', () => {
     const source = compressionMessageSource('legacy')
     const message = createUserMessage({
       content,
-      source: source as any,
+      // The legacy `{kind:'plugin'}` shape is outside the host's
+      // MessageSourceMap by design, so the producer itself escapes through
+      // `as never` (see compat/tool-result.ts); the test uses the same
+      // narrow escape rather than widening everything to `any`.
+      source: source as never,
     })
-    expect((message as any).source.kind).toBe('plugin')
-    expect((message as any).source.plugin).toBe('dsh-context-compression-improved')
+    // Whole-object comparison: `plugin` is not on the declared union, so
+    // comparing the full source is both stronger and type-clean.
+    expect(message.source).toEqual({
+      kind: 'plugin',
+      plugin: 'dsh-context-compression-improved',
+    })
   })
 })
 

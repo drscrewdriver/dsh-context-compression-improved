@@ -90,14 +90,19 @@ export function LlmCapabilityNotice({ presetOptions, sediment, t }: {
             type="button"
             className={css.btnChip}
             onClick={() => {
-              let ok = false
+              // Declared without an initializer: every path below assigns it, so
+              // a `= false` default would be dead (no-useless-assignment).
+              let ok: boolean
               try {
                 ok = typeof window !== 'undefined' && window.confirm(isEn
                   ? 'Hide the “LLM usage notice”? Clear the localStorage key dsh.llm-notice.cci.hidden.v1 to restore.'
                   : '确定隐藏「LLM 使用提示」？确认后设置页不再展示；清空 localStorage 键 dsh.llm-notice.cci.hidden.v1 可恢复。')
               } catch { ok = false }
               if (!ok) return
-              try { localStorage.setItem(HIDDEN_FLAG, '1') } catch {}
+              // A denied/quota-exceeded localStorage (private mode) must not stop
+              // the dismissal: the notice hides for this mount either way, it just
+              // comes back on the next one.
+              try { localStorage.setItem(HIDDEN_FLAG, '1') } catch { /* storage unavailable — hide for this mount only */ }
               setHidden(true)
             }}
           >

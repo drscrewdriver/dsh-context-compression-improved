@@ -2084,7 +2084,7 @@ window.__ModuleLoader__.load({
 								type: "button",
 								className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.btnChip,
 								onClick: () => {
-									let ok = false;
+									let ok;
 									try {
 										ok = typeof window !== "undefined" && window.confirm(isEn ? "Hide the “LLM usage notice”? Clear the localStorage key dsh.llm-notice.cci.hidden.v1 to restore." : "确定隐藏「LLM 使用提示」？确认后设置页不再展示；清空 localStorage 键 dsh.llm-notice.cci.hidden.v1 可恢复。");
 									} catch {

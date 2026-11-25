@@ -30,6 +30,7 @@ import { configureStatsBackfillTrigger, kickStatsBackfillOnRouteHit } from './ru
 import { getDisplayPrefs } from './runtime/display-prefs.ts'
 import { estimateIntegralMoney } from './runtime/savings-integral.ts'
 import { registerPanelCommand } from './runtime/panel-command.ts'
+import { readCuts } from './runtime/cut-index.ts'
 import { resolveOfficialDeepSeekPrice, type OfficialDeepSeekPriceRecord } from './runtime/deepseek-official-pricing.ts'
 
 // The settings namespace literal and the settings schema are owned by the
@@ -823,8 +824,10 @@ function registerCutsRoute(ctx: Context): void {
       const sessionId = url.searchParams.get('session') ?? ''
       const limit = Math.min(Number(url.searchParams.get('limit') ?? '500'), 2000)
       const strategy = url.searchParams.get('strategy') ?? undefined
-      // Dynamic import to avoid circular dependency
-      const { readCuts } = require('./runtime/cut-index.ts') as { readCuts: (id: string, opts?: { limit?: number; strategy?: string }) => unknown[] }
+      // Statically imported at module top: the cut index only pulls node:fs and
+      // node:path, so the "dynamic import to avoid a circular dependency" note
+      // this call used to carry was stale — and a require() here also broke
+      // @typescript-eslint/no-require-imports.
       const cuts = sessionId ? readCuts(sessionId, { limit, ...(strategy ? { strategy: strategy as never } : {}) }) : []
       jsonResponse(res, 200, cuts)
     } catch (err) {
