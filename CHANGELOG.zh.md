@@ -1,5 +1,7 @@
 # 更新日志（fork 新增条目）
 
+0.15.7：修 issue #11——`registerCutsRoute` 补 duplicate-route 守卫。双行 entry 各自跑一次 `apply()`，第二个挂载在 `/endpoint/dsh-context-compression-improved/cuts` 撞名抛 `webserver: duplicate exact route`，被 `apply()` 的 rethrow 放大成整行 activate 失败 → 安装回滚 → 配置菜单只读。另五组路由早已带守卫，cuts 是唯一漏网；修法与兄弟路由同构，非 duplicate 失败降级为 warn。
+
 0.10.0：功能版——per-session 统计面板 + SQLite 持久化（claims 幂等、原文不落库）+ 旧会话 jsonl 回填 + `/ccip` 面板命令 + 记账口径修复；同版含宿主枚举补票 DSH 0.2.1-rc.3（18 rc，契约面零改动）。
 
 > 完整历史（含上游 0.1.0 及更早版本）见 [CHANGELOG.md](CHANGELOG.md)。本文件只翻译本 fork 的新增条目。 · [English](CHANGELOG.md) · [日本語](CHANGELOG.ja.md) · [한국어](CHANGELOG.ko.md) · [Português](CHANGELOG.pt.md)

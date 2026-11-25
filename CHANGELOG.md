@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.15.7 (2026-11-25)
+
+- fix(bundle): `registerCutsRoute` now carries the duplicate-route guard (issue #11). `cordis.patch.yml` mounts this package on two rows, so `apply()` runs twice against one `webServer`; the second mount collided on `/endpoint/dsh-context-compression-improved/cuts`, threw `webserver: duplicate exact route`, and `apply()`'s re-throwing catch turned that into a failed row, a rolled-back install and a read-only settings card. The other five route families already carried `isDuplicateRouteError`; cuts was the only one that did not. The fix mirrors its siblings: single registration guard, direct/inject dual channel, duplicate treated as success, `ctx.effect` disposal, and non-duplicate failures downgraded to a warn so one unmountable route can no longer take the whole row down.
+
 ## 0.12.1 (2026-11-25)
 
 - feat(guide): 引导新增第 4 步「压缩与折叠走本地直连端点」（zh + en）——估计器通道选「直连 OpenAI 兼容端点」+ 端点地址（/v1）+ 小模型（该区块仅「TokenPilot 启发模式」提供），轮尾折叠的两层端点（高吞吐档 ≤2K / 稳定档 2~8K）走 `sediment.foldMode: direct` + `foldBaseUrl` / `foldStrata*` / `foldLocal35*`；停在「宿主模型」时压缩与对话共用 provider/model，每轮裁剪都在吃对话 token。前 3 步正文逐字未动。

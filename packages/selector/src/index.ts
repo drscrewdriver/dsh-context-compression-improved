@@ -795,10 +795,27 @@ export const Config = z.object({
   settings: z.any().default(DEFAULT_CONTEXT_COMPRESSION_SETTINGS).volatile(),
 }) as unknown as z<Config>
 
-/** F2: Register the per-cut audit index read-only route. */
+/**
+ * F2: Register the per-cut audit index read-only route.
+ *
+ * Registration mirrors the estimator-catalog and savings routes: two channels
+ * for the two `webServer` arrival orders, one guarded registration, and a
+ * duplicate `(kind, path)` treated as success.
+ *
+ * The guard is not cosmetic here. `cordis.patch.yml` mounts this package on two
+ * rows (the bundle row and the estimator-catalog row) so profiles without a host
+ * web server can still load the compression stack, which means `apply()` runs
+ * twice against one `webServer`. Without the guard the second mount throws
+ * inside `apply()`'s re-throwing catch, the row fails to activate, and the whole
+ * install rolls back (issue #11). Every other route family already carried it;
+ * this was the one that did not.
+ */
 function registerCutsRoute(ctx: Context): void {
   const readService = (name: string): unknown => {
     try { return (ctx as unknown as { get: (s: string) => unknown }).get(name) } catch { return undefined }
+  }
+  const log = (level: 'info' | 'warn', message: string, ...args: unknown[]): void => {
+    console[level](message, ...args)
   }
   const handler = (req: unknown, res: unknown) => {
     try {
@@ -814,16 +831,47 @@ function registerCutsRoute(ctx: Context): void {
       jsonResponse(res, 500, { error: String(err) })
     }
   }
-  const webServer = readService('webServer') as { register?: (opts: { kind: string; path: string; handler: (...args: unknown[]) => void }) => (() => void) | void } | undefined
-  if (webServer?.register === undefined) {
-    ctx.inject(['webServer'], (inj) => {
-      const ws = (inj as { webServer?: { register?: (opts: { kind: string; path: string; handler: (...args: unknown[]) => void }) => (() => void) | void } }).webServer
-      if (ws?.register === undefined) return
-      for (const path of CUTS_ROUTES) ws.register({ kind: 'exact', path, handler: handler as never })
-    })
-    return
+
+  let registered = false
+  const register = (webServer: WebServerLike, channel: 'direct' | 'inject'): void => {
+    if (registered) return
+    try {
+      const disposers = CUTS_ROUTES
+        .map(path => webServer.register({ kind: 'exact', path, handler: handler as never }))
+        .filter((off): off is () => void => typeof off === 'function')
+      registered = true
+      ctx.effect(
+        () => () => { for (const off of disposers) off() },
+        'contextCompressionSelector.cuts route',
+      )
+      log('info', 'context-compression cuts route registered (%s): %s', channel, CUTS_ROUTES.join(', '))
+    } catch (error) {
+      // The other mount owns the path, so the collision is a success here. A
+      // non-duplicate failure stays a warn: one route that cannot mount must not
+      // escalate into a failed row and a rolled-back install.
+      if (isDuplicateRouteError(error)) {
+        registered = true
+        log('info', 'context-compression cuts route already registered by another mount (%s)', channel)
+        return
+      }
+      log('warn', 'context-compression cuts route registration failed (%s): %o', channel, error)
+    }
   }
-  for (const path of CUTS_ROUTES) webServer.register({ kind: 'exact', path, handler: handler as never })
+
+  const active = asWebServer(readService('webServer'))
+  if (active !== undefined) {
+    register(active, 'direct')
+    if (registered) return
+  }
+
+  ctx.inject(['webServer'], (injected) => {
+    const webServer = asWebServer((injected as { webServer?: unknown }).webServer)
+    if (webServer === undefined) {
+      log('warn', 'context-compression webServer exposes no register() — cuts route not registered')
+      return
+    }
+    register(webServer, 'inject')
+  })
 }
 
 /** Register the persisted default read by the currently mounted root pruner. */

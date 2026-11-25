@@ -2247,7 +2247,21 @@ const Config = z.object({
 	advisorReportRoute: z.boolean().default(false),
 	settings: z.any().default(DEFAULT_CONTEXT_COMPRESSION_SETTINGS).volatile()
 });
-/** F2: Register the per-cut audit index read-only route. */
+/**
+* F2: Register the per-cut audit index read-only route.
+*
+* Registration mirrors the estimator-catalog and savings routes: two channels
+* for the two `webServer` arrival orders, one guarded registration, and a
+* duplicate `(kind, path)` treated as success.
+*
+* The guard is not cosmetic here. `cordis.patch.yml` mounts this package on two
+* rows (the bundle row and the estimator-catalog row) so profiles without a host
+* web server can still load the compression stack, which means `apply()` runs
+* twice against one `webServer`. Without the guard the second mount throws
+* inside `apply()`'s re-throwing catch, the row fails to activate, and the whole
+* install rolls back (issue #11). Every other route family already carried it;
+* this was the one that did not.
+*/
 function registerCutsRoute(ctx) {
 	const readService = (name) => {
 		try {
@@ -2255,6 +2269,9 @@ function registerCutsRoute(ctx) {
 		} catch {
 			return;
 		}
+	};
+	const log = (level, message, ...args) => {
+		console[level](message, ...args);
 	};
 	const handler = (req, res) => {
 		try {
@@ -2271,23 +2288,41 @@ function registerCutsRoute(ctx) {
 			jsonResponse(res, 500, { error: String(err) });
 		}
 	};
-	const webServer = readService("webServer");
-	if (webServer?.register === void 0) {
-		ctx.inject(["webServer"], (inj) => {
-			const ws = inj.webServer;
-			if (ws?.register === void 0) return;
-			for (const path of CUTS_ROUTES) ws.register({
+	let registered = false;
+	const register = (webServer, channel) => {
+		if (registered) return;
+		try {
+			const disposers = CUTS_ROUTES.map((path) => webServer.register({
 				kind: "exact",
 				path,
 				handler
-			});
-		});
-		return;
+			})).filter((off) => typeof off === "function");
+			registered = true;
+			ctx.effect(() => () => {
+				for (const off of disposers) off();
+			}, "contextCompressionSelector.cuts route");
+			log("info", "context-compression cuts route registered (%s): %s", channel, CUTS_ROUTES.join(", "));
+		} catch (error) {
+			if (isDuplicateRouteError(error)) {
+				registered = true;
+				log("info", "context-compression cuts route already registered by another mount (%s)", channel);
+				return;
+			}
+			log("warn", "context-compression cuts route registration failed (%s): %o", channel, error);
+		}
+	};
+	const active = asWebServer(readService("webServer"));
+	if (active !== void 0) {
+		register(active, "direct");
+		if (registered) return;
 	}
-	for (const path of CUTS_ROUTES) webServer.register({
-		kind: "exact",
-		path,
-		handler
+	ctx.inject(["webServer"], (injected) => {
+		const webServer = asWebServer(injected.webServer);
+		if (webServer === void 0) {
+			log("warn", "context-compression webServer exposes no register() — cuts route not registered");
+			return;
+		}
+		register(webServer, "inject");
 	});
 }
 /** Register the persisted default read by the currently mounted root pruner. */

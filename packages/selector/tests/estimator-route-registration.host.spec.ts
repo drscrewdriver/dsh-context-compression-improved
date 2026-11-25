@@ -28,6 +28,11 @@ const SETTINGS_LEGACY_ROUTE = '/endpoint/dsh-context-compression-improved/settin
 const SETTINGS_ROUTE = '/api/dsh-context-compression-improved/settings'
 const MONITOR_LEGACY_ROUTE = '/endpoint/dsh-context-compression-improved/monitor'
 
+// F2: the per-cut audit index. This pair is the one route family whose
+// duplicate-route guard was missing, which is what issue #11 reported.
+const CUTS_ROUTE = '/api/dsh-context-compression-improved/cuts'
+const CUTS_LEGACY_ROUTE = '/endpoint/dsh-context-compression-improved/cuts'
+
 interface RegisteredRoute {
   kind: string
   path: string
@@ -198,5 +203,49 @@ describe('estimator catalog route registration', () => {
     await settle()
 
     expect(routes.map(route => route.path).sort()).toEqual([SAVINGS_LEGACY_ROUTE, SAVINGS_ROUTE, MONITOR_LEGACY_ROUTE, MONITOR_ROUTE, SAVINGS_SESSIONS_LEGACY_ROUTE, SAVINGS_SESSIONS_ROUTE, SETTINGS_LEGACY_ROUTE, SETTINGS_ROUTE, '/endpoint/dsh-context-compression-improved/cuts', '/api/dsh-context-compression-improved/cuts'].sort())
+  })
+})
+
+/**
+ * `cordis.patch.yml` mounts this package on two rows (the bundle row and the
+ * estimator-catalog row) so profiles without a host web server can still load
+ * the compression stack. `apply()` therefore runs twice against ONE
+ * `webServer`, which makes idempotent route registration a live invariant
+ * rather than a detail.
+ *
+ * Issue #11 is that invariant breaking: `registerCutsRoute` was the only
+ * registrar without the `isDuplicateRouteError` guard, so the second mount
+ * threw, `apply()`'s re-throwing catch failed the row, and the whole install
+ * rolled back. The fake server below reproduces the host's duplicate contract
+ * verbatim, so two `apply()` calls ARE the reported failure.
+ */
+describe('double mount of one package (bundle row + estimator-catalog row)', () => {
+  it('does not throw on the second apply — issue #11', async () => {
+    const routes: RegisteredRoute[] = []
+    const runtime = new Context()
+    ctx = runtime
+    await mountWebServer(runtime, routes)
+
+    // Row 1 of cordis.patch.yml.
+    expect(() => apply(runtime, { presetOverlay: true })).not.toThrow()
+    await settle()
+    // Row 2: same Context, same webServer, same paths — the collision case.
+    expect(() => apply(runtime, { estimatorCatalogRoute: true })).not.toThrow()
+    await settle()
+  })
+
+  it('leaves exactly one registration per cuts path after the collision', async () => {
+    const routes: RegisteredRoute[] = []
+    const runtime = new Context()
+    ctx = runtime
+    await mountWebServer(runtime, routes)
+
+    apply(runtime, { presetOverlay: true })
+    await settle()
+    apply(runtime, { estimatorCatalogRoute: true })
+    await settle()
+
+    expect(routes.filter(route => route.path === CUTS_ROUTE)).toHaveLength(1)
+    expect(routes.filter(route => route.path === CUTS_LEGACY_ROUTE)).toHaveLength(1)
   })
 })
