@@ -165,5 +165,14 @@ export const de = {
   'savings.cumulative': "Kumuliert (über N Calls)",
   'profile.flash-tuned': 'Flash-tuned',
   'detail.flash-tuned': 'Flash optimized',
+  'llm.title': 'LLM-Nutzung für die Kompression',
+  'llm.recommend': 'Kompression, Turn-Ende-Faltung und der Schätzer rufen alle ein LLM auf. Bevorzugen Sie einen lokalen oder im LAN selbst gehosteten OpenAI-kompatiblen Endpunkt — Ollama, LM Studio, selbst gehostetes llama.cpp, vLLM, SGLang, Strata, Ninfer und ähnliche Runtimes —, damit jeder Schnitt keine Konversations-Tokens oder Kosten verbraucht.',
+  'llm.status': 'Schätzer: {estimator} · Turn-Ende-Faltung: {fold}',
+  'llm.route.off': 'nicht konfiguriert (nur Regeln / mechanische Karte, keine LLM-Aufrufe)',
+  'llm.route.host': 'Host-Modell {route} (teilt provider/model mit der Konversation; verbraucht Konversations-Tokens)',
+  'llm.route.direct': 'direkter Endpunkt {route} (lokal empfohlen)',
+  'llm.hostWarning': 'Ein Kanal läuft noch auf dem Host-Modell: Kompression und Konversation teilen ein provider/model, jeder Schnitt/jede Faltung verbraucht Konversations-Tokens und Kosten.',
+  'llm.foldHint': 'Die zwei Faltungsstufen kommen aus der Deployment-Konfiguration: sediment.foldMode: direct mit foldBaseUrl + foldStrata* (≤2K Eingabe) und foldLocal35* (2–8K Eingabe).',
+  'estimator.hostWarning': 'Der Host-Kanal teilt provider/model mit der Konversation: Schätzer-Aufrufe verbrauchen Konversations-Tokens und Kosten. Lokalen direkten Endpunkt bevorzugen.',
 
 } satisfies Record<ContextCompressionLocaleKey, string>

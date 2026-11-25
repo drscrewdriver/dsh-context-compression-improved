@@ -165,5 +165,14 @@ export const ja = {
   'savings.cumulative': "累計（N コール）",
   'profile.flash-tuned': 'Flash-tuned',
   'detail.flash-tuned': 'Flash optimized',
+  'llm.title': '圧縮での LLM 利用',
+  'llm.recommend': '圧縮・ターン末尾の折り畳み・推定器はいずれも LLM を呼び出します。ローカルまたは LAN 内で自ホストした OpenAI 互換エンドポイント（Ollama、LM Studio、自ホスト llama.cpp、vLLM、SGLang、Strata、Ninfer など）を優先すると、毎回のトリムで会話のトークンや費用を消費しません。',
+  'llm.status': '推定器：{estimator} · ターン末尾折り畳み：{fold}',
+  'llm.route.off': '未設定（ルールのみ／機械カード、LLM 呼び出しなし）',
+  'llm.route.host': '宿主モデル {route}（会話と provider/model を共有し、会話トークンを消費）',
+  'llm.route.direct': '直接接続エンドポイント {route}（ローカル推奨）',
+  'llm.hostWarning': '宿主モデルのままのチャネルがあります：圧縮と会話が同じ provider/model を共有し、トリム/折り畳みのたびに会話トークンと費用を消費します。',
+  'llm.foldHint': '折り畳みの 2 段エンドポイントはデプロイ設定で指定します：sediment.foldMode: direct + foldBaseUrl + foldStrata*（≤2K 入力）と foldLocal35*（2〜8K 入力）。',
+  'estimator.hostWarning': '宿主チャネルは会話と provider/model を共有します：推定呼び出しが会話トークンと費用を消費します。ローカル直接エンドポイントを推奨します。',
 
 } satisfies Record<ContextCompressionLocaleKey, string>

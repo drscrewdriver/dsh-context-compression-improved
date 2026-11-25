@@ -165,5 +165,14 @@ export const ko = {
   'savings.cumulative': "누적(N회 호출)",
   'profile.flash-tuned': 'Flash-tuned',
   'detail.flash-tuned': 'Flash optimized',
+  'llm.title': '압축용 LLM 사용',
+  'llm.recommend': '압축, 턴 끝 접기, 추정기는 모두 LLM을 호출합니다. 로컬 또는 LAN 내 자체 호스팅 OpenAI 호환 엔드포인트(Ollama, LM Studio, 자체 호스팅 llama.cpp, vLLM, SGLang, Strata, Ninfer 등)를 우선 사용하면 매번 트림할 때 대화 토큰과 비용을 쓰지 않습니다.',
+  'llm.status': '추정기: {estimator} · 턴 끝 접기: {fold}',
+  'llm.route.off': '미설정(규칙 전용/기계 카드, LLM 호출 없음)',
+  'llm.route.host': '호스트 모델 {route}(대화와 provider/model 공유, 대화 토큰 소모)',
+  'llm.route.direct': '직접 엔드포인트 {route}(로컬 권장)',
+  'llm.hostWarning': '아직 호스트 모델을 쓰는 채널이 있습니다: 압축과 대화가 같은 provider/model을 공유하며 트림/접기마다 대화 토큰과 비용을 씁니다.',
+  'llm.foldHint': '접기의 두 계층 엔드포인트는 배포 설정에서 지정합니다: sediment.foldMode: direct + foldBaseUrl + foldStrata*(≤2K 입력)와 foldLocal35*(2~8K 입력).',
+  'estimator.hostWarning': '호스트 채널은 대화와 provider/model을 공유합니다: 추정 호출이 대화 토큰과 비용을 씁니다. 로컬 직접 엔드포인트를 권장합니다.',
 
 } satisfies Record<ContextCompressionLocaleKey, string>

@@ -165,5 +165,14 @@ export const fr = {
   'savings.cumulative': "Cumulé (sur N appels)",
   'profile.flash-tuned': 'Flash-tuned',
   'detail.flash-tuned': 'Flash optimized',
+  'llm.title': 'Utilisation du LLM pour la compression',
+  'llm.recommend': 'La compression, le pliage de fin de tour et l’estimateur appellent tous un LLM. Préférez un point de terminaison local ou auto-hébergé sur le LAN compatible OpenAI — Ollama, LM Studio, llama.cpp auto-hébergé, vLLM, SGLang, Strata, Ninfer et runtimes similaires — pour que chaque découpe ne consomme ni tokens ni frais de conversation.',
+  'llm.status': 'Estimateur : {estimator} · Pliage de fin de tour : {fold}',
+  'llm.route.off': 'non configuré (règles seules / carte mécanique, aucun appel LLM)',
+  'llm.route.host': 'modèle hôte {route} (partage provider/model avec la conversation ; consomme les tokens de conversation)',
+  'llm.route.direct': 'point de terminaison direct {route} (local recommandé)',
+  'llm.hostWarning': 'Un canal reste sur le modèle hôte : la compression et la conversation partagent un même provider/model, chaque découpe/pliage dépense des tokens et des frais de conversation.',
+  'llm.foldHint': 'Les deux paliers de pliage viennent de la configuration de déploiement : sediment.foldMode: direct avec foldBaseUrl + foldStrata* (≤2K d’entrée) et foldLocal35* (2–8K d’entrée).',
+  'estimator.hostWarning': 'Le canal hôte partage provider/model avec la conversation : les appels de l’estimateur dépensent tokens et frais de conversation. Préférez un point de terminaison local direct.',
 
 } satisfies Record<ContextCompressionLocaleKey, string>

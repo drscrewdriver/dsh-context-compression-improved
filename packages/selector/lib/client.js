@@ -422,7 +422,7 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region \0dsh-context-compression-css:466eb745356d-CompressionProfileSelector.module.css.mjs
-		const css = ".rLocJG_settingsSection{max-width:720px;color:var(--dsw-alias-label-primary);flex-direction:column;gap:12px;display:flex}.rLocJG_settingsTitle{color:var(--dsw-alias-label-primary);margin:0;font-size:16px;font-weight:500;line-height:24px}.rLocJG_settingsDescription{color:var(--dsw-alias-label-tertiary);margin:0;font-size:14px;line-height:22px}.rLocJG_root{width:100%}.rLocJG_profileGrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;display:grid}.rLocJG_profileCard{border:1px solid var(--dsw-alias-border-l2);min-height:112px;color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left;background:0 0;border-radius:10px;flex-direction:column;gap:8px;padding:14px;display:flex}.rLocJG_profileCard:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.rLocJG_profileCard[aria-pressed=true]{border-color:var(--dsw-alias-label-primary)}.rLocJG_profileCard:active:not(:disabled){transform:scale(.99)}.rLocJG_profileCard:disabled{cursor:default;opacity:.6}.rLocJG_profileCard:focus-visible{outline-offset:2px;outline:2px solid}.rLocJG_profileCardTop{align-items:center;gap:8px;display:flex}.rLocJG_profileCardTitle{font-size:14px;font-weight:500;line-height:20px}.rLocJG_profileCurrent{background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-base);border-radius:999px;padding:1px 6px;font-size:10px;line-height:14px}.rLocJG_profileCardDetail{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}.rLocJG_button{border:1px solid var(--dsw-alias-border-l2);width:100%;min-height:34px;color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left;background:0 0;border-radius:10px;align-items:center;gap:8px;padding:6px 8px;display:flex}.rLocJG_button:hover{background:var(--dsw-alias-interactive-bg-hover)}.rLocJG_button:disabled{cursor:default;opacity:.6}.rLocJG_copy{flex:1;min-width:0}.rLocJG_label{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:14px}.rLocJG_value{text-overflow:ellipsis;white-space:nowrap;font-size:13px;line-height:17px;overflow:hidden}.rLocJG_chevron{color:var(--dsw-alias-label-secondary);flex:none}.rLocJG_menuCopy{flex-direction:column;gap:2px;min-width:220px;display:flex}.rLocJG_menuTitle{font-size:13px;line-height:17px}.rLocJG_menuDetail{white-space:normal;max-width:290px;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:15px}.rLocJG_error{color:var(--dsw-alias-state-error-primary);padding:4px 8px 0;font-size:11px;line-height:15px}.rLocJG_unavailable{color:var(--dsw-alias-label-tertiary);padding:4px 8px 0;font-size:11px;line-height:15px}.rLocJG_settingsHint{color:var(--dsw-alias-label-secondary);padding:4px 8px 0;font-size:11px;line-height:15px}.rLocJG_pricing{color:var(--dsw-alias-label-tertiary);padding:4px 8px 0;font-size:11px;line-height:15px}.rLocJG_custom{border-top:1px solid var(--dsw-alias-border-l2);margin-top:16px;padding:16px 0 0}.rLocJG_customTitle{margin:0 0 6px;font-size:13px;line-height:17px}.rLocJG_customNote{color:var(--dsw-alias-label-tertiary);margin:4px 0;font-size:11px;line-height:15px}.rLocJG_stage{border:0;border-top:1px solid var(--dsw-alias-border-l2);margin:12px 0 0;padding:12px 0 0}.rLocJG_stageToggle{align-items:center;gap:6px;font-size:12px;line-height:16px;display:inline-flex}.rLocJG_fieldGrid{grid-template-columns:1fr;gap:8px;display:grid}.rLocJG_field{min-width:0;color:var(--dsw-alias-label-secondary);flex-direction:column;gap:4px;margin-top:8px;font-size:11px;line-height:15px;display:flex}.rLocJG_field input,.rLocJG_field select{box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);width:100%;min-width:0;min-height:30px;color:var(--dsw-alias-label-primary);border-radius:7px;padding:4px 6px}.rLocJG_field input:focus-visible,.rLocJG_field select:focus-visible,.rLocJG_actions button:focus-visible{outline-offset:2px;outline:2px solid}.rLocJG_actions{flex-wrap:wrap;gap:8px;margin-top:10px;display:flex}.rLocJG_actions button{border:1px solid var(--dsw-alias-border-l2);min-height:30px;color:var(--dsw-alias-label-primary);background:0 0;border-radius:7px;padding:4px 8px}.rLocJG_actions button:active:not(:disabled){transform:scale(.98)}.rLocJG_actions button:disabled{opacity:.6}@media (width<=560px){.rLocJG_profileGrid{grid-template-columns:1fr}}.rLocJG_autoCompact{border:1px solid #80808059;border-radius:8px;margin-top:24px;padding:16px}.rLocJG_autoCompactTitle{margin:0 0 8px;font-size:15px;font-weight:600}.rLocJG_autoCompactRisk{opacity:.9;margin:8px 0 0;font-size:12px}.rLocJG_savingsCard{border:1px solid #ffffff1a;border-radius:8px;flex-direction:column;gap:4px;margin-top:14px;padding:10px 12px;display:flex}.rLocJG_savingsRow{justify-content:space-between;align-items:baseline;gap:12px;display:flex}.rLocJG_savingsNetPositive strong{color:#30d158}.rLocJG_savingsNetNegative strong{color:#ff9f0a}.rLocJG_savingsMuted{opacity:.66;font-size:.92em}.rLocJG_savingsBreakdown{border-top:1px solid #ffffff14;margin-top:4px;padding-top:4px}.rLocJG_savingsNote{opacity:.5;margin-top:4px;font-size:.85em}";
+		const css = ".rLocJG_settingsSection{max-width:720px;color:var(--dsw-alias-label-primary);flex-direction:column;gap:12px;display:flex}.rLocJG_settingsTitle{color:var(--dsw-alias-label-primary);margin:0;font-size:16px;font-weight:500;line-height:24px}.rLocJG_settingsDescription{color:var(--dsw-alias-label-tertiary);margin:0;font-size:14px;line-height:22px}.rLocJG_root{width:100%}.rLocJG_profileGrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;display:grid}.rLocJG_profileCard{border:1px solid var(--dsw-alias-border-l2);min-height:112px;color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left;background:0 0;border-radius:10px;flex-direction:column;gap:8px;padding:14px;display:flex}.rLocJG_profileCard:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.rLocJG_profileCard[aria-pressed=true]{border-color:var(--dsw-alias-label-primary)}.rLocJG_profileCard:active:not(:disabled){transform:scale(.99)}.rLocJG_profileCard:disabled{cursor:default;opacity:.6}.rLocJG_profileCard:focus-visible{outline-offset:2px;outline:2px solid}.rLocJG_profileCardTop{align-items:center;gap:8px;display:flex}.rLocJG_profileCardTitle{font-size:14px;font-weight:500;line-height:20px}.rLocJG_profileCurrent{background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-base);border-radius:999px;padding:1px 6px;font-size:10px;line-height:14px}.rLocJG_profileCardDetail{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}.rLocJG_button{border:1px solid var(--dsw-alias-border-l2);width:100%;min-height:34px;color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left;background:0 0;border-radius:10px;align-items:center;gap:8px;padding:6px 8px;display:flex}.rLocJG_button:hover{background:var(--dsw-alias-interactive-bg-hover)}.rLocJG_button:disabled{cursor:default;opacity:.6}.rLocJG_copy{flex:1;min-width:0}.rLocJG_label{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:14px}.rLocJG_value{text-overflow:ellipsis;white-space:nowrap;font-size:13px;line-height:17px;overflow:hidden}.rLocJG_chevron{color:var(--dsw-alias-label-secondary);flex:none}.rLocJG_menuCopy{flex-direction:column;gap:2px;min-width:220px;display:flex}.rLocJG_menuTitle{font-size:13px;line-height:17px}.rLocJG_menuDetail{white-space:normal;max-width:290px;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:15px}.rLocJG_error{color:var(--dsw-alias-state-error-primary);padding:4px 8px 0;font-size:11px;line-height:15px}.rLocJG_unavailable{color:var(--dsw-alias-label-tertiary);padding:4px 8px 0;font-size:11px;line-height:15px}.rLocJG_settingsHint{color:var(--dsw-alias-label-secondary);padding:4px 8px 0;font-size:11px;line-height:15px}.rLocJG_pricing{color:var(--dsw-alias-label-tertiary);padding:4px 8px 0;font-size:11px;line-height:15px}.rLocJG_custom{border-top:1px solid var(--dsw-alias-border-l2);margin-top:16px;padding:16px 0 0}.rLocJG_customTitle{margin:0 0 6px;font-size:13px;line-height:17px}.rLocJG_customNote{color:var(--dsw-alias-label-tertiary);margin:4px 0;font-size:11px;line-height:15px}.rLocJG_stage{border:0;border-top:1px solid var(--dsw-alias-border-l2);margin:12px 0 0;padding:12px 0 0}.rLocJG_stageToggle{align-items:center;gap:6px;font-size:12px;line-height:16px;display:inline-flex}.rLocJG_fieldGrid{grid-template-columns:1fr;gap:8px;display:grid}.rLocJG_field{min-width:0;color:var(--dsw-alias-label-secondary);flex-direction:column;gap:4px;margin-top:8px;font-size:11px;line-height:15px;display:flex}.rLocJG_field input,.rLocJG_field select{box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-base);width:100%;min-width:0;min-height:30px;color:var(--dsw-alias-label-primary);border-radius:7px;padding:4px 6px}.rLocJG_field input:focus-visible,.rLocJG_field select:focus-visible,.rLocJG_actions button:focus-visible{outline-offset:2px;outline:2px solid}.rLocJG_actions{flex-wrap:wrap;gap:8px;margin-top:10px;display:flex}.rLocJG_actions button{border:1px solid var(--dsw-alias-border-l2);min-height:30px;color:var(--dsw-alias-label-primary);background:0 0;border-radius:7px;padding:4px 8px}.rLocJG_actions button:active:not(:disabled){transform:scale(.98)}.rLocJG_actions button:disabled{opacity:.6}@media (width<=560px){.rLocJG_profileGrid{grid-template-columns:1fr}}.rLocJG_autoCompact{border:1px solid #80808059;border-radius:8px;margin-top:24px;padding:16px}.rLocJG_llmNotice{background:#d977060f;border:1px solid #80808059;border-left:4px solid #d97706;border-radius:8px;margin:12px 0;padding:14px 16px}.rLocJG_btnChip{appearance:none;font:inherit;cursor:pointer;color:inherit;background:0 0;border:1px solid #80808073;border-radius:999px;padding:2px 8px;font-size:11px}.rLocJG_autoCompactTitle{margin:0 0 8px;font-size:15px;font-weight:600}.rLocJG_autoCompactRisk{opacity:.9;margin:8px 0 0;font-size:12px}.rLocJG_savingsCard{border:1px solid #ffffff1a;border-radius:8px;flex-direction:column;gap:4px;margin-top:14px;padding:10px 12px;display:flex}.rLocJG_savingsRow{justify-content:space-between;align-items:baseline;gap:12px;display:flex}.rLocJG_savingsNetPositive strong{color:#30d158}.rLocJG_savingsNetNegative strong{color:#ff9f0a}.rLocJG_savingsMuted{opacity:.66;font-size:.92em}.rLocJG_savingsBreakdown{border-top:1px solid #ffffff14;margin-top:4px;padding-top:4px}.rLocJG_savingsNote{opacity:.5;margin-top:4px;font-size:.85em}";
 		const tagId = "dsh-context-compression-improved/CompressionProfileSelector.module.css";
 		if (typeof document !== "undefined" && document.querySelector(`style[data-plugin-css="${tagId}"]`) === null) {
 			const tag = document.createElement("style");
@@ -436,6 +436,7 @@ window.__ModuleLoader__.load({
 			"autoCompact": "rLocJG_autoCompact",
 			"autoCompactRisk": "rLocJG_autoCompactRisk",
 			"autoCompactTitle": "rLocJG_autoCompactTitle",
+			"btnChip": "rLocJG_btnChip",
 			"button": "rLocJG_button",
 			"chevron": "rLocJG_chevron",
 			"copy": "rLocJG_copy",
@@ -446,6 +447,7 @@ window.__ModuleLoader__.load({
 			"field": "rLocJG_field",
 			"fieldGrid": "rLocJG_fieldGrid",
 			"label": "rLocJG_label",
+			"llmNotice": "rLocJG_llmNotice",
 			"menuCopy": "rLocJG_menuCopy",
 			"menuDetail": "rLocJG_menuDetail",
 			"menuTitle": "rLocJG_menuTitle",
@@ -969,7 +971,24 @@ window.__ModuleLoader__.load({
 		* select with the display-impact disclosure in its description (M13) —
 		* replaced spans leave the transcript view; originals stay in the log.
 		*/
-		function SedimentControls({ value, disabled, save, settle, t }) {
+		function SedimentControls({ value, fold, disabled, save, settle, t }) {
+			const foldLine = (() => {
+				if (fold === void 0) return null;
+				const mode = fold.foldMode ?? "";
+				if (mode === "") return t("llm.route.off");
+				const strata = fold.foldStrataModel?.trim() ?? "";
+				const local35 = fold.foldLocal35Model?.trim() ?? "";
+				if (mode === "direct") {
+					const route = [
+						fold.foldBaseUrl?.trim() ?? "",
+						strata === "" ? "" : `≤2K: ${strata}`,
+						local35 === "" ? "" : `2–8K: ${local35}`
+					].filter((part) => part !== "").join(" · ") || "—";
+					return t("llm.route.direct").replace("{route}", route);
+				}
+				const route = [fold.foldStrataProvider ?? "", strata].filter((part) => part !== "").join(" / ") || "—";
+				return t("llm.route.host").replace("{route}", route);
+			})();
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
 				className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.autoCompact,
 				"aria-labelledby": "context-compression-sediment-title",
@@ -982,6 +1001,14 @@ window.__ModuleLoader__.load({
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.customNote,
 						children: t("sediment.description")
+					}),
+					foldLine === null ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.customNote,
+						children: [
+							t("sediment.enabled"),
+							" — ",
+							foldLine
+						]
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
 						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.field,
@@ -1198,6 +1225,10 @@ window.__ModuleLoader__.load({
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.customNote,
 							children: t("estimator.hostReuse")
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.autoCompactRisk,
+							children: t("estimator.hostWarning")
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.customNote,
@@ -1781,7 +1812,8 @@ window.__ModuleLoader__.load({
 .sgGuideBtn{appearance:none;font:inherit;font-size:12px;padding:5px 12px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.3));background:transparent;color:var(--dsw-alias-label-primary, currentColor);cursor:pointer}
 .sgGuideBtn-primary{background:var(--dsw-alias-button-primary-fill, #4d6bfe);border-color:transparent;color:#fff}
 .sgGuideBtn-skip{margin-right:auto;color:var(--dsw-alias-label-tertiary, rgba(127,127,127,.9));border-color:transparent;text-decoration:underline}
-.sgGuideRestart{appearance:none;font:inherit;font-size:12px;padding:0;border:0;background:transparent;color:var(--dsw-alias-link-primary, #4d6bfe);cursor:pointer;text-decoration:underline}
+.sgGuideRestart{appearance:none;font:inherit;font-size:12px;line-height:1.4;padding:4px 12px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2, rgba(127,127,127,.35));background:var(--dsw-alias-bg-layer-2, rgba(127,127,127,.06));color:var(--dsw-alias-label-primary, currentColor);cursor:pointer;text-decoration:none}
+.sgGuideRestart:hover{border-color:var(--dsw-alias-button-primary-fill, #4d6bfe);color:var(--dsw-alias-button-primary-fill, #4d6bfe)}
 `;
 		function injectGuideCss() {
 			try {
@@ -1913,6 +1945,10 @@ window.__ModuleLoader__.load({
 		const CCI_GUIDE_STEPS = {
 			zh: [
 				{
+					title: "压缩与折叠走本地直连端点",
+					body: "压缩/折叠/估计器都是按需调用：未启用或未配置时完全不走 LLM（零费用）；配置直连端点后不会跟随宿主。建议显式指定本地或局域网自建 OpenAI 兼容端点（Ollama、LM Studio、自建 llama.cpp、vLLM、SGLang、Strata、Ninfer 等）：估计器填 /v1 地址与小模型；轮尾折叠两层端点（≤2K 输入档、2~8K 输入档）在配置写 sediment.foldMode: direct + foldBaseUrl / foldStrata* / foldLocal35*。停在「宿主模型」时会与对话共用 provider/model，高价 API 下每轮裁剪都会增加费用，不推荐作为默认。"
+				},
+				{
 					title: "先选 Profile，再看正交开关",
 					body: "设置 → 上下文压缩选择器，上方卡片就是压缩档位（平衡模式／节省模式／PTC 模式（绝对水位）等），点一下即改即存。下面的代码骨架压缩、轮尾沉降、回合末意图摘要属于档位之外的正交开关（默认关），Auto Compact 触发水位才是随档位联动的参数。"
 				},
@@ -1923,13 +1959,13 @@ window.__ModuleLoader__.load({
 				{
 					title: "看节省去悬浮面板，先分清口径",
 					body: "在设置里打开「悬浮面板」，输入区旁出现可拖拽的悬浮球，点开是压缩监控：净节省、毛节省、负节省（压缩后再读全文的抵消）、缓存命中率与成本估算。设置页底部的「节省统计(本进程)」在首次裁剪前是空的；标注「持久化降级」说明统计只留在内存。"
-				},
-				{
-					title: "压缩与折叠走本地直连端点",
-					body: "两处都能单独指定模型：设置页的「估计器（可选）」（仅「TokenPilot 启发模式」提供）把「通道」选成「直连 OpenAI 兼容端点」，填端点地址（/v1）与一个小模型；轮尾折叠的两层端点（高吞吐档吃 ≤2K 输入、稳定档吃 2~8K，如本地 35B）在配置里写 `sediment.foldMode: direct` 加 `foldBaseUrl` / `foldStrata*` / `foldLocal35*`。停在「宿主模型」时，压缩与对话共用同一个 provider/model，每轮裁剪都在吃对话 token。"
 				}
 			],
 			en: [
+				{
+					title: "Route compression and folding to local direct endpoints",
+					body: "Compression/folding/estimator are on-demand calls: nothing runs an LLM while they are off or unconfigured (zero cost), and an explicit direct endpoint never follows the host. Prefer a local/LAN self-hosted OpenAI-compatible endpoint (Ollama, LM Studio, self-hosted llama.cpp, vLLM, SGLang, Strata, Ninfer, …): point the estimator at a /v1 URL with a small model; configure the two turn-tail fold tiers (≤2K input, 2–8K input) as sediment.foldMode: direct with foldBaseUrl / foldStrata* / foldLocal35*. Left on the host model, every trim shares provider/model with the conversation and adds cost on a premium API — not recommended as a default."
+				},
 				{
 					title: "Pick a profile first, then the orthogonal switches",
 					body: "Settings → Context compression selector: the cards at the top are the profiles (Balanced, Savings, PTC / Code-mode (absolute), …); a click applies and saves. Code skeleton compression, turn-tail sedimentation, and turn-tail intent summary below are orthogonal switches outside the profile (off by default), while the Auto Compact trigger level is the one parameter that follows the profile."
@@ -1941,10 +1977,6 @@ window.__ModuleLoader__.load({
 				{
 					title: "Read savings in the monitor, mind the basis",
 					body: "Turn on “Floating panel” in settings and a draggable ball appears next to the composer; it opens the compression monitor with net Δ, gross Δ, offsets (full reads after compression), cache hit rate, and cost estimates. The “Savings (this process)” card at the bottom of Settings stays empty until the first trim; a “persistence degraded” note means the numbers live in memory only."
-				},
-				{
-					title: "Route compression and folding to local direct endpoints",
-					body: "Two places take an explicit model: the Estimator block in settings (offered only under the TokenPilot-inspired profile) — set Channel to “Direct OpenAI-compatible endpoint” with a /v1 base URL and a small model; and the two turn-tail folding tiers (a high-throughput tier for inputs ≤2K, a stable tier such as local 35B for 2–8K), configured as sediment.foldMode: direct with foldBaseUrl / foldStrata* / foldLocal35*. Left on “Host model”, summarisation shares one provider/model with the conversation, so every trim spends conversation tokens."
 				}
 			]
 		};
@@ -1960,6 +1992,133 @@ window.__ModuleLoader__.load({
 		/** Full-page Settings surface backed by the same durable selector state. */
 		function ContextCompressionSettingsSection(props) {
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SettingsCompressionProfileControls, { ...props });
+		}
+		/** Estimate the estimator channel route for display ('' when unconfigured). */
+		function estimatorRouteLabel(options, t) {
+			const mode = options?.estimatorMode ?? "";
+			if (mode === "") return {
+				label: t("llm.route.off"),
+				host: false
+			};
+			const provider = options?.estimatorProvider?.trim() ?? "";
+			const model = options?.estimatorModel?.trim() ?? "";
+			if (mode === "direct") {
+				const route = [options?.estimatorBaseUrl?.trim() ?? "", model].filter((part) => part !== "").join(" · ") || "—";
+				return {
+					label: t("llm.route.direct").replace("{route}", route),
+					host: false
+				};
+			}
+			const route = [provider, model].filter((part) => part !== "").join(" / ") || "—";
+			return {
+				label: t("llm.route.host").replace("{route}", route),
+				host: true
+			};
+		}
+		/** Resolve the turn-tail fold route for display ('' when foldMode is unset). */
+		function foldRouteLabel(sediment, t) {
+			const mode = sediment?.foldMode ?? "";
+			if (mode === "") return {
+				label: t("llm.route.off"),
+				host: false
+			};
+			const strata = sediment?.foldStrataModel?.trim() ?? "";
+			const local35 = sediment?.foldLocal35Model?.trim() ?? "";
+			if (mode === "direct") {
+				const route = [
+					sediment?.foldBaseUrl?.trim() ?? "",
+					strata === "" ? "" : `≤2K: ${strata}`,
+					local35 === "" ? "" : `2–8K: ${local35}`
+				].filter((part) => part !== "").join(" · ") || "—";
+				return {
+					label: t("llm.route.direct").replace("{route}", route),
+					host: false
+				};
+			}
+			const route = [sediment?.foldStrataProvider?.trim() ?? "", strata].filter((part) => part !== "").join(" / ") || "—";
+			return {
+				label: t("llm.route.host").replace("{route}", route),
+				host: true
+			};
+		}
+		/**
+		* 压缩使用 LLM 能力（费用提示 + 本地端点建议）——设置面**第一区块**。
+		*
+		* 原则：凡用到 LLM 的处理（压缩/轮尾折叠/估计器），费用提示与本地端点建议永远
+		* 排在第一位；样式美化排在其次。停在「宿主模型」时压缩与对话共用 provider/model，
+		* 每轮裁剪都会消耗对话 token 与费用——这一行必须在用户打开面板的第一屏可见。
+		*/
+		function LlmCapabilityNotice({ presetOptions, sediment, t }) {
+			const estimator = estimatorRouteLabel(presetOptions, t);
+			const fold = foldRouteLabel(sediment, t);
+			const HIDDEN_FLAG = "dsh.llm-notice.cci.hidden.v1";
+			const isEn = typeof document !== "undefined" && (document.documentElement.lang || "").toLowerCase().startsWith("en");
+			const readHidden = () => {
+				try {
+					return typeof localStorage !== "undefined" && localStorage.getItem(HIDDEN_FLAG) === "1";
+				} catch {
+					return false;
+				}
+			};
+			const [hidden, setHidden] = (0, react.useState)(() => readHidden());
+			if (hidden) return null;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+				className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.llmNotice,
+				"aria-labelledby": "context-compression-llm-title",
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						style: {
+							display: "flex",
+							alignItems: "center",
+							gap: 8,
+							flexWrap: "wrap"
+						},
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
+							id: "context-compression-llm-title",
+							className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.autoCompactTitle,
+							style: { margin: 0 },
+							children: t("llm.title")
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							style: { marginLeft: "auto" },
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.btnChip,
+								onClick: () => {
+									let ok = false;
+									try {
+										ok = typeof window !== "undefined" && window.confirm(isEn ? "Hide the “LLM usage notice”? Clear the localStorage key dsh.llm-notice.cci.hidden.v1 to restore." : "确定隐藏「LLM 使用提示」？确认后设置页不再展示；清空 localStorage 键 dsh.llm-notice.cci.hidden.v1 可恢复。");
+									} catch {
+										ok = false;
+									}
+									if (!ok) return;
+									try {
+										localStorage.setItem(HIDDEN_FLAG, "1");
+									} catch {}
+									setHidden(true);
+								},
+								children: isEn ? "Got it" : "我已知晓"
+							})
+						})]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.customNote,
+						children: t("llm.recommend")
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.customNote,
+						children: t("llm.status").replace("{estimator}", estimator.label).replace("{fold}", fold.label)
+					}),
+					estimator.host || fold.host ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.autoCompactRisk,
+						role: "note",
+						children: ["⚠ ", t("llm.hostWarning")]
+					}) : null,
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.customNote,
+						children: t("llm.foldHint")
+					})
+				]
+			});
 		}
 		function SettingsCompressionProfileControls({ useCompression, select, saveCustom, resetCustom, savePtcCustom, resetPtcCustom, saveAutoCompact, saveCodeSkeleton, saveSediment, saveIntentSummary, saveMonitorPanel, savePresetOptions, t }) {
 			const state = useCompression((snapshot) => snapshot);
@@ -2010,6 +2169,11 @@ window.__ModuleLoader__.load({
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 						className: _dsh_context_compression_css_466eb745356d_CompressionProfileSelector_module_css_default.settingsDescription,
 						children: t("settings.description")
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(LlmCapabilityNotice, {
+						presetOptions: state.value?.presetOptions,
+						sediment: state.value?.sediment,
+						t
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 						style: { margin: "0 0 10px" },
@@ -2072,6 +2236,7 @@ window.__ModuleLoader__.load({
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(SedimentControls, {
 						value: state.value?.sediment?.enabled ?? false,
+						fold: state.value?.sediment,
 						disabled: busy || !state.writable || false,
 						save: saveSediment,
 						settle,
@@ -2581,6 +2746,15 @@ window.__ModuleLoader__.load({
 			"status.presetUnavailable": "此会话的 preset 未提供上下文压缩，或能力尚未确认。",
 			"status.minimalUnavailable": "极简模式不会为此会话加载上下文压缩能力，因此选择器在本会话中等效为关闭，仅保留 Harness 原生行为。切换到标准、PTC／Coding、创造模式，或支持该能力的自定义 preset 后即可配置。",
 			"status.saveFailed": "保存失败，请重试",
+			"llm.title": "压缩使用 LLM 能力",
+			"llm.recommend": "压缩、轮尾折叠与估计器均为按需 LLM 调用：未启用或未配置时完全不走 LLM（零费用）。建议显式指定本地或局域网自建 OpenAI 兼容端点（Ollama、LM Studio、自建 llama.cpp、vLLM、SGLang、Strata、Ninfer 等）；指定端点后不会跟随宿主；「宿主模型」与对话共用 provider/model，高价 API 下每轮裁剪都会增加费用，不推荐作为默认。",
+			"llm.status": "估计器：{estimator} · 轮尾折叠：{fold}",
+			"llm.route.off": "未配置（纯规则 / 机械卡，无 LLM 调用）",
+			"llm.route.host": "宿主模型 {route}（与对话共用 provider/model；高价 API 下每轮裁剪都会增费）",
+			"llm.route.direct": "直连端点 {route}（推荐本地）",
+			"llm.hostWarning": "⚠ 仍有通道停在宿主模型：与对话共用 provider/model，高价 API 下每轮裁剪/折叠都会增加费用；请改为直连本地端点。",
+			"llm.foldHint": "折叠两层端点走部署配置：sediment.foldMode: direct + foldBaseUrl + foldStrata*（≤2K 输入档）与 foldLocal35*（2~8K 输入档）。",
+			"estimator.hostWarning": "宿主通道与对话共用 provider/model：估计调用会消耗对话 token 与费用；建议改为直连本地端点。",
 			"pricing.disclosure": "DeepSeek 官方价格目录复核于 2026-08-25。Asia/Shanghai 周一至周五 09:00–12:00、14:00–18:00 为峰时，其余为谷时；跨边界请求按成本区间处理。",
 			"profile.balanced": "平衡模式",
 			"profile.cache-strict": "Cache Strict（前缀保护）",
@@ -2747,6 +2921,15 @@ window.__ModuleLoader__.load({
 			"status.presetUnavailable": "This session’s preset does not provide context compression, or availability is not yet confirmed.",
 			"status.minimalUnavailable": "Minimal mode does not load context compression for this session. The selector is effectively off and Harness native behavior remains. Switch to Standard, PTC / Coding, Creative, or a capable custom preset to configure it.",
 			"status.saveFailed": "Save failed. Try again.",
+			"llm.title": "LLM usage for compression",
+			"llm.recommend": "Compression, turn-tail folding and the estimator are on-demand LLM calls only: with them off or unconfigured, no LLM is called at all (zero cost). Prefer an explicit local/LAN self-hosted OpenAI-compatible endpoint (Ollama, LM Studio, self-hosted llama.cpp, vLLM, SGLang, Strata, Ninfer, …); once set, it never follows the host. The host model shares provider/model with the conversation, so every trim adds cost on a premium API — not recommended as a default.",
+			"llm.status": "Estimator: {estimator} · Turn-tail fold: {fold}",
+			"llm.route.off": "not configured (rule-only / mechanical card, no LLM calls)",
+			"llm.route.host": "host model {route} (shares provider/model with the conversation; each trim adds cost on a premium API)",
+			"llm.route.direct": "direct endpoint {route} (local recommended)",
+			"llm.hostWarning": "⚠ A channel is still on the host model: it shares one provider/model with the conversation, so every trim/fold adds cost on a premium API. Switch it to a local direct endpoint.",
+			"llm.foldHint": "The two fold tiers come from deployment config: sediment.foldMode: direct with foldBaseUrl + foldStrata* (≤2K input) and foldLocal35* (2–8K input).",
+			"estimator.hostWarning": "Host channel shares provider/model with the conversation: estimator calls spend conversation tokens and money. Prefer a local direct endpoint.",
 			"pricing.disclosure": "DeepSeek official prices checked 2026-08-25. Peak Mon–Fri 09:00–12:00 and 14:00–18:00 Asia/Shanghai; otherwise off-peak. Cross-boundary requests use a cost range.",
 			"profile.balanced": "Balanced",
 			"profile.cache-strict": "Cache Strict (prefix protection)",
@@ -3068,7 +3251,16 @@ window.__ModuleLoader__.load({
 			"savings.money": "Geld gespart (cache-gewichtet)",
 			"savings.cumulative": "Kumuliert (über N Calls)",
 			"profile.flash-tuned": "Flash-tuned",
-			"detail.flash-tuned": "Flash optimized"
+			"detail.flash-tuned": "Flash optimized",
+			"llm.title": "LLM-Nutzung für die Kompression",
+			"llm.recommend": "Kompression, Turn-Ende-Faltung und der Schätzer rufen alle ein LLM auf. Bevorzugen Sie einen lokalen oder im LAN selbst gehosteten OpenAI-kompatiblen Endpunkt — Ollama, LM Studio, selbst gehostetes llama.cpp, vLLM, SGLang, Strata, Ninfer und ähnliche Runtimes —, damit jeder Schnitt keine Konversations-Tokens oder Kosten verbraucht.",
+			"llm.status": "Schätzer: {estimator} · Turn-Ende-Faltung: {fold}",
+			"llm.route.off": "nicht konfiguriert (nur Regeln / mechanische Karte, keine LLM-Aufrufe)",
+			"llm.route.host": "Host-Modell {route} (teilt provider/model mit der Konversation; verbraucht Konversations-Tokens)",
+			"llm.route.direct": "direkter Endpunkt {route} (lokal empfohlen)",
+			"llm.hostWarning": "Ein Kanal läuft noch auf dem Host-Modell: Kompression und Konversation teilen ein provider/model, jeder Schnitt/jede Faltung verbraucht Konversations-Tokens und Kosten.",
+			"llm.foldHint": "Die zwei Faltungsstufen kommen aus der Deployment-Konfiguration: sediment.foldMode: direct mit foldBaseUrl + foldStrata* (≤2K Eingabe) und foldLocal35* (2–8K Eingabe).",
+			"estimator.hostWarning": "Der Host-Kanal teilt provider/model mit der Konversation: Schätzer-Aufrufe verbrauchen Konversations-Tokens und Kosten. Lokalen direkten Endpunkt bevorzugen."
 		};
 		//#endregion
 		//#region src/client/locales/es.ts
@@ -3236,7 +3428,16 @@ window.__ModuleLoader__.load({
 			"savings.money": "Dinero ahorrado (ponderado por caché)",
 			"savings.cumulative": "Acumulado (en N llamadas)",
 			"profile.flash-tuned": "Flash-tuned",
-			"detail.flash-tuned": "Flash optimized"
+			"detail.flash-tuned": "Flash optimized",
+			"llm.title": "Uso de LLM para la compresión",
+			"llm.recommend": "La compresión, el plegado de fin de turno y el estimador llaman a un LLM. Prefiere un endpoint local o autoalojado en LAN compatible con OpenAI — Ollama, LM Studio, llama.cpp autoalojado, vLLM, SGLang, Strata, Ninfer y runtimes similares — para que cada recorte no gaste tokens ni coste de conversación.",
+			"llm.status": "Estimador: {estimator} · Plegado de fin de turno: {fold}",
+			"llm.route.off": "no configurado (solo reglas / tarjeta mecánica, sin llamadas LLM)",
+			"llm.route.host": "modelo anfitrión {route} (comparte provider/model con la conversación; gasta tokens de conversación)",
+			"llm.route.direct": "endpoint directo {route} (local recomendado)",
+			"llm.hostWarning": "Algún canal sigue en el modelo anfitrión: compresión y conversación comparten un mismo provider/model, cada recorte/plegado gasta tokens y coste de conversación.",
+			"llm.foldHint": "Los dos niveles de plegado vienen de la configuración de despliegue: sediment.foldMode: direct con foldBaseUrl + foldStrata* (entrada ≤2K) y foldLocal35* (entrada 2–8K).",
+			"estimator.hostWarning": "El canal anfitrión comparte provider/model con la conversación: las llamadas del estimador gastan tokens y coste. Prefiere un endpoint local directo."
 		};
 		//#endregion
 		//#region src/client/locales/fr.ts
@@ -3404,7 +3605,16 @@ window.__ModuleLoader__.load({
 			"savings.money": "Argent économisé (pondéré cache)",
 			"savings.cumulative": "Cumulé (sur N appels)",
 			"profile.flash-tuned": "Flash-tuned",
-			"detail.flash-tuned": "Flash optimized"
+			"detail.flash-tuned": "Flash optimized",
+			"llm.title": "Utilisation du LLM pour la compression",
+			"llm.recommend": "La compression, le pliage de fin de tour et l’estimateur appellent tous un LLM. Préférez un point de terminaison local ou auto-hébergé sur le LAN compatible OpenAI — Ollama, LM Studio, llama.cpp auto-hébergé, vLLM, SGLang, Strata, Ninfer et runtimes similaires — pour que chaque découpe ne consomme ni tokens ni frais de conversation.",
+			"llm.status": "Estimateur : {estimator} · Pliage de fin de tour : {fold}",
+			"llm.route.off": "non configuré (règles seules / carte mécanique, aucun appel LLM)",
+			"llm.route.host": "modèle hôte {route} (partage provider/model avec la conversation ; consomme les tokens de conversation)",
+			"llm.route.direct": "point de terminaison direct {route} (local recommandé)",
+			"llm.hostWarning": "Un canal reste sur le modèle hôte : la compression et la conversation partagent un même provider/model, chaque découpe/pliage dépense des tokens et des frais de conversation.",
+			"llm.foldHint": "Les deux paliers de pliage viennent de la configuration de déploiement : sediment.foldMode: direct avec foldBaseUrl + foldStrata* (≤2K d’entrée) et foldLocal35* (2–8K d’entrée).",
+			"estimator.hostWarning": "Le canal hôte partage provider/model avec la conversation : les appels de l’estimateur dépensent tokens et frais de conversation. Préférez un point de terminaison local direct."
 		};
 		//#endregion
 		//#region src/client/locales/it.ts
@@ -3572,7 +3782,16 @@ window.__ModuleLoader__.load({
 			"savings.money": "Denaro risparmiato (ponderato cache)",
 			"savings.cumulative": "Cumulato (su N chiamate)",
 			"profile.flash-tuned": "Flash-tuned",
-			"detail.flash-tuned": "Flash optimized"
+			"detail.flash-tuned": "Flash optimized",
+			"llm.title": "Uso dell’LLM per la compressione",
+			"llm.recommend": "Compressione, piegatura di fine turno e stimatore chiamano tutti un LLM. Preferisci un endpoint locale o self-hosted in LAN compatibile OpenAI — Ollama, LM Studio, llama.cpp self-hosted, vLLM, SGLang, Strata, Ninfer e runtime simili — così ogni taglio non consuma token o costi della conversazione.",
+			"llm.status": "Stimatore: {estimator} · Piegatura di fine turno: {fold}",
+			"llm.route.off": "non configurato (solo regole / carta meccanica, nessuna chiamata LLM)",
+			"llm.route.host": "modello host {route} (condivide provider/model con la conversazione; consuma token della conversazione)",
+			"llm.route.direct": "endpoint diretto {route} (locale consigliato)",
+			"llm.hostWarning": "Un canale è ancora sul modello host: compressione e conversazione condividono lo stesso provider/model, ogni taglio/piegatura spende token e costi della conversazione.",
+			"llm.foldHint": "I due livelli di piegatura vengono dalla configurazione di deployment: sediment.foldMode: direct con foldBaseUrl + foldStrata* (input ≤2K) e foldLocal35* (input 2–8K).",
+			"estimator.hostWarning": "Il canale host condivide provider/model con la conversazione: le chiamate dello stimatore spendono token e costi. Preferisci un endpoint locale diretto."
 		};
 		//#endregion
 		//#region src/client/locales/ja.ts
@@ -3740,7 +3959,16 @@ window.__ModuleLoader__.load({
 			"savings.money": "節約金額（キャッシュ加重）",
 			"savings.cumulative": "累計（N コール）",
 			"profile.flash-tuned": "Flash-tuned",
-			"detail.flash-tuned": "Flash optimized"
+			"detail.flash-tuned": "Flash optimized",
+			"llm.title": "圧縮での LLM 利用",
+			"llm.recommend": "圧縮・ターン末尾の折り畳み・推定器はいずれも LLM を呼び出します。ローカルまたは LAN 内で自ホストした OpenAI 互換エンドポイント（Ollama、LM Studio、自ホスト llama.cpp、vLLM、SGLang、Strata、Ninfer など）を優先すると、毎回のトリムで会話のトークンや費用を消費しません。",
+			"llm.status": "推定器：{estimator} · ターン末尾折り畳み：{fold}",
+			"llm.route.off": "未設定（ルールのみ／機械カード、LLM 呼び出しなし）",
+			"llm.route.host": "宿主モデル {route}（会話と provider/model を共有し、会話トークンを消費）",
+			"llm.route.direct": "直接接続エンドポイント {route}（ローカル推奨）",
+			"llm.hostWarning": "宿主モデルのままのチャネルがあります：圧縮と会話が同じ provider/model を共有し、トリム/折り畳みのたびに会話トークンと費用を消費します。",
+			"llm.foldHint": "折り畳みの 2 段エンドポイントはデプロイ設定で指定します：sediment.foldMode: direct + foldBaseUrl + foldStrata*（≤2K 入力）と foldLocal35*（2〜8K 入力）。",
+			"estimator.hostWarning": "宿主チャネルは会話と provider/model を共有します：推定呼び出しが会話トークンと費用を消費します。ローカル直接エンドポイントを推奨します。"
 		};
 		//#endregion
 		//#region src/client/locales/ko.ts
@@ -3908,7 +4136,16 @@ window.__ModuleLoader__.load({
 			"savings.money": "절약 금액(캐시 가중)",
 			"savings.cumulative": "누적(N회 호출)",
 			"profile.flash-tuned": "Flash-tuned",
-			"detail.flash-tuned": "Flash optimized"
+			"detail.flash-tuned": "Flash optimized",
+			"llm.title": "압축용 LLM 사용",
+			"llm.recommend": "압축, 턴 끝 접기, 추정기는 모두 LLM을 호출합니다. 로컬 또는 LAN 내 자체 호스팅 OpenAI 호환 엔드포인트(Ollama, LM Studio, 자체 호스팅 llama.cpp, vLLM, SGLang, Strata, Ninfer 등)를 우선 사용하면 매번 트림할 때 대화 토큰과 비용을 쓰지 않습니다.",
+			"llm.status": "추정기: {estimator} · 턴 끝 접기: {fold}",
+			"llm.route.off": "미설정(규칙 전용/기계 카드, LLM 호출 없음)",
+			"llm.route.host": "호스트 모델 {route}(대화와 provider/model 공유, 대화 토큰 소모)",
+			"llm.route.direct": "직접 엔드포인트 {route}(로컬 권장)",
+			"llm.hostWarning": "아직 호스트 모델을 쓰는 채널이 있습니다: 압축과 대화가 같은 provider/model을 공유하며 트림/접기마다 대화 토큰과 비용을 씁니다.",
+			"llm.foldHint": "접기의 두 계층 엔드포인트는 배포 설정에서 지정합니다: sediment.foldMode: direct + foldBaseUrl + foldStrata*(≤2K 입력)와 foldLocal35*(2~8K 입력).",
+			"estimator.hostWarning": "호스트 채널은 대화와 provider/model을 공유합니다: 추정 호출이 대화 토큰과 비용을 씁니다. 로컬 직접 엔드포인트를 권장합니다."
 		};
 		//#endregion
 		//#region src/client/locales/ru.ts
@@ -4076,7 +4313,16 @@ window.__ModuleLoader__.load({
 			"savings.money": "Сэкономлено (взвешено по кэшу)",
 			"savings.cumulative": "Накоплено (за N вызовов)",
 			"profile.flash-tuned": "Flash-tuned",
-			"detail.flash-tuned": "Flash optimized"
+			"detail.flash-tuned": "Flash optimized",
+			"llm.title": "Использование LLM для сжатия",
+			"llm.recommend": "Сжатие, свёртка в конце хода и оценщик вызывают LLM. Предпочитайте локальную или развёрнутую в LAN OpenAI-совместимую точку — Ollama, LM Studio, собственный llama.cpp, vLLM, SGLang, Strata, Ninfer и подобные рантаймы, — чтобы каждое обрезание не тратило токены и деньги диалога.",
+			"llm.status": "Оценщик: {estimator} · Свёртка конца хода: {fold}",
+			"llm.route.off": "не настроено (только правила / механическая карточка, без вызовов LLM)",
+			"llm.route.host": "хост-модель {route} (делит provider/model с диалогом; тратит токены диалога)",
+			"llm.route.direct": "прямая точка {route} (рекомендуется локальная)",
+			"llm.hostWarning": "Есть канал на хост-модели: сжатие и диалог делят один provider/model, каждая обрезка/свёртка тратит токены и деньги диалога.",
+			"llm.foldHint": "Два уровня свёртки задаются в конфигурации развёртывания: sediment.foldMode: direct с foldBaseUrl + foldStrata* (вход ≤2K) и foldLocal35* (вход 2–8K).",
+			"estimator.hostWarning": "Хост-канал делит provider/model с диалогом: вызовы оценщика тратят токены и деньги диалога. Предпочтите локальную прямую точку."
 		};
 		//#endregion
 		//#region src/client/locales/pt.ts
@@ -4244,7 +4490,16 @@ window.__ModuleLoader__.load({
 			"savings.money": "Dinheiro economado (ponderado por cache)",
 			"savings.cumulative": "Acumulado (ao longo de N chamadas)",
 			"profile.flash-tuned": "Flash-tuned",
-			"detail.flash-tuned": "Flash optimized"
+			"detail.flash-tuned": "Flash optimized",
+			"llm.title": "Uso de LLM para compressão",
+			"llm.recommend": "Compressão, dobra de fim de turno e estimador chamam um LLM. Prefira um endpoint local ou auto-hospedado na LAN compatível com OpenAI — Ollama, LM Studio, llama.cpp auto-hospedado, vLLM, SGLang, Strata, Ninfer e runtimes semelhantes — para que cada corte não gaste tokens nem custo da conversa.",
+			"llm.status": "Estimador: {estimator} · Dobra de fim de turno: {fold}",
+			"llm.route.off": "não configurado (somente regras / cartão mecânico, sem chamadas LLM)",
+			"llm.route.host": "modelo hospedeiro {route} (compartilha provider/model com a conversa; gasta tokens da conversa)",
+			"llm.route.direct": "endpoint direto {route} (local recomendado)",
+			"llm.hostWarning": "Ainda há canal no modelo hospedeiro: compressão e conversa compartilham o mesmo provider/model, cada corte/dobra gasta tokens e custo da conversa.",
+			"llm.foldHint": "Os dois níveis de dobra vêm da configuração de implantação: sediment.foldMode: direct com foldBaseUrl + foldStrata* (entrada ≤2K) e foldLocal35* (entrada 2–8K).",
+			"estimator.hostWarning": "O canal hospedeiro compartilha provider/model com a conversa: chamadas do estimador gastam tokens e custo. Prefira um endpoint local direto."
 		};
 		//#endregion
 		//#region src/client/preset-options.ts

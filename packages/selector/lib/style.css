@@ -295,6 +295,27 @@
   padding: 16px;
 }
 
+.WcpPCW_llmNotice {
+  background: #d977060f;
+  border: 1px solid #80808059;
+  border-left: 4px solid #d97706;
+  border-radius: 8px;
+  margin: 12px 0;
+  padding: 14px 16px;
+}
+
+.WcpPCW_btnChip {
+  appearance: none;
+  font: inherit;
+  cursor: pointer;
+  color: inherit;
+  background: none;
+  border: 1px solid #80808073;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
 .WcpPCW_autoCompactTitle {
   margin: 0 0 8px;
   font-size: 15px;

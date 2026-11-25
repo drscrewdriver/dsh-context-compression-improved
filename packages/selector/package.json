@@ -1,6 +1,6 @@
 {
   "name": "dsh-context-compression-improved",
-  "version": "0.15.5",
+  "version": "0.15.6",
   "description": "Token-saving context-compression selector bundle for DeepSeek Harness — fewer tool-result tokens on every turn, fully auditable",
   "type": "module",
   "main": "lib/index.js",

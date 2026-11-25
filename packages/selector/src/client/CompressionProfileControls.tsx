@@ -17,6 +17,7 @@ import {
   isValidAutoCompactThresholdPercent,
   type CompressionProfile,
   type CustomCompressionPolicyV3,
+  type SedimentSettings,
 } from '../profiles.ts'
 import type { CompressionProfileSelectorProps } from './CompressionProfileSelector.tsx'
 import { CustomPolicyEditor, editableCustom } from './CustomPolicyEditor.tsx'
@@ -320,6 +321,8 @@ export function CodeSkeletonControls({ value, disabled, save, settle, t }: CodeS
 
 interface SedimentControlsProps {
   value: boolean
+  /** 轮尾折叠的完整配置（来自持久态 sediment）：只用于展示端点现状与费用提示。 */
+  fold?: SedimentSettings | undefined
   disabled: boolean
   save: (enabled: boolean) => Promise<void>
   settle: (operation: () => Promise<void>) => void
@@ -331,11 +334,26 @@ interface SedimentControlsProps {
  * select with the display-impact disclosure in its description (M13) —
  * replaced spans leave the transcript view; originals stay in the log.
  */
-export function SedimentControls({ value, disabled, save, settle, t }: SedimentControlsProps) {
+export function SedimentControls({ value, fold, disabled, save, settle, t }: SedimentControlsProps) {
+  const foldLine = (() => {
+    if (fold === undefined) return null
+    const mode = fold.foldMode ?? ''
+    if (mode === '') return t('llm.route.off')
+    const strata = fold.foldStrataModel?.trim() ?? ''
+    const local35 = fold.foldLocal35Model?.trim() ?? ''
+    if (mode === 'direct') {
+      const base = fold.foldBaseUrl?.trim() ?? ''
+      const route = [base, strata === '' ? '' : `≤2K: ${strata}`, local35 === '' ? '' : `2–8K: ${local35}`].filter(part => part !== '').join(' · ') || '—'
+      return t('llm.route.direct').replace('{route}', route)
+    }
+    const route = [fold.foldStrataProvider ?? '', strata].filter(part => part !== '').join(' / ') || '—'
+    return t('llm.route.host').replace('{route}', route)
+  })()
   return (
     <section className={css.autoCompact} aria-labelledby="context-compression-sediment-title">
       <h3 id="context-compression-sediment-title" className={css.autoCompactTitle}>{t('sediment.title')}</h3>
       <p className={css.customNote}>{t('sediment.description')}</p>
+      {foldLine === null ? null : <p className={css.customNote}>{t('sediment.enabled')} — {foldLine}</p>}
       <label className={css.field}>
         <span>{t('sediment.enabled')}</span>
         <select

@@ -18,6 +18,15 @@ declare const zh: {
   'status.presetUnavailable': string;
   'status.minimalUnavailable': string;
   'status.saveFailed': string;
+  'llm.title': string;
+  'llm.recommend': string;
+  'llm.status': string;
+  'llm.route.off': string;
+  'llm.route.host': string;
+  'llm.route.direct': string;
+  'llm.hostWarning': string;
+  'llm.foldHint': string;
+  'estimator.hostWarning': string;
   'pricing.disclosure': string;
   'profile.balanced': string;
   'profile.cache-strict': string;

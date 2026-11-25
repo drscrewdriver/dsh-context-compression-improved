@@ -157,6 +157,28 @@
   border-radius: 8px;
 }
 
+/* 压缩使用 LLM 能力：费用/端点提示永远的第一区块（左缘告警色强调）。 */
+.llmNotice {
+  margin: 12px 0;
+  padding: 14px 16px;
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  border-left: 4px solid #d97706;
+  border-radius: 8px;
+  background: rgba(217, 119, 6, 0.06);
+}
+
+.btnChip {
+  appearance: none;
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(128, 128, 128, 0.45);
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+}
+
 .autoCompactTitle {
   margin: 0 0 8px;
   font-size: 15px;

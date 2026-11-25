@@ -165,5 +165,14 @@ export const pt = {
   'savings.cumulative': 'Acumulado (ao longo de N chamadas)',
   'profile.flash-tuned': 'Flash-tuned',
   'detail.flash-tuned': 'Flash optimized',
+  'llm.title': 'Uso de LLM para compressão',
+  'llm.recommend': 'Compressão, dobra de fim de turno e estimador chamam um LLM. Prefira um endpoint local ou auto-hospedado na LAN compatível com OpenAI — Ollama, LM Studio, llama.cpp auto-hospedado, vLLM, SGLang, Strata, Ninfer e runtimes semelhantes — para que cada corte não gaste tokens nem custo da conversa.',
+  'llm.status': 'Estimador: {estimator} · Dobra de fim de turno: {fold}',
+  'llm.route.off': 'não configurado (somente regras / cartão mecânico, sem chamadas LLM)',
+  'llm.route.host': 'modelo hospedeiro {route} (compartilha provider/model com a conversa; gasta tokens da conversa)',
+  'llm.route.direct': 'endpoint direto {route} (local recomendado)',
+  'llm.hostWarning': 'Ainda há canal no modelo hospedeiro: compressão e conversa compartilham o mesmo provider/model, cada corte/dobra gasta tokens e custo da conversa.',
+  'llm.foldHint': 'Os dois níveis de dobra vêm da configuração de implantação: sediment.foldMode: direct com foldBaseUrl + foldStrata* (entrada ≤2K) e foldLocal35* (entrada 2–8K).',
+  'estimator.hostWarning': 'O canal hospedeiro compartilha provider/model com a conversa: chamadas do estimador gastam tokens e custo. Prefira um endpoint local direto.',
 
 } satisfies Record<ContextCompressionLocaleKey, string>

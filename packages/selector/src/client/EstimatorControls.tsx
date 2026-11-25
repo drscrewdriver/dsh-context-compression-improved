@@ -212,6 +212,7 @@ export function EstimatorControls({ options, disabled, save, settle, t }: Estima
             <p className={css.customNote}>{String(hostProvider.error)}</p>
           )}
           <p className={css.customNote}>{t('estimator.hostReuse')}</p>
+          <p className={css.autoCompactRisk}>{t('estimator.hostWarning')}</p>
           <p className={css.customNote}>{t('estimator.hostRoute').replace('{route}', effectiveRoute)}</p>
         </>
       ) : (

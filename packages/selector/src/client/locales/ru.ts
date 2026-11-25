@@ -165,5 +165,14 @@ export const ru = {
   'savings.cumulative': "Накоплено (за N вызовов)",
   'profile.flash-tuned': 'Flash-tuned',
   'detail.flash-tuned': 'Flash optimized',
+  'llm.title': 'Использование LLM для сжатия',
+  'llm.recommend': 'Сжатие, свёртка в конце хода и оценщик вызывают LLM. Предпочитайте локальную или развёрнутую в LAN OpenAI-совместимую точку — Ollama, LM Studio, собственный llama.cpp, vLLM, SGLang, Strata, Ninfer и подобные рантаймы, — чтобы каждое обрезание не тратило токены и деньги диалога.',
+  'llm.status': 'Оценщик: {estimator} · Свёртка конца хода: {fold}',
+  'llm.route.off': 'не настроено (только правила / механическая карточка, без вызовов LLM)',
+  'llm.route.host': 'хост-модель {route} (делит provider/model с диалогом; тратит токены диалога)',
+  'llm.route.direct': 'прямая точка {route} (рекомендуется локальная)',
+  'llm.hostWarning': 'Есть канал на хост-модели: сжатие и диалог делят один provider/model, каждая обрезка/свёртка тратит токены и деньги диалога.',
+  'llm.foldHint': 'Два уровня свёртки задаются в конфигурации развёртывания: sediment.foldMode: direct с foldBaseUrl + foldStrata* (вход ≤2K) и foldLocal35* (вход 2–8K).',
+  'estimator.hostWarning': 'Хост-канал делит provider/model с диалогом: вызовы оценщика тратят токены и деньги диалога. Предпочтите локальную прямую точку.',
 
 } satisfies Record<ContextCompressionLocaleKey, string>
