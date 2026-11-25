@@ -17,3 +17,4 @@ release-artifacts/
 
 # cell-browser-e2e scratch cells (never ship)
 .cell-e2e/
+.tmp/

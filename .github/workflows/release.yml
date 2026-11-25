@@ -1,0 +1,151 @@
+name: release
+
+# 本仓是 pnpm 工作区变体，与单包版（dsh-sidebar-fold）的差异只有三处：
+#   Node 版本、门禁命令、三方版本对齐清单。其余步骤逐字相同。
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:      { description: 要发布的 tag（如 v0.1.14）, required: true, type: string }
+      dry_run:  { description: 只打包不推 npm, type: boolean, default: true }
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # 试点期用 ubuntu；若有 pwsh 专属脚本的仓改 windows-latest
+    runs-on: ubuntu-latest
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.9.0
+          registry-url: https://registry.npmjs.org
+
+      # ① 三方版本对齐：tag / package.json / dsh.plugin.json
+      - name: 版本对齐
+        run: |
+          set -euo pipefail
+          V="${TAG#v}"
+          P=$(node -p "require('./package.json').version")
+          [ "${V}" = "${P}" ] || { echo "::error::tag ${TAG} 与根 package.json ${P} 不一致"; exit 1; }
+          # 本仓版本号有三处：根 package.json、packages/selector/package.json、
+          # packages/selector/dsh.plugin.json —— 三处必须同号
+          for f in packages/selector/package.json packages/selector/dsh.plugin.json; do
+            [ -f "${f}" ] || continue
+            DCC=$(node -p "require('./" + "$f" + "').version" 2>/dev/null || echo "")
+            [ -z "${DCC}" ] || [ "${DCC}" = "${P}" ] || { echo "::error::${f} 的 ${DCC} 与根 ${P} 不一致"; exit 1; }
+          done
+          echo "VERSION=${P}"        >> "${GITHUB_ENV}"
+          echo "PKG_NAME=$(node -p "require('./package.json').name")" >> "${GITHUB_ENV}"
+
+      - name: 安装依赖
+        run: |
+          set -euo pipefail
+          if   [ -f pnpm-lock.yaml ];   then corepack enable && pnpm install --frozen-lockfile
+          elif [ -f package-lock.json ]; then npm ci --no-audit --no-fund
+          else                              npm install --no-audit --no-fund
+          fi
+
+      # ③ 门禁：有 ci 脚本走 ci，否则逐项存在才跑
+      - name: 门禁
+        run: |
+          set -euo pipefail
+          # 本仓没有聚合 ci 脚本，且顺序敏感（typecheck 依赖 bundle、test:built 依赖 build），
+          # 因此逐项显式写死，顺序与 .github/workflows/ci.yml 一致；verify:release 不可省。
+          pnpm lint
+          pnpm typecheck
+          pnpm build
+          pnpm test
+          pnpm verify:release
+
+      - name: 打包清单
+        run: npm pack --dry-run
+
+      # ⑤ 幂等：同版本已存在则整体跳过发布动作
+      - name: 幂等检查
+        id: guard
+        run: |
+          if npm view "$PKG_NAME@$VERSION" version --registry https://registry.npmjs.org 2>/dev/null | grep -q .; then
+            echo "exists=true"  >> "$GITHUB_OUTPUT"
+            echo "::warning::$PKG_NAME@$VERSION 已存在于 registry，跳过 publish/dist-tag/Release"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ⑥ 发布
+      - name: npm publish
+        if: steps.guard.outputs.exists == 'false' && (github.event_name == 'push' || inputs.dry_run == false)
+        run: npm publish --registry https://registry.npmjs.org
+
+      # ⑦ dist-tag 同步（读侧滞后 → 重试；失败只告警不判死，因为 publish 已成功）
+      - name: 同步 dsh-* 线标签
+        id: disttag
+        if: steps.guard.outputs.exists == 'false' && (github.event_name == 'push' || inputs.dry_run == false)
+        run: |
+          set -uo pipefail
+          REG=https://registry.npmjs.org
+          # 三种情形必须分开，否则「本包没有 dsh-* 线标签」会被当成读侧滞后白等 3 分钟：
+          #   A 查询失败/空      -> 读侧滞后，重试
+          #   B 有 dist-tags 但无 dsh-* -> 该包没有线标签，直接收工
+          #   C 有 dsh-*        -> 逐个 add
+          for attempt in 1 2 3 4 5 6; do
+            RAW=$(npm view "$PKG_NAME" dist-tags --json --registry "$REG" 2>/dev/null)
+            if [ -n "${RAW:-}" ]; then
+              TAGS=$(printf '%s' "$RAW" \
+                | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{console.log(Object.keys(JSON.parse(s)).filter(t=>t.startsWith('dsh-')).join(' '))}catch{console.log('')}})")
+              if [ -z "${TAGS:-}" ]; then
+                echo "::notice::$PKG_NAME 没有 dsh-* 线标签，无需同步"
+                echo "synced=none" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              ok=1
+              for t in $TAGS; do
+                npm dist-tag add "$PKG_NAME@$VERSION" "$t" --registry "$REG" || ok=0
+              done
+              [ "$ok" = 1 ] && { echo "synced=$TAGS" >> "$GITHUB_OUTPUT"; exit 0; }
+            fi
+            echo "第 $attempt 轮未拿到 dist-tags（读侧滞后），30s 后重试"; sleep 30
+          done
+          echo "::warning::线标签同步未完成，需本地补跑 node mine-dsh-plugins/_tools/sync-dist-tags.mjs --only $PKG_NAME"
+          echo "synced=PENDING" >> "$GITHUB_OUTPUT"
+
+      # ⑧ Release + Latest 徽标（--target 传完整 SHA，禁止短号）
+      - name: GitHub Release
+        if: steps.guard.outputs.exists == 'false' && (github.event_name == 'push' || inputs.dry_run == false)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          node scripts/release-notes.mjs --version "$VERSION" --tag "$TAG" --out notes.md
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --notes-file notes.md
+          gh release edit "$TAG" --latest
+
+      # ⑨ 事实表
+      - name: Job Summary
+        if: always()
+        run: |
+          {
+            echo "### $TAG"
+            echo "| 项 | 值 |"
+            echo "|---|---|"
+            echo "| 包 | ${PKG_NAME:-?} |"
+            echo "| 版本 | ${VERSION:-?} |"
+            echo "| 已存在跳过 | ${{ steps.guard.outputs.exists }} |"
+            echo "| 线标签 | ${{ steps.disttag.outputs.synced || '-' }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
