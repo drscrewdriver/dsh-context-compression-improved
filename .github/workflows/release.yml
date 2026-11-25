@@ -47,7 +47,7 @@ jobs:
           # packages/selector/dsh.plugin.json —— 三处必须同号
           for f in packages/selector/package.json packages/selector/dsh.plugin.json; do
             [ -f "${f}" ] || continue
-            DCC=$(node -p "require('./" + "$f" + "').version" 2>/dev/null || echo "")
+            DCC=$(node -p "require('./$f').version" 2>/dev/null || echo "")
             [ -z "${DCC}" ] || [ "${DCC}" = "${P}" ] || { echo "::error::${f} 的 ${DCC} 与根 ${P} 不一致"; exit 1; }
           done
           echo "VERSION=${P}"        >> "${GITHUB_ENV}"
